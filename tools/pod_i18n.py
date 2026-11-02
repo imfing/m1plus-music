@@ -301,6 +301,9 @@ TEXT = dict([
        '%d canción', '%d brano', '%d เพลง', 'Utwory: %d', 'Песен: %d', 'Пісень: %d'),
     _t('%d tracks', '%d 首歌曲', '%d 首歌曲', '%d 曲', '%d곡', '%d titres', '%d Titel',
        '%d canciones', '%d brani', '%d เพลง', 'Utwory: %d', 'Песен: %d', 'Пісень: %d'),
+    # the album's length after the track count ("47 min", "1 h 12 min": the payload joins the two with a space); abbreviations, so no plural forms
+    _t('%d min', '%d分钟', '%d分鐘', '%d分', '%d분', '%d min', '%d Min.', '%d min', '%d min', '%d นาที', '%d min', '%d мин', '%d хв'),
+    _t('%d h', '%d小时', '%d小時', '%d時間', '%d시간', '%d h', '%d Std.', '%d h', '%d h', '%d ชม.', '%d godz.', '%d ч', '%d год'),
     # The Playlists page (patch/playlists.c): the menu row that opens the stock Playlists page to delete (its multi-select button), and the
     # empty page's line. New / Import / Export playlist are the stock keys (STOCK).
     _t('Delete Playlists', '删除歌单', '刪除歌單', 'プレイリストを削除', '재생 목록 삭제', 'Supprimer des playlists', 'Playlists löschen',

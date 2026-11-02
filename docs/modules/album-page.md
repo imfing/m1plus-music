@@ -37,13 +37,32 @@ list so an enclosing view cannot intercept the whole navigation band.
 | Cover | 160 × 160 at (80, 50), 10 px corners |
 | Album | Centered 22 px white at y 224 |
 | Artist | Centered 18 px grey at y 247 |
-| Metadata | 15 px at y 267: year and track count, or track count alone |
+| Metadata | 15 px at y 267: year, track count and length (`1959 · 8 tracks · 47 min`); year and length only when known |
 | Playback | Shuffle target 44 × 44 at x 42; Play all target 180 × 44 at x 95; y 292 |
 | Tracks | Number column, 19 px title, gold playing title, 20% white press fill, 13% white hairline |
 
-Year is the first track year in 1000..2999. There is no album duration:
-database `time/time_end` fields are CUE offsets, not ordinary-file lengths.
+Year is the first track year in 1000..2999.
 Track numbers use a wider column from 100 onward. CUE titles use the file name.
+
+## Album length
+
+The library stores no track lengths (`time/time_end` are CUE offsets), so the page reads
+each track's FLAC STREAMINFO: total samples / sample rate, after a leading ID3v2 tag if present.
+A page timer reads `AB_LEN_STEP` (4) headers per `AB_LEN_MS` (20 ms) tick, from the page's open
+or reload. It stops on destroy and when another query replaced the stock list, and the reload
+starts it again. The line gains ` · 47 min` (whole minutes, at least 1; `1 h 12 min`, `2 h`
+from 59.5 min), with the translated keys `%d min` and `%d h`.
+
+No length is shown, and nothing is read, when a track is not a `.flac` or is a CUE track.
+A header that does not read as STREAMINFO, or a missing file, ends the job without a length
+and without caching.
+
+`/mnt/mmc/.m1plus/album-lengths` caches results: the magic `MAL1`, then 12-byte records
+`{cover key, signature, seconds}`, newest first, at most `AB_LEN_KEEP` (512). The signature is
+FNV-1a over the tracks' paths, so a changed track list is read again; a file replaced under the
+same path keeps its cached length. A hit shows the length on open without reading any track.
+The cache is written with `pod_card_write` (only while the card is mounted); a file without
+the magic is ignored and replaced.
 
 ## Artwork and shared tint
 
@@ -99,5 +118,6 @@ shared wave marker and a 20 px navbar title. See [Queue](queue.md) and [rows](ro
 `SONGS_PINS` checks `is_playing` (`0x4d9d64`) and album row-builder calls
 at `0x524c40..0x524ca4`. This page adds no hook.
 Tests cover layout, tint contrast, tone-cache bounds/LRU, playback mode changes, stack
-navigation and failures. Hardware appearance and input remain unverified by those models;
+navigation and failures; `len_tests` covers the length (headers, rounding, cache, the albums
+without one and the line's width in all languages). Hardware appearance and input remain unverified by those models;
 use [device checks](device-checks.md).

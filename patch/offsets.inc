@@ -320,6 +320,9 @@
 #define AB_TEXT_SLACK 4
 #define AB_PLAY_TEXT_W 50      /* the English "Play all" at 18 px: where the payload cannot measure the translated text, the pill's pair is centred for this width */
 #define AB_COVER_MS 200
+#define AB_LEN_MS 20           /* the album's length: AB_LEN_STEP tracks' FLAC headers are read per tick of this page timer */
+#define AB_LEN_STEP 4
+#define AB_LEN_KEEP 512        /* the albums the length cache (CARD_DIR/album-lengths) keeps, the last computed first */
 #define REC_CUE_END 0x4c       /* the CUE track's end (loadSongList's twin of REC_CUE_START); the stock row shows a CUE track by its file name when either is set (@0x524c98) */
 /* Our Queue page (patch/queuepage.c, docs/modules/queue.md; ui/m1plus_queue.bin, tools/pod_ui.py build_queue_page, which reads this file and must equal it), in place of the stock
  * queue drawer. Window rows (the list is the whole window, QP_WIN_H, the glass Back floats over it): the playing track's QP_COVER px cover (QP_COVER_R corners cut in

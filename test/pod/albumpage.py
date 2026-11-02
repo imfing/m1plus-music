@@ -741,7 +741,132 @@ def select_tests(ctx):
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests]   # tools/check.py runs each as its own task
+def flac(secs, rate=44100, id3=0, footer=False, total=None):
+    """A FLAC file's head: an optional ID3v2 tag of id3 bytes (with its footer flag), "fLaC", the STREAMINFO block header and STREAMINFO (secs at rate, or total samples)."""
+    n = secs * rate if total is None else total
+    si = bytes(10) + bytes((rate >> 12 & 0xff, rate >> 4 & 0xff, (rate & 0xf) << 4 | 0x02, 0xf0 | n >> 32 & 0xf)) + struct.pack('>I', n & 0xffffffff) + bytes(16)
+    body = b'fLaC' + bytes((0x80, 0, 0, 34)) + si + bytes(64)
+    if not id3: return body
+    size = bytes((id3 >> 21 & 0x7f, id3 >> 14 & 0x7f, id3 >> 7 & 0x7f, id3 & 0x7f))
+    return b'ID3\x04\x00' + bytes((0x10 if footer else 0,)) + size + bytes(id3 + (10 if footer else 0)) + body
+
+
+LEN_CACHE = '/mnt/mmc/.m1plus/album-lengths'
+
+
+def len_machine(secs, **kw):
+    """An album machine whose tracks are FLAC files of secs[i] seconds (None: no file on the card)."""
+    m = album_machine(n=len(secs), **kw)
+    for i, s in enumerate(secs):
+        if s is not None: m.fs[f'/mnt/mmc/m/{i}.flac'] = flac(s)
+    return m
+
+
+def len_run(m, limit=50):
+    """Fire the length timer until it stops re-arming: the number of ticks."""
+    for n in range(1, limit + 1):
+        if m.call(PSYMS['ab_on_len'], count=40000000) != O['RET_REPEAT']: return n
+    return limit
+
+
+def meta(m): return utf(m.wtext[m.widgets['ab_meta']])
+
+
+def len_tests(ctx):
+    """8. The album's length: FLAC STREAMINFO read in steps, the header line, the card cache, and the albums that show none."""
+    expect = ctx.expect
+    secs = [301, 342, 289, 410, 330, 548, 307, 299]   # 2826 s = 47 min 6 s
+    m = len_machine(secs)
+    open_album(m)
+    expect(meta(m) == '1959 · 8 tracks' and ('timer_add', PSYMS['ab_on_len'], O['AB_LEN_MS']) in m.calls, f'before the headers are read: the line as before, the step timer armed ({meta(m)})')
+    ticks = len_run(m)
+    expect(ticks == 2, f'{O["AB_LEN_STEP"]} headers per tick: 8 tracks in 2 ticks ({ticks})')
+    expect(meta(m) == '1959 · 8 tracks · 47 min', f'the sum, rounded to the minute ({meta(m)})')
+    cache = m.fs.get(LEN_CACHE, b'')
+    expect(cache[:4] == b'MAL1' and len(cache) == 16 and struct.unpack('<3I', cache[4:]) [0] == m.key and struct.unpack('<3I', cache[4:])[2] == sum(secs),
+           f'the length is cached on the card: magic, then key, signature, seconds ({cache.hex()})')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the cache answers at once: no step timer, no track opened
+    m2 = len_machine(secs); m2.fs[LEN_CACHE] = cache
+    open_album(m2)
+    expect(meta(m2) == '1959 · 8 tracks · 47 min' and not any(c[0] == 'timer_add' and c[1] == PSYMS['ab_on_len'] for c in m2.calls)
+           and not any(c[0] == 'open' and c[1].endswith('.flac') for c in m2.calls), 'a cached album: the length at once, no file read')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # another track list (a track deleted, re-ripped): the signature differs, read again
+    m2 = len_machine(secs[:7]); m2.fs[LEN_CACHE] = cache
+    open_album(m2); len_run(m2)
+    expect(meta(m2) == '1959 · 7 tracks · 42 min', f'other tracks under the same album: read again ({meta(m2)})')
+    c2 = m2.fs[LEN_CACHE]
+    expect(len(c2) == 16 and struct.unpack('<3I', c2[4:16])[2] == sum(secs[:7]), 'its entry replaced, not added')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the cache keeps the last AB_LEN_KEEP albums, newest first
+    keep = O['AB_LEN_KEEP']
+    m2 = len_machine([60]); m2.fs[LEN_CACHE] = b'MAL1' + b''.join(struct.pack('<3I', 1000 + i, 1, 60) for i in range(keep))
+    open_album(m2); len_run(m2)
+    c2 = m2.fs[LEN_CACHE]
+    expect(len(c2) == 4 + 12 * keep and struct.unpack('<I', c2[4:8])[0] == m2.key and struct.unpack('<I', c2[16:20])[0] == 1000 and struct.unpack('<I', c2[-12:-8])[0] == 1000 + keep - 2,
+           f'a full cache: the new album first, the oldest dropped ({len(c2)} bytes)')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # a cache that is not ours is ignored and replaced
+    m2 = len_machine([60]); m2.fs[LEN_CACHE] = b'junkjunkjunkjunk'
+    open_album(m2); len_run(m2)
+    expect(meta(m2) == '1959 · 1 track · 1 min' and m2.fs[LEN_CACHE][:4] == b'MAL1' and len(m2.fs[LEN_CACHE]) == 16, 'a foreign cache file: read, then rewritten as ours')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the text: minutes, hours, rounding
+    for s, want in ((10, '1 min'), (89, '1 min'), (90, '2 min'), (3569, '59 min'), (3570, '1 h'), (3600, '1 h'), (4320, '1 h 12 min'), (7200, '2 h'), (36000 + 59 * 60, '10 h 59 min')):
+        m2 = len_machine([s], year=0); open_album(m2); len_run(m2)
+        expect(meta(m2) == f'1 track · {want}', f'{s} s: "{want}" ({meta(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the header: an ID3v2 tag before "fLaC" (with and without its footer), 96 kHz, a 36-bit sample count
+    for name, data, want in (('an ID3 tag', flac(600, id3=3000), '10 min'), ('an ID3 tag with a footer', flac(600, id3=129, footer=True), '10 min'),
+                             ('96 kHz', flac(1800, rate=96000), '30 min'), ('more than 2^32 samples', flac(0, rate=192000, total=192000 * 30000), '8 h 20 min')):
+        m2 = len_machine([None], year=0); m2.fs['/mnt/mmc/m/0.flac'] = data
+        open_album(m2); len_run(m2)
+        expect(meta(m2) == f'1 track · {want}', f'{name}: "{want}" ({meta(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # no length: a file that is not there, not FLAC inside, a zero rate or sample count; nothing is cached
+    for name, data in (('a missing file', None), ('an MP3 named .flac', b'ID3\x04\x00\x00\x00\x00\x00\x00\xff\xfb' + bytes(64)), ('a short file', b'fLaC'),
+                       ('no STREAMINFO first', b'fLaC' + bytes((0x84, 0, 0, 34)) + bytes(64)), ('rate 0', flac(0, rate=0, total=1000)), ('no sample count', flac(0, total=0))):
+        m2 = len_machine([300, None]);
+        if data is not None: m2.fs['/mnt/mmc/m/1.flac'] = data
+        open_album(m2); len_run(m2)
+        expect(meta(m2) == '1959 · 2 tracks' and LEN_CACHE not in m2.fs, f'{name}: no length, nothing cached ({meta(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # not read at all: another format or a CUE track
+    m2 = album_machine(n=2)
+    for r, p in zip(m2.songs, ('/mnt/mmc/m/0.flac', '/mnt/mmc/m/1.mp3')): m2.setword(r + O['REC_PATH'], m2.cstr(p))
+    m2.fs['/mnt/mmc/m/0.flac'] = flac(60)
+    open_album(m2)
+    expect(meta(m2) == '1959 · 2 tracks' and not any(c[0] == 'timer_add' and c[1] == PSYMS['ab_on_len'] for c in m2.calls) and not any(c[0] == 'open' and c[1].startswith('/mnt/mmc/m/') for c in m2.calls),
+           'an album with an MP3: no length, nothing read')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    m2 = album_machine(n=3, cues=(1,))
+    for i in range(3): m2.fs[f'/mnt/mmc/m/{i}.flac'] = flac(60)
+    open_album(m2)
+    expect(meta(m2) == '1959 · 3 tracks' and not any(c[0] == 'timer_add' and c[1] == PSYMS['ab_on_len'] for c in m2.calls), 'an album with a CUE track: no length (one file holds many tracks)')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the list replaced under the timer (another page's query): it stops without reading freed records; the reload starts again
+    m2 = len_machine(secs); open_album(m2)
+    m2.setword(SHOWLIST, m2.new_deque([]))
+    m2.calls = []
+    r = m2.call(PSYMS['ab_on_len'], count=40000000)
+    expect(r != O['RET_REPEAT'] and not any(c[0] == 'open' for c in m2.calls) and meta(m2) == '1959 · 8 tracks', 'a replaced list: the timer ends, nothing read')
+    # closing the page removes the timer
+    m2 = len_machine(secs); open_album(m2); m2.calls = []
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    expect(('timer_remove', 0x777) in [c[:2] for c in m2.calls], f'closing the page removes the step timer ({[c for c in m2.calls if c[0] == "timer_remove"]})')
+    # the longest line fits in every language
+    import awtk_strings
+    from awtk_text import Ttf, StbText
+    raw = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw')
+    font = Ttf(os.path.join(raw, 'fonts', 'default.ttf'))
+    built = {loc: dict(awtk_strings.load(os.path.join(raw, 'strings', loc + '.bin'))) for loc in pod_i18n.LOCALES}
+    line = lambda loc: '1959 · ' + built[loc]['%d tracks'].replace('%d', '999') + ' · ' + built[loc]['%d h'].replace('%d', '10') + ' ' + built[loc]['%d min'].replace('%d', '59')
+    over = [(loc, w) for loc in pod_i18n.LOCALES for w in [StbText(font, 15).layout(line(loc))[1]] if w > 286]
+    expect(not over, f'"1959 · 999 tracks · 10 h 59 min" fits the meta line in all languages ({over})')
+
+
+SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests, len_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

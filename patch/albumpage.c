@@ -59,6 +59,9 @@ static struct {
         [CLASSINFO_SIZE]; /* the browsing record of the album (CLASSINFO, as loadAlbumdetailList left it), put back before every query and play */
     unsigned cover_key; /* cc_album_key of the album row: the cache file's name; also the tone cache's key */
     unsigned stale_timer, build_timer;
+    unsigned len_timer, len_at, len_sum,
+        len_sig; /* the album's length: the next track to read, the seconds so far, the tracks' signature */
+    int len_secs; /* the album's length in seconds, -1 while unknown (not all FLAC, a CUE track, a header that does not read) */
     int own; /* the page holds the cache worker's job set */
     unsigned tone; /* the window's colour as 0x00BBGGRR once tinted */
     int tinted;
@@ -343,22 +346,43 @@ static const char *ab_artist(void) {
     return (const char *)ab.ci + (ab.cls == CLASS_14 ? CLASSINFO_ARTIST_14 : CLASSINFO_ARTIST);
 }
 
-/* "1959 . 8 tracks" when a track carries a year (the first that does), else "8 tracks". */
+/* The album's length as "47 min", "1 h 12 min" or "2 h" (rounded to the minute, at least 1 min). */
+static void ab_len_text(char *out, unsigned size, unsigned secs) {
+    unsigned m = (secs + 30) / 60, o;
+    char h[24];
+    if (!m) m = 1;
+    if (m < 60) {
+        pod_fmt(out, size, TR("%d min"), (int)m);
+        return;
+    }
+    pod_fmt(h, sizeof h, TR("%d h"), (int)(m / 60));
+    o = (unsigned)snprintf(out, size, "%s", h);
+    if (m % 60 && o + 1 < size) {
+        out[o++] = ' ';
+        pod_fmt(out + o, size - o, TR("%d min"), (int)(m % 60));
+    }
+}
+
+/* "1959 . 8 tracks . 47 min" when a track carries a year (the first that does) and the length is known; the year and the length are left out when not. */
 static void ab_meta(char *out, unsigned size) {
     int year = 0;
     unsigned o = 0, i;
-    char count[48];
+    char count[48], len[48];
     for (i = 0; ab.list && i < ab.count && !year; ++i) {
         year = I(deque_at(ab.list, i), REC_YEAR);
         if (year < 1000 || year > 2999) year = 0;
     }
     pod_fmt(count, sizeof count, TR(ab.count == 1 ? "%d track" : "%d tracks"), (int)ab.count);
     if (year) o = (unsigned)snprintf(out, size, "%d \xc2\xb7 ", year);
-    snprintf(out + o, size - o, "%s", count);
+    o += (unsigned)snprintf(out + o, size - o, "%s", count);
+    if (ab.len_secs >= 0 && o < size) {
+        ab_len_text(len, sizeof len, (unsigned)ab.len_secs);
+        snprintf(out + o, size - o, " \xc2\xb7 %s", len);
+    }
 }
 
 static void ab_texts(void) {
-    char line[96];
+    char line[128];
     widget_set_text_utf8(ab.hname, (const char *)ab.ci + CLASSINFO_ALBUM);
     widget_set_text_utf8(ab.hartist, ab_artist());
     ab_meta(line, sizeof line);
@@ -386,6 +410,159 @@ static void ab_paint_pill(void *canvas, int off) {
     rect[0] = ab.ptx, rect[1] = AH_BTN_Y + (AH_BTN_H - AB_TEXT_H) / 2 - off, rect[2] = ab.ptw, rect[3] = AB_TEXT_H;
     widget_prepare_text_style(ab.ptext, canvas);
     if (n && rect[1] >= 0 && rect[1] + AB_TEXT_H <= AH_WIN_H) canvas_draw_text_in_rect(canvas, text, n, rect);
+}
+
+/* ---------------------------------------------------------------------------
+ * The album's length: the library has no track lengths (songtable's time / time_end are CUE offsets), so the page reads each track's FLAC STREAMINFO (total samples / sample
+ * rate), AB_LEN_STEP files per AB_LEN_MS tick, and keeps the sum in a card cache keyed by the cover key and a signature of the tracks' paths. An album with a track that is not
+ * a .flac, a CUE track or a header that does not read shows no length.
+ */
+#define AB_LEN_FILE CARD_DIR "/album-lengths"
+#define AB_LEN_TMP CARD_DIR "/album-lengths.tmp"
+static const char ab_len_magic[4] = {'M', 'A', 'L', '1'};
+
+/* The cache file's first 4 bytes read from fd are its magic. */
+static int ab_len_head(int fd) {
+    char m[4];
+    return read(fd, m, 4) == 4 && m[0] == ab_len_magic[0] && m[1] == ab_len_magic[1] && m[2] == ab_len_magic[2] &&
+           m[3] == ab_len_magic[3];
+}
+
+/* hi:lo (36 bits) / d, bit by bit (no 64 bit division in the payload); the quotient fits 32 bits for d >= 16. */
+static unsigned ab_div36(unsigned hi, unsigned lo, unsigned d) {
+    unsigned r = 0, q = 0, bit;
+    int i;
+    for (i = 35; i >= 0; --i) {
+        bit = i >= 32 ? (hi >> (i - 32)) & 1 : (lo >> i) & 1;
+        r = (r << 1) | bit;
+        q <<= 1;
+        if (r >= d) r -= d, q |= 1;
+    }
+    return q;
+}
+
+/* The whole seconds of a FLAC file from its STREAMINFO (after an ID3v2 tag, if one leads), -1 when it does not read as one. */
+static int ab_flac_secs(const char *path) {
+    unsigned char b[26]; /* "fLaC", the block header, STREAMINFO up to the end of the total samples */
+    unsigned at, rate, hi, lo;
+    int fd = open(path, O_RDONLY, 0), n;
+    if (fd < 0) return -1;
+    n = read(fd, b, sizeof b);
+    if (n >= 10 && b[0] == 'I' && b[1] == 'D' && b[2] == '3') {
+        at = 10 + ((b[6] & 0x7fu) << 21 | (b[7] & 0x7fu) << 14 | (b[8] & 0x7fu) << 7 | (b[9] & 0x7fu)) +
+             (b[5] & 0x10 ? 10 : 0);
+        n = lseek(fd, (long)at, 0) == (long)at ? read(fd, b, sizeof b) : -1;
+    }
+    close(fd);
+    if (n != (int)sizeof b || b[0] != 'f' || b[1] != 'L' || b[2] != 'a' || b[3] != 'C' || (b[4] & 0x7f) != 0 || b[5] ||
+        b[6] || b[7] != 34)
+        return -1;
+    rate = (unsigned)b[18] << 12 | (unsigned)b[19] << 4 | b[20] >> 4;
+    hi = b[21] & 0x0fu;
+    lo = (unsigned)b[22] << 24 | (unsigned)b[23] << 16 | (unsigned)b[24] << 8 | b[25];
+    if (rate < 16 || (!hi && !lo)) return -1;
+    return (int)ab_div36(hi, lo, rate);
+}
+
+/* 1 when the path ends in .flac (any case). */
+static int ab_is_flac(const char *p) {
+    unsigned n = 0;
+    while (p[n]) ++n;
+    return n > 5 && strcasecmp(p + n - 5, ".flac") == 0;
+}
+
+/* The tracks' signature (FNV-1a over the paths, each ended by a 0); 0 when one is not a plain FLAC track (a CUE track, another format): no length then. */
+static unsigned ab_len_sig(void) {
+    unsigned h = 2166136261u, i;
+    for (i = 0; i < ab.count; ++i) {
+        void *r = deque_at(ab.list, i);
+        const char *p = cc_str(r, REC_PATH);
+        if (I(r, REC_CUE_START) || I(r, REC_CUE_END) || !ab_is_flac(p)) return 0;
+        do h = (h ^ (unsigned char)*p) * 16777619u;
+        while (*p++);
+    }
+    return h ? h : 1;
+}
+
+/* The cached length of the album with these tracks; -1 when the cache does not have it. */
+static int ab_len_cached(unsigned sig) {
+    unsigned rec[64 * 3], i;
+    int fd = open(AB_LEN_FILE, O_RDONLY, 0), n, secs = -1;
+    if (fd < 0) return -1;
+    if (ab_len_head(fd))
+        while (secs < 0 && (n = read(fd, rec, sizeof rec)) >= 12)
+            for (i = 0; i + 3 <= (unsigned)n / 4; i += 3)
+                if (rec[i] == ab.cover_key && rec[i + 1] == sig) {
+                    secs = (int)rec[i + 2];
+                    break;
+                }
+    close(fd);
+    return secs;
+}
+
+/* The album's length first in the cache, its older entry and the oldest beyond AB_LEN_KEEP dropped. Best effort: a card that is not there or a failed write leaves the old file. */
+static void ab_len_put(unsigned sig, unsigned secs) {
+    unsigned head[4], *old = calloc(AB_LEN_KEEP - 1, 12), n = 0, i, k;
+    int fd;
+    if (!old) return;
+    fd = open(AB_LEN_FILE, O_RDONLY, 0);
+    if (fd >= 0) {
+        if (ab_len_head(fd)) {
+            int got = read(fd, old, (AB_LEN_KEEP - 1) * 12);
+            n = got > 0 ? (unsigned)got / 12 : 0;
+        }
+        close(fd);
+    }
+    for (i = k = 0; i < n; ++i)
+        if (old[i * 3] != ab.cover_key) {
+            old[k * 3] = old[i * 3], old[k * 3 + 1] = old[i * 3 + 1], old[k * 3 + 2] = old[i * 3 + 2];
+            ++k;
+        }
+    memcpy(head, ab_len_magic, 4);
+    head[1] = ab.cover_key, head[2] = sig, head[3] = secs;
+    pod_card_write(CARD_DIR, AB_LEN_FILE, AB_LEN_TMP, head, sizeof head, old, k * 12);
+    free(old);
+}
+
+static void ab_len_stop(void) {
+    if (ab.len_timer) timer_remove(ab.len_timer);
+    ab.len_timer = 0;
+}
+
+static int ab_on_len(const void *unused) {
+    unsigned end;
+    int s;
+    (void)unused;
+    if (!ab.view || !ab.len_timer) return RET_OK;
+    if (!ab_valid()) { /* another query replaced the list: its records are gone; the reload starts again */
+        ab.len_timer = 0;
+        return RET_OK;
+    }
+    end = ab.len_at + AB_LEN_STEP < ab.count ? ab.len_at + AB_LEN_STEP : ab.count;
+    for (; ab.len_at < end; ++ab.len_at) {
+        s = ab_flac_secs(cc_str(deque_at(ab.list, ab.len_at), REC_PATH));
+        if (s < 0) {
+            ab.len_timer = 0;
+            return RET_OK;
+        }
+        ab.len_sum += (unsigned)s;
+    }
+    if (ab.len_at < ab.count) return RET_REPEAT;
+    ab.len_timer = 0;
+    ab.len_secs = (int)ab.len_sum;
+    ab_len_put(ab.len_sig, ab.len_sum);
+    ab_texts();
+    return RET_OK;
+}
+
+/* The length of the album now listed: from the cache, else read in steps (the header line shows it when done). */
+static void ab_len_start(void) {
+    ab_len_stop();
+    ab.len_secs = -1, ab.len_at = ab.len_sum = 0;
+    ab.len_sig = ab.count ? ab_len_sig() : 0;
+    if (!ab.len_sig) return;
+    ab.len_secs = ab_len_cached(ab.len_sig);
+    if (ab.len_secs < 0) ab.len_timer = timer_add(ab_on_len, (void *)0, AB_LEN_MS);
 }
 
 /* ---------------------------------------------------------------------------
@@ -417,6 +594,7 @@ static void ab_load(int keep) {
     if (!ab.count) widget_set_tr_text(ab.status, list ? "Not enough memory" : "No songs");
     ab_size();
     widget_set_prop_int(ab.sv, "yoffset", at < 0 ? 0 : at > ab_max_scroll() ? ab_max_scroll() : at);
+    ab_len_start();
     ab_texts();
     if (ab.count) ab_cover();
     ab_redraw();
@@ -642,6 +820,7 @@ static int ab_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (ab.stale_timer) timer_remove(ab.stale_timer);
+    ab_len_stop();
     ab_build_end();
     ab_bar_black();
     grid_free(&ab.g);

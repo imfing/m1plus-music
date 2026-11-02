@@ -28,7 +28,9 @@ in [history](../history.md); feature modules retain their detailed edge cases.
   scrolling stops. [Details](songs.md)
 - **NAV-01 — Album/navbar:** one seamless capsule, contained pressed highlights and no leftover
   pixels in button gaps. Play all resets in-order mode; Shuffle and track taps use the expected
-  queue. Look up album returns correctly to Now Playing. [Album](album-page.md), [navbars](navbar.md)
+  queue. Look up album returns correctly to Now Playing. A FLAC album's line gains its length
+  shortly after opening (compare with the player's track times) and at once on reopening; an
+  MP3 or CUE album shows none. [Album](album-page.md), [navbars](navbar.md)
 - **PLAY-01 — Now Playing/lock screen:** sharp rounded covers, tint changes, neutral missing
   art, remaining time, transport/favorite/More controls, translucent card and swipe behaviour.
   Check idle/no-queue and charging states. [Now Playing](nowplaying.md), [lock screen](lockscreen.md)
