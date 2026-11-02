@@ -46,16 +46,26 @@ Track numbers use a wider column from 100 onward. CUE titles use the file name.
 
 ## Album length
 
-The library stores no track lengths (`time/time_end` are CUE offsets), so the page reads
-each track's FLAC STREAMINFO: total samples / sample rate, after a leading ID3v2 tag if present.
+The library stores no track lengths (`time/time_end` are CUE offsets), so the page reads each
+track's header, chosen by extension (any case):
+
+| Format | Length |
+|---|---|
+| `.flac` | STREAMINFO total samples / sample rate, after a leading ID3v2 tag |
+| `.mp3` | First layer III frame after an ID3v2 tag (within `AB_MP3_SCAN`, 2048 bytes; the next frame header must follow where the frame's length says, when in the buffer). Xing/Info or VBRI frame count × samples per frame / rate; without one (CBR), bytes to the end less an ID3v1 tag / bitrate |
+| `.m4a` | `mvhd` duration / time scale (version 0 or 1). Top-level atoms from `ftyp` are walked to `moov` wherever it is (64-bit atom sizes up to 4 GB), then `moov`'s children |
+| `.wav` | `data` size / `fmt ` bytes per second; chunks in any order, odd sizes padded. A `data` size of 0 or ~0 (a stream) does not read |
+
+Atom and chunk walks stop after `AB_ATOMS` (64). Each track is whole seconds, rounded down.
 A page timer reads `AB_LEN_STEP` (4) headers per `AB_LEN_MS` (20 ms) tick, from the page's open
 or reload. It stops on destroy and when another query replaced the stock list, and the reload
 starts it again. The line gains ` · 47 min` (whole minutes, at least 1; `1 h 12 min`, `2 h`
 from 59.5 min), with the translated keys `%d min` and `%d h`.
 
-No length is shown, and nothing is read, when a track is not a `.flac` or is a CUE track.
-A header that does not read as STREAMINFO, or a missing file, ends the job without a length
-and without caching.
+No length is shown, and nothing is read, when a track has another extension or is a CUE track.
+A header that does not read as its format's, or a missing file, ends the job without a length
+and without caching. A VBR MP3 without a Xing/Info or VBRI header reads as CBR from its first
+frame's bitrate, so its length is an estimate.
 
 `/mnt/mmc/.m1plus/album-lengths` caches results: the magic `MAL1`, then 12-byte records
 `{cover key, signature, seconds}`, newest first, at most `AB_LEN_KEEP` (512). The signature is

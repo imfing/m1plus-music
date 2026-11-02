@@ -322,6 +322,8 @@
 #define AB_COVER_MS 200
 #define AB_LEN_MS 20           /* the album's length: AB_LEN_STEP tracks' FLAC headers are read per tick of this page timer */
 #define AB_LEN_STEP 4
+#define AB_MP3_SCAN 2048        /* the bytes after an MP3's ID3v2 tag searched for its first frame */
+#define AB_ATOMS 64            /* the M4A atoms / WAV chunks walked before a header is given up */
 #define AB_LEN_KEEP 512        /* the albums the length cache (CARD_DIR/album-lengths) keeps, the last computed first */
 #define REC_CUE_END 0x4c       /* the CUE track's end (loadSongList's twin of REC_CUE_START); the stock row shows a CUE track by its file name when either is set (@0x524c98) */
 /* Our Queue page (patch/queuepage.c, docs/modules/queue.md; ui/m1plus_queue.bin, tools/pod_ui.py build_queue_page, which reads this file and must equal it), in place of the stock

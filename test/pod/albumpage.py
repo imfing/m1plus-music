@@ -751,6 +751,53 @@ def flac(secs, rate=44100, id3=0, footer=False, total=None):
     return b'ID3\x04\x00' + bytes((0x10 if footer else 0,)) + size + bytes(id3 + (10 if footer else 0)) + body
 
 
+def id3v2(size):
+    return b'ID3\x03\x00\x00' + bytes((size >> 21 & 0x7f, size >> 14 & 0x7f, size >> 7 & 0x7f, size & 0x7f)) + bytes(size)
+
+
+MP3_KBPS = ([0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160])
+MP3_HZ = {3: (44100, 48000, 32000), 2: (22050, 24000, 16000), 0: (11025, 12000, 8000)}
+
+
+def mp3(secs, tag='Xing', kbps=128, rate=44100, ver=3, mono=False, id3=0, id3v1=False, junk=b''):
+    """An MP3 file: an optional ID3v2 tag and junk, then layer III frames. tag 'Xing' / 'Info' / 'VBRI' puts the frame count (secs * rate / samples per frame) in the first
+    frame; None is a constant bitrate file of secs * kbps * 125 audio bytes (the length from its size), with an ID3v1 tag after it if asked."""
+    lsf = ver != 3; spf = 576 if lsf else 1152
+    hdr = bytes((0xff, 0xe0 | ver << 3 | 1 << 1 | 1, MP3_KBPS[lsf].index(kbps) << 4 | MP3_HZ[ver].index(rate) << 2, (3 if mono else 1) << 6))
+    flen = spf // 8 * kbps * 1000 // rate
+    frames = secs * rate // spf
+    first = bytearray(hdr + bytes(flen - 4))
+    side = (9 if mono else 17) if lsf else (17 if mono else 32)
+    if tag in ('Xing', 'Info'): first[4 + side:4 + side + 12] = tag.encode() + struct.pack('>II', 0x0f, frames)
+    elif tag == 'VBRI': first[36:36 + 18] = b'VBRI' + struct.pack('>HHHII', 1, 0, 75, 0, frames)
+    audio = bytes(first) + (hdr + bytes(flen - 4)) * 3
+    if tag is None: audio += bytes(secs * kbps * 125 - len(audio))
+    return (id3v2(id3) if id3 else b'') + junk + audio + (b'TAG' + bytes(125) if id3v1 else b'')
+
+
+def atom(t, body): return struct.pack('>I', 8 + len(body)) + t + body
+
+
+def m4a(secs, ts=44100, v1=False, moov_last=True, big_mdat=False, no_ftyp=False, no_mvhd=False):
+    """An M4A file: ftyp, mdat (a 64-bit size if big_mdat) and moov holding udta, mvhd (version 0 or 1: secs * ts in ts units) and trak, in either order."""
+    d = secs * ts
+    mvhd = (b'\x01\0\0\0' + bytes(16) + struct.pack('>IQ', ts, d) if v1 else bytes(12) + struct.pack('>II', ts, d)) + bytes(80)
+    moov = atom(b'moov', atom(b'udta', bytes(20)) + (b'' if no_mvhd else atom(b'mvhd', mvhd)) + atom(b'trak', bytes(40)))
+    mdat = struct.pack('>I', 1) + b'mdat' + struct.pack('>Q', 16 + 1000) + bytes(1000) if big_mdat else atom(b'mdat', bytes(1000))
+    return (b'' if no_ftyp else atom(b'ftyp', b'M4A \0\0\0\0isom')) + (mdat + moov if moov_last else moov + mdat)
+
+
+def wav(secs, rate=44100, ch=2, bits=16, data_first=False, size=None):
+    """A WAV file's chunks: fmt, an odd-sized LIST (padded) and data (secs of audio; size overrides its size). With data_first the data's bytes are there, before fmt."""
+    br = rate * ch * bits // 8
+    fmt = b'fmt ' + struct.pack('<IHHIIHH', 16, 1, ch, rate, br, ch * bits // 8, bits)
+    n = secs * br if size is None else size
+    lst = b'LIST' + struct.pack('<I', 7) + bytes(8)
+    data = b'data' + struct.pack('<I', n) + (bytes(n) if data_first else b'')
+    body = data + lst + fmt if data_first else fmt + lst + data
+    return b'RIFF' + struct.pack('<I', 4 + len(body)) + b'WAVE' + body
+
+
 LEN_CACHE = '/mnt/mmc/.m1plus/album-lengths'
 
 
@@ -760,6 +807,21 @@ def len_machine(secs, **kw):
     for i, s in enumerate(secs):
         if s is not None: m.fs[f'/mnt/mmc/m/{i}.flac'] = flac(s)
     return m
+
+
+def files_machine(files, **kw):
+    """An album machine whose tracks are these (path, bytes) files (bytes None: no file on the card)."""
+    m = album_machine(n=len(files), **kw)
+    for r, (p, data) in zip(m.songs, files):
+        m.setword(r + O['REC_PATH'], m.cstr(p))
+        if data is not None: m.fs[p] = data
+    return m
+
+
+def cached_secs(m):
+    """The seconds the length cache holds for the open album, None when it has none."""
+    c = m.fs.get(LEN_CACHE, b'')
+    return struct.unpack('<3I', c[4:16])[2] if c[:4] == b'MAL1' and len(c) >= 16 else None
 
 
 def len_run(m, limit=50):
@@ -773,7 +835,7 @@ def meta(m): return utf(m.wtext[m.widgets['ab_meta']])
 
 
 def len_tests(ctx):
-    """8. The album's length: FLAC STREAMINFO read in steps, the header line, the card cache, and the albums that show none."""
+    """8. The album's length: FLAC, MP3, M4A and WAV headers read in steps, the header line, the card cache, and the albums that show none."""
     expect = ctx.expect
     secs = [301, 342, 289, 410, 330, 548, 307, 299]   # 2826 s = 47 min 6 s
     m = len_machine(secs)
@@ -832,13 +894,43 @@ def len_tests(ctx):
         open_album(m2); len_run(m2)
         expect(meta(m2) == '1959 · 2 tracks' and LEN_CACHE not in m2.fs, f'{name}: no length, nothing cached ({meta(m2)})')
         m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # MP3: the Xing / Info / VBRI frame count (MPEG 1, 2, 2.5; mono's shorter side info), else the size / the bitrate; after an ID3v2 tag, junk, less an ID3v1 tag
+    for name, data, want in (('Xing', mp3(300), 300 * 44100 // 1152 * 1152 // 44100), ('Info (a LAME CBR file)', mp3(250, tag='Info', kbps=320), 250 * 44100 // 1152 * 1152 // 44100),
+                             ('VBRI', mp3(400, tag='VBRI', rate=48000), 400 * 48000 // 1152 * 1152 // 48000), ('MPEG 2 mono', mp3(200, ver=2, rate=22050, kbps=64, mono=True), 200 * 22050 // 576 * 576 // 22050),
+                             ('MPEG 2.5', mp3(120, ver=0, rate=8000, kbps=8), 120 * 8000 // 576 * 576 // 8000), ('an ID3v2 tag with art', mp3(300, id3=200000), 300 * 44100 // 1152 * 1152 // 44100),
+                             ('CBR', mp3(181, tag=None, kbps=192), 181), ('CBR, ID3 tags at both ends', mp3(240, tag=None, id3=5000, id3v1=True), 240),
+                             ('junk before the first frame', mp3(300, junk=b'\0\xff\xfb' + bytes(40)), 300 * 44100 // 1152 * 1152 // 44100)):
+        m2 = files_machine([('/mnt/mmc/m/0.mp3', data)], year=0); open_album(m2); len_run(m2)
+        expect(cached_secs(m2) == want, f'MP3, {name}: {want} s ({cached_secs(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # M4A: the movie header's duration / time scale, moov after or before mdat, a 64-bit mdat size, mvhd version 1
+    for name, data, want in (('moov last', m4a(301), 301), ('moov first', m4a(302, moov_last=False), 302), ('a 64-bit mdat', m4a(303, big_mdat=True), 303),
+                             ('mvhd version 1', m4a(304, v1=True, ts=96000), 304), ('a 1000 unit time scale', m4a(36000, ts=1000), 36000)):
+        m2 = files_machine([('/mnt/mmc/m/0.M4A', data)], year=0); open_album(m2); len_run(m2)
+        expect(cached_secs(m2) == want, f'M4A, {name}: {want} s ({cached_secs(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # WAV: data / bytes per second, past an odd chunk, data before fmt
+    for name, data, want in (('16-bit stereo', wav(305), 305), ('24-bit 96 kHz', wav(306, rate=96000, bits=24), 306), ('data before fmt', wav(2, rate=8000, ch=1, bits=8, data_first=True), 2)):
+        m2 = files_machine([('/mnt/mmc/m/0.wav', data)], year=0); open_album(m2); len_run(m2)
+        expect(cached_secs(m2) == want, f'WAV, {name}: {want} s ({cached_secs(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # one album of all four: the sum
+    m2 = files_machine([('/mnt/mmc/m/0.flac', flac(600)), ('/mnt/mmc/m/1.mp3', mp3(600, tag=None)), ('/mnt/mmc/m/2.m4a', m4a(600)), ('/mnt/mmc/m/3.wav', wav(600))])
+    open_album(m2); len_run(m2)
+    expect(meta(m2) == '1959 · 4 tracks · 40 min', f'FLAC, MP3, M4A and WAV in one album: the sum ({meta(m2)})')
+    m2.call(PSYMS['ab_on_destroy'], count=4000000)
+    # headers that do not read: no length, nothing cached
+    for name, p, data in (('an MP3 with no frame', '1.mp3', bytes(4000)), ('a short MP3', '1.mp3', mp3(60)[:40]), ('an M4A without ftyp', '1.m4a', m4a(60, no_ftyp=True)),
+                          ('an M4A without mvhd', '1.m4a', m4a(60, no_mvhd=True)), ('an M4A that is a FLAC', '1.m4a', flac(60)), ('a WAV that is not RIFF', '1.wav', b'RIFX' + wav(60)[4:]),
+                          ('a streamed WAV (data size ~0)', '1.wav', wav(0, size=0xffffffff)), ('a WAV without fmt', '1.wav', wav(60)[:12] + wav(60)[44 + 16:])):
+        m2 = files_machine([('/mnt/mmc/m/0.flac', flac(300)), ('/mnt/mmc/m/' + p, data)]); open_album(m2); len_run(m2)
+        expect(meta(m2) == '1959 · 2 tracks' and LEN_CACHE not in m2.fs, f'{name}: no length, nothing cached ({meta(m2)})')
+        m2.call(PSYMS['ab_on_destroy'], count=4000000)
     # not read at all: another format or a CUE track
-    m2 = album_machine(n=2)
-    for r, p in zip(m2.songs, ('/mnt/mmc/m/0.flac', '/mnt/mmc/m/1.mp3')): m2.setword(r + O['REC_PATH'], m2.cstr(p))
-    m2.fs['/mnt/mmc/m/0.flac'] = flac(60)
+    m2 = files_machine([('/mnt/mmc/m/0.flac', flac(60)), ('/mnt/mmc/m/1.ogg', b'OggS' + bytes(60))])
     open_album(m2)
     expect(meta(m2) == '1959 · 2 tracks' and not any(c[0] == 'timer_add' and c[1] == PSYMS['ab_on_len'] for c in m2.calls) and not any(c[0] == 'open' and c[1].startswith('/mnt/mmc/m/') for c in m2.calls),
-           'an album with an MP3: no length, nothing read')
+           'an album with an Ogg file: no length, nothing read')
     m2.call(PSYMS['ab_on_destroy'], count=4000000)
     m2 = album_machine(n=3, cues=(1,))
     for i in range(3): m2.fs[f'/mnt/mmc/m/{i}.flac'] = flac(60)

@@ -413,9 +413,9 @@ static void ab_paint_pill(void *canvas, int off) {
 }
 
 /* ---------------------------------------------------------------------------
- * The album's length: the library has no track lengths (songtable's time / time_end are CUE offsets), so the page reads each track's FLAC STREAMINFO (total samples / sample
- * rate), AB_LEN_STEP files per AB_LEN_MS tick, and keeps the sum in a card cache keyed by the cover key and a signature of the tracks' paths. An album with a track that is not
- * a .flac, a CUE track or a header that does not read shows no length.
+ * The album's length: the library has no track lengths (songtable's time / time_end are CUE offsets), so the page reads each track's header (FLAC STREAMINFO, the MP3
+ * Xing / Info / VBRI frame count or the CBR bitrate, the M4A movie header, the WAV fmt / data chunks), AB_LEN_STEP files per AB_LEN_MS tick, and keeps the sum in a card
+ * cache keyed by the cover key and a signature of the tracks' paths. An album with a track of another format, a CUE track or a header that does not read shows no length.
  */
 #define AB_LEN_FILE CARD_DIR "/album-lengths"
 #define AB_LEN_TMP CARD_DIR "/album-lengths.tmp"
@@ -428,56 +428,180 @@ static int ab_len_head(int fd) {
            m[3] == ab_len_magic[3];
 }
 
-/* hi:lo (36 bits) / d, bit by bit (no 64 bit division in the payload); the quotient fits 32 bits for d >= 16. */
-static unsigned ab_div36(unsigned hi, unsigned lo, unsigned d) {
+/* hi:lo / d, bit by bit (no 64 bit division in the payload); -1 when d is 0 or not below 2^31, or the quotient does not fit 31 bits (hi >= d does not fit 32). */
+static int ab_div64(unsigned hi, unsigned lo, unsigned d) {
     unsigned r = 0, q = 0, bit;
     int i;
-    for (i = 35; i >= 0; --i) {
+    if (!d || d >= 0x80000000u || hi >= d) return -1;
+    for (i = 63; i >= 0; --i) {
         bit = i >= 32 ? (hi >> (i - 32)) & 1 : (lo >> i) & 1;
         r = (r << 1) | bit;
         q <<= 1;
         if (r >= d) r -= d, q |= 1;
     }
-    return q;
+    return q < 0x80000000u ? (int)q : -1;
 }
 
-/* The whole seconds of a FLAC file from its STREAMINFO (after an ID3v2 tag, if one leads), -1 when it does not read as one. */
-static int ab_flac_secs(const char *path) {
+static unsigned ab_be32(const unsigned char *b) {
+    return (unsigned)b[0] << 24 | (unsigned)b[1] << 16 | (unsigned)b[2] << 8 | b[3];
+}
+
+static unsigned ab_le32(const unsigned char *b) {
+    return (unsigned)b[3] << 24 | (unsigned)b[2] << 16 | (unsigned)b[1] << 8 | b[0];
+}
+
+static int ab_is4(const unsigned char *b, const char *t) {
+    return b[0] == (unsigned char)t[0] && b[1] == (unsigned char)t[1] && b[2] == (unsigned char)t[2] &&
+           b[3] == (unsigned char)t[3];
+}
+
+/* n bytes of fd from offset at: 1 when all of them read. */
+static int ab_pread(int fd, unsigned at, void *b, unsigned n) {
+    return at < 0x80000000u && lseek(fd, (long)at, 0) == (long)at && read(fd, b, n) == (int)n;
+}
+
+/* The bytes an ID3v2 tag at the file's start takes (its syncsafe size, the header and a footer), 0 when there is none. */
+static unsigned ab_id3(int fd) {
+    unsigned char b[10];
+    if (!ab_pread(fd, 0, b, sizeof b) || b[0] != 'I' || b[1] != 'D' || b[2] != '3') return 0;
+    return 10 + ((b[6] & 0x7fu) << 21 | (b[7] & 0x7fu) << 14 | (b[8] & 0x7fu) << 7 | (b[9] & 0x7fu)) +
+           (b[5] & 0x10 ? 10 : 0);
+}
+
+/* FLAC: total samples / sample rate from STREAMINFO, the first metadata block. */
+static int ab_flac_secs(int fd) {
     unsigned char b[26]; /* "fLaC", the block header, STREAMINFO up to the end of the total samples */
-    unsigned at, rate, hi, lo;
-    int fd = open(path, O_RDONLY, 0), n;
-    if (fd < 0) return -1;
-    n = read(fd, b, sizeof b);
-    if (n >= 10 && b[0] == 'I' && b[1] == 'D' && b[2] == '3') {
-        at = 10 + ((b[6] & 0x7fu) << 21 | (b[7] & 0x7fu) << 14 | (b[8] & 0x7fu) << 7 | (b[9] & 0x7fu)) +
-             (b[5] & 0x10 ? 10 : 0);
-        n = lseek(fd, (long)at, 0) == (long)at ? read(fd, b, sizeof b) : -1;
-    }
-    close(fd);
-    if (n != (int)sizeof b || b[0] != 'f' || b[1] != 'L' || b[2] != 'a' || b[3] != 'C' || (b[4] & 0x7f) != 0 || b[5] ||
-        b[6] || b[7] != 34)
+    unsigned rate, hi, lo;
+    if (!ab_pread(fd, ab_id3(fd), b, sizeof b) || !ab_is4(b, "fLaC") || (b[4] & 0x7f) != 0 || b[5] || b[6] ||
+        b[7] != 34)
         return -1;
     rate = (unsigned)b[18] << 12 | (unsigned)b[19] << 4 | b[20] >> 4;
     hi = b[21] & 0x0fu;
-    lo = (unsigned)b[22] << 24 | (unsigned)b[23] << 16 | (unsigned)b[24] << 8 | b[25];
+    lo = ab_be32(b + 22);
     if (rate < 16 || (!hi && !lo)) return -1;
-    return (int)ab_div36(hi, lo, rate);
+    return ab_div64(hi, lo, rate);
 }
 
-/* 1 when the path ends in .flac (any case). */
-static int ab_is_flac(const char *p) {
+/* 1 when b is an MPEG audio layer III frame header (MPEG 1, 2 or 2.5; a bitrate from the table; a known sample rate). */
+static int ab_mp3_sync(const unsigned char *b) {
+    return b[0] == 0xff && (b[1] & 0xe0) == 0xe0 && ((b[1] >> 3) & 3) != 1 && ((b[1] >> 1) & 3) == 1 && b[2] >> 4 &&
+           b[2] >> 4 != 15 && ((b[2] >> 2) & 3) != 3;
+}
+
+static const unsigned short ab_mp3_kbps[2][16] = {{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0},
+                                                  {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0}};
+static const unsigned short ab_mp3_hz[3] = {44100, 48000, 32000};
+
+/* MP3: the first frame after an ID3v2 tag (within AB_MP3_SCAN bytes; a frame after it must start where its length says, when that is in the buffer). Its Xing / Info or
+ * VBRI header's frame count times the samples per frame / the rate; without one (constant bitrate) the bytes to the end, less an ID3v1 tag, / the bitrate. */
+static int ab_mp3_secs(int fd) {
+    unsigned char b[AB_MP3_SCAN], t[3];
+    unsigned at = ab_id3(fd), i, v, lsf = 0, rate = 1, kbps = 1, spf = 0, len, x, frames = 0;
+    long size;
+    int n;
+    if (at >= 0x80000000u || lseek(fd, (long)at, 0) != (long)at || (n = read(fd, b, sizeof b)) < 64) return -1;
+    for (i = 0; i + 64 <= (unsigned)n; ++i) {
+        if (!ab_mp3_sync(b + i)) continue;
+        v = (b[i + 1] >> 3) & 3, lsf = v != 3;
+        rate = ab_mp3_hz[(b[i + 2] >> 2) & 3] >> (v == 3 ? 0 : v == 2 ? 1 : 2);
+        kbps = ab_mp3_kbps[lsf][b[i + 2] >> 4];
+        spf = lsf ? 576 : 1152;
+        len = spf / 8 * kbps * 1000 / rate + ((b[i + 2] >> 1) & 1);
+        if (i + len + 2 <= (unsigned)n && (b[i + len] != 0xff || (b[i + len + 1] & 0xe0) != 0xe0)) continue;
+        break;
+    }
+    if (i + 64 > (unsigned)n) return -1;
+    x = i + 4 + (lsf ? ((b[i + 3] >> 6) == 3 ? 9 : 17) : ((b[i + 3] >> 6) == 3 ? 17 : 32));
+    if ((ab_is4(b + x, "Xing") || ab_is4(b + x, "Info")) && x + 12 <= (unsigned)n && (b[x + 7] & 1))
+        frames = ab_be32(b + x + 8);
+    else if (ab_is4(b + i + 36, "VBRI"))
+        frames = ab_be32(b + i + 36 + 14);
+    if (frames) return (int)(frames / rate * spf + frames % rate * spf / rate);
+    size = lseek(fd, 0, 2);
+    if (size >= 128 && ab_pread(fd, (unsigned)size - 128, t, 3) && t[0] == 'T' && t[1] == 'A' && t[2] == 'G')
+        size -= 128;
+    if (size <= (long)(at + i)) return -1;
+    return (int)(((unsigned)size - at - i) / (kbps * 125));
+}
+
+/* M4A (AAC, ALAC): the movie header's duration / time scale. The top-level atoms (ftyp first) are walked to moov, wherever it is, then moov's to mvhd; at most AB_ATOMS. */
+static int ab_m4a_secs(int fd) {
+    unsigned char b[32];
+    unsigned at = 0, end = 0, size, hl, k;
+    for (k = 0; k < AB_ATOMS && (!end || at + 8 <= end); ++k) {
+        if (!ab_pread(fd, at, b, 8)) return -1;
+        size = ab_be32(b), hl = 8;
+        if (size == 1) { /* a 64-bit size follows the type (a large mdat); one beyond 4 GB is not read */
+            if (!ab_pread(fd, at + 8, b + 8, 8) || ab_be32(b + 8)) return -1;
+            size = ab_be32(b + 12), hl = 16;
+        }
+        if (size < hl || at + size < at || (end && at + size > end) || (!k && !ab_is4(b + 4, "ftyp"))) return -1;
+        if (!end && ab_is4(b + 4, "moov")) {
+            end = at + size, at += hl;
+            continue;
+        }
+        if (end && ab_is4(b + 4, "mvhd")) {
+            if (!ab_pread(fd, at + hl, b, sizeof b)) return -1;
+            return b[0] == 1 ? ab_div64(ab_be32(b + 24), ab_be32(b + 28), ab_be32(b + 20))
+                             : ab_div64(0, ab_be32(b + 16), ab_be32(b + 12));
+        }
+        at += size;
+    }
+    return -1;
+}
+
+/* WAV: the data chunk's bytes / the fmt chunk's bytes per second (the chunks in any order, at most AB_ATOMS; a data size of 0 or ~0 is a stream's and not read). */
+static int ab_wav_secs(int fd) {
+    unsigned char b[12];
+    unsigned at = 12, size, rate = 0, data = 0, k;
+    if (!ab_pread(fd, 0, b, 12) || !ab_is4(b, "RIFF") || !ab_is4(b + 8, "WAVE")) return -1;
+    for (k = 0; k < AB_ATOMS && (!rate || !data); ++k) {
+        if (!ab_pread(fd, at, b, 8)) return -1;
+        size = ab_le32(b + 4);
+        if (ab_is4(b, "fmt ")) {
+            if (size < 16 || !ab_pread(fd, at + 8, b, 12)) return -1;
+            rate = ab_le32(b + 8);
+        } else if (ab_is4(b, "data"))
+            data = size;
+        if (at + 8 + size + (size & 1) < at) return -1;
+        at += 8 + size + (size & 1);
+    }
+    if (!rate || !data || data == 0xffffffffu) return -1;
+    return (int)(data / rate);
+}
+
+/* The format the path's extension (any case) names: AB_FLAC .. AB_WAV, 0 for another. */
+enum { AB_FLAC = 1, AB_MP3, AB_M4A, AB_WAV };
+static int ab_len_kind(const char *p) {
     unsigned n = 0;
     while (p[n]) ++n;
-    return n > 5 && strcasecmp(p + n - 5, ".flac") == 0;
+    if (n > 5 && strcasecmp(p + n - 5, ".flac") == 0) return AB_FLAC;
+    if (n <= 4) return 0;
+    if (strcasecmp(p + n - 4, ".mp3") == 0) return AB_MP3;
+    if (strcasecmp(p + n - 4, ".m4a") == 0) return AB_M4A;
+    if (strcasecmp(p + n - 4, ".wav") == 0) return AB_WAV;
+    return 0;
 }
 
-/* The tracks' signature (FNV-1a over the paths, each ended by a 0); 0 when one is not a plain FLAC track (a CUE track, another format): no length then. */
+/* The whole seconds of a track from its header, -1 when it does not read as its format's. */
+static int ab_track_secs(const char *path) {
+    int kind = ab_len_kind(path), fd, s;
+    if (!kind || (fd = open(path, O_RDONLY, 0)) < 0) return -1;
+    s = kind == AB_FLAC  ? ab_flac_secs(fd)
+        : kind == AB_MP3 ? ab_mp3_secs(fd)
+        : kind == AB_M4A ? ab_m4a_secs(fd)
+                         : ab_wav_secs(fd);
+    close(fd);
+    return s;
+}
+
+/* The tracks' signature (FNV-1a over the paths, each ended by a 0); 0 when one is not a plain track of a read format (a CUE track, another format): no length then. */
 static unsigned ab_len_sig(void) {
     unsigned h = 2166136261u, i;
     for (i = 0; i < ab.count; ++i) {
         void *r = deque_at(ab.list, i);
         const char *p = cc_str(r, REC_PATH);
-        if (I(r, REC_CUE_START) || I(r, REC_CUE_END) || !ab_is_flac(p)) return 0;
+        if (I(r, REC_CUE_START) || I(r, REC_CUE_END) || !ab_len_kind(p)) return 0;
         do h = (h ^ (unsigned char)*p) * 16777619u;
         while (*p++);
     }
@@ -540,7 +664,7 @@ static int ab_on_len(const void *unused) {
     }
     end = ab.len_at + AB_LEN_STEP < ab.count ? ab.len_at + AB_LEN_STEP : ab.count;
     for (; ab.len_at < end; ++ab.len_at) {
-        s = ab_flac_secs(cc_str(deque_at(ab.list, ab.len_at), REC_PATH));
+        s = ab_track_secs(cc_str(deque_at(ab.list, ab.len_at), REC_PATH));
         if (s < 0) {
             ab.len_timer = 0;
             return RET_OK;

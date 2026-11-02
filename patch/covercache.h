@@ -7,7 +7,7 @@
 #pragma once
 
 #define CARD_DIR \
-    "/mnt/mmc/.m1plus" /* the one hidden folder the payload keeps on the card: covers/ (the cache), daily-mix/ (the Daily Mix: tracks, art), the Cover Flow position, recently-played (the Home shelf's albums) and album-lengths (the album page's FLAC lengths); made by the writers, only while the card is mounted */
+    "/mnt/mmc/.m1plus" /* the one hidden folder the payload keeps on the card: covers/ (the cache), daily-mix/ (the Daily Mix: tracks, art), the Cover Flow position, recently-played (the Home shelf's albums) and album-lengths (the album page's track lengths); made by the writers, only while the card is mounted */
 #define ART_DIR CARD_DIR "/covers" /* the cache: r<key>-168.jpg per album, an empty file for "no art" */
 
 /* Pure pixel helpers, also built for the host (test/coverflow.py). */
