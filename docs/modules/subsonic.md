@@ -52,8 +52,10 @@ queue ABI was cross-checked against
 [shanling-m1plus-navidrome](https://github.com/shivaluma/shanling-m1plus-navidrome) (MIT,
 Copyright 2026 shivaluma and contributors). That reference uses a local HTTP proxy; this payload
 queues the configured HTTP or HTTPS stream URL directly. Navidrome playback has been tested on a
-device and reported working. Seeking, format edge cases and audible bit-perfect output have not
-been independently validated.
+device and reported working. On the tracks tested, the M1 Plus showed the original sample rate and
+bit depth; together with raw streaming and no client-side transcoding, this is consistent with
+bit-perfect playback. The display does not prove sample-for-sample identity at the DAC. Seeking and
+less common format edge cases have not been independently validated.
 
 The metadata sync uses Subsonic `search3` with an empty query and paged offsets (Navidrome's
 supported fast-sync path, also used by offline-first clients such as
