@@ -20,7 +20,11 @@ they offer Download; afterward they offer local Play and confirmed Delete action
 streamed because the stock player misidentifies it. Regular tracks can be streamed or downloaded;
 downloaded tracks show local Play and confirmed Delete actions. Downloads use an ID-prefixed name
 under `/mnt/mmc/Navidrome`, refuse to overwrite an existing file, use a `.part` file before rename,
-cap a file at 512 MiB, and keep at least 32 MiB free on the card.
+have no per-file size or total-time cap, and keep at least 32 MiB free on the card. A transfer
+aborts if throughput stays below 512 bytes per second for 45 seconds. After a DSD download
+succeeds, the stock folder scanner adds `/mnt/mmc/Navidrome` to the existing SD music library in
+the background without rebuilding the rest of the library. If artwork caching is still running,
+the page explains that the DSD download must be retried after caching finishes.
 
 Streaming requests Subsonic `stream.view` with `format=raw`; this integration does not request
 transcoding or process audio. DSF and DFF are withheld from stream queues because the stock player

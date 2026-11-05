@@ -9,6 +9,7 @@
 #include "home.h"
 #include "i18n.h"
 #include "palette.h"
+#include <limits.h>
 extern int pn_free_kb(const char *path, unsigned *kb);
 extern int pod_confirm(const char *text);
 
@@ -495,7 +496,6 @@ int sb_songs(const char *json, unsigned n, sb_song_t *out, int max) {
  * (MIT, Copyright 2026 shivaluma and contributors); this implementation is
  * native to this payload and does not copy its plugin or backend. */
 #define SB_RESPONSE_MAX (512 * 1024)
-#define SB_DOWNLOAD_MAX (512LL * 1024 * 1024)
 #define SB_OFFLINE_DIR "/mnt/mmc/Navidrome"
 #define SB_CONFIG_FILE "/mnt/mmc/.m1plus/navidrome.conf"
 #define SB_CONFIG_TMP "/mnt/mmc/.m1plus/navidrome.conf.tmp"
@@ -532,11 +532,12 @@ static struct {
     void *tab_label[2], *tab_mark[2];
     unsigned timer;
     volatile int busy, done, result, mode, sync_count, connection_lost, sync_limit_hit;
+    volatile int library_refreshing, library_refresh_result;
     int sync_shown, setup_prompt, setup_tries;
     int count, selected, index_count, dsd_count, index_offset, indexed_view, loading, view;
     int row_data, row_base;
     int grid_mode, dsd_view, connected, index_valid, art_shown, switching_view, ping_after_work;
-    int refresh_index_after_download;
+    int refresh_index_after_download, library_refresh_shown, download_is_dsd;
     volatile int art_syncing, art_count, art_total;
     sb_song_t songs[SB_MAX];
     int play_ids[SB_MAX], play_count;
@@ -557,14 +558,14 @@ static unsigned sb_write(void *ptr, unsigned size, unsigned nmemb, void *ctx) {
     if (!s || (size && n / size != nmemb)) return 0;
     if (s->fd >= 0) {
         unsigned done = 0;
-        long long limit = s->limit ? s->limit : SB_DOWNLOAD_MAX;
         if (s->prefix_used < sizeof s->prefix) {
             unsigned take = (unsigned)sizeof s->prefix - s->prefix_used;
             if (take > n) take = n;
             memcpy(s->prefix + s->prefix_used, ptr, take);
             s->prefix_used += take;
         }
-        if (s->written + n > limit) return 0;
+        if (s->limit > 0 && (s->written >= s->limit || (long long)n > s->limit - s->written)) return 0;
+        if ((long long)n > LLONG_MAX - s->written) return 0;
         if (s->written - s->last_check >= 1024 * 1024) {
             unsigned free_kb = 0;
             if (!pn_free_kb("/mnt/mmc", &free_kb) || free_kb <= 32768) return 0;
@@ -597,7 +598,7 @@ static int sb_http_timeout(const char *url, sb_sink_t *sink, long timeout) {
     curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT, 12L);
     curl_easy_setopt(h, CURLOPT_TIMEOUT, timeout);
     curl_easy_setopt(h, CURLOPT_LOW_SPEED_LIMIT, 512L);
-    curl_easy_setopt(h, CURLOPT_LOW_SPEED_TIME, timeout < 45L ? timeout / 2L : 45L);
+    curl_easy_setopt(h, CURLOPT_LOW_SPEED_TIME, timeout > 0 && timeout < 45L ? timeout / 2L : 45L);
     curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(h, CURLOPT_PROTOCOLS, sb_https(url) ? CURLPROTO_HTTPS : CURLPROTO_HTTP);
     if (sb_https(url)) curl_easy_setopt(h, CURLOPT_CAINFO, SB_CA);
@@ -1132,13 +1133,20 @@ static void *sb_worker(void *unused) {
                      snprintf(part, sizeof part, "%s.part", final) < (int)sizeof part && access(final, 0) != 0 &&
                      (fd = open(part, O_WRONLY | O_CREAT | O_TRUNC, 0644)) >= 0) {
                 sink->fd = fd;
-                if (!sb_http(url, sink) && fsync(fd) == 0 && close(fd) == 0) {
+                if (!sb_http_timeout(url, sink, 0L) && fsync(fd) == 0 && close(fd) == 0) {
                     fd = -1;
                     if (rename(part, final) == 0) rc = 1;
                 }
                 if (fd >= 0) close(fd);
                 if (rc != 1) unlink(part);
             }
+        }
+        if (rc == 1 && sbp.download_is_dsd) {
+            sbp.library_refresh_result = -1;
+            sbp.library_refreshing = 1;
+            __sync_synchronize();
+            if (pod_card_mounted()) sbp.library_refresh_result = scanSpecFolder(SB_OFFLINE_DIR, 0);
+            sbp.library_refreshing = 0;
         }
     } else if (sbp.mode == 3)
         rc = sb_sync_library(sink);
@@ -1177,6 +1185,13 @@ static int sb_start(int mode) {
         sbp.art_shown = 0;
         sbp.art_syncing = 1;
     }
+    if (mode == 2) {
+        sbp.library_refreshing = 0;
+        sbp.library_refresh_result = 0;
+        sbp.library_refresh_shown = 0;
+        sbp.download_is_dsd = sbp.selected >= 0 && sbp.selected < sbp.count &&
+                              sb_is_dsd(sbp.songs[sbp.selected].suffix);
+    }
     sbp.done = 0;
     sbp.result = -1;
     curl_global_init(CURL_GLOBAL_ALL); /* initialize libcurl on the UI thread before this worker */
@@ -1196,6 +1211,16 @@ static void sb_set_status(const char *text) {
         widget_set_prop_str(sbp.status, "style:normal:text_color", sbp.connected ? "#34C759" : "#AAAAAA");
     }
 }
+
+static int sb_download_blocked(int at) {
+    if (!sbp.busy) return 0;
+    if (sbp.mode == 4 && at >= 0 && at < sbp.count && sb_is_dsd(sbp.songs[at].suffix))
+        sb_set_status(TR("Artwork cache busy. Retry DSD download when it finishes."));
+    else
+        sb_set_status(TR("Wait for the current request to finish"));
+    return 1;
+}
+
 static void sb_config_done(const char *text);
 static void sb_setup_user_done(const char *text);
 static void sb_setup_password_done(const char *text);
@@ -1493,6 +1518,7 @@ static int sb_select_click(void *ctx, void *e) {
             sb_set_status(TR("Could not play the downloaded DSD file"));
             return RET_OK;
         }
+        if (sb_download_blocked(at)) return RET_OK;
         if (sb_start(2) == 0) sb_set_status("Downloading original DSD file to SD…");
         else sb_set_status("DSD download could not start");
         return RET_OK;
@@ -1827,14 +1853,11 @@ static int sb_row_download_click(void *ctx, void *e) {
     int at = (int)(long)ctx + sbp.row_data;
     char path[320];
     (void)e;
-    if (sbp.busy) {
-        sb_set_status(TR("Wait for the current request to finish"));
-        return RET_OK;
-    }
     if (at < 0 || at >= sbp.count) {
         pod_toast(TR("Select a song first"));
         return RET_OK;
     }
+    if (sb_download_blocked(at)) return RET_OK;
     sbp.selected = at;
     if (sb_offline_find(&sbp.songs[at], path, sizeof path)) {
         (void)sb_delete_offline(at);
@@ -1855,6 +1878,10 @@ static int sb_tick(const void *unused) {
         sbp.sync_shown = sbp.sync_count;
         snprintf(msg, sizeof msg, TR("%d tracks synced…"), sbp.sync_shown);
         sb_set_status(msg);
+    }
+    if (sbp.busy && sbp.mode == 2 && sbp.library_refreshing && !sbp.library_refresh_shown) {
+        sbp.library_refresh_shown = 1;
+        sb_set_status(TR("Adding downloaded DSD to the SD library…"));
     }
     if (sbp.busy && sbp.mode == 4 && sbp.art_syncing && sbp.art_count != sbp.art_shown) {
         char msg[64];
@@ -1933,8 +1960,14 @@ static int sb_tick(const void *unused) {
                 sb_place_rows(0);
                 sb_render_rows();
             }
-            sb_set_status(sbp.result > 0 ? TR("Original song downloaded to /mnt/mmc/Navidrome")
-                                         : TR("Download failed; check card space and server permission"));
+            if (sbp.result > 0 && sbp.download_is_dsd) {
+                if (sbp.library_refresh_result > 0)
+                    sb_set_status(TR("DSD downloaded and added to the SD library."));
+                else
+                    sb_set_status(TR("DSD downloaded, but the SD library refresh failed."));
+            } else
+                sb_set_status(sbp.result > 0 ? TR("Original song downloaded to /mnt/mmc/Navidrome")
+                                             : TR("Download failed; check card space and server permission"));
         }
         if (sbp.ping_after_work && !sbp.busy && sbp.mode != 8) {
             sbp.ping_after_work = 0;
@@ -2045,6 +2078,8 @@ void sb_page_open(void *win) {
             sb_set_status("Library sync continuing in background…");
         else if (sbp.mode == 4)
             sb_set_status("Songs ready · artwork caching in background…");
+        else if (sbp.mode == 2 && sbp.library_refreshing)
+            sb_set_status(TR("Adding downloaded DSD to the SD library…"));
         else
             sb_set_status("Navidrome request still running…");
     } else if (sbp.user[0]) {

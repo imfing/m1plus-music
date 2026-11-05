@@ -299,6 +299,9 @@ FUNCTIONS.update({
 # delete (batch_delete_file(class, list, selection, 0, delete_file): the generic loop for 0xf001, deleteMusicFromMusicDb per selected row, remove_file when
 # the flag is set, and `*0xa05a5a = 1` at the end). All of them touch no widget (docs/modules/songs.md has the evidence).
 FUNCTIONS.update({
+    # Navidrome offline DSD downloads (patch/subsonic.c): stock's folder scan worker calls this with drop=0 to add
+    # files from one folder to songtable without dropping the existing library; it touches no UI widgets.
+    'scanSpecFolder':         ('int', 'const char *, int', 0x4e9e90),
     'select_recordinit':       ('void', 'int', 0x4da3b0),
     'set_selectindex':         ('int', 'int', 0x4da434),
     'batch_delete_file':       ('int', 'int, void *, void *, int, int', 0x4e1408),
