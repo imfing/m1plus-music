@@ -12,9 +12,11 @@ Entering or changing server credentials saves them on the SD card and starts a m
 automatically. The page also has an explicit Sync button for later refreshes. They stay saved
 until you enter different credentials. The page has Songs and DSD Downloads sections, a persistent
 grid/list toggle, and server-side search. The SD index stores regular tracks and DSD tracks
-separately; lists scroll continuously and load metadata in windows. DSD tracks appear in their
-own section and offer original-file downloads only, since the stock player misidentifies streamed
-DSD. Other tracks can be streamed or downloaded.
+separately; lists scroll continuously and load metadata in windows. Manual sync asks for
+confirmation, and reopening a page with a valid index does not start a full resync. DSD tracks
+appear in their own section. Before download they offer Download; afterward they offer local Play
+and confirmed Delete actions. DSD is never streamed because the stock player misidentifies it.
+Other tracks can be streamed or downloaded.
 That saves the original file under `/mnt/mmc/Navidrome`; downloads refuse to overwrite an existing
 file, use a `.part` file before rename, cap a file at 512 MiB, and keep at least 32 MiB free on the
 card. Run Shanling's normal Update Library scan to add downloaded audio files to its local library.

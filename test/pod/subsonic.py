@@ -59,8 +59,9 @@ def ui_tests(ctx):
 
     visit(roundtrip)
     by_name = {node.get('name'): node for node in nodes if node.get('name')}
-    required = ('sb_connect', 'sb_sync', 'sb_sync_icon', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view',
-                'sb_grid_row0', 'sb_grid_art0', 'sb_row_play0', 'sb_row_download0')
+    required = ('sb_connect', 'sb_connect_label', 'sb_connected_dot', 'sb_sync', 'sb_sync_icon', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view',
+                'sb_tracks_mark', 'sb_dsd_mark',
+                'sb_grid_row0', 'sb_grid_art0', 'sb_row_play0', 'sb_row_download_icon0')
     ctx.expect(all(name in by_name for name in required) and 'sb_play' not in by_name and 'sb_download' not in by_name
                and 'sb_prev' not in by_name and 'sb_next' not in by_name,
                'Navidrome page has songs and DSD downloads with list/grid views and row actions')
@@ -96,10 +97,28 @@ def login_tests(ctx):
     ctx.expect('if (sb_is_dsd(song->suffix)) continue;' in src and 'if (sb_is_dsd(sbp.songs[at].suffix))' in src
                and 'if (i == at) play_at = queued;' in src and 'start_playqueue(play_at);' in src,
                'DSF/DFF are excluded from automatic stream queues while selected tracks keep their queue position')
-    ctx.expect('get_wifisignal() <= 0' in src and 'sbp.connected = 1' in src and '"#34C759"' in src,
+    ctx.expect('get_wifisignal() <= 0' in src and 'sb_set_connected(1);' in src and '"#34C759"' in src,
                'Wi-Fi is checked before connection and successful server checks show green status')
     ctx.expect('sbp.dsd_view = 0;' in src and 'widget_set_prop_str(sbp.view_icon, "image", icon);' in src,
                'search and view-mode changes cannot carry the DSD-only behavior into regular songs')
+    ctx.expect('if (!sb_is_dsd(sbp.songs[i].suffix))' in src and 'rc = regular;' in src,
+               'server-side search results keep DSD tracks in their dedicated downloads section')
+    ctx.expect('sb_set_active_tab(dsd_view);' in src and 'style:normal:bg_color' in src and 'pod_sb_download' in src,
+               'the selected library tab is highlighted and its DSD glyph follows the accent')
+    ctx.expect('sb_set_connected(1);' in src and 'sb_connected_dot' in src and '"#34C759"' in src
+               and 'TR(sbp.connected ? "Connected" : "Server")' in src,
+               'the Server control shows a green connection dot and Connected label after a successful check')
+    ctx.expect('pod_confirm(TR("Sync Navidrome songs and artwork to the SD card now?"))' in src,
+               'manual library sync asks before starting')
+    ctx.expect('offset > count || (count && offset == count)' in src and 'if (n > 0)' in src
+               and 'No regular songs in the synced library' in src,
+               'switching to an empty Songs section clears the previous DSD rows instead of leaving stale tracks')
+    ctx.expect('if (!sbp.index_valid)' in src and 'sbp.index_valid = 0;' in src
+               and 'sbp.busy || sbp.switching_view' in src,
+               'page reopen preserves a valid index and ignores re-entrant scroll events while switching views')
+    ctx.expect('sb_play_local_dsd' in src and 'sb_delete_dsd' in src and 'pod_ic_rd_remove' in src
+               and 'Delete this downloaded DSD track from the SD card?' in src,
+               'downloaded DSD rows change to local Play and confirmed Delete actions')
     ctx.expect('getCoverArt' in src and 'sb_sync_art(sink)' in src and 'sb_cover_file(cc_playing())' in open(os.path.join(ROOT, 'patch', 'nowplaying.c'), encoding='utf-8').read(),
                'artwork sync caches bounded cover images and exposes them to Now Playing')
 

@@ -964,7 +964,7 @@ _MONTHS = {   # locale -> the twelve month texts
 TEXT.update(_t(k, *[_MONTHS[loc][i] for loc in _L]) for i, k in enumerate(_MONTH_KEYS))
 # Navidrome labels and status text use English in every locale; keep each one in the translation audit.
 _SB_ENGLISH = (
-    'Navidrome', 'Server', 'Songs', 'DSD Downloads', 'Untitled',
+    'Navidrome', 'Server', 'Connected', 'Songs', 'DSD Downloads', 'Untitled',
     'Connect to browse your music', 'Server URL', 'Username', 'Server password', 'Enter a valid username',
     'Enter a server password', 'Could not open login field',
     'Enter a valid HTTP or HTTPS server URL', 'Password cannot contain |', 'Server settings are too long',
@@ -984,6 +984,10 @@ _SB_ENGLISH = (
     'Downloading original file to SD card…', 'Download could not start',
     'Sync complete. Artwork cached when available.', 'Could not check Navidrome server.',
     'Library sync failed; check Wi-Fi, server and SD space.', 'Connect to Wi-Fi before using Navidrome.',
+    'Sync Navidrome songs and artwork to the SD card now?', 'No regular songs in the synced library',
+    'Could not refresh this song page', 'Delete this downloaded DSD track from the SD card?',
+    'Could not delete the downloaded DSD file', 'Downloaded DSD track deleted',
+    'Download this DSD track first', 'Could not play the downloaded DSD file',
 )
 for _key in _SB_ENGLISH:
     TEXT.setdefault(_key, {loc: _key for loc in LOCALES})
