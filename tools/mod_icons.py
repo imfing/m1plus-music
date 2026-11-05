@@ -186,7 +186,8 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_playset', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings')}
 # The Folders page's row glyphs (patch/folders.c): the menu rows' bare white 24 px glyph for what POD_ROWS has no row for: an audio file, the SD card, a USB drive (folders, playlist files, the CD Library and the wave are pod_ic_folders, pod_ic_playlists, pod_ic_cdripper, pod_ic_nowplaying)
 FOLDER_ROWS = {'fo_ic_file': 'file-music', 'fo_ic_sd': 'memory-stick', 'fo_ic_usb': 'usb'}
-SUBSONIC_ICONS = {'pod_sb_sync': 'refresh-cw', 'pod_sb_play': 'play:filled', 'pod_sb_download': 'download'}
+SUBSONIC_ICONS = {'pod_sb_sync': 'refresh-cw', 'pod_sb_play': 'play:filled', 'pod_sb_download': 'download',
+                  'pod_sb_dsd': 'badge:DSD'}
 # The Radio page's row glyphs (patch/radiopage.c): bare white 24 px glyphs for Top Stations, By Country (flag), By Genre, Stations (radio) and Radio Browser (globe; Now Playing and Recently Played are the menu rows' pod_ic_nowplaying and pod_ic_recent);
 # RADIO_ART is the radio-set glyph of the placeholders (the stations' tiles, the Now Playing page's art box, the mini bar): muted grey (ES_RGB), RADIO_ART_PX px.
 RADIO_ROWS = {'pod_ic_rd_stations': 'radio-tower', 'pod_ic_rd_top': 'trending-up', 'pod_ic_rd_country': 'earth', 'pod_ic_rd_genre': 'tag', 'pod_ic_rd_browser': 'globe'}

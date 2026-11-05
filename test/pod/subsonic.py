@@ -95,8 +95,9 @@ def login_tests(ctx):
                and 'sbp.count = 0;\n            close(fd);\n            return -1;' in src,
                'SD metadata indexes are bounded, identity-checked, and rejected if truncated')
     ctx.expect('if (sb_is_dsd(song->suffix)) continue;' in src and 'if (sb_is_dsd(sbp.songs[at].suffix))' in src
-               and 'if (i == at) play_at = queued;' in src and 'start_playqueue(play_at);' in src,
-               'DSF/DFF are excluded from automatic stream queues while selected tracks keep their queue position')
+               and 'sb_index_read_range(first, (unsigned)n, queue_songs)' in src and 'play_at = 0' in src
+               and 'start_playqueue(play_at);' in src,
+               'DSF/DFF stay out of stream queues, which continue across synced index windows from the selected track')
     ctx.expect('get_wifisignal() <= 0' in src and 'sb_set_connected(1);' in src and '"#34C759"' in src,
                'Wi-Fi is checked before connection and successful server checks show green status')
     ctx.expect('sbp.dsd_view = 0;' in src and 'widget_set_prop_str(sbp.view_icon, "image", icon);' in src,
@@ -114,9 +115,9 @@ def login_tests(ctx):
                and 'No regular songs in the synced library' in src,
                'switching to an empty Songs section clears the previous DSD rows instead of leaving stale tracks')
     ctx.expect('if (!sbp.index_valid)' in src and 'sbp.index_valid = 0;' in src
-               and 'sbp.busy || sbp.switching_view' in src,
+               and 'sb_input_locked() || sbp.switching_view' in src,
                'page reopen preserves a valid index and ignores re-entrant scroll events while switching views')
-    ctx.expect('sb_play_local_dsd' in src and 'sb_delete_dsd' in src and 'pod_ic_rd_remove' in src
+    ctx.expect('sb_play_local_file' in src and 'sb_delete_offline' in src and 'pod_ic_rd_remove' in src
                and 'Delete this downloaded DSD track from the SD card?' in src,
                'downloaded DSD rows change to local Play and confirmed Delete actions')
     ctx.expect('getCoverArt' in src and 'sb_sync_art(sink)' in src and 'sb_cover_file(cc_playing())' in open(os.path.join(ROOT, 'patch', 'nowplaying.c'), encoding='utf-8').read(),

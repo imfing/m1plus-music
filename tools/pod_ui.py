@@ -959,7 +959,7 @@ def build_subsonic_page(page):
         btn.children.append(Widget('image', 6, 6, 32, 32, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
         root.children.append(btn)
     tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_songs'),
-            ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_download'))
+            ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_dsd'))
     for name, x, width, text, icon in tabs:
         btn = Widget('button', x, NAVBAR_H + 50, width, 44, [('name', name), ('enable', 'true')])
         btn.set('style', 'btn_tablerow_style')
