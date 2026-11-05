@@ -958,7 +958,7 @@ def build_subsonic_page(page):
         btn = Widget('button', x, NAVBAR_H + 4, 44, 44, [('name', name), ('enable', 'true'), ('style', 'img_btn_style')])
         btn.children.append(Widget('image', 6, 6, 32, 32, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
         root.children.append(btn)
-    tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_songs'),
+    tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_navidrome'),
             ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_dsd'))
     for name, x, width, text, icon in tabs:
         btn = Widget('button', x, NAVBAR_H + 50, width, 44, [('name', name), ('enable', 'true')])
@@ -1005,7 +1005,7 @@ def build_subsonic_page(page):
         styled(sub, STATES, 'text_color', '#AAAAAA')
         styled(sub, ('normal',), 'font_size', str(LIST_SUB_PX))
         actions = []
-        for action, x, icon in (('play', 226, 'pod_sb_play'), ('download', 272, 'pod_sb_download')):
+        for action, x, icon in (('download', 272, 'pod_sb_download'),):
             button = Widget('button', x, 4, 42, 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
             button.children.append(Widget('image', 9, 10, 24, 24, [('name', f'sb_row_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
             actions.append(button)
@@ -1018,7 +1018,7 @@ def build_subsonic_page(page):
         styled(g_sub, STATES, 'text_color', '#AAAAAA')
         styled(g_sub, ('normal',), 'font_size', '12')
         g_actions = []
-        for action, x, icon in (('play', 20, 'pod_sb_play'), ('download', 98, 'pod_sb_download')):
+        for action, x, icon in (('download', 59, 'pod_sb_download'),):
             button = Widget('button', x, 177, 42, 36, [('name', f'sb_grid_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
             button.children.append(Widget('image', 9, 6, 24, 24, [('name', f'sb_grid_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
             g_actions.append(button)

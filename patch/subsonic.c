@@ -540,8 +540,8 @@ static struct {
     void *download_bar, *download_fill;
     void *row[SB_VISIBLE], *title[SB_VISIBLE], *sub[SB_VISIBLE], *art[SB_VISIBLE];
     void *grid_row[SB_VISIBLE], *grid_title[SB_VISIBLE], *grid_sub[SB_VISIBLE], *grid_art[SB_VISIBLE];
-    void *row_play[SB_VISIBLE], *row_download[SB_VISIBLE], *row_download_icon[SB_VISIBLE];
-    void *grid_play[SB_VISIBLE], *grid_download[SB_VISIBLE], *grid_download_icon[SB_VISIBLE];
+    void *row_download[SB_VISIBLE], *row_download_icon[SB_VISIBLE];
+    void *grid_download[SB_VISIBLE], *grid_download_icon[SB_VISIBLE];
     void *tab_label[2], *tab_mark[2];
     unsigned timer;
     unsigned stream_timer;
@@ -1404,15 +1404,11 @@ static void sb_render_rows(void) {
             widget_set_prop_str(sbp.row_download_icon[i], "image", "pod_sb_download");
             widget_set_prop_str(sbp.grid_download_icon[i], "image", "pod_sb_download");
         }
-        widget_resize(sbp.title[i], track_actions ? 152 : 278, 24);
-        widget_resize(sbp.sub[i], track_actions ? 152 : 278, 20);
+        widget_resize(sbp.title[i], track_actions ? 206 : 278, 24);
+        widget_resize(sbp.sub[i], track_actions ? 206 : 278, 20);
         widget_set_visible(sbp.art[i], track_actions, 0);
-        widget_set_visible(sbp.row_play[i], track_actions && !sbp.grid_mode && (!is_dsd || local_file), 0);
-        widget_set_sensitive(sbp.row_play[i], track_actions && !sbp.grid_mode && (!is_dsd || local_file));
         widget_set_visible(sbp.row_download[i], track_actions && !sbp.grid_mode, 0);
         widget_set_sensitive(sbp.row_download[i], track_actions && !sbp.grid_mode);
-        widget_set_visible(sbp.grid_play[i], track_actions && sbp.grid_mode && (!is_dsd || local_file), 0);
-        widget_set_sensitive(sbp.grid_play[i], track_actions && sbp.grid_mode && (!is_dsd || local_file));
         widget_set_visible(sbp.grid_download[i], track_actions && sbp.grid_mode, 0);
         widget_set_sensitive(sbp.grid_download[i], track_actions && sbp.grid_mode);
         if (source >= 0 && source < sbp.count) {
@@ -1422,7 +1418,7 @@ static void sb_render_rows(void) {
             widget_set_text_utf8(sbp.sub[i], detail);
             widget_set_text_utf8(sbp.grid_title[i], sbp.songs[source].title[0] ? sbp.songs[source].title : SB_ENGLISH("Untitled"));
             widget_set_text_utf8(sbp.grid_sub[i], sbp.songs[source].artist);
-            const char *placeholder = is_dsd ? "pod_sb_dsd" : "pod_ic_songs";
+            const char *placeholder = is_dsd ? "pod_ic_dsd_art" : "pod_ic_navidrome_art";
             if (sbp.songs[source].cover[0] && !sb_art_path(art, sizeof art, sbp.songs[source].cover) && access(art, 0) == 0) {
                 snprintf(uri, sizeof uri, "file://%s", art);
             } else {
@@ -2272,39 +2268,6 @@ static int sb_play_click(void *ctx, void *e) {
     on_backtoplayer_onclick((void *)0, (void *)0);
     return RET_OK;
 }
-static int sb_row_play_click(void *ctx, void *e) {
-    int at = (int)(long)ctx + sbp.row_data;
-    (void)e;
-    if (sb_input_locked()) {
-        sb_set_status(SB_ENGLISH("Wait for the current request to finish"));
-        return RET_OK;
-    }
-    if (at < 0 || at >= sbp.count) {
-        pod_toast(SB_ENGLISH("Select a song first"));
-        return RET_OK;
-    }
-    sbp.selected = at;
-    if (sb_is_dsd(sbp.songs[at].suffix)) {
-        char path[320];
-        if (!sb_offline_find(&sbp.songs[at], path, sizeof path)) {
-            sb_set_status(SB_ENGLISH("Download this DSD track first"));
-            return RET_OK;
-        }
-        if (sb_play_local_file(&sbp.songs[at], path) < 0)
-            sb_set_status(SB_ENGLISH("Could not play the downloaded DSD file"));
-        return RET_OK;
-    }
-    {
-        char path[320];
-        if (sb_offline_find(&sbp.songs[at], path, sizeof path)) {
-            if (sb_play_local_file(&sbp.songs[at], path) < 0)
-                sb_set_status(SB_ENGLISH("Could not play the downloaded song"));
-            return RET_OK;
-        }
-    }
-    return sb_play_click(0, 0);
-}
-
 static int sb_delete_offline(int at) {
     char path[320];
     int is_dsd;
@@ -2563,17 +2526,11 @@ void sb_page_open(void *win) {
         sbp.grid_sub[i] = widget_lookup(win, name, 1);
         snprintf(name, sizeof name, "sb_grid_art%d", i);
         sbp.grid_art[i] = widget_lookup(win, name, 1);
-        snprintf(name, sizeof name, "sb_row_play%d", i);
-        sbp.row_play[i] = widget_lookup(win, name, 1);
-        pod_bind(win, name, sb_row_play_click, (void *)(long)i);
         snprintf(name, sizeof name, "sb_row_download%d", i);
         sbp.row_download[i] = widget_lookup(win, name, 1);
         pod_bind(win, name, sb_row_download_click, (void *)(long)i);
         snprintf(name, sizeof name, "sb_row_download_icon%d", i);
         sbp.row_download_icon[i] = widget_lookup(win, name, 1);
-        snprintf(name, sizeof name, "sb_grid_play%d", i);
-        sbp.grid_play[i] = widget_lookup(win, name, 1);
-        pod_bind(win, name, sb_row_play_click, (void *)(long)i);
         snprintf(name, sizeof name, "sb_grid_download%d", i);
         sbp.grid_download[i] = widget_lookup(win, name, 1);
         pod_bind(win, name, sb_row_download_click, (void *)(long)i);
@@ -2592,9 +2549,7 @@ void sb_page_open(void *win) {
         for (i = 0; i < SB_VISIBLE; ++i) {
             widget_set_sensitive(sbp.row[i], 0);
             widget_set_sensitive(sbp.grid_row[i], 0);
-            widget_set_sensitive(sbp.row_play[i], 0);
             widget_set_sensitive(sbp.row_download[i], 0);
-            widget_set_sensitive(sbp.grid_play[i], 0);
             widget_set_sensitive(sbp.grid_download[i], 0);
         }
     }
@@ -2650,10 +2605,8 @@ void sb_page_close(void) {
     memset(sbp.grid_title, 0, sizeof sbp.grid_title);
     memset(sbp.grid_sub, 0, sizeof sbp.grid_sub);
     memset(sbp.grid_art, 0, sizeof sbp.grid_art);
-    memset(sbp.row_play, 0, sizeof sbp.row_play);
     memset(sbp.row_download, 0, sizeof sbp.row_download);
     memset(sbp.row_download_icon, 0, sizeof sbp.row_download_icon);
-    memset(sbp.grid_play, 0, sizeof sbp.grid_play);
     memset(sbp.grid_download, 0, sizeof sbp.grid_download);
     memset(sbp.grid_download_icon, 0, sizeof sbp.grid_download_icon);
     memset(sbp.title, 0, sizeof sbp.title);

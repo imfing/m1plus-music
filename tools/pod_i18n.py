@@ -989,7 +989,7 @@ _SB_ENGLISH = (
     'Sync Navidrome songs and artwork to the SD card now?', 'No regular songs in the synced library',
     'Could not refresh this song page', 'Delete this downloaded DSD track from the SD card?',
     'Could not delete the downloaded DSD file', 'Downloaded DSD track deleted',
-    'Download this DSD track first', 'Could not play the downloaded DSD file',
+    'Could not play the downloaded DSD file',
     'Could not read the synced song list', 'Delete this downloaded song from the SD card?',
     'Could not delete the downloaded song', 'Downloaded song deleted', 'Could not play the downloaded song',
     'Navidrome busy · download starting', 'Navidrome busy · updating SD library',

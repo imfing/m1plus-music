@@ -15,14 +15,18 @@ the stock interface language setting still applies to the rest of M1+ Music.
 Entering or changing server credentials saves them on the SD card and starts a metadata sync
 automatically. The page also has an explicit Sync button for later refreshes. They stay saved
 until you enter different credentials. The page has Songs and DSD Downloads sections, a persistent
-grid/list toggle, and server-side search. The SD index stores regular tracks and DSD tracks
+grid/list toggle, and server-side search. The Songs tab and Extras row use a crisp record mark;
+large 136 px record and DSD marks are used when tracks have no cached cover art, while available
+cover art is displayed as before. Song rows play when tapped and keep only the Download or Delete
+control on the right. The SD index stores regular tracks and DSD tracks
 separately; lists scroll continuously and load 64 metadata records at a time. Sync accepts an empty
 library and caps the combined index at 100,000 tracks; a larger catalog leaves the previous index in
 place and reports the limit. Manual sync asks for confirmation, and reopening a page with a valid
 index does not start a full resync. DSD tracks appear under a dedicated DSD badge. Before download
-they offer Download; afterward they offer local Play and confirmed Delete actions. DSD is never
-streamed because the stock player misidentifies it. Regular tracks can be streamed or downloaded;
-downloaded tracks show local Play and confirmed Delete actions. Downloads use an ID-prefixed name
+they offer Download; afterward tapping the row plays the local file and the right-side control
+offers confirmed Delete. DSD is never streamed because the stock player misidentifies it. Regular
+tracks can be streamed or downloaded; tapping a row streams or plays the local download, and the
+right-side control downloads or deletes it. Downloads use an ID-prefixed name
 under `/mnt/mmc/Navidrome`, refuse to overwrite an existing file, use a `.part` file before rename,
 have no per-file size or total-time cap, and keep at least 32 MiB free on the card. During a
 download, the page shows a percentage or animated progress bar and marks Navidrome busy; other

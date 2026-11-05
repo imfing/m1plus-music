@@ -1,7 +1,8 @@
 """Navidrome/Subsonic JSON parsing and metadata transfer (patch/subsonic.c)."""
 import json, struct
 from harness import *  # noqa: F401,F403
-import awtk_ui, pod_pages, pod_ui
+import awtk_ui, pod_pages, pod_ui, mod_icons
+import palette as palette_mod
 
 REGION, SIZE = 0x30000000, 0x40000
 SB_ID, SB_TEXT = 96, 192
@@ -61,10 +62,11 @@ def ui_tests(ctx):
     by_name = {node.get('name'): node for node in nodes if node.get('name')}
     required = ('sb_connect', 'sb_connect_label', 'sb_connected_dot', 'sb_sync', 'sb_sync_icon', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view',
                 'sb_tracks_mark', 'sb_dsd_mark',
-                'sb_grid_row0', 'sb_grid_art0', 'sb_row_play0', 'sb_row_download_icon0')
-    ctx.expect(all(name in by_name for name in required) and 'sb_play' not in by_name and 'sb_download' not in by_name
+                'sb_grid_row0', 'sb_grid_art0', 'sb_row_download0', 'sb_row_download_icon0')
+    ctx.expect(all(name in by_name for name in required) and 'sb_row_play0' not in by_name and 'sb_grid_play0' not in by_name
+               and 'sb_play' not in by_name and 'sb_download' not in by_name
                and 'sb_prev' not in by_name and 'sb_next' not in by_name,
-               'Navidrome page has songs and DSD downloads with list/grid views and row actions')
+               'Navidrome page has list/grid browsing with download-only actions and row-tap playback')
     ctx.expect(by_name['sb_connect_label'].get('text') == 'Server'
                and by_name['sb_tracks_label'].get('text') == 'Songs'
                and by_name['sb_dsd_label'].get('text') == 'DSD Downloads'
@@ -72,13 +74,23 @@ def ui_tests(ctx):
                and all(by_name[name].get('tr_text') is None for name in
                        ('sb_connect_label', 'sb_tracks_label', 'sb_dsd_label', 'sb_status')),
                'Navidrome page labels remain English regardless of the device locale')
-    ctx.expect(all(by_name[name].h >= 44 for name in ('sb_connect', 'sb_sync', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view', 'sb_row_play0', 'sb_row_download0')),
+    ctx.expect(all(by_name[name].h >= 44 for name in ('sb_connect', 'sb_sync', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view', 'sb_row_download0')),
                'Navidrome touch controls meet the 44 px target height')
-    ctx.expect(by_name['sb_row_play0'].x < by_name['sb_row_download0'].x
-               and by_name['sb_row_download0'].x + by_name['sb_row_download0'].w <= 320,
-               'track play and download icons fit on the right side of each row')
+    ctx.expect(by_name['sb_row_download0'].x + by_name['sb_row_download0'].w <= 320
+               and by_name['sb_grid_download0'].x == 59,
+               'download actions fit at the right edge in list view and are centered in grid view')
     ctx.expect(all(f'{name}_icon' in by_name for name in ('sb_tracks', 'sb_dsd')),
-               'songs and DSD downloads have clear section icons')
+               'Songs and DSD Downloads have clear section icons')
+    ctx.expect(by_name['sb_tracks_icon'].get('image') == 'pod_ic_navidrome'
+               and by_name['sb_dsd_icon'].get('image') == 'pod_sb_dsd',
+               'Navidrome uses a record mark and DSD keeps its badge in the tabs')
+    from PIL import Image
+    logo = Image.open(os.path.join(mod_icons.PNG, mod_icons.SUBSONIC_ART[0] + '.png'))
+    dsd = Image.open(os.path.join(mod_icons.PNG, mod_icons.SUBSONIC_ART[1] + '.png'))
+    ctx.expect(logo.size == dsd.size == (mod_icons.SUBSONIC_ART_PX, mod_icons.SUBSONIC_ART_PX),
+               'Navidrome and DSD row/grid placeholders use full-resolution 136 px source icons')
+    ctx.expect(all(palette_mod.accent_kind(name) == 'glyph' for name in mod_icons.SUBSONIC_ART),
+               'both high-resolution placeholders follow the selected device accent')
     rows = [node for node in nodes if node.get('name', '').startswith('sb_row') and node.get('name')[6:].isdigit()]
     ctx.expect(len(rows) == 6 and all(row.w == 320 and row.h == 52 for row in rows), 'six spacious virtual rows cover the viewport and scroll overscan')
     ctx.expect(by_name['sb_scrollview'].h == 276 and by_name['sb_rows'].h == 1260,
@@ -111,7 +123,8 @@ def login_tests(ctx):
                'search and view-mode changes cannot carry the DSD-only behavior into regular songs')
     ctx.expect('if (!sb_is_dsd(sbp.songs[i].suffix))' in src and 'rc = regular;' in src,
                'server-side search results keep DSD tracks in their dedicated downloads section')
-    ctx.expect('sb_set_active_tab(dsd_view);' in src and 'style:normal:bg_color' in src and 'pod_sb_download' in src,
+    ctx.expect('sb_set_active_tab(dsd_view);' in src and 'style:normal:bg_color' in src and 'pod_sb_download' in src
+               and 'static int sb_select_click(void *ctx, void *e)' in src,
                'the selected library tab is highlighted and its DSD glyph follows the accent')
     ctx.expect('sb_set_connected(1);' in src and 'sb_connected_dot' in src and '"#34C759"' in src
                and 'SB_ENGLISH(sbp.connected ? "Connected" : "Server")' in src,
