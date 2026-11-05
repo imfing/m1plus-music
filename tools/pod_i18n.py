@@ -976,8 +976,7 @@ _SB_ENGLISH = (
     'Download failed; check card space and server permission',
     'Connect to Wi-Fi before using Navidrome.', 'Connect to Wi-Fi before adding a server.',
     'Connect to Wi-Fi to check Navidrome.', 'Checking Navidrome server…', 'Connected to Navidrome',
-    'Syncing cover artwork to SD…',
-    'Connected · syncing songs and artwork…', 'Could not connect. Check Wi-Fi, URL and login.',
+    'Could not connect. Check Wi-Fi, URL and login.',
     'Sync the library after connecting to the server.', 'No DSD tracks in the synced library',
     'DSD downloads · original files only', 'DSD streaming is disabled; download the original file for local playback.',
     'Downloading original DSD file to SD…', 'DSD download could not start',
@@ -985,12 +984,14 @@ _SB_ENGLISH = (
     'Adding downloaded DSD to the SD library…', 'DSD downloaded and added to the SD library.',
     'DSD downloaded, but the SD library refresh failed.',
     'Downloading original file to SD card…', 'Download could not start',
-    'Sync complete. Artwork cached when available.', 'Could not check Navidrome server.',
+    'Could not check Navidrome server.',
     'Library sync failed; check Wi-Fi, server and SD space.', 'Connect to Wi-Fi before using Navidrome.',
     'Sync Navidrome songs and artwork to the SD card now?', 'No regular songs in the synced library',
     'Could not refresh this song page', 'Delete this downloaded DSD track from the SD card?',
     'Could not delete the downloaded DSD file', 'Downloaded DSD track deleted',
     'Download this DSD track first', 'Could not play the downloaded DSD file',
+    'Could not read the synced song list', 'Delete this downloaded song from the SD card?',
+    'Could not delete the downloaded song', 'Downloaded song deleted', 'Could not play the downloaded song',
 )
 for _key in _SB_ENGLISH:
     TEXT.setdefault(_key, {loc: _key for loc in LOCALES})
