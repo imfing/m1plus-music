@@ -17,6 +17,9 @@ SAME_AS_ENGLISH |= {'A request is still running', 'Configuration is too long', '
 SAME_AS_ENGLISH |= {'Could not read the synced song list', 'Could not delete the downloaded song', 'Could not play the downloaded song', 'Delete this downloaded song from the SD card?', 'Downloaded song deleted'}
 SAME_AS_ENGLISH |= {'Connected'}
 SAME_AS_ENGLISH |= {'Sync Navidrome songs and artwork to the SD card now?', 'No regular songs in the synced library', 'Could not refresh this song page', 'Delete this downloaded DSD track from the SD card?', 'Could not delete the downloaded DSD file', 'Downloaded DSD track deleted', 'Download this DSD track first', 'Could not play the downloaded DSD file'}
+SAME_AS_ENGLISH |= {'A download is already queued', 'Artwork cache paused for download.', 'Artwork scan stopped; check SD card and server.',
+                    'Download paused; tap Download to resume', 'Download queued; pausing artwork cache', 'Navidrome busy · download starting',
+                    'Navidrome busy · updating SD library', 'Over 100k tracks; old index kept', 'Server rejected login or access'}
 SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Wi-Fi', 'Wi-Fi MAC', 'Bluetooth', 'EQ', 'System', 'Display', 'Firmware', 'Model', 'Device', 'Status', 'Auto'}    # brand and technical words (Wi-Fi, Bluetooth, EQ); System in German and Polish, Display in Italian
 SAME_AS_ENGLISH |= {'Codec', 'Bitrate', 'Source'}    # Station Info: Codec in French, German and Italian, Bitrate in German and Italian, Source in French
 
@@ -80,7 +83,7 @@ def run(ctx):
                f'{k!r}: %d only in the track counts, once each; %s only in the Daily Mix templates, as often as the key has it')
     expect(sorted(pod_i18n.TEXT) == pod_i18n.KEYS and all(set(by) == set(LOC) for by in pod_i18n.TEXT.values()), 'every key has all 13 languages')
 
-    # 3. Our assets: tr_text keys, no English left but the brand names.
+    # 3. Our assets: tr_text keys, no English left except Navidrome's explicitly English-only page and brand names.
     used = set()
     for page in pod_pages.PAGES:
         tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', page.key + '.bin'), 'rb').read())
@@ -90,7 +93,10 @@ def run(ctx):
             if k is not None:
                 used.add(k)
                 if k not in pod_i18n.TEXT and k not in pod_i18n.STOCK: bad.append((w.name, k))
-            if t not in (None, '') and t not in pod_i18n.BRANDS and t not in pod_keyboard.LABELS: bad.append((w.name, t))
+            english_navidrome = page.key == 'm1plus_subsonic' and t in {
+                'Server', 'Songs', 'DSD Downloads', 'Connect to browse your music'}
+            if t not in (None, '') and t not in pod_i18n.BRANDS and t not in pod_keyboard.LABELS and not english_navidrome:
+                bad.append((w.name, t))
             expect(not (t and k), f'{page.key}:{w.name} does not carry both text and tr_text')
         expect(not bad, f'{page.key}: every text is a tr_text key of ours or the stock tables, or a brand name ({bad})')
         title = tree.find('label_title')
@@ -110,11 +116,12 @@ def run(ctx):
     keys_in_c = set(); plain = []
     for f, src in sources.items():
         for a in call_args(src, 'widget_set_text_utf8'):
-            for inner in call_args(a, 'TR'): a = a.replace(inner, '')       # a translated key inside is fine
+            for name in ('TR', 'SB_ENGLISH'):
+                for inner in call_args(a, name): a = a.replace(inner, '')   # the Navidrome page opts out explicitly
             for lit in literal.findall(a):
                 if lit not in ('', 'M1+ Music', 'iTunes', 'Deezer') and lit not in pod_keyboard.LABELS: plain.append((f, lit))
         for a in call_args(src, 'toast') + call_args(src, 'pod_toast'):
-            if literal.search(a) and not a.startswith('TR('): plain.append((f, a))
+            if literal.search(a) and not a.startswith(('TR(', 'SB_ENGLISH(')): plain.append((f, a))
         for name in ('TR', 'widget_set_tr_text'):
             for a in call_args(src, name):
                 keys_in_c.update(literal.findall(a))

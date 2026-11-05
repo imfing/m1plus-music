@@ -65,6 +65,13 @@ def ui_tests(ctx):
     ctx.expect(all(name in by_name for name in required) and 'sb_play' not in by_name and 'sb_download' not in by_name
                and 'sb_prev' not in by_name and 'sb_next' not in by_name,
                'Navidrome page has songs and DSD downloads with list/grid views and row actions')
+    ctx.expect(by_name['sb_connect_label'].get('text') == 'Server'
+               and by_name['sb_tracks_label'].get('text') == 'Songs'
+               and by_name['sb_dsd_label'].get('text') == 'DSD Downloads'
+               and by_name['sb_status'].get('text') == 'Connect to browse your music'
+               and all(by_name[name].get('tr_text') is None for name in
+                       ('sb_connect_label', 'sb_tracks_label', 'sb_dsd_label', 'sb_status')),
+               'Navidrome page labels remain English regardless of the device locale')
     ctx.expect(all(by_name[name].h >= 44 for name in ('sb_connect', 'sb_sync', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view', 'sb_row_play0', 'sb_row_download0')),
                'Navidrome touch controls meet the 44 px target height')
     ctx.expect(by_name['sb_row_play0'].x < by_name['sb_row_download0'].x
@@ -88,7 +95,7 @@ def login_tests(ctx):
     ctx.expect('sb_setup_defer_prompt(SB_SETUP_USER);' in src and 'sb_setup_defer_prompt(SB_SETUP_PASSWORD);' in src
                and 'if (++sbp.setup_tries < 40) return RET_REPEAT;' in src,
                'URL, username and password prompts chain after each prior keyboard closes')
-    ctx.expect('if (!text[0])' in src and 'pod_toast(TR("Enter a server password"))' in src,
+    ctx.expect('if (!text[0])' in src and 'pod_toast(SB_ENGLISH("Enter a server password"))' in src,
                'login rejects an empty password instead of saving credentials that cannot sync')
     ctx.expect('head.count + head.dsd_count > SB_SYNC_LIMIT' in src and 'sb_fixed_equal(head.server' in src
                and 'head.count + head.dsd_count' in src and 'SB_INDEX_MAGIC "SBIDX2' in src
@@ -107,9 +114,9 @@ def login_tests(ctx):
     ctx.expect('sb_set_active_tab(dsd_view);' in src and 'style:normal:bg_color' in src and 'pod_sb_download' in src,
                'the selected library tab is highlighted and its DSD glyph follows the accent')
     ctx.expect('sb_set_connected(1);' in src and 'sb_connected_dot' in src and '"#34C759"' in src
-               and 'TR(sbp.connected ? "Connected" : "Server")' in src,
+               and 'SB_ENGLISH(sbp.connected ? "Connected" : "Server")' in src,
                'the Server control shows a green connection dot and Connected label after a successful check')
-    ctx.expect('pod_confirm(TR("Sync Navidrome songs and artwork to the SD card now?"))' in src,
+    ctx.expect('pod_confirm(SB_ENGLISH("Sync Navidrome songs and artwork to the SD card now?"))' in src,
                'manual library sync asks before starting')
     ctx.expect('offset > count || (count && offset == count)' in src and 'if (n > 0)' in src
                and 'No regular songs in the synced library' in src,

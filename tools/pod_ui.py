@@ -938,16 +938,16 @@ def build_search_page(page):
 
 
 def build_subsonic_page(page):
-    """Navidrome songs and DSD downloads, with stock list/grid controls."""
+    """English-only Navidrome labels with stock list/grid controls."""
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
     styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
-    root.children.append(navbar(page.title))
+    root.children.append(navbar('Navidrome'))
     btn = Widget('button', 8, NAVBAR_H + 4, 112, 44, [('name', 'sb_connect'), ('enable', 'true')])
     btn.set('style', 'btn_tablerow_style')
     styled(btn, STATES, 'text_color', '#FFFFFF')
     styled(btn, STATES, 'font_size', '16')
     server_label = label('sb_connect_label', 8, 0, 82, 44, '', 14, '#FFFFFF', 'left')
-    server_label.set(*pod_i18n.text_prop('Server'))
+    server_label.set('text', 'Server')
     server_label.set('sensitive', 'false')
     dot = Widget('view', 97, 17, 10, 10, [('name', 'sb_connected_dot'), ('sensitive', 'false')])
     styled(dot, ('normal',), 'bg_color', '#8E8E93')
@@ -967,7 +967,7 @@ def build_subsonic_page(page):
         mark = Widget('view', 0, 41, width, 3, [('name', f'{name}_mark'), ('visible', 'false'), ('sensitive', 'false')])
         styled(mark, ('normal',), 'bg_color', '#EEEEEC')
         caption = label(f'{name}_label', 32, 0, width - 34, 44, '', 13, '#FFFFFF', 'left')
-        caption.set(*pod_i18n.text_prop(text))
+        caption.set('text', text)
         caption.set('style', 'btn_tablerow_style')
         caption.set('sensitive', 'false')
         btn.children.extend([caption, mark])
@@ -976,8 +976,16 @@ def build_subsonic_page(page):
     view_btn.children.append(Widget('image', 8, 8, 26, 26, [('name', 'sb_view_icon'), ('image', 'pod_nav_grid'), ('draw_type', 'icon'), ('sensitive', 'false')]))
     root.children.append(view_btn)
     status = label('sb_status', 12, NAVBAR_H + 96, 296, 22, '', 14, '#AAAAAA', 'left')
-    status.set(*pod_i18n.text_prop('Connect to browse your music'))
+    status.set('text', 'Connect to browse your music')
     root.children.append(status)
+    progress = Widget('view', 12, NAVBAR_H + 118, 296, 6,
+                      [('name', 'sb_download_progress'), ('visible', 'false'), ('sensitive', 'false')])
+    styled(progress, ('normal',), 'bg_color', '#333333')
+    fill = Widget('view', 0, 0, 1, 6,
+                  [('name', 'sb_download_fill'), ('visible', 'false'), ('sensitive', 'false')])
+    styled(fill, ('normal',), 'bg_color', '#EEEEEC')
+    progress.children.append(fill)
+    root.children.append(progress)
     lv = stock_list([], True, top=NAVBAR_H + 124)
     lv.h = 276
     lv.set('name', 'sb_listview')
