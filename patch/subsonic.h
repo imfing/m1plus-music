@@ -39,8 +39,8 @@ int sb_sync_query(char *out, unsigned cap, unsigned offset);
 int sb_track_filename(char *out, unsigned cap, const sb_song_t *song);
 
 /* Parse songs in one Subsonic JSON response (getAlbum, getPlaylist, search3,
- * getRandomSongs). Fields absent from a response remain empty/zero. Returns
- * count, or -1 for malformed/failed API responses. */
+ * getRandomSongs). Missing fields remain empty/zero; overlong display metadata
+ * is safely truncated. Returns count, or -1 for malformed/failed responses. */
 int sb_songs(const char *json, unsigned n, sb_song_t *out, int max);
 
 /* Runtime integration: opens a Subsonic browser in an already opened page window. */

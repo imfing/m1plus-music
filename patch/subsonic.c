@@ -92,6 +92,18 @@ static const char *sb_string(const char *p, const char *end, char *out, unsigned
     unsigned used = 0;
     if (p >= end || *p != '"') return 0;
     ++p;
+    if (!out || !cap) {
+        int escaped = 0;
+        for (; p < end; ++p) {
+            if (escaped)
+                escaped = 0;
+            else if (*p == '\\')
+                escaped = 1;
+            else if (*p == '"')
+                return p + 1;
+        }
+        return 0;
+    }
     while (p < end && *p != '"') {
         unsigned c = (unsigned char)*p++;
         int decoded = 0;
@@ -195,7 +207,31 @@ static const char *sb_object(const char *obj, const char *end, const char *key) 
     return 0;
 }
 
-static int sb_member(const char *obj, const char *end, const char *key, char *out, unsigned cap, unsigned *num) {
+static void sb_trim_utf8(char *out, unsigned cap) {
+    unsigned n, start, lead, need;
+    unsigned c;
+    if (!out || !cap) return;
+    n = sb_len(out);
+    if (n >= cap) n = cap - 1;
+    out[n] = 0;
+    if (!n) return;
+    start = n;
+    while (start && (((unsigned char)out[start - 1] & 0xc0u) == 0x80u)) --start;
+    if (start == n)
+        lead = n - 1;
+    else if (start)
+        lead = start - 1;
+    else {
+        out[0] = 0;
+        return;
+    }
+    c = (unsigned char)out[lead];
+    need = c < 0x80 ? 1 : c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : c >= 0xc0 ? 2 : 1;
+    if (need > n - lead) out[lead] = 0;
+}
+
+static int sb_member_mode(const char *obj, const char *end, const char *key, char *out, unsigned cap, unsigned *num,
+                          int truncate_text) {
     const char *p = sb_ws(obj, end);
     if (p >= end || *p != '{') return 0;
     ++p;
@@ -209,7 +245,10 @@ static int sb_member(const char *obj, const char *end, const char *key, char *ou
         if (sb_eq(name, sb_len(name), key)) {
             if (*p == '"') {
                 q = sb_string(p, end, out, cap);
-                if (!q) return -1;
+                if (!q) {
+                    if (!truncate_text || !out || !cap || !sb_string(p, end, (char *)0, 0)) return -1;
+                    sb_trim_utf8(out, cap);
+                }
                 return 1;
             }
             if (*p >= '0' && *p <= '9') {
@@ -235,6 +274,71 @@ static int sb_member(const char *obj, const char *end, const char *key, char *ou
             ++p;
         else if (p < end && *p != '}')
             return 0;
+    }
+    return 0;
+}
+
+static int sb_member(const char *obj, const char *end, const char *key, char *out, unsigned cap, unsigned *num) {
+    return sb_member_mode(obj, end, key, out, cap, num, 0);
+}
+
+static int sb_member_truncate(const char *obj, const char *end, const char *key, char *out, unsigned cap) {
+    return sb_member_mode(obj, end, key, out, cap, (unsigned *)0, 1);
+}
+
+/* Locate a songs array structurally so text inside a title cannot look like a JSON key. */
+static int sb_array_member(const char *obj, const char *end, const char *key, const char **array) {
+    const char *p = sb_ws(obj, end);
+    int found = 0;
+    *array = 0;
+    if (p >= end || *p != '{') return -1;
+    ++p;
+    for (;;) {
+        char name[48];
+        const char *q, *value;
+        p = sb_ws(p, end);
+        if (p >= end) return -1;
+        if (*p == '}') return found;
+        q = sb_string(p, end, name, sizeof name);
+        if (!q) return -1;
+        p = sb_ws(q, end);
+        if (p >= end || *p++ != ':') return -1;
+        value = sb_ws(p, end);
+        if (sb_eq(name, sb_len(name), key)) {
+            if (value >= end || *value != '[' || found) return -1;
+            *array = value + 1;
+            found = 1;
+        }
+        p = sb_skip(value, end);
+        if (!p) return -1;
+        p = sb_ws(p, end);
+        if (p >= end) return -1;
+        if (*p == ',') {
+            p = sb_ws(p + 1, end);
+            if (p >= end || *p == '}') return -1;
+        } else if (*p != '}')
+            return -1;
+    }
+}
+
+static int sb_song_array(const char *obj, const char *end, const char **container, const char **array) {
+    static const char *keys[] = {"searchResult3", "album", "randomSongs", "songsByGenre"};
+    const char *value;
+    int found;
+    unsigned i;
+    *container = 0;
+    *array = 0;
+    found = sb_array_member(obj, end, "song", array);
+    if (found != 0) {
+        *container = obj;
+        return found;
+    }
+    for (i = 0; i < sizeof keys / sizeof keys[0]; ++i) {
+        value = sb_object(obj, end, keys[i]);
+        if (!value) continue;
+        if (!sb_skip(value, end)) return -1;
+        *container = value;
+        return sb_array_member(value, end, "song", array);
     }
     return 0;
 }
@@ -320,10 +424,10 @@ static void sb_md5(const unsigned char *msg, unsigned n, unsigned char out[16]) 
 
 static int sb_auth(char *token, unsigned tcap, char *salt, unsigned scap, const char *password) {
     static const char hex[] = "0123456789abcdef";
-    unsigned char raw[8], digest[16], input[SB_TEXT + 8];
+    unsigned char raw[8], digest[16], input[SB_TEXT + 16];
     unsigned i, n = sb_len(password);
     int fd;
-    if (!token || tcap < 33 || !salt || scap < 17 || n >= SB_TEXT) return -1;
+    if (!token || tcap < 33 || !salt || scap < 17 || n >= SB_TEXT || n > sizeof input - 16) return -1;
     fd = open("/dev/urandom", O_RDONLY, 0);
     if (fd < 0) return -1;
     if (read(fd, raw, sizeof raw) != (int)sizeof raw) {
@@ -379,11 +483,21 @@ int sb_url(char *out, unsigned cap, const char *base, const char *method, const 
 }
 
 #define SB_SYNC_PAGE 64
-int sb_sync_query(char *out, unsigned cap, unsigned offset) {
+static int sb_sync_query_variant(char *out, unsigned cap, unsigned offset, unsigned variant) {
     int n;
     if (!out || !cap) return -1;
-    n = snprintf(out, cap, "&query=&songCount=%u&albumCount=0&artistCount=0&songOffset=%u", SB_SYNC_PAGE, offset);
+    if (variant == 1)
+        n = snprintf(out, cap, "&songCount=%u&albumCount=0&artistCount=0&songOffset=%u", SB_SYNC_PAGE, offset);
+    else if (variant == 2)
+        n = snprintf(out, cap, "&query=%%2A&songCount=%u&albumCount=0&artistCount=0&songOffset=%u", SB_SYNC_PAGE,
+                     offset);
+    else
+        n = snprintf(out, cap, "&query=&songCount=%u&albumCount=0&artistCount=0&songOffset=%u", SB_SYNC_PAGE, offset);
     return n < 0 || (unsigned)n >= cap ? -1 : n;
+}
+
+int sb_sync_query(char *out, unsigned cap, unsigned offset) {
+    return sb_sync_query_variant(out, cap, offset, 0);
 }
 
 int sb_track_filename(char *out, unsigned cap, const sb_song_t *song) {
@@ -409,63 +523,64 @@ int sb_track_filename(char *out, unsigned cap, const sb_song_t *song) {
     return (int)n;
 }
 
-static void sb_field(const char *obj, const char *end, const char *name, char *out, unsigned cap) {
-    (void)sb_member(obj, end, name, out, cap, (unsigned *)0);
+static int sb_field(const char *obj, const char *end, const char *name, char *out, unsigned cap) {
+    return sb_member_truncate(obj, end, name, out, cap);
 }
 
 static int sb_response(const char *json, unsigned n) {
     char status[16];
-    const char *end = json + n;
-    const char *p = sb_object(sb_ws(json, end), end, "subsonic-response");
-    if (!p) return 0;
+    const char *end, *root, *after, *p;
+    if (!json || !n) return 0;
+    end = json + n;
+    root = sb_ws(json, end);
+    if (root >= end || *root != '{') return 0;
+    after = sb_skip(root, end);
+    if (!after || sb_ws(after, end) != end) return 0;
+    p = sb_object(root, end, "subsonic-response");
+    if (!p || !sb_skip(p, end)) return 0;
     if (sb_member(p, end, "status", status, sizeof status, (unsigned *)0) <= 0) return 0;
     return sb_eq(status, sb_len(status), "ok");
 }
 
 int sb_songs(const char *json, unsigned n, sb_song_t *out, int max) {
-    const char *end, *p, *arr = 0, *arrend;
+    const char *end, *p, *arr, *close, *response, *container;
     unsigned depth = 0;
-    int count = 0;
+    int count = 0, closed = 0, array_state;
     if (!json || !out || max <= 0 || n > 1024 * 1024 || !sb_response(json, n)) return -1;
     end = json + n;
-    /* Locate the first songs array emitted by search3, getAlbum, getPlaylist or getRandomSongs. */
-    for (p = json; p + 7 < end; ++p)
-        if (*p == '"' && p[1] == 's' && p[2] == 'o' && p[3] == 'n' && p[4] == 'g' &&
-            (p[5] == '"' || (p[5] == 's' && p[6] == '"'))) {
-            const char *q = sb_ws(p + (p[5] == 's' ? 7 : 6), end);
-            if (q < end && *q == ':') {
-                q = sb_ws(q + 1, end);
-                if (q < end && *q == '[') {
-                    arr = q + 1;
-                    break;
-                }
-            }
-        }
-    if (!arr) return 0;
+    response = sb_object(sb_ws(json, end), end, "subsonic-response");
+    if (!response || !sb_skip(response, end)) return -1;
+    array_state = sb_song_array(response, end, &container, &arr);
+    if (!container || array_state < 0) return -1;
+    if (!array_state) return 0;
+    close = sb_skip(arr - 1, end);
+    if (!close) return -1;
+    --close;
     p = arr;
-    while (p < end && count < max) {
-        const char *q;
-        p = sb_ws(p, end);
-        if (p >= end || *p == ']') break;
-        if (*p == ',') {
-            ++p;
-            continue;
+    while (p <= close && count < max) {
+        const char *q, *arrend;
+        p = sb_ws(p, close + 1);
+        if (p == close && *p == ']') {
+            closed = 1;
+            break;
         }
+        if (p >= close) return -1;
         if (*p != '{' || depth++ > (unsigned)max) return -1;
-        q = sb_skip(p, end);
-        if (!q) return -1;
+        q = sb_skip(p, close + 1);
+        if (!q || q > close) return -1;
         arrend = q;
         {
             sb_song_t *s = out + count;
             unsigned v = 0;
             unsigned i;
             for (i = 0; i < sizeof(*s); ++i) ((unsigned char *)s)[i] = 0;
-            sb_field(p, arrend, "id", s->id, sizeof s->id);
-            sb_field(p, arrend, "title", s->title, sizeof s->title);
-            sb_field(p, arrend, "artist", s->artist, sizeof s->artist);
-            sb_field(p, arrend, "album", s->album, sizeof s->album);
-            sb_field(p, arrend, "coverArt", s->cover, sizeof s->cover);
-            sb_field(p, arrend, "suffix", s->suffix, sizeof s->suffix);
+            if (sb_member(p, arrend, "id", s->id, sizeof s->id, (unsigned *)0) < 0 ||
+                sb_field(p, arrend, "title", s->title, sizeof s->title) < 0 ||
+                sb_field(p, arrend, "artist", s->artist, sizeof s->artist) < 0 ||
+                sb_field(p, arrend, "album", s->album, sizeof s->album) < 0 ||
+                sb_field(p, arrend, "coverArt", s->cover, sizeof s->cover) < 0 ||
+                sb_field(p, arrend, "suffix", s->suffix, sizeof s->suffix) < 0)
+                return -1;
             (void)sb_member(p, arrend, "duration", (char *)0, 0, &v);
             s->duration = v;
             v = 0;
@@ -486,11 +601,23 @@ int sb_songs(const char *json, unsigned n, sb_song_t *out, int max) {
             v = 0;
             (void)sb_member(p, arrend, "bitDepth", (char *)0, 0, &v);
             s->bit_depth = v;
-            if (s->id[0]) ++count;
+            if (!s->id[0]) return -1;
+            ++count;
         }
-        p = q;
+        p = sb_ws(q, close + 1);
+        if (p == close && *p == ']') {
+            closed = 1;
+            break;
+        }
+        if (p >= close || *p != ',') return -1;
+        p = sb_ws(p + 1, close + 1);
+        if (p >= close || *p == ']') return -1;
     }
-    return count;
+    if (!closed) {
+        p = sb_ws(p, close + 1);
+        if (p == close && *p == ']') closed = 1;
+    }
+    return closed ? count : -1;
 }
 
 /* Navidrome integration uses the stock MPlayer queue path. The player receives
@@ -512,6 +639,7 @@ int sb_songs(const char *json, unsigned n, sb_song_t *out, int max) {
 #define SB_VIEW_TMP "/mnt/mmc/.m1plus/navidrome-view.tmp"
 #define SB_INDEX_MAGIC "SBIDX2\0\0"
 #define SB_SYNC_LIMIT 100000
+#define SB_SYNC_RESERVE_KB 2048u
 #define SB_ROW_H 52
 #define SB_GRID_PITCH 210
 #define SB_GRID_COVER 136
@@ -520,6 +648,19 @@ int sb_songs(const char *json, unsigned n, sb_song_t *out, int max) {
 #define SB_CA "/etc/m1plus-cacert.pem"
 #define SB_VISIBLE 6
 enum { SB_VIEW_TRACKS, SB_VIEW_SEARCH, SB_VIEW_DSD };
+enum {
+    SB_SYNC_ERR_NONE,
+    SB_SYNC_ERR_CARD,
+    SB_SYNC_ERR_SPACE,
+    SB_SYNC_ERR_STORAGE,
+    SB_SYNC_ERR_NETWORK,
+    SB_SYNC_ERR_REQUEST,
+    SB_SYNC_ERR_AUTH,
+    SB_SYNC_ERR_SERVER,
+    SB_SYNC_ERR_RESPONSE,
+    SB_SYNC_ERR_EMPTY,
+    SB_SYNC_ERR_MEMORY
+};
 enum { SB_SETUP_USER = 1, SB_SETUP_PASSWORD = 2 };
 typedef struct {
     char data[SB_RESPONSE_MAX];
@@ -545,7 +686,7 @@ static struct {
     void *tab_label[2], *tab_mark[2];
     unsigned timer;
     unsigned stream_timer;
-    volatile int busy, done, result, mode, sync_count, connection_lost, sync_limit_hit;
+    volatile int busy, done, result, mode, sync_count, connection_lost, sync_limit_hit, sync_error;
     volatile int http_status;
     volatile int library_refreshing, library_refresh_result;
     int sync_shown, setup_prompt, setup_tries;
@@ -558,7 +699,7 @@ static struct {
     long long download_offset;
     int download_status_kind, download_status_value, download_anim_x, download_anim_dir, download_anim_ticks;
     volatile int art_syncing, art_count, art_total, art_cached, art_failed, art_pause_request;
-    int pending_download_at, download_song_valid, stream_queue_active;
+    int pending_download_at, download_song_valid, stream_queue_active, art_pause_for_playback, curl_ready;
     unsigned stream_grace_until;
     sb_song_t download_song;
     sb_song_t songs[SB_MAX];
@@ -717,9 +858,24 @@ static int sb_download_xfer(void *ctx, long long total, long long now, long long
     return 0;
 }
 
+static int sb_curl_init(void) {
+    if (sbp.curl_ready) return 1;
+    if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) return 0;
+    sbp.curl_ready = 1;
+    return 1;
+}
+
+#define SB_CURL_SETOPT(option, value)                                                                                \
+    do {                                                                                                             \
+        if (curl_easy_setopt(h, option, value) != CURLE_OK) {                                                        \
+            rc = CURLE_FAILED_INIT;                                                                                 \
+            goto cleanup;                                                                                           \
+        }                                                                                                            \
+    } while (0)
+
 static int sb_http_timeout_range(const char *url, sb_sink_t *sink, long timeout, const char *range) {
     void *h = curl_easy_init();
-    int rc;
+    int rc = CURLE_FAILED_INIT;
     long status = 0;
     char *content_type = (char *)0;
     long long content_length = -1;
@@ -727,30 +883,33 @@ static int sb_http_timeout_range(const char *url, sb_sink_t *sink, long timeout,
         if (sink) sink->curl_result = -1, sink->http_status = 0;
         return -1;
     }
-    curl_easy_setopt(h, CURLOPT_URL, url);
-    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, sb_write);
-    curl_easy_setopt(h, CURLOPT_WRITEDATA, sink);
-    curl_easy_setopt(h, CURLOPT_HEADERFUNCTION, sb_header);
-    curl_easy_setopt(h, CURLOPT_HEADERDATA, sink);
-    curl_easy_setopt(h, CURLOPT_FAILONERROR, 1L);
-    curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT, 12L);
-    curl_easy_setopt(h, CURLOPT_TIMEOUT, timeout);
-    curl_easy_setopt(h, CURLOPT_LOW_SPEED_LIMIT, 512L);
-    curl_easy_setopt(h, CURLOPT_LOW_SPEED_TIME, timeout > 0 && timeout < 45L ? timeout / 2L : 45L);
-    curl_easy_setopt(h, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(h, CURLOPT_XFERINFOFUNCTION, sb_download_xfer);
-    curl_easy_setopt(h, CURLOPT_XFERINFODATA, sink);
-    curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(h, CURLOPT_MAXREDIRS, 5L);
-    curl_easy_setopt(h, CURLOPT_REDIR_PROTOCOLS, sb_https(url) ? CURLPROTO_HTTPS : CURLPROTO_HTTP_HTTPS);
-    curl_easy_setopt(h, CURLOPT_PROTOCOLS, CURLPROTO_HTTP_HTTPS);
-    if (range && *range) curl_easy_setopt(h, CURLOPT_RANGE, range);
-    if (sb_https(url)) curl_easy_setopt(h, CURLOPT_CAINFO, SB_CA);
+    SB_CURL_SETOPT(CURLOPT_URL, url);
+    SB_CURL_SETOPT(CURLOPT_WRITEFUNCTION, sb_write);
+    SB_CURL_SETOPT(CURLOPT_WRITEDATA, sink);
+    SB_CURL_SETOPT(CURLOPT_HEADERFUNCTION, sb_header);
+    SB_CURL_SETOPT(CURLOPT_HEADERDATA, sink);
+    SB_CURL_SETOPT(CURLOPT_FAILONERROR, 1L);
+    SB_CURL_SETOPT(CURLOPT_CONNECTTIMEOUT, 12L);
+    SB_CURL_SETOPT(CURLOPT_TIMEOUT, timeout);
+    SB_CURL_SETOPT(CURLOPT_LOW_SPEED_LIMIT, 512L);
+    SB_CURL_SETOPT(CURLOPT_LOW_SPEED_TIME, timeout > 0 && timeout < 45L ? timeout / 2L : 45L);
+    SB_CURL_SETOPT(CURLOPT_NOPROGRESS, 0L);
+    SB_CURL_SETOPT(CURLOPT_XFERINFOFUNCTION, sb_download_xfer);
+    SB_CURL_SETOPT(CURLOPT_XFERINFODATA, sink);
+    SB_CURL_SETOPT(CURLOPT_NOSIGNAL, 1L);
+    SB_CURL_SETOPT(CURLOPT_FOLLOWLOCATION, 1L);
+    SB_CURL_SETOPT(CURLOPT_MAXREDIRS, 5L);
+    SB_CURL_SETOPT(CURLOPT_REDIR_PROTOCOLS, sb_https(url) ? CURLPROTO_HTTPS : CURLPROTO_HTTP_HTTPS);
+    SB_CURL_SETOPT(CURLOPT_PROTOCOLS, CURLPROTO_HTTP_HTTPS);
+    SB_CURL_SETOPT(CURLOPT_CAINFO, SB_CA);
+    SB_CURL_SETOPT(CURLOPT_SSL_VERIFYPEER, 1L);
+    SB_CURL_SETOPT(CURLOPT_SSL_VERIFYHOST, 2L);
+    if (range && *range) SB_CURL_SETOPT(CURLOPT_RANGE, range);
     rc = curl_easy_perform(h);
-    curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_getinfo(h, CURLINFO_CONTENT_TYPE, &content_type);
-    curl_easy_getinfo(h, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &content_length);
+cleanup:
+    if (curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status) != CURLE_OK) status = 0;
+    if (curl_easy_getinfo(h, CURLINFO_CONTENT_TYPE, &content_type) != CURLE_OK) content_type = (char *)0;
+    if (curl_easy_getinfo(h, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &content_length) != CURLE_OK) content_length = -1;
     if (sink) {
         unsigned i;
         sink->curl_result = rc;
@@ -770,6 +929,8 @@ static int sb_http_timeout_range(const char *url, sb_sink_t *sink, long timeout,
         sbp.connection_lost = 1;
     return rc == 0 ? 0 : -1;
 }
+
+#undef SB_CURL_SETOPT
 
 static int sb_http_timeout(const char *url, sb_sink_t *sink, long timeout) {
     return sb_http_timeout_range(url, sink, timeout, (const char *)0);
@@ -870,30 +1031,91 @@ static void sb_song_copy(sb_song_t *dst, const sb_song_t *src) {
     for (i = 0; i < sizeof *dst; ++i) ((unsigned char *)dst)[i] = ((const unsigned char *)src)[i];
 }
 
+static int sb_sync_fetch_page(sb_sink_t *sink, unsigned offset) {
+    char url[SB_URL], extra[128];
+    unsigned variant;
+    int n, saw_body = 0;
+    /* Servers differ on the empty search query; the final form is Navidrome's
+     * documented trailing-wildcard equivalent for older server versions. */
+    for (variant = 0; variant < 3; ++variant) {
+        int k;
+        memset(sink, 0, sizeof *sink);
+        sink->fd = -1;
+        k = variant ? sb_sync_query_variant(extra, sizeof extra, offset, variant)
+                    : sb_sync_query(extra, sizeof extra, offset);
+        if (k < 0 || sb_url(url, sizeof url, sbp.base, "search3", 0, sbp.user, sbp.password, extra)) {
+            sbp.sync_error = SB_SYNC_ERR_REQUEST;
+            return -1;
+        }
+        if (sb_http(url, sink)) {
+            int status = sb_atomic_load(&sbp.http_status);
+            sbp.sync_error = status == 401 || status == 403 ? SB_SYNC_ERR_AUTH
+                             : status >= 400                 ? SB_SYNC_ERR_SERVER
+                             : sink->curl_result == CURLE_WRITE_ERROR ? SB_SYNC_ERR_RESPONSE
+                                                                     : SB_SYNC_ERR_NETWORK;
+            return -1;
+        }
+        if (sink->used) saw_body = 1;
+        n = sb_songs(sink->data, sink->used, sbp.songs, SB_MAX);
+        if (n >= 0) return n;
+    }
+    sbp.sync_error = saw_body ? SB_SYNC_ERR_RESPONSE : SB_SYNC_ERR_EMPTY;
+    return -1;
+}
+
 static int sb_sync_library(sb_sink_t *sink) {
     sb_index_head_t head;
-    char url[SB_URL], extra[128];
-    sb_song_t dsd[SB_MAX];
+    sb_song_t *dsd = 0;
     unsigned offset = 0, regular = 0, dsd_count = 0, free_kb = 0, i;
-    int fd = -1, dfd = -1, rc = -1, n, k;
-    if (!pod_card_mounted() || !pn_free_kb("/mnt/mmc", &free_kb) || free_kb < 32768) return -1;
+    unsigned page_kb = 0;
+    int fd = -1, dfd = -1, rc = -1, n;
+    sbp.sync_error = SB_SYNC_ERR_NONE;
+    if (!pod_card_mounted()) {
+        sbp.sync_error = SB_SYNC_ERR_CARD;
+        return -1;
+    }
+    if (!pn_free_kb("/mnt/mmc", &free_kb)) {
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
+        return -1;
+    }
+    if (free_kb < SB_SYNC_RESERVE_KB) {
+        sbp.sync_error = SB_SYNC_ERR_SPACE;
+        return -1;
+    }
+    dsd = (sb_song_t *)calloc(SB_MAX, sizeof *dsd);
+    if (!dsd) {
+        sbp.sync_error = SB_SYNC_ERR_MEMORY;
+        return -1;
+    }
     mkdir(CARD_DIR, 0755);
     fd = open(SB_INDEX_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     dfd = open(SB_DSD_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0 || dfd < 0) goto done;
+    if (fd < 0 || dfd < 0) {
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
+        goto done;
+    }
     memset(&head, 0, sizeof head);
     memcpy(head.magic, SB_INDEX_MAGIC, sizeof head.magic);
     memcpy(head.server, sbp.base, sizeof head.server);
     memcpy(head.user, sbp.user, sizeof head.user);
-    if (!sb_write_all(fd, &head, sizeof head)) goto done;
+    if (!sb_write_all(fd, &head, sizeof head)) {
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
+        goto done;
+    }
     for (;;) {
-        if (!pod_card_mounted()) goto done;
-        memset(sink, 0, sizeof *sink);
-        sink->fd = -1;
-        k = sb_sync_query(extra, sizeof extra, offset);
-        if (k < 0 || sb_url(url, sizeof url, sbp.base, "search3", 0, sbp.user, sbp.password, extra)) goto done;
-        if (sb_http(url, sink)) goto done;
-        n = sb_songs(sink->data, sink->used, sbp.songs, SB_MAX);
+        if (!pod_card_mounted()) {
+            sbp.sync_error = SB_SYNC_ERR_CARD;
+            goto done;
+        }
+        if (!pn_free_kb("/mnt/mmc", &free_kb)) {
+            sbp.sync_error = SB_SYNC_ERR_STORAGE;
+            goto done;
+        }
+        if (free_kb < SB_SYNC_RESERVE_KB) {
+            sbp.sync_error = SB_SYNC_ERR_SPACE;
+            goto done;
+        }
+        n = sb_sync_fetch_page(sink, offset);
         if (n < 0) goto done;
         if (!n) {
             rc = 0;
@@ -903,13 +1125,25 @@ static int sb_sync_library(sb_sink_t *sink) {
             sbp.sync_limit_hit = 1;
             goto done;
         }
+        page_kb = ((unsigned)n * (unsigned)sizeof(sb_song_t) + 1023u) >> 10;
+        if (!pn_free_kb("/mnt/mmc", &free_kb)) {
+            sbp.sync_error = SB_SYNC_ERR_STORAGE;
+            goto done;
+        }
+        if (free_kb < SB_SYNC_RESERVE_KB + page_kb) {
+            sbp.sync_error = SB_SYNC_ERR_SPACE;
+            goto done;
+        }
         {
             unsigned ndsd = 0, nregular = 0;
             for (i = 0; i < (unsigned)n; ++i) {
                 if (sb_is_dsd(sbp.songs[i].suffix)) sb_song_copy(&dsd[ndsd++], &sbp.songs[i]);
                 else sb_song_copy(&sbp.songs[nregular++], &sbp.songs[i]);
             }
-            if (!sb_write_song_records(fd, sbp.songs, nregular) || !sb_write_song_records(dfd, dsd, ndsd)) goto done;
+            if (!sb_write_song_records(fd, sbp.songs, nregular) || !sb_write_song_records(dfd, dsd, ndsd)) {
+                sbp.sync_error = SB_SYNC_ERR_STORAGE;
+                goto done;
+            }
             regular += nregular;
             dsd_count += ndsd;
         }
@@ -919,43 +1153,79 @@ static int sb_sync_library(sb_sink_t *sink) {
             rc = 0;
             break;
         }
-        if (!pn_free_kb("/mnt/mmc", &free_kb) || free_kb < 32768) goto done;
     }
     head.count = regular;
     head.dsd_count = dsd_count;
-    if (!pod_card_mounted() || lseek(fd, 0, 0) < 0 || !sb_write_all(fd, &head, sizeof head) || fsync(dfd) ||
-        lseek(dfd, 0, 0) < 0 || lseek(fd, 0, 2) < 0)
+    if (!pod_card_mounted()) {
+        sbp.sync_error = SB_SYNC_ERR_CARD;
         goto done;
+    }
+    {
+        unsigned copy_kb = (dsd_count * (unsigned)sizeof(sb_song_t) + 1023u) >> 10;
+        if (!pn_free_kb("/mnt/mmc", &free_kb)) {
+            sbp.sync_error = SB_SYNC_ERR_STORAGE;
+            goto done;
+        }
+        if (free_kb < SB_SYNC_RESERVE_KB + copy_kb) {
+            sbp.sync_error = SB_SYNC_ERR_SPACE;
+            goto done;
+        }
+    }
+    if (lseek(fd, 0, 0) < 0 || !sb_write_all(fd, &head, sizeof head) || fsync(dfd) ||
+        lseek(dfd, 0, 0) < 0 || lseek(fd, 0, 2) < 0) {
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
+        goto done;
+    }
     {
         char copy[4096];
         int got;
         close(dfd);
         dfd = open(SB_DSD_TMP, O_RDONLY, 0);
-        if (dfd < 0) goto done;
+        if (dfd < 0) {
+            sbp.sync_error = SB_SYNC_ERR_STORAGE;
+            goto done;
+        }
         while ((got = read(dfd, copy, sizeof copy)) > 0)
-            if (!sb_write_all(fd, copy, (unsigned)got)) goto done;
-        if (got < 0 || fsync(fd)) goto done;
+            if (!sb_write_all(fd, copy, (unsigned)got)) {
+                sbp.sync_error = SB_SYNC_ERR_STORAGE;
+                goto done;
+            }
+        if (got < 0 || fsync(fd)) {
+            sbp.sync_error = SB_SYNC_ERR_STORAGE;
+            goto done;
+        }
     }
     close(dfd);
     dfd = -1;
     if (close(fd)) {
         fd = -1;
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
         goto done;
     }
     fd = -1;
-    if (!pod_card_mounted() || rename(SB_INDEX_TMP, SB_INDEX_FILE)) goto done;
+    if (!pod_card_mounted()) {
+        sbp.sync_error = SB_SYNC_ERR_CARD;
+        goto done;
+    }
+    if (rename(SB_INDEX_TMP, SB_INDEX_FILE)) {
+        sbp.sync_error = SB_SYNC_ERR_STORAGE;
+        goto done;
+    }
+    rc = 1; /* rename commits the new index; removable filesystems may reject directory fsync */
     unlink(SB_DSD_TMP);
     {
         int dir = open(CARD_DIR, O_RDONLY, 0);
-        if (dir < 0) goto done;
-        rc = fsync(dir) ? -1 : 1;
-        close(dir);
+        if (dir >= 0) {
+            (void)fsync(dir);
+            close(dir);
+        }
     }
 done:
     if (fd >= 0) close(fd);
     if (dfd >= 0) close(dfd);
     if (rc != 1) unlink(SB_INDEX_TMP);
     if (rc != 1) unlink(SB_DSD_TMP);
+    free(dsd);
     return rc == 1 ? (int)offset : -1;
 }
 
@@ -1041,7 +1311,11 @@ static void sb_set_connected(int connected) {
         widget_set_text_utf8(sbp.connect_label, SB_ENGLISH(sbp.connected ? "Connected" : "Server"));
 }
 
-static int sb_input_locked(void) { return (sbp.busy || sbp.done) && sbp.mode != 4; }
+static int sb_page_timer_missing(void) { return sbp.win && !sbp.timer; }
+
+static int sb_input_locked(void) {
+    return sb_page_timer_missing() || ((sbp.busy || sbp.done) && sbp.mode != 4);
+}
 
 static int sb_fetch_art(sb_sink_t *sink, const char *id) {
     char url[SB_URL], path[256], png[256], part[272], extra[32];
@@ -1127,7 +1401,16 @@ static int sb_download_file(const char *url, const char *part, const char *final
     fd = open(part, O_RDWR | O_CREAT, 0644);
     if (fd < 0) return -1;
     offset = lseek(fd, 0, 2);
-    if (offset < 0) goto done;
+    if (offset < 0) {
+        /* Stock lseek uses a 32-bit long. Restart an unseekable partial rather
+         * than appending a full response at an unknown offset. */
+        int oldfd = fd;
+        fd = -1;
+        if (close(oldfd) < 0) goto done;
+        fd = open(part, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) goto done;
+        offset = 0;
+    }
     sbp.download_offset = offset;
     sb_sink_prepare_file(sink, fd);
     if (offset > 0) {
@@ -1448,7 +1731,10 @@ static void *sb_worker(void *unused) {
     int rc = -1;
     (void)unused;
     sink = (sb_sink_t *)calloc(1, sizeof *sink);
-    if (!sink) goto finished;
+    if (!sink) {
+        if (sbp.mode == 3) sbp.sync_error = SB_SYNC_ERR_MEMORY;
+        goto finished;
+    }
     sink->fd = -1;
     if (sbp.mode == 8 && !sb_url(url, sizeof url, sbp.base, "ping", 0, sbp.user, sbp.password, 0) &&
         !sb_http(url, sink) && sb_response(sink->data, sink->used))
@@ -1497,6 +1783,7 @@ finished:
 
 static int sb_start(int mode) {
     unsigned long th = 0;
+    if (sb_page_timer_missing()) return -1;
     if (get_wifisignal() <= 0) {
         sb_set_connected(0);
         if (sbp.status) {
@@ -1506,12 +1793,14 @@ static int sb_start(int mode) {
         return -1;
     }
     if (sbp.busy || sbp.done || !sbp.user[0] || !sbp.password[0]) return -1;
+    if (!sb_curl_init()) return -1;
     sbp.mode = mode;
     sbp.connection_lost = 0;
     sb_atomic_store(&sbp.http_status, 0);
     if (mode == 3) {
         sbp.sync_count = sbp.sync_shown = 0;
         sbp.sync_limit_hit = 0;
+        sbp.sync_error = SB_SYNC_ERR_NONE;
     }
     if (mode == 4) {
         sbp.art_count = sbp.art_total = 0;
@@ -1545,7 +1834,6 @@ static int sb_start(int mode) {
     }
     sbp.done = 0;
     sbp.result = -1;
-    curl_global_init(CURL_GLOBAL_ALL); /* initialize libcurl on the UI thread before this worker */
     __sync_synchronize();
     sbp.busy = 1;
     if (pthread_create(&th, (void *)0, sb_worker, (void *)0) != 0) {
@@ -1873,7 +2161,7 @@ static int sb_view_click(void *ctx, void *e) {
 static int sb_sync_click(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (sbp.busy || sbp.done) {
+    if (sbp.busy || sbp.done || sb_page_timer_missing()) {
         sb_set_status(SB_ENGLISH("Wait for the current request to finish"));
         return RET_OK;
     }
@@ -1994,7 +2282,7 @@ static void sb_search_done(const char *text) {
     if (n >= sizeof sbp.query) n = sizeof sbp.query - 1;
     for (i = 0; i < n; ++i) sbp.query[i] = text[i];
     sbp.query[n] = 0;
-    if (sbp.busy || sbp.done) {
+    if (sbp.busy || sbp.done || sb_page_timer_missing()) {
         sb_set_status(SB_ENGLISH("A request is still running"));
         return;
     }
@@ -2070,7 +2358,7 @@ static void sb_config_done(const char *text) {
             if (!ok) unlink(SB_CONFIG_TMP);
             dir = ok ? open(CARD_DIR, O_RDONLY, 0) : -1;
             if (dir >= 0) {
-                ok = fsync(dir) == 0;
+                (void)fsync(dir);
                 close(dir);
             }
         }
@@ -2113,7 +2401,7 @@ static void sb_config_load(void) {
 static int sb_connect_click(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (sbp.busy || sbp.done) {
+    if (sbp.busy || sbp.done || sb_page_timer_missing()) {
         sb_set_status(SB_ENGLISH("Wait for the current request to finish"));
         return RET_OK;
     }
@@ -2123,7 +2411,7 @@ static int sb_connect_click(void *ctx, void *e) {
 static int sb_search_click(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (sbp.busy || sbp.done) {
+    if (sbp.busy || sbp.done || sb_page_timer_missing()) {
         sb_set_status(SB_ENGLISH("Wait for the current request to finish"));
         return RET_OK;
     }
@@ -2251,6 +2539,10 @@ static int sb_play_click(void *ctx, void *e) {
         memcpy(sbp.play_cover[i], covers[i], sizeof sbp.play_cover[i]);
     }
     free(queue_songs);
+    if (sbp.busy && sbp.mode == 4) {
+        sbp.art_pause_for_playback = 1;
+        sb_atomic_store(&sbp.art_pause_request, 1);
+    }
     mclLoadPlayList(q, play_at, 0);
     deque_destroy(q);
     for (i = 0; i < queued * 5; ++i) free(owned_fields[i]);
@@ -2288,6 +2580,10 @@ static int sb_row_download_click(void *ctx, void *e) {
     int at = (int)(long)ctx + sbp.row_data;
     char path[320];
     (void)e;
+    if (sb_page_timer_missing()) {
+        sb_set_status(SB_ENGLISH("Navidrome page timer unavailable. Close and reopen the page."));
+        return RET_OK;
+    }
     if (at < 0 || at >= sbp.count) {
         pod_toast(SB_ENGLISH("Select a song first"));
         return RET_OK;
@@ -2382,7 +2678,8 @@ static int sb_tick(const void *unused) {
                 sb_set_status(msg);
             }
         } else if (sbp.mode == 3) {
-            if (sbp.result >= 0 && sb_index_load(0, 0) >= 0) {
+            int loaded = sbp.result >= 0 ? sb_index_load(0, 0) : -1;
+            if (sbp.result >= 0 && loaded >= 0) {
                 sbp.row_data = 0;
                 sbp.dsd_view = 0;
                 widget_set_prop_int(sbp.scroll, "yoffset", 0);
@@ -2393,15 +2690,41 @@ static int sb_tick(const void *unused) {
                     sb_set_status("Navidrome library is empty.");
                 else {
                     sb_set_status("Songs synced. Artwork will cache in the background.");
-                    if (sb_start(4) == 0)
+                    if (mclGetPlayStatus() == 2 || mclGetPlayStatus() == 3) {
+                        sbp.art_pause_for_playback = 1;
+                        sb_set_status("Songs synced. Artwork caching waits until playback stops.");
+                    } else if (sb_start(4) == 0)
                         sb_set_status("Songs ready · caching artwork to SD…");
                     else
                         sb_set_status("Songs synced. Wi-Fi is needed to cache artwork.");
                 }
             } else if (sbp.sync_limit_hit)
                 sb_set_status(SB_ENGLISH("Over 100k tracks; old index kept"));
+            else if (loaded < 0 && sbp.result >= 0)
+                sb_set_status(SB_ENGLISH("Synced index could not be read from SD card."));
+            else if (sbp.sync_error == SB_SYNC_ERR_CARD)
+                sb_set_status(SB_ENGLISH("SD card is unavailable. Insert it and retry."));
+            else if (sbp.sync_error == SB_SYNC_ERR_SPACE)
+                sb_set_status(SB_ENGLISH("SD card space too low for the library index."));
+            else if (sbp.sync_error == SB_SYNC_ERR_STORAGE)
+                sb_set_status(SB_ENGLISH("SD card write failed. Check card and free space."));
+            else if (sbp.sync_error == SB_SYNC_ERR_NETWORK) {
+                sb_set_connected(0);
+                sb_set_status(SB_ENGLISH("Wi-Fi or server connection failed during sync."));
+            } else if (sbp.sync_error == SB_SYNC_ERR_REQUEST)
+                sb_set_status(SB_ENGLISH("Could not prepare the library sync request."));
+            else if (sbp.sync_error == SB_SYNC_ERR_AUTH)
+                sb_set_status(SB_ENGLISH("Server rejected the library sync request."));
+            else if (sbp.sync_error == SB_SYNC_ERR_SERVER)
+                sb_set_status(SB_ENGLISH("Server returned an HTTP error during sync."));
+            else if (sbp.sync_error == SB_SYNC_ERR_RESPONSE)
+                sb_set_status(SB_ENGLISH("Server returned unreadable library data."));
+            else if (sbp.sync_error == SB_SYNC_ERR_EMPTY)
+                sb_set_status(SB_ENGLISH("Server returned an empty library response."));
+            else if (sbp.sync_error == SB_SYNC_ERR_MEMORY)
+                sb_set_status(SB_ENGLISH("Not enough memory to sync the library."));
             else
-                sb_set_status("Library sync failed; check Wi-Fi, server and SD space.");
+                sb_set_status(SB_ENGLISH("Library sync failed. Check server and SD card."));
         } else if (sbp.mode == 4) {
             sbp.art_syncing = 0;
             sb_render_rows();
@@ -2411,7 +2734,9 @@ static int sb_tick(const void *unused) {
                 char msg[80];
                 snprintf(msg, sizeof msg, SB_ENGLISH("Artwork: %d saved, %d failed"), sbp.art_cached, sbp.art_failed);
                 sb_set_status(msg);
-            } else if (sbp.result == 2)
+            } else if (sbp.result == 2 && sbp.art_pause_for_playback)
+                sb_set_status(SB_ENGLISH("Artwork cache paused during playback; it will resume after playback stops."));
+            else if (sbp.result == 2)
                 sb_set_status(SB_ENGLISH("Artwork cache paused for download."));
             else
                 sb_set_status(sbp.connection_lost ? "Artwork caching paused; check server connection."
@@ -2456,6 +2781,13 @@ static int sb_tick(const void *unused) {
         if (sbp.ping_after_work && !sbp.busy && sbp.mode != 8) {
             sbp.ping_after_work = 0;
             if (sb_start(8) == 0) sb_set_status("Checking Navidrome server…");
+        }
+    }
+    if (sbp.art_pause_for_playback && sbp.win && sbp.connected && !sbp.busy && !sbp.done &&
+        mclGetPlayStatus() == 1) {
+        if (sb_start(4) == 0) {
+            sbp.art_pause_for_playback = 0;
+            sb_set_status(SB_ENGLISH("Playback stopped. Resuming artwork cache…"));
         }
     }
     return RET_REPEAT;
@@ -2555,6 +2887,10 @@ void sb_page_open(void *win) {
     }
     sbp.timer = timer_add(sb_tick, 0, 100);
     widget_on(win, EVT_DESTROY, sb_destroy_event, 0);
+    if (!sbp.timer) {
+        sb_set_status(SB_ENGLISH("Navidrome page timer unavailable. Close and reopen the page."));
+        return;
+    }
     if (sbp.user[0] && (sbp.busy || sbp.done)) {
         if (sbp.mode != 8) sbp.ping_after_work = 1;
         if (sbp.mode == 3)

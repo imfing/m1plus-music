@@ -36,6 +36,8 @@
 #define CURLOPT_ACCEPT_ENCODING 10102
 #define CURLOPT_FAILONERROR \
     45 /* an HTTP code of 400 or more fails the request (CURLE_HTTP_RETURNED_ERROR, 22) instead of handing over the error page */
+#define CURLOPT_SSL_VERIFYPEER 64
+#define CURLOPT_SSL_VERIFYHOST 81
 #define CURLOPT_NOBODY 44 /* long 1: a header-only request (HEAD) */
 #define CURLPROTO_HTTP 1
 #define CURLPROTO_HTTPS 2
@@ -62,6 +64,8 @@
 #define CURLINFO_STARTTRANSFER_TIME_T 0x600036
 #define CURLINFO_APPCONNECT_TIME_T 0x600038
 #define CURL_GLOBAL_ALL 3
+#define CURLE_OK 0
+#define CURLE_FAILED_INIT 2
 #define CURLINFO_TEXT 0
 #define CURLINFO_HEADER_IN 1
 /* curl_easy_perform results the refresh tells apart */

@@ -27,6 +27,14 @@ def parser_tests(ctx):
            and field(SB_ID + SB_TEXT * 2, SB_TEXT) == 'An Album', 'Subsonic song title, artist, and album parse as UTF-8')
     off = SB_ID + SB_TEXT * 3 + SB_ID + 12
     expect(struct.unpack_from('<III', raw, off) == (245, 7, 2), 'duration, track and disc numbers parse')
+    long_body = json.dumps({"subsonic-response": {"status": "ok", "searchResult3": {"song": [
+        {"id": "long-1", "title": "音" * 100, "artist": "A", "album": "B"}]}}}, ensure_ascii=False).encode()
+    m.u.mem_write(src, long_body)
+    n = m.call(PSYMS['sb_songs'], a0=src, a1=len(long_body), a2=dst, a3=1)
+    raw = bytes(m.u.mem_read(dst, SONG_SIZE))
+    title = raw[SB_ID:SB_ID + SB_TEXT].split(b'\0')[0].decode('utf-8')
+    expect(n == 1 and 0 < len(title.encode('utf-8')) < SB_TEXT,
+           'long UTF-8 metadata is safely truncated without rejecting the whole library page')
     album_song = b'{"subsonic-response":{"status":"ok","album":{"song":[{"id":"dsd-1","title":"DSD Song","suffix":"dsf"}]}}}'
     m.u.mem_write(src, album_song)
     n = m.call(PSYMS['sb_songs'], a0=src, a1=len(album_song), a2=dst, a3=1)
@@ -46,6 +54,15 @@ def parser_tests(ctx):
     text = bytes(m.u.mem_read(query, n + 1)).split(b'\0')[0].decode()
     expect(n > 0 and text == '&query=&songCount=64&albumCount=0&artistCount=0&songOffset=128',
            'full-library sync pages use the Subsonic songOffset parameter')
+    src = open(os.path.join(ROOT, 'patch', 'subsonic.c'), encoding='utf-8').read()
+    expect('variant == 1' in src and 'variant == 2' in src and 'query=%%2A' in src
+           and 'SB_SYNC_ERR_EMPTY' in src,
+           'sync retries compatible empty-query forms and distinguishes a blank server response')
+    sync = src[src.index('static int sb_sync_library'):src.index('static unsigned sb_art_hash')]
+    expect('#define SB_SYNC_RESERVE_KB 2048u' in src and 'free_kb < 32768' not in sync
+           and 'SB_SYNC_RESERVE_KB + page_kb' in sync and 'SB_SYNC_RESERVE_KB + copy_kb' in sync
+           and 'unlink(SB_INDEX_TMP)' in sync and 'rename(SB_INDEX_TMP, SB_INDEX_FILE)' in sync,
+           'library sync reserves modest free space, checks index growth, and preserves the previous index on failure')
 
 
 def ui_tests(ctx):

@@ -32,8 +32,9 @@ have no per-file size or total-time cap, and keep at least 32 MiB free on the ca
 download, the page shows a percentage or animated progress bar and marks Navidrome busy; other
 Navidrome actions wait for the transfer. Interrupted transfers keep a partial file and resume with
 HTTP range requests when the server supports them; resumed responses must start at the saved byte
-offset and match the declared range length. A transfer aborts if throughput stays below 512 bytes
-per second for 45 seconds. After a DSD download
+offset and match the declared range length. If the stock 32-bit `lseek` cannot represent a partial
+file's size, the transfer restarts from byte zero rather than appending at an unknown offset.
+Downloads abort if throughput stays below 512 bytes per second for 45 seconds. After a DSD download
 succeeds, the stock folder scanner adds `/mnt/mmc/Navidrome` to the existing SD music library in
 the background without rebuilding the rest of the library. If artwork caching is running, a
 requested download pauses artwork caching and starts after the current image request stops.
@@ -56,14 +57,21 @@ compatibility and audible bit-perfect output still need device validation.
 The metadata sync uses Subsonic `search3` with an empty query and paged offsets (Navidrome's
 supported fast-sync path, also used by offline-first clients such as
 [Symfonium](https://docs.symfonium.app/wiki/providers/subsonic-opensubsonic-media-provider-configuration/)).
-It writes a temporary index before replacing the prior one. After the index is available, artwork
+If an empty-query response is unreadable, sync retries without the query and then with Navidrome's
+trailing-wildcard empty-query form. Long display metadata is truncated safely instead of aborting a
+whole page. Library indexing keeps a 2 MiB free-space reserve and checks each page's actual metadata
+size;
+artwork caching has its separate 34 MiB reserve. A failed or short-on-space sync removes its
+temporary files and leaves the previous index in place. It writes a temporary index before
+replacing the prior one. After the index is available, artwork
 fetching runs in the background with visible progress, JPEG and PNG signature checks, a shorter
 per-image timeout, a 24-entry recent-failure dedupe, a 2 MiB per-image cap and a 34 MiB free-space
-reserve. A download request can pause this worker between image requests or abort the current fetch.
-The list remains
-scrollable and playable during artwork caching; missing/failed artwork does not invalidate the music
-index. Rendering loads full-size cached covers only for the active list or grid layout. A server
-check requires Wi-Fi; transport failures clear the green status indicator.
+reserve. Starting Navidrome playback pauses this worker and aborts its current image fetch; artwork
+caching resumes after playback stops once the Navidrome page is open and connected. A download
+request can also pause this worker between image requests or abort the current fetch. The list
+remains scrollable and playable during artwork caching; missing/failed artwork does not invalidate
+the music index. Rendering loads full-size cached covers only for the active list or grid layout. A
+server check requires Wi-Fi; transport failures clear the green status indicator.
 
 The feature changes only the app payload and UI assets. It does not patch startup, bootloader or
 recovery code. The generated update remains limited to the repo's existing kernel/rootfs update
