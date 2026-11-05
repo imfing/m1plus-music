@@ -962,7 +962,33 @@ _MONTHS = {   # locale -> the twelve month texts
     'uk_UK': [f'%d {x}' for x in ('січ.', 'лют.', 'бер.', 'квіт.', 'трав.', 'черв.', 'лип.', 'серп.', 'вер.', 'жовт.', 'лист.', 'груд.')],
 }
 TEXT.update(_t(k, *[_MONTHS[loc][i] for loc in _L]) for i, k in enumerate(_MONTH_KEYS))
+# Navidrome labels and status text use English in every locale; keep each one in the translation audit.
+_SB_ENGLISH = (
+    'Navidrome', 'Server', 'Songs', 'DSD Downloads', 'Untitled',
+    'Connect to browse your music', 'Server URL', 'Username', 'Server password', 'Enter a valid username',
+    'Enter a server password', 'Could not open login field',
+    'Enter a valid HTTP or HTTPS server URL', 'Password cannot contain |', 'Server settings are too long',
+    'Syncing library to SD card…', 'Library sync could not start', 'A request is still running',
+    'Searching Navidrome…', 'Search could not start', 'Configuration is too long',
+    'Enter URL|username|password', 'Server URL must use HTTP or HTTPS', 'Wait for the current request to finish',
+    'Search songs', 'Navidrome Search', 'Select a song first', 'Could not prepare stream queue',
+    'Original song downloaded to /mnt/mmc/Navidrome',
+    'Download failed; check card space and server permission',
+    'Connect to Wi-Fi before using Navidrome.', 'Connect to Wi-Fi before adding a server.',
+    'Connect to Wi-Fi to check Navidrome.', 'Checking Navidrome server…', 'Connected to Navidrome',
+    'Syncing cover artwork to SD…',
+    'Connected · syncing songs and artwork…', 'Could not connect. Check Wi-Fi, URL and login.',
+    'Sync the library after connecting to the server.', 'No DSD tracks in the synced library',
+    'DSD downloads · original files only', 'DSD streaming is disabled; download the original file for local playback.',
+    'Downloading original DSD file to SD…', 'DSD download could not start',
+    'Downloading original file to SD card…', 'Download could not start',
+    'Sync complete. Artwork cached when available.', 'Could not check Navidrome server.',
+    'Library sync failed; check Wi-Fi, server and SD space.', 'Connect to Wi-Fi before using Navidrome.',
+)
+for _key in _SB_ENGLISH:
+    TEXT.setdefault(_key, {loc: _key for loc in LOCALES})
 TEXT.update([
+    _t('%d tracks synced…', '%d 首歌曲已同步…', '%d 首歌曲已同步…', '%d 曲を同期済み…', '%d곡 동기화됨…', '%d titres synchronisés…', '%d Titel synchronisiert…', '%d canciones sincronizadas…', '%d brani sincronizzati…', 'ซิงก์แล้ว %d เพลง…', 'Zsynchronizowano utwory: %d…', 'Синхронизировано песен: %d…', 'Синхронізовано пісень: %d…'),
     _t(', %d', '，%d年', '，%d年', ', %d年', ', %d년', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d'),
     _t('Just now', '刚刚', '剛剛', 'たった今', '방금', 'À l’instant', 'Gerade eben', 'Ahora mismo', 'Adesso', 'เมื่อสักครู่', 'Przed chwilą', 'Только что', 'Щойно'),
     _t('%dm ago', '%d分钟前', '%d分鐘前', '%d分前', '%d분 전', 'il y a %d min', 'vor %d Min.', 'hace %d min', '%d min fa', '%d นาทีที่แล้ว', '%d min temu', '%d мин назад', '%d хв тому'),

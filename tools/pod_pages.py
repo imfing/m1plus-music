@@ -56,6 +56,7 @@ ACT_LIST = 21    # open a stock song list on the Songs page (patch/songs.c songs
 ACT_IPOD = 22    # open the Pod, the virtual iPod Classic page: a fullscreen window with a touch click wheel (patch/ipod.c ipod_open)
 ACT_PODCASTS = 23   # open the Podcasts page: the shows in /mnt/mmc/Podcasts and their episodes (patch/podcasts.c podcasts_open)
 ACT_RADIO = 50    # open the Radio page: Stations, Recently Played, Radio Browser (the directory's top stations, countries and genres, a station's search) (patch/radiopage.c radio_open)
+ACT_SUBSONIC = 51 # Navidrome/Subsonic remote library and playback (patch/subsonic.c)
 ACT_SEARCH = 35   # open the library search page (patch/search.c search_open; the stock search_page where ours will not open), the Search item of the menu and Extras
 ACT_KB_EN = 27  # switch row (Settings > Keyboards): English, always on and not switchable (the row's switch is shown on and the row is dimmed)
 ACT_KB_ZH = 28  # switch row (Settings > Keyboards): Chinese (Pinyin), off by default; on gives the on-screen keyboard a language key and the pinyin layer (patch/keyboard.c kb_zh_toggle)
@@ -200,6 +201,7 @@ ITEMS = [   # item id = index; the default order, essentials first (iPod classic
     Row('Search', ACT_SEARCH),
     # Radio (docs/modules/radio.md): internet radio stations; an item like the rest, hidden from the menu by default (on Extras, in Library, after Podcasts).
     Row('Radio', ACT_RADIO),
+    Row('Navidrome', ACT_SUBSONIC),
 ]
 SETTINGS_ID = 18
 assert ITEMS[SETTINGS_ID].label == 'Settings'
@@ -208,17 +210,17 @@ assert ITEMS[SETTINGS_ID].label == 'Settings'
 # comes from DEFAULT_MENU and EXTRAS_GROUPS, not from the id.
 ITEM_IDS = ('Now Playing', 'Cover Flow', 'Albums', 'Artists', 'Songs', 'Playlists', 'Shuffle', 'Genres', 'Folders',
             'Favorites', 'Recently Added', 'Recently Played', 'Most Played', 'Composers', 'Hi-Res', 'Update Library',
-            'Tidal', 'CD Ripper', 'Settings', 'Pod', 'Podcasts', 'Search', 'Radio')
+            'Tidal', 'CD Ripper', 'Settings', 'Pod', 'Podcasts', 'Search', 'Radio', 'Navidrome')
 assert tuple(r.label for r in ITEMS[:len(ITEM_IDS)]) == ITEM_IDS, 'menu item ids are frozen: append new items, never insert or reorder'
 DEFAULT_MENU = [1, 2, 3, 4, 5]   # the items shown by default, in order (saved string "12345"): Cover Flow, Albums, Artists, Songs, Playlists, then Extras. A minimal menu: Now Playing is not
                                     # among them (the mini player bar of the Home instance opens it, docs/modules/minibar.md), nor are Shuffle and Settings; every other item is on the Extras page,
                                     # grouped (EXTRAS_GROUPS), and Settings > Main Menu can show any of them
 assert all(0 <= i < len(ITEMS) for i in DEFAULT_MENU) and len(set(DEFAULT_MENU)) == len(DEFAULT_MENU)
-ID_CHARS = '012345678abcdefghijklmn'   # the saved list's character for each item id: '0'..'8' the first nine, 'a'..'i' the nine Extras tiles, 'j' Settings, 'k' the Pod, 'l' Podcasts, 'm' Search, 'n' Radio
+ID_CHARS = '012345678abcdefghijklmno'   # one saved-list character per menu item
 assert len(ID_CHARS) == len(ITEMS)
 OFF_CHAR = '-'           # the saved list's separator: the item characters after it are turned off (not listed on the Extras page); at most once
 DEFAULT_OFF = []         # no item is turned off by default
-MENU_FILE_MAX = 26       # patch/menu.c reads at most this many bytes of the saved list (23 item characters at most in both parts together, the '-' and a newline); longer is invalid
+MENU_FILE_MAX = 27       # 24 item characters, optional off separator, newline and NUL
 MENU = Page('m1plus_menu', 'm1plus_menu_page', 'M1+ Music', rows=ITEMS + [
     Row('Extras', ACT_PAGE, EXTRAS_PAGE_INDEX),   # always shown, always last
 ])
@@ -422,7 +424,7 @@ def format_pulldown(shown):
 # views, the song collections, the tools. Settings is in none: it is the Extras page's navbar button.
 EXTRAS_GROUPS = (
     ('Play', ('Now Playing', 'Shuffle', 'Pod')),
-    ('Library', ('Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search')),
+    ('Library', ('Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search', 'Navidrome')),
     ('Collections', ('Favorites', 'Recently Played', 'Recently Added', 'Most Played', 'Hi-Res')),
     ('Tools', ('Update Library', 'CD Ripper', 'Tidal')),
 )
@@ -506,6 +508,7 @@ PODCASTS = Page('m1plus_podcasts', 'm1plus_podcasts_page', 'Podcasts', kind='pod
 RADIO = Page('m1plus_radio', 'm1plus_radio_page', 'Radio', kind='radio')
 RADIONP = Page('m1plus_radionp', 'm1plus_radionp_page', 'Radio', kind='radionp')
 RADIOINFO = Page('m1plus_radioinfo', 'm1plus_radioinfo_page', 'Station Info', kind='radioinfo')   # patch/radioinfo.c: Radio Now Playing's Station Info
+SUBSONIC_PAGE = Page('m1plus_subsonic', 'm1plus_subsonic_page', 'Navidrome', kind='subsonic')
 
 # The Tape page (patch/tape.c): a fullscreen window drawn landscape; the payload paints the cassette and takes the touches (opened from Now Playing's More dialog, not from a menu row).
 TAPE = Page('m1plus_tape', 'm1plus_tape_page', 'Cassette Mode', kind='tape')
@@ -600,7 +603,8 @@ QUEUE_PAGE = Page('m1plus_queue', 'm1plus_queue_page', 'Queue', kind='queue')
 # PAGES[0] is the entry page.
 PAGES = [MENU, COVER, ARTISTS, SHUFFLE_PAGE, SETTINGS_PAGE, EXTRAS_PAGE, ALBUMS, MENUCFG_PAGE, LIBRARY_PAGE, HOMESET_PAGE, PLAYLISTS, SONGS, DAILYMIX,
          EXTRASCFG_PAGE, DEVELOPER_PAGE, IPOD, PODCASTS, TAPE, NPSET_PAGE, KEYBOARD, KEYBOARDS_PAGE, SORT_PAGE, THEME_PAGE, ABOUT_PAGE, SEARCH, ALBUM_PAGE, VINYL, FOLDERS, QUEUE_PAGE,
-         RECORD_PAGE, VINYL_WHITE, VTHEME_PAGE, ONLINEART, CACHE_PAGE, COVLIST, FILES_PAGE, UPDATE, RELNOTES, BG_PAGE, ACCENT_PAGE, APPEARANCE_PAGE, PULLDOWN_PAGE, RADIO, RADIONP, RADIOINFO]
+         RECORD_PAGE, VINYL_WHITE, VTHEME_PAGE, ONLINEART, CACHE_PAGE, COVLIST, FILES_PAGE, UPDATE, RELNOTES, BG_PAGE, ACCENT_PAGE, APPEARANCE_PAGE, PULLDOWN_PAGE, RADIO, RADIONP, RADIOINFO, SUBSONIC_PAGE]
+SUBSONIC_PAGE_INDEX = PAGES.index(SUBSONIC_PAGE)
 assert PAGES[KEYBOARDS_PAGE_INDEX] is KEYBOARDS_PAGE
 assert PAGES[NPSET_PAGE_INDEX] is NPSET_PAGE
 assert PAGES[SHUFFLE_PAGE_INDEX] is SHUFFLE_PAGE and PAGES[SETTINGS_PAGE_INDEX] is SETTINGS_PAGE

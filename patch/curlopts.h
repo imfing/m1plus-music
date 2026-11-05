@@ -35,6 +35,7 @@
 #define CURLOPT_FAILONERROR \
     45 /* an HTTP code of 400 or more fails the request (CURLE_HTTP_RETURNED_ERROR, 22) instead of handing over the error page */
 #define CURLOPT_NOBODY 44 /* long 1: a header-only request (HEAD) */
+#define CURLPROTO_HTTP 1
 #define CURLPROTO_HTTPS 2
 #define CURLOPT_PROTOCOLS 181
 #define CURLOPT_REDIR_PROTOCOLS 182

@@ -937,6 +937,84 @@ def build_search_page(page):
     return root
 
 
+def build_subsonic_page(page):
+    """Navidrome songs and DSD downloads, with stock list/grid controls."""
+    root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
+    styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
+    root.children.append(navbar(page.title))
+    btn = Widget('button', 8, NAVBAR_H + 4, 112, 44, [('name', 'sb_connect'), ('enable', 'true'), ('tr_text', 'Server')])
+    btn.set('style', 'btn_tablerow_style')
+    styled(btn, STATES, 'text_color', '#FFFFFF')
+    styled(btn, STATES, 'font_size', '16')
+    root.children.append(btn)
+    for name, x, icon in (('sb_search', 210, 'pod_ic_search'), ('sb_sync', 266, 'pod_sb_sync')):
+        btn = Widget('button', x, NAVBAR_H + 4, 44, 44, [('name', name), ('enable', 'true'), ('style', 'img_btn_style')])
+        btn.children.append(Widget('image', 6, 6, 32, 32, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+        root.children.append(btn)
+    tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_songs'),
+            ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_download'))
+    for name, x, width, text, icon in tabs:
+        btn = Widget('button', x, NAVBAR_H + 50, width, 44, [('name', name), ('enable', 'true')])
+        btn.set('style', 'btn_tablerow_style')
+        btn.children.append(Widget('image', 5, 10, 24, 24, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+        caption = label(f'{name}_label', 32, 0, width - 34, 44, '', 13, '#FFFFFF', 'left')
+        caption.set(*pod_i18n.text_prop(text))
+        caption.set('style', 'btn_tablerow_style')
+        caption.set('sensitive', 'false')
+        btn.children.append(caption)
+        root.children.append(btn)
+    view_btn = Widget('button', 266, NAVBAR_H + 50, 42, 44, [('name', 'sb_view'), ('enable', 'true'), ('style', 'img_btn_style')])
+    view_btn.children.append(Widget('image', 8, 8, 26, 26, [('name', 'sb_view_icon'), ('image', 'pod_nav_grid'), ('draw_type', 'icon'), ('sensitive', 'false')]))
+    root.children.append(view_btn)
+    status = label('sb_status', 12, NAVBAR_H + 96, 296, 22, '', 14, '#AAAAAA', 'left')
+    status.set(*pod_i18n.text_prop('Connect to browse your music'))
+    root.children.append(status)
+    lv = stock_list([], True, top=NAVBAR_H + 124)
+    lv.h = 276
+    lv.set('name', 'sb_listview')
+    sv = lv.children[0]
+    sv.h = 276
+    lv.children[1].h = 276
+    sv.set('name', 'sb_scrollview')
+    grid = Widget('view', 0, 0, SCREEN_W, 6 * 210, [('name', 'sb_rows')])
+    styled(grid, ('normal',), 'bg_color', '#000000')
+    for i in range(6):
+        item = Widget('list_item', 0, i * 52, SCREEN_W, 52, [('name', f'sb_row{i}'), ('style', 'list_item_style'), ('enable', 'true')])
+        art = Widget('image', 4, 4, 44, 44, [('name', f'sb_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
+        title = Widget('hscroll_label', 58, 2, 152, 22, [('name', f'sb_title{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true')])
+        styled(title, STATES, 'text_color', '#FFFFFF')
+        styled(title, ('normal',), 'font_size', str(LIST_TITLE_PX))
+        sub = Widget('hscroll_label', 58, 29, 152, 19, [('name', f'sb_sub{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true')])
+        styled(sub, STATES, 'text_color', '#AAAAAA')
+        styled(sub, ('normal',), 'font_size', str(LIST_SUB_PX))
+        actions = []
+        for action, x, icon in (('play', 226, 'pod_sb_play'), ('download', 272, 'pod_sb_download')):
+            button = Widget('button', x, 4, 42, 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
+            button.children.append(Widget('image', 9, 10, 24, 24, [('name', f'sb_row_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+            actions.append(button)
+        gitem = Widget('view', (i % 2) * 160, (i // 2) * 210, 160, 204, [('name', f'sb_grid_row{i}'), ('enable', 'true')])
+        g_art = Widget('image', 12, 4, 136, 136, [('name', f'sb_grid_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
+        g_title = Widget('hscroll_label', 6, 142, 148, 19, [('name', f'sb_grid_title{i}'), ('text', ''), ('ellipses', 'true')])
+        styled(g_title, STATES, 'text_color', '#FFFFFF')
+        styled(g_title, ('normal',), 'font_size', '14')
+        g_sub = Widget('hscroll_label', 6, 161, 148, 17, [('name', f'sb_grid_sub{i}'), ('text', ''), ('ellipses', 'true')])
+        styled(g_sub, STATES, 'text_color', '#AAAAAA')
+        styled(g_sub, ('normal',), 'font_size', '12')
+        g_actions = []
+        for action, x, icon in (('play', 20, 'pod_sb_play'), ('download', 98, 'pod_sb_download')):
+            button = Widget('button', x, 177, 42, 36, [('name', f'sb_grid_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
+            button.children.append(Widget('image', 9, 6, 24, 24, [('name', f'sb_grid_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+            g_actions.append(button)
+        gitem.children = [g_art, g_title, g_sub, *g_actions]
+        item.children = [art, title, sub, *actions]
+        grid.children.append(item)
+        grid.children.append(gitem)
+    sv.children.append(grid)
+    root.children.append(lv)
+    root.children.append(hidden(label('label_title', 0, 0, 200, 22, '', 16, '#FFFFFF', 'left')))
+    return root
+
+
 def build_songs_page(page):
     o = OFFSETS
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
@@ -2108,6 +2186,8 @@ def build_page(page):
         return build_songs_page(page)
     if page.kind == 'search':
         return build_search_page(page)
+    if page.kind == 'subsonic':
+        return build_subsonic_page(page)
     if page.kind == 'album':
         return build_album_page(page)
     if page.kind == 'queue':
