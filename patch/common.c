@@ -74,6 +74,17 @@ int pod_is_type(void *w, const char *type) {
     return t && strcmp(t, type) == 0;
 }
 
+/* The navbar's small title of a page with a large heading: shown once the heading has scrolled away, i.e. the scroll offset has reached SG_COLLAPSE, or, on a page whose
+ * heading is a header's name (a playlist, a podcast show), `head` (the offset the name has gone at). The page ORs in its own conditions (select mode, no scroll events ...). */
+int pod_title_gone(int off, int head) { return off >= (head ? head : SG_COLLAPSE); }
+
+/* Show or hide the small title w when `on` differs from *cur. */
+void pod_title_set(void *w, int *cur, int on) {
+    if (on == *cur) return;
+    *cur = on;
+    if (w) widget_set_visible(w, on, 0);
+}
+
 /* A translated "%d songs" with the number put where the translation has its %d. The table's text is never a printf format. */
 void pod_fmt(char *out, unsigned size, const char *f, int n) {
     char digits[12];
@@ -204,7 +215,8 @@ __attribute__((noinline)) unsigned pod_alpha(unsigned y, unsigned a_top, unsigne
 __attribute__((noinline)) unsigned pod_shade(unsigned color, unsigned y, unsigned a_top, unsigned a_bot,
                                              unsigned rows) {
     unsigned keep = 255 - pod_alpha(y, a_top, a_bot, rows);
-    return pal_not_role((color & 255) * keep / 255 | (color >> 8 & 255) * keep / 255 << 8 | (color >> 16 & 255) * keep / 255 << 16);
+    return pal_not_role((color & 255) * keep / 255 | (color >> 8 & 255) * keep / 255 << 8 |
+                        (color >> 16 & 255) * keep / 255 << 16);
 }
 
 /* The coverage of the area outside a quarter circle of radius r in the corner square of r pixels (the circle's centre at

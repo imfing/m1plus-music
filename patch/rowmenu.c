@@ -133,8 +133,8 @@ void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int 
         bottom = cy + RM_DOTS_PX > view_h ? view_h - cy : RM_DOTS_PX, src[4], dst[4];
     if (!rm->on || !rm->dots || bottom <= top) return;
     src[0] = 0, src[1] = top, src[2] = RM_DOTS_PX, src[3] = bottom - top;
-    dst[0] = flush ? right - RM_DOTS_PX : rowmenu_zone_x(right) + (RM_MORE_W - RM_DOTS_PX) / 2, dst[1] = cy + top, dst[2] = RM_DOTS_PX,
-    dst[3] = bottom - top;
+    dst[0] = flush ? right - RM_DOTS_PX : rowmenu_zone_x(right) + (RM_MORE_W - RM_DOTS_PX) / 2, dst[1] = cy + top,
+    dst[2] = RM_DOTS_PX, dst[3] = bottom - top;
     canvas_draw_image(canvas, rm->dots, src, dst);
 }
 

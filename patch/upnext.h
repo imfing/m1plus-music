@@ -17,7 +17,8 @@
 #define UPNEXT_MISSING (-5) /* a row whose file is not on the card */
 #define UPNEXT_FULL (-6) /* the queue would pass 65536 songs (SHUFFLE_MAX) */
 #define UPNEXT_MEMORY (-7) /* Shuffle's saved order could not be grown (no memory) */
-#define UPNEXT_DLNA (-8) /* the DLNA renderer service runs: its threads read the queue without a lock, so the queue is not edited */
+#define UPNEXT_DLNA \
+    (-8) /* the DLNA renderer service runs: its threads read the queue without a lock, so the queue is not edited */
 
 /* Play Next (after == 0: right after the playing song, newest first; the rows of one call keep their order) or Play After (after != 0: at the end of the queue). `rows` is a
  * deque of stSongInfo that stays the caller's (the rows are copied). Returns one of the codes above. UI thread. */

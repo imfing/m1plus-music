@@ -96,7 +96,7 @@ def artists_page(s, album_artist=False, other=None, scroll=0, touched=None, to=N
         rows.append((n, y)); y += row
     end = y + 12
     tall = Image.new('RGBA', (320, end), (0, 0, 0, 255)); d = ImageDraw.Draw(tall)
-    s.text(tall, O_['SG_TITLE_X'], O_['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, title), 32, 250), 32)
+    s.text(tall, O_['SG_TITLE_X'], O_['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, title), 32, O_['SG_TITLE_W']), 32)
     for c, hy in secs: PS.header(s, tall, c, hy)
     chev = Image.new('RGBA', (10, 16), (0, 0, 0, 0))   # the payload's chevron (ar_make_chevron): a 2 px stroke, 4 x 4 samples a pixel, #8A8A8A
     def seg2(px, py, ax, ay, bx, by):

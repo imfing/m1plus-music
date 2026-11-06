@@ -56,8 +56,11 @@ unsigned cc_cover_key(
         url); /* url (NULL ok; holds 80) gets the chosen key's cc_url, "" when no file. Key when its cache file has a picture, else the first library album (albums: cc_albums) named album (NOCASE, not the Unknown row) whose file has one, else key */
 int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsigned *out);
 void *cc_copy_list(void *list); /* a stock list copied into a deque of our own */
-void *cc_albums(void); /* the stock Albums list (getAllAlbum), copied; NULL if empty */
-void *cc_songs(void); /* the stock Songs list (getAllMusic), copied; NULL if empty */
+void *
+cc_albums(void); /* the stock Albums list (getAllAlbum), copied; NULL if empty or the copy failed (cc_list_failed) */
+void *cc_songs(void); /* the stock Songs list (getAllMusic), copied; NULL if empty or failed (cc_list_failed) */
+int cc_list_failed(
+    void); /* the last cc_albums / cc_songs returned NULL because the copy of a non-empty list failed (a failed query is not told apart from an empty list: stock returns 0 for both) */
 int cc_open_album(
     void *artist_row, unsigned scope,
     int index); /* the stock Albums row sequence (artist_row NULL), or that artist's (scope CLASS_ARTISTS) or composer's (CLASS_COMPOSERS); 0 once the page is requested */
@@ -66,13 +69,25 @@ int cc_find_album(
         album); /* the library Albums row with that album name (NOCASE), -1: none; cc_open_album(NULL, 0, row) opens it */
 /* The album order shared by Cover Flow and Albums (Settings > Library > Album Order). The stock list is never reordered: the
  * sorted view is a permutation of its row numbers, and anything that goes back to stock (cc_open_album) takes the stock row. */
-int cc_nocase(const char *a,
-              const char *b); /* ASCII case-insensitive compare (SQLite NOCASE, as the stock list groups) */
-int cc_name_cmp(const char *a,
-                const char *b); /* cc_nocase with a leading "The " dropped from both (the Artist order's name key) */
+int cc_nocase(const char *a, const char *b); /* ASCII case-insensitive compare (SQLite NOCASE) */
+int cc_key_cmp(
+    const char *a,
+    const char *
+        b); /* the name order of the lists on prepared keys: digit runs by value, ASCII case folded, digits and symbols before letters, non-ASCII after */
+int cc_name_cmp(
+    const char *a,
+    const char *
+        b); /* cc_key_cmp of the names without leading white space and a leading "The " (no pinyin: see cc_name_keys) */
 const char *cc_name_key(
     const char *
-        s); /* s without a leading "The " (when something follows it): the text the Artist order compares, and the Artists page's section letter comes from */
+        s); /* s without leading white space and a leading "The " (when something follows it): the text the Artist order compares */
+int cc_name_initial(
+    const char *
+        name); /* the first byte of that text, a CJK character as its pinyin initial (stock's utf8_to_pinyin): the section letter of a name */
+const char **cc_name_keys(
+    unsigned n, const char *(*name)(const void *ctx, unsigned i),
+    const void *
+        ctx); /* the keys of n names for cc_key_cmp, CJK characters as pinyin initials; one block to free(); NULL: no names or no memory (keep the stock order) */
 void cc_heapsort(unsigned *v, unsigned n,
                  int (*cmp)(unsigned,
                             unsigned)); /* in place, no memory; cmp must be total (break ties by the row number) */
@@ -87,9 +102,21 @@ void *cc_playing(void); /* the stSongInfo of the track the player is on, NULL if
 /* The cache builder, shared by Cover Flow (its Preparing screen, and Settings > Library > Rebuild Covers) and the
  * Albums page (in the background). ONE worker thread app-wide: a job set is held from cc_build_open until
  * cc_build_stop, and cc_build_open refuses while one is held. The owner polls the counters from a page-scoped timer
- * (UI thread) and must call cc_build_stop (cancel, join, free) when it is done with the set and when its page is destroyed.
- * The thread touches only its own jobs, the counters, files under ART_DIR and the stock art calls under parse_cover_mutex;
- * never a widget, a deque or the image manager.
+ * (UI thread) and must call cc_build_stop when it is done with the set and when its page is destroyed. Stop never waits for
+ * the thread: a worker that has exited or has no job left is joined and the set freed at once; one still inside a job is cancelled and orphaned (it keeps
+ * the set, stock's art call cannot be interrupted) and is joined and freed by the next cc_build_open / cc_build_busy /
+ * cc_build_orphan / cc_build_stop once it has exited. Until then cc_build_open refuses and cc_build_busy is true.
+ * The thread touches only its own jobs, the counters, files under ART_DIR and the art calls under parse_cover_mutex (stock's two and
+ * taglib_album_picture; our own resize runs outside it); never a widget, a deque or the image manager.
+ * A card job that hangs: ART_DIR/.inflight (ART_DIR is .m1plus/covers on the card, hidden in Finder) is a small text record of the job being extracted, written once the stock parser lock is held:
+ *   m1plus cover 1 / key: <8 hex> / build: <the player's build tag> / track: <path> / end
+ * (a `\` or newline in a path is written `\\` or `\n`, any other control byte `\xNN`; no `end` line: cut short). cc_build_open turns a leftover one (the last run died or hung) into
+ * r<key>-168.jpg.try (an empty file; a power-off is no proof), and a second leaves r<key>-168.jpg.bad, a text record of the same shape with `result: interrupted twice`, `phase: unknown` and the track
+ * (a finished job for the key removes the .try; an .inflight with no valid key line is removed and blames no one; a cut one still strikes, with `track: unknown`); every set skips a key with a .bad (existence only; cc_clear_bad, called when Rebuild Covers is requested, removes them all). cc_build_done,
+ * which the pages poll, also stops a set whose done counter has not moved for CC_STALL_MS and then returns total: the worker is orphaned as by cc_build_stop, the job is marked .bad (and its .inflight removed) if its extraction had begun,
+ * with `result: timed out`, the `phase:` where the worker's progress stopped (embedded art: reading tags, shrinking, stock fallback; folder: scanning, image shrinking, stock fallback; not that a file is corrupt) and, when known, `image: <path> WxH jpeg|png [progressive|baseline]`.
+ * A timed-out "folder image, shrinking" on a progressive JPEG over 4 MP would mean the PV_REFUSED guard was bypassed.
+ * The poll that finds the worker exited frees the set.
  *   CC_MISSING  only albums with no cache file (neither a picture nor the empty "no art" marker); cc_build_add skips the rest
  *   CC_REBUILD  every album is extracted again and its file replaced (temp + rename), a marker too, so an album that gained
  *               art gets it; an album that now yields none keeps what it has (old files stay until a new one replaces them) */
@@ -118,12 +145,22 @@ int cc_build_done(void); /* albums finished so far (advances as files appear) */
 int cc_build_total(void);
 int cc_build_running(void); /* a thread was started and the set is not stopped yet */
 int cc_build_busy(void); /* a job set is held */
-void cc_build_stop(void); /* cancel, join (bounded by one album's art), free; safe when nothing is held */
+int cc_build_active(
+    void); /* the worker runs a cover or duration set with work left: volatile reads only (no lock, no file), for the status bar's sync icon (patch/lineout.c); false for a transient file job, a cancelled or orphaned set */
+void cc_build_stop(
+    void); /* cancel, then join and free, or orphan a worker still inside a job (never blocks); safe when nothing is held */
+int cc_build_orphan(
+    void); /* a stopped worker has not exited yet (reaps it if it has) and was stopped less than CC_STALL_MS (10 s) ago: cc_build_open refuses for a moment, so retry; after that, give up until the next open */
+void cc_clear_bad(void); /* removes every .bad under ART_DIR (the Rebuild Covers request) */
+int cc_build_truncated(
+    void); /* the set's last cc_build_near_step could not queue an album (set full, or out of memory): some albums were not queued; kept like stalled, until the next cc_build_open */
+int cc_build_stalled(
+    void); /* the last set ended because build_watch gave up on it (also after it is freed, until the next cc_build_open): its albums were not all built */
 /* Albums by distance from row `centre` (the centre, then one after, one before, ...), as the shared album order shows them
  * (`order` may be NULL): each one with a track path is added. Returns the number of jobs held after (cc_build_total). */
 int cc_build_near(void *albums, const unsigned *order, unsigned centre);
 /* The same walk in bounded steps: `*cursor` starts at 0 and is advanced; at most `batch` albums are considered (and so
- * stat'ed) per call. 1 once the walk is complete (or the set is full), 0 when more remains. The caller keeps `centre`
+ * stat'ed) per call. 1 once the walk is complete (or the set is full: then `*cursor` is left on the album that did not fit), 0 when more remains. The caller keeps `centre`
  * and the set unchanged between calls, and starts the worker only after the last step (jobs are never written while it runs). `keys`, if not NULL, holds the cache key of each album by
  * display position (a scoped list's, patch/coverflow.c coverflow_artist_albums); NULL keys every album by cc_album_key. */
 int cc_build_near_step(void *albums, const unsigned *order, const unsigned *keys, unsigned centre, unsigned *cursor,

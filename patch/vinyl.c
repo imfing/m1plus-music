@@ -207,7 +207,8 @@ static const char *const vn_pages[VN_THEMES] = {"m1plus_vinyl", "m1plus_vinyl_wh
 static const unsigned char vn_grain_amp[VN_THEMES] = {VN_GRAIN, 0};
 static const char *const vn_grain_name[VN_THEMES] = {"vinyl_grain", (const char *)0};
 
-#define VN_D255(x) (((x) + 128 + (((x) + 128) >> 8)) >> 8) /* x / 255 rounded, x in 0 .. 65535 (tools/vinyl_art.py d255) */
+#define VN_D255(x) \
+    (((x) + 128 + (((x) + 128) >> 8)) >> 8) /* x / 255 rounded, x in 0 .. 65535 (tools/vinyl_art.py d255) */
 
 /* soft[n - (128 - 3 amp)][c]: a channel c soft-light blended with n (tools/vinyl_art.py soft_light), n in 128 +- 3 amp; made for amp at the first grain. */
 static struct {
@@ -226,20 +227,23 @@ static void vn_grain(void *bmp, int x0, int y0, int w, int h) {
     memset(bitmap, 0, sizeof bitmap);
     if (widget_load_image(vn.win, vn_grain_name[vn.theme], bitmap)) return;
     format = (unsigned)(*(unsigned short *)((char *)bitmap + BITMAP_FORMAT)) - 1u;
-    if (format < 4 && bitmap[0] == VN_W && bitmap[1] == VN_H) m = bitmap_lock_buffer_for_read(bitmap); /* read in place: the weight is R */
+    if (format < 4 && bitmap[0] == VN_W && bitmap[1] == VN_H)
+        m = bitmap_lock_buffer_for_read(bitmap); /* read in place: the weight is R */
     p = m ? (unsigned *)bitmap_lock_buffer_for_write(bmp) : (unsigned *)0;
     if (p) {
         if (vg.amp != amp)
             for (vg.amp = amp, y = 0; y <= 6 * amp; ++y)
                 for (x = 0, n0 = 128 - 3 * amp + y; x < 256; ++x)
-                    vg.soft[y][x] = (unsigned char)(((255 - x) * x * n0 >> 16) + VN_D255(x * (255 - VN_D255((255 - x) * (255 - n0)))));
+                    vg.soft[y][x] = (unsigned char)(((255 - x) * x * n0 >> 16) +
+                                                    VN_D255(x * (255 - VN_D255((255 - x) * (255 - n0)))));
         stride = bitmap_get_line_length(bitmap);
         for (y = (unsigned)y0; y < (unsigned)(y0 + h); ++y)
             for (x = (unsigned)x0; x < (unsigned)(x0 + w); ++x) {
                 unsigned i = y * VN_W + x, wt = m[y * stride + x * 4 + at[format][0]], v = p[i], hs, n, k, o;
                 if (!wt) continue;
                 hs = (i + 1) * 0x9E3779B1u, hs ^= hs >> 16, hs *= 0x85EBCA6Bu, hs ^= hs >> 13;
-                n = VN_D255(((hs & 255) + (hs >> 8 & 255) + (hs >> 16 & 255)) * 2 * amp); /* the value less 128 - 3 amp */
+                n = VN_D255(((hs & 255) + (hs >> 8 & 255) + (hs >> 16 & 255)) * 2 *
+                            amp); /* the value less 128 - 3 amp */
                 for (o = v & 0xff000000u, k = 0; k < 24; k += 8) {
                     unsigned c = v >> k & 255;
                     o |= VN_D255(c * (255 - wt) + vg.soft[n][c] * wt) << k;

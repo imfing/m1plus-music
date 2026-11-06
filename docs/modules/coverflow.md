@@ -125,20 +125,39 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   this file, behaviour unchanged): `cc_build_open(capacity, mode)` takes the app's one job set (refused while another page
   holds it), `cc_build_add(track, key)` queues an album (in `CC_MISSING` mode it skips an album whose cache file, picture or marker,
   exists), `cc_build_start()` makes the cache directory, checks 16 MB free (`statfs`) and starts the one pthread (`cc_worker` runs
-  `build_art`), `cc_build_done()` / `cc_build_total()` are the polled counters, `cc_build_stop()` cancels, joins (bounded by
-  one album) and frees. The thread touches only its jobs (strings copied on the UI thread), three `volatile` counters, files under
-  `.m1plus/covers` and the two stock art calls under `parse_cover_mutex` (`0xa04588`, the lock every stock caller holds;
-  `parseplaycover_thd` takes the same one); never a widget, a deque or the image manager. `build_art` checks the cancel flag again
-  after taking that mutex (a Back that waited behind a stock parse skips the extraction). `cc_build_near_step` is the resumable
+  `build_art`), `cc_build_done()` / `cc_build_total()` are the polled counters, `cc_build_stop()` cancels and, if the worker has
+  exited, joins and frees; a worker still inside a job is orphaned and keeps the set until it has exited (never waited for; `cc_build_open`
+  refuses and `cc_build_busy` is true meanwhile, then the next call joins and frees it). The thread touches only its jobs (strings copied on the UI thread), three `volatile` counters, files under
+  `.m1plus/covers` and the art calls under `parse_cover_mutex` (`0xa04588`, the lock every stock caller holds;
+  `parseplaycover_thd` takes the same one); never a widget, a deque or the image manager. Held: the two stock art calls and
+  `taglib_album_picture`, which saves to the shared `/tmp/.tmp_picture`; under the lock that file is renamed to `/tmp/.m1plus_art`
+  and `pv_cover` shrinks it after the unlock, as it does a folder picture. Each lock is taken through `art_lock`, which checks the cancel flag
+  (a Back that waited behind a stock parse skips the extraction, writes no marker). A progressive JPEG over `PV_COVER_PROGRESSIVE_PX`
+  (4 MP) or 8192 on a side is refused (`PV_REFUSED`, libjpeg buffers all its coefficients): no art, stock is not asked. **A hung job** (`build_art`, key
+  jobs): `.m1plus/covers/.inflight` (a text record, below) is written once `art_lock` holds the lock for it (an album that only waited is not to blame) and removed after the extraction. `cc_build_open` turns a leftover one into a strike, an empty
+  `r<key>-168.jpg.try` (a power-off is no proof), and a second one into `r<key>-168.jpg.bad` (a text record; a finished job for the key removes its `.try`); no set queues a `.bad` key; the Rebuild Covers request (`rebuild_ask`) removes every `.bad` once (`cc_clear_bad`), so each album gets one retry and a resumed rebuild skips the ones that hang again
+  (a strike that could not be written keeps the `.inflight`).
+  **Records.** Both files live in `.m1plus/covers/` on the card (hidden in Finder) and are plain text, one field per line, ending with `end` (no `end`: cut short): `m1plus cover 1`, `key: <8 hex>`, `build: <M1PLUS_TAG>`, then for an `.inflight` `track: <first track>` and `end`; for a `.bad` `result: timed out | interrupted twice`,
+  `phase: <where progress stopped> | unknown`, `track:`, `image: <path> WxH jpeg|png [progressive|baseline]` when an image is known (a folder image: path, size and frame from `pc_pic_info`; an embedded picture: just `embedded jpeg|png`, it is not opened for diagnostics), `end`. A `\` or newline in a path is written `\\` or `\n`, any other control byte `\xNN`.
+  The phases are set under `cb_mutex` before the blocking call: embedded art (reading tags, shrinking, stock fallback), folder (scanning, image shrinking, stock fallback); `art_lock` sets the lock-taking ones. The phase says where progress stopped, not that the file is corrupt; a timed-out "folder image, shrinking" on a progressive JPEG over 4 MP would mean the `PV_REFUSED` guard was bypassed. The in-memory phase and image live in `cb` (reset when a job starts); `.inflight` carries neither.
+  `build_recover` reads a leftover `.inflight` defensively (1 KB at most; the header and a valid `key:` required, else it is removed and no one is blamed; a cut one still strikes, with `track: unknown`); its second strike has `result: interrupted twice`, `phase: unknown` and the track. `.try` stays empty; "skip a key with a `.bad`" looks at existence only.
+  `cc_build_done` (what the pages poll) also stops a set whose counter has not moved for `CC_STALL_MS` (10 s of `time_now_ms`, unsigned): the worker is orphaned as by
+  `cc_build_stop`, and the set reads as finished (`done` = `total`, so the pages end; `cc_build_stalled` stays true until the next open, and a pending Rebuild Covers request is then kept, the next foreground resumes it without the hung album);
+  the watchdog writes the job's `.bad` itself if its extraction had begun (a worker that never returns could not), from a snapshot (key, phase, track, image) copied under `cb_mutex` in the claim, so nothing live is read after the unlock and removes the `.inflight`, so the next boot takes no strike; the poll that finds the worker exited frees the set.
+  The claim and the job transitions share one mutex of ours (`cb_mutex`, zero-filled in `.scratch` like stock's `parse_cover_mutex`; never held over extraction or file I/O): a job starts (`cur`, `began = 0`, `seq`) only while `cancelled` is clear; the watchdog re-checks that `done` and `seq` did not move, then sets `stalled`/`cancelled`
+  and captures `cur` (`claimed`) in one step, so the next job cannot start after a claim and a `.bad` can only name the claimed job. A claimed job that returns and publishes its cover acknowledges it (under the mutex, `claimed` equal to its key is cleared) and removes the `.bad`; the watchdog, after writing the `.bad`, re-checks `claimed` and removes it if it was cleared, so either order ends with the cover and no `.bad`. A failed or cancelled job never clears the claim, so its `.bad` stays.
+  `art_lock` writes `.inflight` first (stock's lock held), then sets `began` under the mutex, so a claim, which needs `began`, always finds the journal; a job claimed in between unlinks it and extracts nothing.
+  The `.bad` write and `.inflight` unlink run on the UI thread, so a stalling card can still block the UI there, for an unbounded time. An orphan need not hold stock's lock (our resize runs outside it); new builds stay refused until it exits, because it still owns the set's resources. Clear Cover Cache removes both files; `CC_DURATIONS` sets are not watched. `cc_build_near_step` is the resumable
   nearest-first walk the Albums page uses to scan in 64-album steps (`docs/modules/albums.md`); Cover Flow's own `start_build`
   stays one synchronous pass (it runs before the Preparing screen is shown, whose state machine has no scan state, and the
   screen is the expected wait there; making it incremental would add a screen state for no change in what the user sees). Each file is written to `.tmp` and
   renamed; both extractors failing leaves an empty marker (not retried; none is written over a file that exists); a vanished
   track leaves none, and neither does a thumbnail that was extracted but could not be published (a failed rename: the next open
   retries). This page owns its set only while `cf.owns` (`build_end`). If the progress timer cannot be created (at the start or
-  when re-armed) the worker is cancelled and joined and the cached covers show. No build below 16 MB free, without a
-  card or if `pthread_create` fails. A 250 ms timer polls the counters; Cancel, Back and closing stop it (`pthread_join`);
-  `EVT_DESTROY` removes the timer, joins, frees everything. Nothing is written outside the card.
+  when re-armed) the worker is stopped and the cached covers show. No build below 16 MB free, without a
+  card or if `pthread_create` fails. When the open is refused only because a stopped worker is still inside its last album
+  (`cc_build_orphan`), the Preparing screen is shown and `on_retry` (one `POLL_MS` timer) asks again until the set is free or 10 s have passed since the worker was orphaned (`cc_build_orphan` turns false: the cached covers are shown). A 250 ms timer polls the counters; Cancel, Back and closing stop it (`cc_build_stop`);
+  `EVT_DESTROY` removes the timer and stops the worker. Nothing is written outside the card.
 - **Rebuild Covers is not Cover Flow's** (it used to open this page): Settings > Library > Rebuild Covers writes a request file and
   Home's cover build does it (`docs/modules/homecover.md`, `docs/modules/settings.md`) with `CC_REBUILD`. The worker's `CC_REBUILD` mode
   is unchanged: it extracts each album again to `.tmp` and `rename`s it over the cache file, so an old picture is replaced atomically and

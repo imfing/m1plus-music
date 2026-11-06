@@ -1026,8 +1026,9 @@ def library_tests(ctx, on_row):
     rb_i = next(i for i, r in enumerate(C.rows) if r.action == P.ACT_REBUILD)
     KEY = 'Rebuild all covers? This may take a few minutes.'
 
-    def rebuild_machine(language=None, yes=False):
+    def rebuild_machine(language=None, yes=False, bad=None):
         m = cover_machine(albums=3)
+        if bad: m.fs[bad] = b''; m.present.add(bad); m.listing[bad.rsplit('/', 1)[0]] = [('.', 4), ('r00000001-168.jpg', 8), (bad.rsplit('/', 1)[1], 8)]
         for n in ['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(P.SETTINGS_PAGE.rows))] + [sw, val]:
             if n not in m.widgets: m.widget(n)
         if language: m.set_language(language)
@@ -1044,6 +1045,9 @@ def library_tests(ctx, on_row):
     REQ = '/mnt/data/m1plus/covers-rebuild'
     expect(not any(n in m.names() for n in ('window_open', 'pthread_create', 'mkdir', 'rename', 'unlink', 'fopen', 'toast')) and build_state(m)['jobs'] == 0 and REQ not in m.fs,
            'No (or the dialog closed): nothing happens at all, no page, no thread, no file, no toast')
+    BAD = '/mnt/mmc/.m1plus/covers/r00000001-168.jpg.bad'
+    m = rebuild_machine(yes=True, bad=BAD)
+    expect(('unlink', BAD) in m.calls and [c for c in m.calls if c[0] == 'unlink'] == [('unlink', BAD)] and ('opendir', '/mnt/mmc/.m1plus/covers') in m.calls, 'Yes clears the .bad markers: each album gets one retry')
     m = rebuild_machine(yes=True)
     expect(m.fs.get(REQ) == b'1\n' and [c[1] for c in m.calls if c[0] == 'toast'] == ['Covers will rebuild on Home'],
            'Yes writes the request file and shows the toast')

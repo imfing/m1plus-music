@@ -50,6 +50,11 @@ in [history](../history.md); feature modules retain their detailed edge cases.
 - **HOME-04 — Daily Mix:** responsive creation/regeneration, readable card over varied palettes,
   expected songs/artist limits, play/shuffle/track taps and correct detail page. Check settings,
   reboot, card swap/no card, missing covers and Add-to-playlist behaviour. [Details](dailymix.md)
+- **HOME-05 — Cache pill and sync icon:** with covers missing (Developer > Clear Cover Cache, then Home) the pill "Checking library…" (empty bar, no count; "Rebuilding covers…" after Rebuild Covers) appears at once, and about 5 s after Home is in front it becomes "Preparing covers n/m"
+  with the bar growing and the list below it intact; "Measuring tracks n/m" follows. The x stops the pass at once without a stall, the pill hides, and the pass does not return
+  on leaving and re-entering Home until a reboot or Settings > Library > Rebuild Covers (which then runs). While any build runs, on Home, Albums, Songs, Cover Flow and Settings, the static sync glyph
+  shows between Bluetooth and Wi-Fi in the status bar and in the pull-down's bar, clear of the clock (also with Battery Percentage on); it goes out when the build ends or is stopped. Playback and scrolling stay smooth during
+  a build (the worker runs at nice 10). With the cache complete, leaving and re-entering Home shows no pill and does no scan; after playing a song no pill shows (same library); adding an album shows it about 5 s later and builds; the x while it waits cancels it, and after a reboot it returns. Leaving Home mid-build (or during the wait) and coming back restarts it after about 1 s, not 5. Check the pill's text and bar in several languages. [Details](homecover.md), [sync icon](lineout.md)
 
 ## Extras
 

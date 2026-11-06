@@ -119,7 +119,6 @@ static struct {
     int seen, dir, noscroll;
     int down, down_x, down_y; /* the row a press began on, + 1, and where */
     int title_on; /* the small title is shown */
-    int title_fits; /* the small title's text fits its room (the glass capsule starts 64 px after it): a language where it does not has none */
     int menu; /* the sort card is open */
     int picker; /* the stock playlist picker is open over this page */
     unsigned more_timer, stale_timer, build_timer;
@@ -151,7 +150,8 @@ static struct {
 } sg __attribute__((section(".scratch")));
 
 static int sg_on_stale(const void *unused);
-static void *sg_under __attribute__((section(".scratch"))); /* a Songs page below the one open (Search was opened from it and a playlist result opened ours): its state, put back when this page is destroyed */
+static void *sg_under __attribute__((section(
+    ".scratch"))); /* a Songs page below the one open (Search was opened from it and a playlist result opened ours): its state, put back when this page is destroyed */
 
 static void sg_show(void *w, int on) {
     if (!w) return;
@@ -428,7 +428,7 @@ static void sg_paint_rows(void *canvas) {
         widget_prepare_text_style(pass ? sg.st_sub : sg.st_title, canvas);
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, sg_tile(r), pass, tx, sg_row_y(r) - off + (pass ? LIST_SUB_Y : LIST_TITLE_Y), room,
-                      pass ? LIST_SUB_H : LIST_TITLE_H, GRID_VIEW_H);
+                      pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
     az_paint_heads(&sg.al, canvas); /* the section letters, then over everything the pinned band and its letter */
 }
@@ -549,12 +549,8 @@ static int sg_on_load(const void *unused) {
  * The navbar's title: the large title is in the content; once it has scrolled away the navbar shows the small one
  */
 static void sg_title_update(void) {
-    int on = (sg.noscroll && !sg_recent()) || sg.select ||
-             (sg_off() > (sg.head ? PH_COLLAPSE : SG_COLLAPSE) && sg.title_fits);
-    if (on != sg.title_on) {
-        sg.title_on = on;
-        widget_set_visible(sg.title, on, 0);
-    }
+    int on = sg.noscroll || sg.select || pod_title_gone(sg_off(), sg.head ? PH_COLLAPSE : 0);
+    pod_title_set(sg.title, &sg.title_on, on);
     /* The navbar's fade (an insensitive image, built hidden) is for rows passing under the bar: shown while the list is scrolled, hidden at rest, where
      * it would darken the large title (as the Albums and Playlists pages). Never a touch target. No fade widget = nothing happens. */
     if (sg.fade) {
@@ -609,7 +605,12 @@ static int sg_on_build_start(const void *unused) {
     unsigned seen[2 * SG_BUILD_N + 1];
     (void)unused;
     sg.build_timer = 0;
-    if (!sg.view || !sg.count || sg.own || !sg_valid() || !cc_build_open(2 * SG_BUILD_N + 1, CC_MISSING)) return RET_OK;
+    if (!sg.view || !sg.count || sg.own || !sg_valid()) return RET_OK;
+    if (!cc_build_open(2 * SG_BUILD_N + 1, CC_MISSING)) {
+        if (cc_build_orphan()) /* a worker stopped by the page before is still inside a job: ask again shortly */
+            sg.build_timer = timer_add(sg_on_build_start, (void *)0, SG_BUILD_MS);
+        return RET_OK;
+    }
     sg.own = 1;
     c = sg_first();
     sg.build_at = c;
@@ -725,19 +726,10 @@ static void sg_head_prep(void) {
 }
 
 static void sg_head(
-    void) { /* the navbar's title: "N Selected" in select mode, else "Songs" (in a language where it does not fit: none), else the list's, cut to fit */
+    void) { /* the navbar's title: "N Selected" in select mode, else "Songs" or the list's name, cut to its room with an ellipsis */
     char buf[64];
     if (!sg.select) {
-        const unsigned *t;
-        if (!sg_lib()) {
-            az_fit(sg.title, sg_name_text());
-            sg.title_fits = !sg_recent(); /* (Recently Added: it never fits before x 122) */
-            return;
-        }
-        widget_set_tr_text(sg.title, "Songs");
-        t = widget_get_text(sg.title);
-        sg.title_fits =
-            !t || az_text_w(sg.title, t) <= I(sg.title, W_W); /* (no text, or no way to measure it: shown) */
+        az_fit(sg.title, sg_lib() ? TR("Songs") : sg_name_text());
         return;
     }
     sg_fmt(buf, sizeof buf, TR("%d Selected"), (int)sg.nsel);
@@ -1401,7 +1393,9 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     sg.name[i] = 0;
     sg.win = window_open("m1plus_songs");
     if (!sg.win) {
-        if (sg_under) memcpy(&sg, sg_under, sizeof sg), free(sg_under), sg_under = (void *)0; /* the page below is the open one again */
+        if (sg_under)
+            memcpy(&sg, sg_under, sizeof sg), free(sg_under),
+                sg_under = (void *)0; /* the page below is the open one again */
         return -1;
     }
     widget_on(sg.win, EVT_DESTROY, sg_on_destroy, (void *)0);
@@ -1503,11 +1497,11 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
             (void *)0; /* (one that did not decode is freed with the other at destroy: the pair is all or none) */
     sg.noscroll = !widget_on(sg.sv, EVT_SCROLL, sg_on_scroll, (void *)0) ||
                   !widget_on(sg.sv, EVT_SCROLL_END, sg_on_scroll, (void *)0);
-    if (sg.noscroll && !sg_recent())
+    if (sg.noscroll)
         widget_set_visible(
             sg.title, 1,
             0); /* the large title's collapse needs the scroll events: without them the navbar keeps its title */
-    sg.title_on = sg.noscroll && !sg_recent();
+    sg.title_on = sg.noscroll;
     widget_on(sg.win, EVT_WINDOW_TO_FG, sg_on_fg, (void *)0);
     widget_on(sg.win, EVT_WINDOW_TO_BG, sg_on_bg, (void *)0);
     widget_on(sg.view, EVT_POINTER_DOWN, sg_on_down, (void *)0);

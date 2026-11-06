@@ -99,7 +99,7 @@ def songs_view_tests(ctx):
     expect(shown_titles(texts, titles)[:3] == ['n2', 'n1', 'n0'] and vis(m, 'btn_play') == (1, 1), f'the rows are the 0xf009 list in its order ({shown_titles(texts, titles)[:3]})')
     m.setword(m.sv + SC_YOFF, 300)
     m.call(PSYMS['sg_on_scroll'], count=4000000)
-    expect(not [c for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['label_title'] and c[2]], 'the small title never shows on this page, also scrolled (it does not fit before x 122)')
+    expect([c for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['label_title'] and c[2]], 'the small title shows once scrolled, as on the other lists (cut to its room before x 122)')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
 
     for label, home, cls in (('Favorites', 'HOME_FAV', 'CLASS_FAV'), ('Hi-Res', 'HOME_HIRES', 'CLASS_HIRES')):
@@ -140,7 +140,7 @@ def album_view_tests(ctx):
     expect(m.props[(m.sv, 'virtual_h')] == TOP + rows * PITCH, f'the content is the title block and {rows} grid rows ({m.props[(m.sv, "virtual_h")]})')
     blits, texts, styles, fills = SG.settle(m)
     names = [t for t, r in texts if t in EXPECT]
-    expect(names == EXPECT[:2], f'the albums, newest first, one tile per album (a compilation\'s tracks and the same name in another case in one; the song with no album skipped): {names}')
+    expect(names == EXPECT[:4], f'the albums, newest first, one tile per album (a compilation\'s tracks and the same name in another case in one; the song with no album skipped), the second row\'s cut by the window too: {names}')
     expect(set(styles) == {'label_grid_sub', 'label_grid_title'}, f'drawn in the Albums grid\'s text styles ({set(styles)})')
     dst = [b[2] for b in blits if m.bitmaps[b[0]][1:] == (COVER, COVER)]
     want = [[MARGIN + c * (COVER + GAP), TOP + r * PITCH, COVER, COVER] for r in range(rows) for c in range(2)]
@@ -163,7 +163,7 @@ def album_view_tests(ctx):
     m.flags.clear(); m.calls.clear()
     SG.click(m, 'btn_albumview')
     blits, texts, styles, fills = SG.settle(m)
-    expect(m.flags == [(ALL, 3)] and [t for t, r in texts if t in EXPECT] == EXPECT[:2], 'toggling again reads the full list again and shows the same albums')
+    expect(m.flags == [(ALL, 3)] and [t for t, r in texts if t in EXPECT] == EXPECT[:4], 'toggling again reads the full list again and shows the same albums')
 
     # nothing of the stock list is read while the album view is up: a replaced list is not stale for it
     m.calls.clear()
@@ -171,7 +171,7 @@ def album_view_tests(ctx):
     m.call(PSYMS['sg_on_fg'], count=4000000)
     blits, texts, styles, fills = SG.paint(m)
     bad = [c for c in m.calls if c[0] in ('loadLocalClassList', 'timer_add') and (c[0] != 'timer_add' or c[1] == PSYMS['sg_on_stale'])]
-    expect(not bad and [t for t, r in texts if t in EXPECT] == EXPECT[:2], f'{bad}'
+    expect(not bad and [t for t, r in texts if t in EXPECT] == EXPECT[:4], f'{bad}'
            'back in front, or painted, with the stock list replaced: no query, no stale timer, the albums as they were')
     # select mode is not offered
     m.calls.clear(); m.call(PSYMS['sg_on_select'], count=4000000)

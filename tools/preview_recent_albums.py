@@ -21,7 +21,7 @@ ALBUMS = [('Kind of Blue', 'Miles Davis', 0), ('Music Has the Right to Children'
 
 
 def title(s, im):
-    s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, 'Recently Added'), 32, 250), 32)
+    s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, 'Recently Added'), 32, O['SG_TITLE_W']), 32)
 
 
 def navbar(s, im, pieces):

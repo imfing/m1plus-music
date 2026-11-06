@@ -19,14 +19,9 @@ LIB_ARTIST_ORDER = [12, 8, 1, 4, 6, 2, 5, 7, 9, 11, 0, 3, 10, 13]    # by hand: 
 # ... < queen (A Night at the Opera, Greatest Hits) < theo; The Wall and Wall tie and keep the stock order; Unknown Album last
 
 
-def fold(s): return ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in s)
-def skip(s): return s[4:] if len(s) > 4 and fold(s[:4]) == 'the ' else s
-
-
 def model(specs):
-    """Artist order, independently: Unknown Album last, then the artist and the title without a leading "The ", ASCII
-    case folded, then the stock position."""
-    return sorted(range(len(specs)), key=lambda i: (specs[i][0] == 'Unknown Album', fold(skip(specs[i][1])), fold(skip(specs[i][0])), i))
+    """Artist order, independently: Unknown Album last, then the artist and the title by the library name order (name_sort_key), then the stock position."""
+    return sorted(range(len(specs)), key=lambda i: (specs[i][0] == 'Unknown Album', name_sort_key(specs[i][1]), name_sort_key(specs[i][0]), i))
 
 
 def lib_machine(specs=LIB, sort=None, data=None):
@@ -141,6 +136,26 @@ def run(ctx):
     m = lib_machine(big + [('Album 4000', 'Artist')]); m.call(cover_open, count=2000000)
     expect(not any(c[0] == 'calloc' and c[1] == 4001 * 4 for c in m.calls) and m.props.get((m.widgets['label_status'], 'sensitive')) == 1,
            'a library over the limit is not sorted (nothing shows)')
+
+    # ===================== 4b. the name comparison: digit runs, CJK by pinyin, white space, stable ties =====================
+    nat = [('Vol 10', 'Mix'), ('Vol 2', 'Mix'), ('B', 'Disc 10'), ('B', 'Disc 9'), ('Z', ' Zed'), ('Y', 'zebra'), ('周杰伦', 'Jay'),
+           ('Same', 'Twin'), ('Same', 'Twin'), ('_x', 'Sym'), ('7', 'Seven'), ('孙燕姿', 'Stefanie'), ('Sam', 'S'), ('The Abc', 'First')]
+    nat = [(album, artist) for artist, album in nat]
+    m = lib_machine(nat); m.call(cover_open, count=30000000)
+    shown, rows = shelf(m, len(nat))
+    expect(rows == model(nat), f'digit runs by value, CJK by pinyin initials, white space skipped, ties stable ({[nat[i] for i in rows]})')
+    artists_in_order = [nat[i][1] for i in rows]
+    expect(artists_in_order.index('Vol 2') < artists_in_order.index('Vol 10') and artists_in_order.index('7') < artists_in_order.index('_x') < artists_in_order.index('B'),
+           'Vol 2 before Vol 10; digits before symbols before letters')
+    expect(artists_in_order.index('Sam') < artists_in_order.index('孙燕姿') < artists_in_order.index('Y') < artists_in_order.index('Z') < artists_in_order.index('周杰伦'),
+           'a CJK artist sits among the Latin ones by its initials (孙燕姿 "syz" after Sam; 周杰伦 "zjl" after Z)')
+    twins = [i for i in rows if nat[i][1] == 'Same']
+    expect(twins == sorted(twins), 'the same artist and title keep the stock order')
+    m = lib_machine(nat)
+    m.calloc_fail_size = 8 * len(nat) + sum(len(x.encode()) + 1 for pair in nat for x in pair if any(ord(c) > 127 for c in x))   # the keys: two pointers per album and the copies of the CJK names
+    m.call(cover_open, count=30000000)
+    shown, rows = shelf(m, len(nat))
+    expect(rows == list(range(len(nat))), 'no memory for the keys: the page still opens, on the stock order')
 
     # ===================== 5. opens on the playing album =====================
     def opened(m, tracks, pos, **kw):

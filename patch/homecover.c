@@ -5,9 +5,9 @@
  * The Home instance of the menu builds the album covers that have no cache file (neither a picture nor the "no art" marker), or every cover
  * again while Settings > Library > Rebuild Covers is requested (REBUILD_FILE, CC_REBUILD, the line reads "Rebuilding covers"), with the
  * shared worker of patch/covercache.c, as the Albums page does (patch/albums.c "background cache build"), and shows a plain line at the
- * top of the page while it runs: "Preparing covers 120/840" (the key "Preparing covers" and the count, built here). The line is the
- * asset's hidden, insensitive label pod_cover_prog (tools/pod_ui.py); showing it moves the list down by HC_H (the list keeps its
- * place, menu_arrange clamps the offset), hiding it moves the list back. Nothing is shown when nothing is missing.
+ * top of the page while it runs: a capsule "Preparing covers 120/840" with a progress bar and a stop button x. The pill is the
+ * asset's hidden, insensitive view pod_cache_pill (tools/pod_ui.py cache_pill: the label pod_cover_prog, the bar's pod_cache_fill, the button pod_cache_x); showing it moves the list down by HC_H (the list keeps its
+ * place, menu_arrange clamps the offset), hiding it moves the list back. The x stops Home's pass for the rest of the boot (hc_off) until Rebuild Covers is asked. Nothing is shown when nothing is missing.
  *
  * No hook of its own: patch/home.c calls homecover_start from home_menu_opened beside recent_start. Everything runs from the window's
  * events and page-scoped timers: HC_START_MS after the page is in front a one-shot opens a CC_MISSING set (refused while Cover Flow, the
@@ -29,14 +29,23 @@
 
 #define HC_START_MS \
     RC_RESOLVE_MS /* after the page is in front: nothing is scanned while the menu opens and settles (Recently Played's album list load waits as long) */
+#define HC_RESUME_MS \
+    1000 /* back on Home with the pill up when it left: only the page's return transition to cover, not the first open's menu and Recently Played load */
 #define HC_POLL_MS 500
+#define HC_DOTS_MS 400 /* the waiting text's dots: one more every 400 ms (1, 2, 3, back to 1) */
 #define HC_BATCH 64 /* albums stat'ed per scan step */
 #define HC_SCAN_MS 20 /* between steps: input is served in between */
 
 static struct {
-    void *win, *lab, *lv;
+    void *win, *pill, *lab, *fill, *stop, *lv;
     unsigned timer; /* the one-shot start, the scan steps, then the poll */
+    unsigned dots; /* the waiting text's dot timer (0 = none): runs only while wait is set and the pill is shown */
+    const char *wkey; /* the waiting text's key (translated again at each dot tick) */
+    int dph; /* the dots shown now, less one (0..2) */
     int fg, own, scanning, shown, done;
+    int wait, need,
+        probe; /* wait: the pill shows its waiting text; need: parts out of date (1 covers, 2 tracks) after the library was read; probe: no pill, the library is read to compare */
+    int resume; /* Home left while the pill was up (a build or its wait in progress): the next foreground restarts at HC_RESUME_MS */
     int rebuild; /* the set is a CC_REBUILD one (REBUILD_FILE existed when the scan began) */
     void *albums; /* the library's albums (cc_albums), held for the scan only */
     unsigned *order;
@@ -45,23 +54,177 @@ static struct {
     void *songs;
     unsigned lcur, lcount, lsaved;
     int len, lmore, lerr;
+    int trunc; /* the cover pass could not queue every missing album (CC_MAX_JOBS, or no memory): not stamped, another chunk follows it */
+    unsigned rows[SH_TILES]; /* the shelf's albums (recent_rekey) the scan's order puts first, and how many */
+    int shelf;
+    unsigned next,
+        nhash; /* a truncated chunk: the scan cursor where the next one starts, and the hash of the scan order */
 } hc __attribute__((section(".scratch")));
+
+static int hc_off __attribute__((section(
+    ".scratch"))); /* the stop button (x) was pressed: Home builds nothing more until the next Rebuild Covers (homecover_rebuild_asked); in memory, so a reboot clears it */
+
+/* ---------------------------------------------------------------------------
+ * The stamp and the library's signature (docs/modules/homecover.md "The check")
+ */
+#define HC_SIG 9 /* the database's signature: three files, three words each */
+#define HC_DB "/mnt/data/database.db" /* the stock library (songtable and the rest) */
+
+static struct {
+    int c, t; /* the part's line was there */
+    unsigned cn, ch, tn, th; /* albums and key hash of the library at the end of the last complete pass of the part */
+} st __attribute__((section(".scratch")));
+
+static struct {
+    int have, sigok; /* n and h are the library's; sig is the database state they were read in (and was readable) */
+    unsigned n, h, oh,
+        sig[HC_SIG]; /* oh: the cover keys in stored order, position-sensitive (the scan order is the stored one plus the shelf rows) */
+} lib __attribute__((section(".scratch")));
+
+/* A chain of cover passes (the albums did not fit one set, CC_MAX_JOBS): where the next chunk's scan starts, kept while Home is in the background. Valid for the library signature (n, h)
+ * and the mode (rebuild) it was taken for; oh is lib.oh then (the stored order: a reordered list shows there); rows / shelf make the rest of the order the chunk had. */
+static struct {
+    int valid, rebuild, shelf;
+    unsigned n, h, cur, oh, rows[SH_TILES];
+} rs __attribute__((section(".scratch")));
+
+static int hc_has(const char *p, const char *tag) {
+    while (*tag && *p == *tag) ++p, ++tag;
+    return !*tag;
+}
+
+/* One line "<tag> <decimal albums> <hex hash>"; 1 and the numbers when well formed. */
+static int hc_line(const char *p, const char *tag, unsigned *n, unsigned *h) {
+    unsigned v = 0;
+    int digits = 0;
+    if (!hc_has(p, tag)) return 0;
+    p += 7;
+    for (; *p >= '0' && *p <= '9'; ++p, ++digits) v = v * 10 + (unsigned)(*p - '0');
+    if (!digits || *p++ != ' ') return 0;
+    *n = v, v = 0, digits = 0;
+    for (; (*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f'); ++p, ++digits)
+        v = v * 16 + (unsigned)(*p <= '9' ? *p - '0' : *p - 'a' + 10);
+    if (!digits || (*p != '\n' && *p)) return 0;
+    *h = v;
+    return 1;
+}
+
+static void st_read(void) {
+    char buf[96];
+    const char *p;
+    int fd, n;
+    memset(&st, 0, sizeof st);
+    fd = open(STAMP_FILE, O_RDONLY, 0);
+    if (fd < 0) return;
+    n = read(fd, buf, sizeof buf - 1);
+    close(fd);
+    if (n <= 0) return;
+    buf[n] = 0;
+    for (p = buf; *p;) {
+        if (!st.c && hc_line(p, "covers ", &st.cn, &st.ch)) st.c = 1;
+        if (!st.t && hc_line(p, "tracks ", &st.tn, &st.th)) st.t = 1;
+        while (*p && *p != '\n') ++p;
+        if (*p) ++p;
+    }
+}
+
+/* The stamp as st says (the card's, atomically); no line left removes the file. 0 done, -1 not written. */
+static int st_write(void) {
+    char buf[96];
+    unsigned o = 0;
+    if (st.c) o += (unsigned)snprintf(buf + o, sizeof buf - o, "covers %u %08x\n", st.cn, st.ch);
+    if (st.t) o += (unsigned)snprintf(buf + o, sizeof buf - o, "tracks %u %08x\n", st.tn, st.th);
+    if (!o) {
+        unlink(STAMP_FILE);
+        return 0;
+    }
+    return pod_card_write(CARD_DIR, STAMP_FILE, STAMP_TMP, buf, o, (const void *)0, 0);
+}
+
+/* Clear Cover Cache (1) and Clear Track Durations (2) make their part stale: the line goes. */
+void homecover_stamp_drop(int mask) {
+    st_read();
+    if (mask & 1) st.c = 0;
+    if (mask & 2) st.t = 0;
+    st_write();
+}
+
+/* The database's state: modification time (seconds, nanoseconds) and size of the file and of its WAL and journal (as the Playlists page keeps its scans, patch/playlists.c
+ * pl_dbsig). 0 when the file cannot be read. struct stat (MIPS o32): st_size at +0x30, st_mtime at +0x40, its nanoseconds at +0x44. */
+static int hc_dbsig(unsigned sig[HC_SIG]) {
+    static const char *const path[3] = {HC_DB, HC_DB "-wal", HC_DB "-journal"};
+    unsigned s[40];
+    int i;
+    for (i = 0; i < 3; ++i) {
+        memset(s, 0, sizeof s);
+        if (__xstat(3, path[i], s) != 0)
+            sig[3 * i] = sig[3 * i + 1] = sig[3 * i + 2] = 0xffffffffu;
+        else
+            sig[3 * i] = s[0x40 / 4], sig[3 * i + 1] = s[0x44 / 4], sig[3 * i + 2] = s[0x30 / 4];
+        if (i == 0 && sig[0] == 0xffffffffu) return 0;
+    }
+    return 1;
+}
+
+/* The library's albums (a stock album list, any order): the count and the sum of the cover keys (artist + album), with the database's state now. */
+static void hc_lib_of(void *list) {
+    unsigned n = list ? deque_size(list) : 0, i, h = 0, oh = 0, k;
+    for (i = 0; i < n; ++i) k = cc_album_key(deque_at(list, i)), h += k, oh = oh * 31 + k;
+    lib.n = n, lib.h = h, lib.oh = oh, lib.have = 1;
+    lib.sigok =
+        n ? hc_dbsig(lib.sig)
+          : 0; /* (an empty library is not trusted: stock answers empty to a failed query too, so Home asks again at each foreground) */
+}
+
+/* What is out of date by the stamp against lib: bit 1 covers, bit 2 track lengths. */
+static int hc_stale(void) {
+    return (st.c && st.cn == lib.n && st.ch == lib.h ? 0 : 1) | (st.t && st.tn == lib.n && st.th == lib.h ? 0 : 2);
+}
+
+/* A pass ran to its end (mask 1 covers, 2 tracks): the stamp says the library is as lib. */
+static void hc_stamp(int mask) {
+    if (!lib.have) return;
+    st_read();
+    if (mask & 1) st.c = 1, st.cn = lib.n, st.ch = lib.h;
+    if (mask & 2) st.t = 1, st.tn = lib.n, st.th = lib.h;
+    st_write();
+}
+
+/* Is work expected? Cheap: the stamp's lines and the database file's state, no album query. A missing line or a pending Rebuild Covers: that part (1, 2); a database file that is not as it
+ * was when lib was read, or nothing read yet since the boot: 4 (the library is asked at HC_START_MS without showing anything; the pill appears only if its signature differs from the stamp). 0: nothing. */
+static int hc_expect(void) {
+    unsigned sig[HC_SIG];
+    int mask, i;
+    if (!pod_card_mounted()) return 0; /* nothing can be made without the card */
+    st_read();
+    mask = (st.c ? 0 : 1) | (st.t ? 0 : 2) | (access(REBUILD_FILE, F_OK) ? 0 : 1);
+    if (mask) return mask;
+    if (!lib.have || !lib.sigok) return 4;
+    if (!hc_dbsig(sig)) return 4;
+    for (i = 0; i < HC_SIG; ++i)
+        if (sig[i] != lib.sig[i]) return 4; /* (a play changes the file too: not work until the library says so) */
+    return hc_stale(); /* the same database: what the last pass left stale (a pass that did not finish) */
+}
 
 #define HC_LBATCH 1024 /* songs looked up per step (in memory) */
 #define HC_LSTAT 64 /* files stat'ed per step: the songs the table lacks */
 #define HC_LSAVE 500 /* measured songs between two saves of the table */
-static unsigned hl_clean __attribute__((section(".scratch"))),
+static unsigned hl_clean __attribute__((section(".scratch"))), hl_sum __attribute__((section(".scratch"))),
     hl_epoch __attribute__((section(
-        ".scratch"))); /* albums + 1 of a pass that found every song in the table (and the clears then): not read again until that changes */
+        ".scratch"))); /* the library signature (albums + 1, key sum) of a pass that found every song in the table (and the clears then): not read again until that changes */
 
-/* The line shown or hidden (visible and sensitive together) and the list below it made room for. */
+/* A pass found every song of the library as lib says in the table. */
+static void hl_mark(void) { hl_clean = lib.n + 1, hl_sum = lib.h, hl_epoch = dur_epoch(); }
+static int hl_marked(void) { return lib.have && hl_clean == lib.n + 1 && hl_sum == lib.h && hl_epoch == dur_epoch(); }
+
+/* The pill shown or hidden (visible and sensitive together) and the list below it made room for. */
 static void hc_show(int on) {
     static const char *const kids[] = {"pod_scrollview", "scroll_bar_m"};
     int h = WIN_H - 2 * HOME_PAD - (on ? HC_H : 0), i;
-    if (!hc.win || !hc.lab || !hc.lv || on == hc.shown) return;
+    if (!hc.win || !hc.pill || !hc.lv || on == hc.shown) return;
     hc.shown = on;
-    widget_set_visible(hc.lab, on, 0);
-    widget_set_sensitive(hc.lab, on);
+    widget_set_visible(hc.pill, on, 0);
+    widget_set_sensitive(hc.pill, on);
     widget_move(hc.lv, 0, HOME_PAD + (on ? HC_H : 0));
     widget_resize(hc.lv, SCREEN_W, h);
     for (i = 0; i < 2; i++) {
@@ -72,8 +235,62 @@ static void hc_show(int on) {
     menu_arrange(hc.win, 0); /* the scroll offset is clamped to the new height */
 }
 
+/* The dot timer goes (a no-op when it is not running). */
+static void hc_dots_stop(void) {
+    if (hc.dots) timer_remove(hc.dots);
+    hc.dots = 0;
+}
+
+/* The waiting label: the translated text without its trailing ellipsis (the "…" character, or three ASCII dots) and 1 to 3 ASCII dots by phase. 1 when the text has no ellipsis (shown as it is, no animation). */
+static int hc_wait_label(void) {
+    char text[96];
+    const char *t = TR(hc.wkey);
+    unsigned n = 0;
+    while (t[n]) n++;
+    const unsigned char *e = (const unsigned char *)t + (n >= 3 ? n - 3 : 0);
+    if (n >= 3 && ((e[0] == 0xe2 && e[1] == 0x80 && e[2] == 0xa6) || (e[0] == '.' && e[1] == '.' && e[2] == '.')))
+        n -= 3;
+    else {
+        widget_set_text_utf8(hc.lab, t);
+        widget_invalidate_force(hc.lab, (void *)0);
+        return 0;
+    }
+    if (n > sizeof text - 4) n = sizeof text - 4;
+    memcpy(text, t, n);
+    memcpy(text + n, "...", (unsigned)hc.dph + 1);
+    text[n + (unsigned)hc.dph + 1] = 0;
+    widget_set_text_utf8(hc.lab, text);
+    widget_invalidate_force(hc.lab, (void *)0);
+    return 1;
+}
+
+/* The dot tick (page-scoped, RET_REPEAT): only the label changes. It ends itself when the waiting state is over (a stale tick does nothing). */
+static int hc_on_dots(const void *unused) {
+    (void)unused;
+    if (!hc.win || !hc.wait || !hc.shown) {
+        hc.dots = 0;
+        return RET_OK;
+    }
+    hc.dph = (hc.dph + 1) % 3;
+    hc_wait_label();
+    return RET_REPEAT;
+}
+
+/* The waiting state: work is expected, the count is not known yet: "Checking library…" (or "Rebuilding covers…" while a Rebuild Covers request is pending), an empty bar, no count. The dots after the text cycle on their own timer. */
+static void hc_wait_text(void) {
+    hc.wait = 1;
+    hc.wkey = access(REBUILD_FILE, F_OK) == 0 ? "Rebuilding covers…" : "Checking library…";
+    hc.dph = 0;
+    if (hc_wait_label() && !hc.dots)
+        hc.dots = timer_add(hc_on_dots, (void *)0, HC_DOTS_MS); /* (no timer: the text stays at one dot) */
+    widget_set_visible(hc.fill, 0, 0);
+    widget_invalidate_force(hc.pill, (void *)0);
+}
+
 static void hc_text(void) {
     char text[64];
+    int total, w;
+    if (hc.wait) hc.wait = 0, hc_dots_stop(), widget_set_visible(hc.fill, 1, 0);
     snprintf(text, sizeof text, "%s %d/%d",
              TR(hc.len       ? "Measuring tracks"
                 : hc.rebuild ? "Rebuilding covers"
@@ -81,6 +298,14 @@ static void hc_text(void) {
              cc_build_done(), cc_build_total());
     widget_set_text_utf8(hc.lab, text);
     widget_invalidate_force(hc.lab, (void *)0);
+    total = cc_build_total();
+    w = total > 0 ? HC_BW * cc_build_done() / total : 0;
+    widget_resize(hc.fill,
+                  w < HC_BH   ? HC_BH
+                  : w > HC_BW ? HC_BW
+                              : w,
+                  HC_BH); /* the bar's fill: done/total of the track, never thinner than it is tall */
+    widget_invalidate_force(hc.pill, (void *)0);
 }
 
 static void hc_free_scan(void) {
@@ -111,7 +336,7 @@ static void hc_dur_save(void) {
     hc.lsaved = (unsigned)done;
 }
 
-/* The page's build released: the timer removed, what was measured saved, a running worker cancelled and joined (bounded by one album's art or one file), the line hidden. */
+/* The page's build released: the timer removed, what was measured saved, a running worker cancelled (joined if finished, else left to exit on its own), the line hidden. */
 static void hc_end(void) {
     if (hc.timer) timer_remove(hc.timer);
     hc.timer = 0;
@@ -121,6 +346,8 @@ static void hc_end(void) {
     hc.own = 0;
     if (hc.len) dur_release();
     hc.len = 0;
+    hc.wait = 0;
+    hc_dots_stop();
     hc_show(0);
 }
 
@@ -129,14 +356,27 @@ static int hc_on_dscan(const void *unused);
 /* The song length pass: the library's songs are read (one stock query, as the covers' albums are), looked up in the table in steps, the ones it lacks queued for the worker. */
 static void hc_dur_begin(void) {
     unsigned cap;
-    if (!hc.win || !hc.fg || hc.own || hc.len || hc.timer || cc_build_busy() || !pod_card_mounted() ||
-        (hl_clean == hc.count + 1 && hl_epoch == dur_epoch()))
+    int failed;
+    if (!hc.win || !hc.fg || hc_off || hc.own || hc.len || hc.timer || cc_build_busy() || !pod_card_mounted()) {
+        hc_show(0); /* (no stamp line: Home asks again) */
         return;
+    }
+    if (hl_marked()) { /* a pass found the table complete for this library */
+        hc_stamp(2);
+        hc_show(0);
+        return;
+    }
+    if (hc.wait) hc_wait_text(); /* (the pill, if waiting, now says what is waited for) */
     hc.songs = cc_songs();
+    failed = !hc.songs && cc_list_failed();
     hc.lcount = hc.songs ? deque_size(hc.songs) : 0;
     cap = hc.lcount < CC_MAX_LEN_JOBS ? hc.lcount : CC_MAX_LEN_JOBS;
+    if (!cap && !failed && !hc.count)
+        hc_stamp(
+            2); /* no songs in a library with no albums: nothing to measure. Albums but no songs is a failed read (stock answers empty to a failed query): no line, Home asks again */
     if (!cap || !cc_build_open(cap, CC_DURATIONS)) {
         hc_free_scan();
+        hc_show(0);
         return;
     }
     dur_acquire();
@@ -160,7 +400,7 @@ static int hc_on_dpoll(const void *unused) {
     if (done >= cc_build_total()) {
         hc_dur_save();
         more = hc.lmore && !hc.lerr; /* more songs than one set holds: another pass */
-        if (!hc.lmore && !hc.lerr) hl_clean = hc.count + 1, hl_epoch = dur_epoch();
+        if (!hc.lmore && !hc.lerr) hl_mark(), hc_stamp(2);
         hc_end();
         if (more) hc_dur_begin();
         return RET_OK;
@@ -196,7 +436,7 @@ static int hc_on_dscan(const void *unused) {
     hc_free_scan();
     dur_pass_end(); /* the entries of files no song names any more */
     if (!cc_build_total()) { /* every song is in the table */
-        if (!hc.lmore) hl_clean = hc.count + 1, hl_epoch = dur_epoch();
+        if (!hc.lmore) hl_mark(), hc_stamp(2);
         hc_end();
         return RET_OK;
     }
@@ -213,6 +453,8 @@ static int hc_on_dscan(const void *unused) {
     return RET_OK;
 }
 
+static int hc_on_start(const void *unused);
+
 static int hc_on_poll(const void *unused) {
     int done;
     (void)unused;
@@ -225,9 +467,31 @@ static int hc_on_poll(const void *unused) {
         recent_refresh(); /* the tiles that found no file try again */
     }
     if (done >= cc_build_total()) {
-        if (hc.rebuild) unlink(REBUILD_FILE); /* the request is done only when every album was extracted again */
+        int stalled = cc_build_stalled(),
+            again = hc.trunc &&
+                    !stalled; /* (a stalled set did not finish its albums; a truncated one did not queue them all) */
+        if (!stalled && !hc.trunc) { /* the scan reached the end of the list and the set finished */
+            if (hc.rebuild)
+                unlink(
+                    REBUILD_FILE); /* the request is done only when every album was extracted again (a stalled set leaves the rest for the next foreground, minus the hung album) */
+            hc_stamp(
+                1); /* every album has a file or a marker now (a stalled set: the hung album has .bad but the rest may not have been looked at; the next foreground scans again and skips it) */
+            rs.valid = 0;
+        } else if (again) {
+            rs.valid = 1, rs.rebuild = hc.rebuild, rs.n = lib.n,
+            rs.h =
+                lib.h; /* the chunk finished: the next one starts where this scan stopped (an unfinished chunk leaves the record at its own start) */
+            rs.cur = hc.next, rs.oh = hc.nhash, rs.shelf = hc.shelf;
+            memcpy(rs.rows, hc.rows, sizeof rs.rows);
+        }
         hc_end();
-        hc_dur_begin(); /* then the songs' durations */
+        if (again) {
+            hc.timer = timer_add(
+                hc_on_start, (void *)0,
+                HC_SCAN_MS); /* the albums that did not fit: the next chunk starts at once (it begins at the cursor, so each chunk moves on and the chain ends) */
+            if (!hc.timer) hc_show(0);
+        } else if (hc.need & 2)
+            hc_dur_begin(); /* then the songs' durations */
         return RET_OK;
     }
     hc.timer = timer_add(hc_on_poll, (void *)0, HC_POLL_MS);
@@ -237,17 +501,16 @@ static int hc_on_poll(const void *unused) {
 
 /* The scan in steps (as al_on_build_start): the first call opens the set, every call considers HC_BATCH albums in the list's order and,
  * while more remains, re-arms itself; the worker starts only after the last step. */
-/* The scan's order: the list's (cc_album_order, NULL = as stored), with the Recently Played albums moved to the front, most recent first,
- * so the shelf's covers are made first (the rest keep their order). No memory for an order: the list's own. */
+/* The scan's order: as stored (NULL), with the Recently Played albums moved to the front, most recent first, so the shelf's covers are made
+ * first (the rest keep their order). Not the Albums page's display order: Album Order by artist would sort the whole library on the UI thread
+ * at every chunk, and Albums and Cover Flow build what they show themselves. No memory for an order: the stored one. */
 static unsigned *hc_order(void *albums, const unsigned *rows, int shelf) {
-    unsigned n = deque_size(albums), *v = cc_album_order(albums), i, p, k;
+    unsigned n = deque_size(albums), *v, i, p, k;
     int s;
-    if (!shelf) return v;
-    if (!v) {
-        v = calloc(n, sizeof *v);
-        if (!v) return v;
-        for (i = 0; i < n; ++i) v[i] = i;
-    }
+    if (!shelf) return (unsigned *)0;
+    v = calloc(n, sizeof *v);
+    if (!v) return v;
+    for (i = 0; i < n; ++i) v[i] = i;
     for (s = 0, k = 0; s < shelf; ++s) {
         for (p = k; p < n && v[p] != rows[s]; ++p) {
         }
@@ -259,40 +522,109 @@ static unsigned *hc_order(void *albums, const unsigned *rows, int shelf) {
 }
 
 static int hc_on_start(const void *unused) {
-    unsigned cap, rows[SH_TILES];
-    int shelf;
+    unsigned cap, i;
+    int resume, nothing;
     (void)unused;
     hc.timer = 0;
-    if (!hc.win || !hc.fg) return RET_OK;
+    if (!hc.win || !hc.fg || hc_off) return RET_OK;
     if (!hc.scanning) {
-        if (hc.own || cc_build_busy())
-            return RET_OK; /* the worker is held by someone else: the next foreground retries */
-        hc.albums = cc_albums();
-        /* Recently Played: a stale cover key names a file the build never makes; its albums are queued first */
-        shelf = recent_rekey(hc.albums, rows);
-        hc.count = hc.albums ? deque_size(hc.albums) : 0;
-        cap = hc.count < CC_MAX_JOBS ? hc.count : CC_MAX_JOBS;
-        hc.rebuild = !access(REBUILD_FILE,
-                             F_OK); /* Settings > Library > Rebuild Covers asked: every album, existing files too */
-        if (!cap || !cc_build_open(cap, hc.rebuild ? CC_REBUILD : CC_MISSING)) {
-            hc_free_scan();
+        if (hc.own) return RET_OK;
+        if (cc_build_busy()) { /* held by someone else: the next foreground retries; by a stopped worker still inside its last album: soon */
+            if (cc_build_orphan())
+                hc.timer = timer_add(hc_on_start, (void *)0, HC_POLL_MS);
+            else
+                hc_show(0);
             return RET_OK;
         }
-        hc.order = hc_order(hc.albums, rows, shelf);
+        hc.albums = cc_albums();
+        if (!hc.albums &&
+            cc_list_failed()) { /* the query or the copy failed: not an empty library, nothing is stamped (Home asks again) */
+            hc_free_scan();
+            hc_show(0);
+            return RET_OK;
+        }
+        hc.trunc = 0;
+        /* Recently Played: a stale cover key names a file the build never makes; its albums are queued first */
+        hc.shelf = recent_rekey(hc.albums, hc.rows);
+        hc.count = hc.albums ? deque_size(hc.albums) : 0;
+        hc_lib_of(hc.albums); /* the library's signature, and the database's state it was read in */
+        st_read();
+        hc.rebuild = !access(REBUILD_FILE,
+                             F_OK); /* Settings > Library > Rebuild Covers asked: every album, existing files too */
+        hc.need = hc_stale() | hc.rebuild;
+        hc.probe = 0;
+        if (hc.need &&
+            (!hc.shown ||
+             hc.wait)) { /* (a probe shows the pill only now; the waiting text follows what is out of date) */
+            hc_show(1);
+            hc_wait_text();
+        }
+        if (!hc.need) { /* the stamp says the library is the one the cache was made for (the database changed, the albums did not): nothing to scan */
+            hc_free_scan();
+            hc_show(0);
+            return RET_OK;
+        }
+        if (!(hc.need & 1)) { /* only the track lengths are out of date */
+            hc_free_scan();
+            hc_dur_begin();
+            return RET_OK;
+        }
+        cap = hc.count < CC_MAX_JOBS ? hc.count : CC_MAX_JOBS;
+        if (!cap) { /* an empty library (or a query that failed: stock does not tell): nothing to make; stamped as 0 albums, which no real library matches, and asked again at the next foreground (hc_lib_of) */
+            hc_free_scan();
+            hc_stamp(1);
+            rs.valid = 0;
+            if (hc.need & 2)
+                hc_dur_begin();
+            else
+                hc_show(0);
+            return RET_OK;
+        }
+        resume = rs.valid && rs.rebuild == hc.rebuild && rs.n == lib.n && rs.h == lib.h;
+        if (resume) { /* a chain of chunks: the same order (the shelf as it was), the scan from where the last chunk stopped */
+            hc.shelf = rs.shelf;
+            memcpy(hc.rows, rs.rows, sizeof hc.rows);
+        }
+        hc.order = hc_order(hc.albums, hc.rows, hc.shelf);
+        if ((hc.shelf && !hc.order) || !cc_build_open(cap, hc.rebuild ? CC_REBUILD : CC_MISSING)) {
+            hc_free_scan(); /* (no memory for the shelf's order: not scanned in another order, which a chain's cursor would not fit; the next foreground asks again) */
+            hc_show(0);
+            return RET_OK;
+        }
         hc.own = hc.scanning = 1;
         hc.cur = 0;
+        i = rs.cur >> 1;
+        if (resume && i < hc.count && lib.oh == rs.oh)
+            hc.cur = rs.cur;
+        else
+            rs.valid = 0; /* another library, mode or order (the hash of the scan order differs): from the start */
     }
     if (!cc_build_near_step(hc.albums, hc.order, (const unsigned *)0, 0, &hc.cur, HC_BATCH)) {
         hc.timer = timer_add(hc_on_start, (void *)0, HC_SCAN_MS);
         if (!hc.timer) hc_end(); /* no way to continue: nothing built, the next foreground retries */
         return RET_OK;
     }
+    hc.trunc = cc_build_truncated();
+    if (hc.trunc) { /* the cursor is on the album that did not fit: the next chunk's first */
+        hc.next = hc.cur;
+        hc.nhash = lib.oh;
+        if (st.c) homecover_stamp_drop(1); /* the chain is unfinished: no matching line may skip it */
+    }
     hc_free_scan(); /* the jobs hold their own copies of the paths */
-    if (hc.rebuild && !cc_build_total())
+    nothing = !cc_build_total();
+    if (hc.rebuild && nothing && !hc.trunc)
         unlink(REBUILD_FILE); /* nothing to extract (no album has a track): nothing to wait for */
     if (!cc_build_start()) { /* nothing missing, no card, no space, no thread: the set is already freed */
         hc.own = 0;
-        hc_dur_begin(); /* the covers are as built as they will be: the songs' durations */
+        if (nothing && !hc.trunc)
+            hc_stamp(1),
+                rs.valid =
+                    0; /* nothing missing (not: nothing queued for want of memory): the cache is complete (the other refusals leave the line: Home asks again) */
+        hc.need &= nothing && !hc.trunc ? 3 : 2;
+        if (hc.need & 2)
+            hc_dur_begin(); /* the covers are as built as they will be: the songs' durations */
+        else
+            hc_show(0);
         return RET_OK;
     }
     hc.done = 0;
@@ -303,8 +635,29 @@ static int hc_on_start(const void *unused) {
     return RET_OK;
 }
 
-static void hc_later(void) {
-    if (hc.win && hc.fg && !hc.own && !hc.timer) hc.timer = timer_add(hc_on_start, (void *)0, HC_START_MS);
+/* Home is in front: is work expected (hc_expect)? Then the pill shows at once in its waiting state and the one-shot is armed; nothing is scanned or queried before it.
+ * Nothing expected: no pill, no timer. 0 when the timer could not be made. */
+static int hc_later(void) {
+    int e, ms;
+    if (!hc.win || !hc.fg || hc_off || hc.own || hc.timer) return 1;
+    ms = hc.resume ? HC_RESUME_MS : HC_START_MS;
+    hc.resume = 0;
+    e = hc_expect();
+    if (!e) {
+        hc_show(0);
+        return 1;
+    }
+    hc.probe = e == 4;
+    hc.timer = timer_add(hc_on_start, (void *)0, ms);
+    if (!hc.timer) {
+        hc_show(0);
+        return 0;
+    }
+    if (!hc.probe) {
+        hc_show(1);
+        hc_wait_text();
+    }
+    return 1;
 }
 
 static int hc_on_destroy(void *ctx, void *e) {
@@ -320,6 +673,8 @@ static int hc_on_background(void *ctx, void *e) {
     (void)e;
     if (!hc.win || ctx != hc.win) return RET_OK;
     hc.fg = 0;
+    hc.resume =
+        hc.shown; /* the pill was up: a build or its wait was in progress (a silent probe keeps the full delay) */
     hc_end();
     return RET_OK;
 }
@@ -332,28 +687,45 @@ static int hc_on_foreground(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The pill's x: Home's pass stops (a set Home owns is cancelled, never joined here; the scan and timers end) and Home starts none again until the next Rebuild Covers. */
+static int hc_on_stop(void *ctx, void *e) {
+    (void)e;
+    if (!hc.win || ctx != hc.win) return RET_OK;
+    hc_off = 1;
+    hc_end();
+    return RET_OK;
+}
+
+/* Settings > Library > Rebuild Covers was confirmed (patch/m1plus.c): an explicit request ends the stop. */
+void homecover_rebuild_asked(void) { hc_off = 0, rs.valid = 0; }
+
 /* The Home instance of the menu is up (patch/home.c, after the list took the whole window). */
 void homecover_start(void *win) {
     if (!win || home_off()) return;
     if (hc.win) hc_on_destroy(hc.win, (void *)0); /* an earlier window that never said it was gone */
     memset(&hc, 0, sizeof hc);
     hc.win = win;
+    hc.pill = widget_lookup(win, "pod_cache_pill", 1);
     hc.lab = widget_lookup(win, "pod_cover_prog", 1);
+    hc.fill = widget_lookup(win, "pod_cache_fill", 1);
     hc.lv = widget_lookup(win, "pod_listview", 1);
     hc.fg = 1;
-    if (!hc.lab || !hc.lv || !widget_on(win, EVT_DESTROY, hc_on_destroy, win) ||
+    if (!hc.pill || !hc.lab || !hc.fill || !hc.lv || !(hc.stop = widget_lookup(win, "pod_cache_x", 1)) ||
+        !widget_on(hc.stop, EVT_CLICK, hc_on_stop, win) || !widget_on(win, EVT_DESTROY, hc_on_destroy, win) ||
         !widget_on(win, EVT_WINDOW_TO_BG, hc_on_background, win) ||
         !widget_on(win, EVT_WINDOW_TO_FG, hc_on_foreground, win)) {
         hc.win = (void *)0; /* a handler that was registered finds no window of ours any more */
         return;
     }
-    hc_later();
-    if (!hc.timer) hc.win = (void *)0;
+    if (!hc_later() && !hc_off)
+        hc.win =
+            (void
+                 *)0; /* (stopped by the x: the window stays bound, so a Rebuild Covers and the next foreground start it again) */
 }
 
 /* ---------------------------------------------------------------------------
  * Settings > Developer > Clear Cover Cache (after its confirm): every file in ART_DIR is removed (Cover Flow's position is outside it):
- * the r<key>-168.jpg pictures, their empty no-art markers, .tmp leftovers and the stale old-format files. HC_CLEAR_N unlinks a tick on a
+ * the r<key>-168.jpg pictures, their empty no-art markers, the .bad markers and .inflight (dot files are listed too), .tmp leftovers and the stale old-format files. HC_CLEAR_N unlinks a tick on a
  * one-shot that re-arms itself (the directory handle is kept between ticks), so a big cache never blocks input; the timer needs no page, it
  * ends with the last file. A pending Rebuild Covers request goes too (every cover is missing now, the next Home build makes them all).
  */
@@ -406,6 +778,8 @@ int homecover_clear(void) {
     if (cl.timer) return 1;
     if (cc_build_busy()) return 0;
     unlink(REBUILD_FILE);
+    homecover_stamp_drop(1); /* every cover is missing now: Home's next open builds them */
+    rs.valid = 0;
     cl.dir = opendir(ART_DIR);
     if (!cl.dir) {
         pod_toast(TR("Cover cache cleared")); /* no cache folder: nothing to clear */
@@ -513,7 +887,9 @@ static int cp_tick(const void *unused) {
             const char *track = cc_str(r, REC_PATH);
             if (!track[0] || !key) continue;
             cc_path(path, sizeof path, key, "");
-            if (access(path, F_OK)) { /* cc_build_add's CC_MISSING rule */
+            if (access(path, F_OK)) { /* cc_build_add's CC_MISSING rule (a .bad album is not queued: not missing) */
+                char bad[72];
+                if (!access(cc_path(bad, sizeof bad, key, ".bad"), F_OK)) continue;
                 ++cp.missing;
                 if (cp.im && cp.nim < CC_MAX_JOBS) cp.im[cp.nim++] = (unsigned short)cp.cur;
             } else if (!cc_file_size(path)) { /* the empty no-art marker */

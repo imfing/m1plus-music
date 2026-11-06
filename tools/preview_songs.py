@@ -121,7 +121,7 @@ def content(s, covers_on=True, select=None, title=None, head=False):
     if head:   # a playlist's header: the mosaic (the Playlists page's tile, PH_COVER px, 10 px corners), the name 22 px centred under it (patch/songs.c; the count is the footer only)
         im.alpha_composite(PI.mosaic([PI.ALBUMS[i][2] for i in (0, 1, 2, 3)], O['PH_COVER'], O['PH_COVER_R']), (O['PH_COVER_X'], O['PH_COVER_Y']))
         s.text(im, W / 2, O['PH_NAME_Y'] + O['PH_NAME_H'] / 2, fit(s, title, 22, O['PH_NAME_W']), 22, anchor='m')
-    else: s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, fit(s, title, 32, 250) if title else tr(s, 'Songs'), 32)
+    else: s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, fit(s, title, 32, O['SG_TITLE_W']) if title else tr(s, 'Songs'), 32)
     n = sum(1 for it in items if it[0] == 'r')   # the song count under the last row (patch/songs.c sg_foot_text: the key by n == 1, the number where %d is)
     foot = tuple(int(pod_ui.SG_FOOT_RGB[i:i + 2], 16) for i in (1, 3, 5))
     count = tr(s, '%d song' if n == 1 else '%d songs').replace('%d', str(n))
@@ -213,9 +213,8 @@ def navbar(s, im, scroll, select, title=None, genre=False):
         if scroll > O['SG_COLLAPSE']: s.text(im, O['NAV_TITLE_X'], 25, fit(s, title, PI.title_px(s.tree), room), PI.title_px(s.tree))
         return
     for _, name, x in SONGS_BUTTONS: glass(s, im, name, x)
-    if scroll > O['SG_COLLAPSE']:    # the large title has scrolled away: the navbar carries the small one (hidden by the payload where the word is wider than its room)
-        word = tr(s, 'Songs')
-        if s.font.width(word, PI.title_px(s.tree)) <= 64: s.text(im, O['NAV_TITLE_X'], 25, word, PI.title_px(s.tree))
+    if scroll > O['SG_COLLAPSE']:    # the large title has scrolled away: the navbar carries the small one (cut with an ellipsis where the word is wider than its 64 px room)
+        s.text(im, O['NAV_TITLE_X'], 25, fit(s, tr(s, 'Songs'), PI.title_px(s.tree), O['NAV_SEARCH_X'] - O['NAV_TITLE_X']), PI.title_px(s.tree))
 
 
 def sort_card(s, im, current=0):

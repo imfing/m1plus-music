@@ -50,7 +50,8 @@ int search_open_in(int scope);
 #define SE_ART_R 4
 #define SE_ART_X 12
 #define SE_ART_Y 8
-#define SE_TITLE_Y 7 /* the title and the grey line, centred in the SE_ROW_H row (the library rows' LIST_TITLE_H / LIST_SUB_H boxes, 2 px higher) */
+#define SE_TITLE_Y \
+    7 /* the title and the grey line, centred in the SE_ROW_H row (the library rows' LIST_TITLE_H / LIST_SUB_H boxes, 2 px higher) */
 #define SE_SUB_Y 33
 #define SE_TEXT_LEFT 68 /* the title and the grey line start here; the separator too */
 #define SE_END_CHEV 278 /* the text of a row with a chevron ends here, one without at SE_END_PLAIN */

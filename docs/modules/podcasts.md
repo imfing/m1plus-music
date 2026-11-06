@@ -24,6 +24,7 @@ github.com/m-d-e-v/q2-podcasts, `internal/library/download.go` and
 ## Pages and controls
 
 Shows contains Continue Listening, a show grid and Downloads/Subscriptions rows (text ends at x 278, the shared list chevron `pod_make_chevron` at x 288, hairline to 310; the episode page's show row likewise).
+The Shows, Downloads, Subscriptions and Saved levels open on the large title (`pg_big`, x `SG_TITLE_X` 12, `SG_TITLE_W` wide, 32 px, cut with an ellipsis); the navbar's small title (the same words, `label_title`) shows once the offset reaches `SG_COLLAPSE` (`pod_title_gone`, `pg_collapse`), as on every large-title page ([navbar](navbar.md) "Small titles"). Its width runs from x 58 to the leftmost visible button (`pg_nav`): the globe, else the "...", else Now Playing. The refresh line, section headers and rows keep their own x (14-16).
 Shows sort by newest remote or local episode date. The show page has artwork, metadata,
 Latest Episode and all known episodes, newest first. A body tap opens episode details;
 the pill plays, downloads, pauses, resumes or retries according to state.

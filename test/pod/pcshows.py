@@ -237,42 +237,46 @@ def layout_tests(ctx):
 
 
 def title_tests(ctx):
-    """The Shows, Downloads and Subscriptions levels have a large heading at the top of their content (it scrolls away; nothing collapses into the navbar, whose title label stays hidden and is never resized there); the search level has no title; select mode keeps "N Selected"."""
+    """The Shows, Downloads and Subscriptions levels have a large heading at the top of their content (x SG_TITLE_X, SG_TITLE_W wide); once it has scrolled away (SG_COLLAPSE) the navbar's small title shows, cut before the leftmost button; the search level has no title; select mode keeps "N Selected"."""
     expect = ctx.expect
     m = opened()
     t, big, fade = m.widgets['label_title'], m.widgets['pg_big'], m.widgets['img_nb_fade']
-    resized = lambda mm: [c for c in mm.calls if c[0] == 'widget_resize' and c[1] == mm.widgets['label_title']]
-    expect(m.props.get((t, 'visible')) == 0 and m.props.get((big, 'visible'), 1) == 1 and m.props.get((fade, 'visible'), 0) == 0 and PCP.title_text(m) == 'Podcasts' and not resized(m),
-           f'at rest: the large Podcasts heading is there, the navbar\'s title is hidden and not resized, no fade ({PCP.title_text(m)} {resized(m)} {m.props.get((t, "visible"))})')
+    resized = lambda mm: [c[2] for c in mm.calls if c[0] == 'widget_resize' and c[1] == mm.widgets['label_title']]
+    expect(m.props.get((t, 'visible')) == 0 and m.props.get((big, 'visible'), 1) == 1 and m.props.get((fade, 'visible'), 0) == 0 and PCP.title_text(m) == 'Podcasts' and m.wtext.get(t) == 'Podcasts' and resized(m)[-1:] == [O['NAV_VIEW_X'] + O['NAV_VIEW_W'] - O['NAV_TITLE_X']],
+           f'at rest: the large Podcasts heading is there, the navbar\'s title (the same words) is hidden and ends at Now Playing (no "..." here), no fade ({PCP.title_text(m)} {resized(m)} {m.props.get((t, "visible"))})')
     fn_, ctx_ = m.bound[(m.sv, O['EVT_SCROLL'])]
     def scroll(off):
         m.props[(m.sv, 'yoffset')] = off; m.setword(m.sv + PCP.SC_YOFF, off)
         m.call(fn_, a0=ctx_, a1=0, count=4000000)
     # (the content is only so high: the scroll offsets are what the scroll view would give)
-    for off in (O['SG_COLLAPSE'], O['SG_COLLAPSE'] + 1, 200):
+    for off, on in ((O['SG_COLLAPSE'] - 1, 0), (O['SG_COLLAPSE'], 1), (O['SG_COLLAPSE'] + 1, 1), (200, 1)):
         scroll(off)
-        expect(m.props.get((t, 'visible')) == 0 and m.props.get((big, 'visible'), 1) == 1 and m.props.get((fade, 'visible')) == 1, f'at offset {off}: the heading scrolls with the content, nothing collapses into the navbar (the fade is on for the rows under the bar)')
+        expect(m.props.get((t, 'visible')) == on and m.props.get((big, 'visible'), 1) == 1 and m.props.get((fade, 'visible')) == 1, f'at offset {off}: the heading scrolls with the content, the navbar\'s small title is {"shown" if on else "hidden"} (the fade is on for the rows under the bar)')
     scroll(0)
-    expect(m.props.get((t, 'visible')) == 0 and m.props.get((fade, 'visible')) == 0, 'scrolled back: the fade off')
+    expect(m.props.get((t, 'visible')) == 0 and m.props.get((fade, 'visible')) == 0, 'scrolled back: the small title and the fade off')
     scroll(300)
     x, y, _ = PCP.show_at(m, 'bravo')
     PCP.tap(m, x, y, off=300)
     expect(PCP.title_text(m) == 'bravo' and m.props.get((big, 'visible'), 1) == 0 and m.props.get((fade, 'visible')) == 0, 'a Show page: its own title, the large heading hidden')
     PCP.click(m, 'btn_return')
-    expect(m.props.get((big, 'visible'), 1) == 1 and m.props.get((m.sv, 'yoffset')) == 300 and m.props.get((t, 'visible')) == 0 and PCP.title_text(m) == 'Podcasts', 'Back: the Shows level where it was (300), the navbar still without a title')
+    expect(m.props.get((big, 'visible'), 1) == 1 and m.props.get((m.sv, 'yoffset')) == 300 and m.props.get((t, 'visible')) == 1 and m.wtext.get(t) == 'Podcasts', 'Back: the Shows level where it was (300), the navbar\'s small title shows')
     # the Downloads level: its heading, whatever the offset
     m = opened()
     DL = sibling('pcdl')
     DL.poke_slot(m, 0, 'Sub One', 'a.mp3', 1, seq=1); m.setword(DL.pn_at(12), 5); tick(m)
     PCP.tap_downloads(m)
-    expect(PCP.title_text(m) == 'Downloads' and m.props.get((m.widgets['label_title'], 'visible')) == 0 and m.props.get((m.widgets['pg_big'], 'visible'), 1) == 1 and not resized(m), 'the Downloads level: the large Downloads heading, no title in the navbar')
-    # every level in turn, the capsule's four pieces on the Shows level: the heading is the large widget at (PP_TITLE_X, 0), the navbar's title is hidden and never resized, nothing is moved or resized on the heading
+    expect(PCP.title_text(m) == 'Downloads' and m.props.get((m.widgets['label_title'], 'visible')) == 0 and m.props.get((m.widgets['pg_big'], 'visible'), 1) == 1 and m.wtext.get(m.widgets['label_title']) == 'Downloads' and resized(m)[-1:] == [O['NAV_VIEW_X'] - O['NAV_TITLE_X']],
+           'the Downloads level: the large Downloads heading at rest, the small title (the same words, ending at the "...") hidden')
+    scroll(O['SG_COLLAPSE'] + 1)
+    expect(m.props.get((m.widgets['label_title'], 'visible')) == 1 and m.props.get((m.widgets['pg_big'], 'visible'), 1) == 1, 'past SG_COLLAPSE the Downloads page\'s small title shows')
+    scroll(0)
+    # every level in turn, the capsule's four pieces on the Shows level: the heading is the large widget at (SG_TITLE_X, 0), the navbar's title is hidden at rest, nothing is moved or resized on the heading
     m = opened(lambda x: x.put('/mnt/mmc/podcasts.opml', b'<opml><body><outline xmlUrl="https://n.example/rss" text="N"/></body></opml>'))
     big, nav = m.widgets['pg_big'], m.widgets['label_title']
     def level(name, heading):
         shown = m.props.get((big, 'visible'), 1) == 1 and m.props.get((nav, 'visible'), 0) == 0
-        expect(not resized(m) and not [c for c in m.calls if c[0] in ('widget_move', 'widget_resize') and c[1] == big] and shown == (heading is not None) and (heading is None or PCP.title_text(m) == heading),
-               f'{name}: heading {heading!r} in the large label, the navbar title hidden and never resized ({PCP.title_text(m)}, {resized(m)})')
+        expect(not [c for c in m.calls if c[0] in ('widget_move', 'widget_resize') and c[1] == big] and shown == (heading is not None) and (heading is None or PCP.title_text(m) == heading),
+               f'{name}: heading {heading!r} in the large label, the navbar title hidden at rest ({PCP.title_text(m)})')
     level('Shows', 'Podcasts')
     expect(flags(m, 'btn_more') == (1, 1) and flags(m, 'btn_globe') == (0, 0), 'the Shows level has the "..." capsule piece (and no globe: Podcast Search is off)')
     PCP.tap_downloads(m); level('Downloads', 'Downloads')
@@ -284,7 +288,7 @@ def title_tests(ctx):
     PCP.click(m, 'btn_return')
     # the empty library has the heading too
     m = opened(lambda mm: mm.folder('/mnt/mmc/Music'), lambda mm: None)
-    expect(m.props.get((m.widgets['label_title'], 'visible')) == 0 and m.props.get((m.widgets['pg_big'], 'visible'), 1) == 1 and not resized(m), 'no show: the large heading, the navbar\'s title hidden')
+    expect(m.props.get((m.widgets['label_title'], 'visible')) == 0 and m.props.get((m.widgets['pg_big'], 'visible'), 1) == 1 , 'no show: the large heading, the navbar\'s title hidden')
 
 
 def line_tests(ctx):
@@ -736,7 +740,7 @@ def empty_tests(ctx):
     # a subscription with no episode: its page's hint
     m = opened(lambda mm: mm.put(f'{RP}/Fresh/.show', f'M1PLUS-SHOW 1\ntitle=Fresh\nfeed={F["three"]}\nimage=\nchecked=0\n'.encode()), lambda mm: None)
     PCP.tap_show(m, 'Fresh')
-    expect(('widget_set_tr_text', m.widgets['label_status'], 'No episodes yet. Choose Refresh Feed in the menu at the top right.') in m.calls, 'a subscription not refreshed yet opens a page that says how to fill it')
+    expect('No episodes yet. Choose Refresh Feed in the menu at the top right.' in PCP.hint(m), 'a subscription not refreshed yet opens a page that says how to fill it')
     # no memory
     m = machine(); m.calloc_fail = True
     m.call(PSYMS['podcasts_open'], count=40000000)
@@ -769,7 +773,7 @@ def width_tests(ctx):
     expect(all(w['line'] <= room and w['never'] <= room for w in worst.values()), f'the refresh line fits {room} px in every language, the age alone when "Updated <age>" would not ({[l for l, w in worst.items() if w["line"] > room or w["never"] > room]})')
     expect(all(w['prog'] <= room for w in worst.values()), f'"Refreshing 40/40…" fits the line ({[l for l, w in worst.items() if w["prog"] > room]})')
     expect(all(w['heads'] <= 320 - 2 * o['PP_HEAD_X'] for w in worst.values()), 'the headers fit one line')
-    expect(all(w['head'] <= 320 - 2 * o['PP_TITLE_X'] for w in worst.values()), f'the large headings (Podcasts, Downloads, Subscriptions at {o["PP_TITLE_PX"]} px) fit the page in every language ({[(l, w["head"]) for l, w in worst.items() if w["head"] > 320 - 2 * o["PP_TITLE_X"]]})')
+    expect(all(w['head'] <= o['SG_TITLE_W'] for w in worst.values()), f'the large headings (Podcasts, Downloads, Subscriptions at {o["PP_TITLE_PX"]} px) fit the page in every language ({[(l, w["head"]) for l, w in worst.items() if w["head"] > o["SG_TITLE_W"]]})')
     expect(all(w['left'] <= o['PP_SHELF_W'] for w in worst.values()), f'"99m left" fits an item\'s 92 px in every language ({[(l, w["left"]) for l, w in worst.items() if w["left"] > o["PP_SHELF_W"]]}); a longer one (French and Russian from 100 minutes\' 3 digits) ends in an ellipsis')
     expect(all(w['dlt'] <= o['PP_DL_TEXT_W'] and w['dls'] <= o['PP_DL_TEXT_W'] for w in worst.values()), f'"Downloads (40)" and the running line fit the row ({[(l, w["dlt"], w["dls"]) for l, w in worst.items() if w["dlt"] > o["PP_DL_TEXT_W"] or w["dls"] > o["PP_DL_TEXT_W"]]})')
     over = {k: [(l, w[k]) for l, w in worst.items() if w[k] > GC] for k in ('new', 'today', 'neverc', 'eps', 'ago')}

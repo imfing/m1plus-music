@@ -93,7 +93,7 @@ def empty_tests(ctx):
     expect = ctx.expect
     m = machine()
     PCS.tap_row(m, 'Saved'); PCS.settle(m)
-    expect(PCP.title_text(m) == 'Saved' and PCS.flags(m, 'label_status') == (1, 1) and m.wtext.get(m.widgets['label_status']) == 'No saved episodes', 'nothing saved: the page says so')
+    expect(PCP.title_text(m) == 'Saved' and 'No saved episodes' in PCP.hint(m), 'nothing saved: the page says so')
 
 
 SECTIONS = [row_tests, level_tests, empty_tests]

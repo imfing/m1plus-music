@@ -143,6 +143,8 @@ FUNCTIONS = {
     'widget_prepare_text_style': ('int', 'void *, void *', 0x66a214),
     'canvas_draw_text_in_rect': ('int', 'void *, const unsigned *, unsigned, const void *', 0x6496a0),
     'canvas_measure_text':     ('float', 'void *, const unsigned *, unsigned', 0x644544),   # float_t in $f0
+    # the library title order (patch/covercache.c cc_name_keys): stock's utf8_to_pinyin(in, out) appends to out (strlen) one byte per ASCII char and, for a CJK char U+4E00..U+9FA5, its pinyin initial
+    'utf8_to_pinyin':          ('void', 'const char *, char *', 0x73a5f0),
     # the Albums list rows' highlight and hairline: color_t is one word (lcd_set_fill_color stores $a1 at lcd+0xbc), r,g,b,a bytes;
     # canvas_fill_rect @0x644e4c takes h on the stack and clips to the canvas' clip rect
     'canvas_set_fill_color':   ('int', 'void *, unsigned', 0x644220),

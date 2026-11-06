@@ -158,8 +158,7 @@ def reference(scroll, n):
         cut_top, cut_bottom = max(0, -top), min(COVER, VIEW_H - top)
         cover = ((0, cut_top, COVER, cut_bottom - cut_top), (x, top + cut_top, COVER, cut_bottom - cut_top)) if cut_bottom > cut_top else None
         ty = top + COVER + TGAP
-        title = (x, ty, COVER, THEIGHT) if 0 <= ty and ty + THEIGHT <= VIEW_H else None
-        sub = (x, ty + THEIGHT, COVER, SUBH) if 0 <= ty + THEIGHT and ty + THEIGHT + SUBH <= VIEW_H else None
+        title, sub = (x, ty, COVER, THEIGHT), (x, ty + THEIGHT, COVER, SUBH)   # every cell's texts: the scroll_view's clip cuts them
         out.append((a, cover, title, sub))
     return out
 
@@ -172,7 +171,7 @@ def list_ref(scroll, n):
         if top >= VIEW_H or top + ROW <= 0: continue
         ct, cb = max(0, -(top + LAY)), min(LART, VIEW_H - (top + LAY))
         cover = ((0, ct, LART, cb - ct), (LAX, top + LAY + ct, LART, cb - ct)) if cb > ct else None
-        ok = lambda y, h: (TX, y, TW, h) if 0 <= y and y + h <= VIEW_H else None
+        ok = lambda y, h: (TX, y, TW, h)   # every row's texts: the scroll_view's clip cuts them
         out.append((a, cover, ok(top + TY, TH), ok(top + SY, SH), top + ROW - 1 if 0 <= top + ROW - 1 < VIEW_H else None))
     return out
 
@@ -521,15 +520,15 @@ def layout_tests(ctx):
     expect(dsts(blits) == want_dsts(ref), 'after scrolling 100 px: the cells and the cut first row')
     ts, ss = grid_texts(m, texts)
     expect(ts == {f'Album {c[0]}': c[2] for c in ref if c[2]} and ss == {f'Artist {c[0]}': c[3] for c in ref if c[3]},
-           'after scrolling 100 px: the albums and artists that lie wholly in the view')
+           'after scrolling 100 px: the albums and artists of every cell in view, cut ones too')
     top_row = [b for b in blits if b[2][1] == 0][0]
     expect(top_row[1] == (0, 90, COVER, 54) and top_row[2] == (MARGIN, 0, COVER, 54), f'the first row is cut to its last 54 px ({top_row[1]} -> {top_row[2]})')
     scroll_to(m, 165)
     ref = reference(165, n)
     ts, ss = grid_texts(m, paint(m)[1])
     expect(ts == {f'Album {c[0]}': c[2] for c in ref if c[2]} and ss == {f'Artist {c[0]}': c[3] for c in ref if c[3]}
-           and 'Album 0' not in ts and 'Artist 0' in ss and ref[0][1] is None,
-           'at 165 px the first row\'s cover is gone and its album (7 px cut by the top) is not drawn, its artist (wholly in view) is')
+           and 'Album 0' in ts and 'Artist 0' in ss and ref[0][1] is None,
+           'at 165 px the first row\'s cover is gone and its album (7 px cut by the top) and its artist are drawn, the clip cuts the album')
     mx = RGAP + ((n + COLS - 1) // COLS) * PITCH - VIEW_H
     expect(mx == 1210, f'fifteen albums are eight rows: 10 + 8 x 200 = 1610 px of content, {mx} px of scroll')
     scroll_to(m, 100000)
@@ -841,7 +840,7 @@ def taps_list_tests(ctx):
     got_t = sorted((t[0], t[1]) for t, sty in zip(texts, m.text_styles) if sty == 'label_row_title')
     got_a = sorted((t[0], t[1]) for t, sty in zip(texts, m.text_styles) if sty == 'label_row_sub')
     expect(got_t == want_t and got_a == want_a and len(texts) == len(want_t) + len(want_a),
-           f'the album names in the title style and the artists in the sub style, each in its {TW} px rect; texts cut by the view are not drawn ({len(want_t)} + {len(want_a)})')
+           f'the album names in the title style and the artists in the sub style, each in its {TW} px rect; texts cut by the view drawn too ({len(want_t)} + {len(want_a)})')
     prep = [c[1] for c in m.calls if c[0] == 'widget_prepare_text_style']
     expect(prep == [m.widgets['label_row_title'], m.widgets['label_row_sub']] and m.text_styles == ['label_row_title'] * len(want_t) + ['label_row_sub'] * len(want_a),
            'two text-style switches a frame: all titles, then all artists')
@@ -875,7 +874,7 @@ def taps_list_tests(ctx):
     expect((top_row[1], top_row[2]) == want_top and top_row[1][1] + top_row[1][3] == LART,
            f'the first cover is cut to its last pixels ({top_row[1]} -> {top_row[2]})')
     expect(sorted(t[0] for t in texts) == sorted([f'Album {a}' for a, _, t, _, _ in ref if t] + [f'Artist {a}' for a, _, _, s_, _ in ref if s_]),
-           'texts that do not lie wholly in the view are not drawn')
+           'texts cut by the view are drawn too (the clip cuts them)')
     scroll_to(m, 100000)
     blits, texts = paint(m)
     ref = list_ref(mx, n)
@@ -1369,12 +1368,33 @@ def background_build_tests(ctx):
     m = albums_machine(12, missing={0, 7, 11}, sort='artist'); open_grid(m); fired(m, 'al_on_build_start')
     expect(sorted(int(t.split('/')[4]) for t, _ in build_jobs(m)) == [0, 7, 11], 'in the Artist order the same albums are the jobs (keys are the albums\')')
 
-    # 17e. Cancel and join on destroy (also with the one-shot still pending); a late poll does nothing.
+    # 17e. Cancel on destroy (the UI thread never joins a worker inside a job; the orphan is reaped after it exits) (also with the one-shot still pending); a late poll does nothing.
     m = albums_machine(8, missing={2, 5}); open_grid(m); fired(m, 'al_on_build_start')
     new = fired(m, 'al_on_destroy', 3000000)
-    expect([c for c in new if c[0] == 'pthread_join'] and build_state(m)['jobs'] == 0 and ('timer_remove', 0x777) in new,
-           'destroy cancels and joins the worker, frees the jobs and drops the timer')
-    expect(build_state(m)['cancelled'] == 0 and build_state(m)['running'] == 0, 'and the shared worker is idle again')
+    s = build_state(m)
+    expect(not [c for c in new if c[0] == 'pthread_join'] and s['jobs'] != 0 and s['orphan'] == 1 and s['cancelled'] == 1 and s['running'] == 0 and ('timer_remove', 0x777) in new,
+           f'destroy with a job in flight cancels without joining: the worker keeps the set, the timer is dropped ({s})')
+    jobs_ptr = s['jobs']
+    expect(m.call(PSYMS['cc_build_busy']) == 1 and m.call(PSYMS['cc_build_open'], a0=1, a1=0) == 0 and count_of(m, 'pthread_join') == 0 and build_state(m)['jobs'] == jobs_ptr,
+           'while the orphan lives cc_build_busy is true and cc_build_open refuses, nothing is joined or freed')
+    expect(m.call(PSYMS['cc_build_orphan']) == 1, 'cc_build_orphan says so')
+    m.call(PSYMS['cc_build_stop'])
+    expect(build_state(m)['jobs'] == jobs_ptr and count_of(m, 'free') == 0, 'a stop by a page that owns nothing leaves the orphan\'s set alone')
+    m.present |= {f'/mnt/mmc/m/{i}/1.flac' for i in range(8)}
+    m.call(PSYMS['cc_worker'], count=5000000)           # the orphan stops at its cancel flag and exits
+    expect(build_state(m)['exited'] == 1 and build_state(m)['jobs'] == jobs_ptr, 'the exited worker has not freed the set itself')
+    expect(m.call(PSYMS['cc_build_busy']) == 0, 'the next cc_build_busy reaps it: not busy')
+    names = [c[0] for c in m.calls]
+    s = build_state(m)
+    expect(names.count('pthread_join') == 1 and names.count('free') >= 2 and s['jobs'] == 0 and s['orphan'] == 0 and s['cancelled'] == 0 and s['total'] == 0,
+           f'joined once, the tracks and the array freed ({s})')
+    expect(m.call(PSYMS['cc_build_open'], a0=1, a1=0) == 1 and build_state(m)['jobs'] != 0 and count_of(m, 'pthread_join') == 0, 'and cc_build_open succeeds again')
+    m.call(PSYMS['cc_build_stop'])
+    expect(build_state(m)['jobs'] == 0 and count_of(m, 'pthread_join') == 0, 'a set never started is freed without a join')
+    m2 = albums_machine(8, missing={2, 5}); open_grid(m2); fired(m2, 'al_on_build_start')
+    m2.setword(PSYMS['cb'] + 4 * 5, build_state(m2)['total'])   # every job is done, the thread is only returning
+    fired(m2, 'al_on_destroy', 3000000)
+    expect(count_of(m2, 'pthread_join') == 1 and build_state(m2)['jobs'] == 0 and build_state(m2)['orphan'] == 0, 'a worker with no job left is joined at once (it cannot be inside one)')
     new = fired(m, 'al_on_build', 1000000)
     expect(not [c for c in new if c[0] in ('timer_add', 'pthread_create', 'widget_invalidate_force')], 'a late poll after close does nothing')
     new = fired(m, 'al_on_build_start', 1000000)
@@ -1393,8 +1413,23 @@ def background_build_tests(ctx):
     expect(count_of(m, 'pthread_create') == 1 and build_state(m)['running'] == 1, 'Albums runs the worker')
     new = fired(m, 'al_on_cover', 6000000)
     names = [c[0] for c in new]
-    expect('pthread_join' in names and 'pthread_create' in names and names.index('pthread_join') < names.index('pthread_create') and ('window_open', 'm1plus_cover') in new,
-           'the Cover Flow button joins Albums\' worker before Cover Flow starts its own (one at a time)')
+    expect('pthread_join' not in names and 'pthread_create' not in names and ('window_open', 'm1plus_cover') in new and build_state(m)['orphan'] == 1
+           and [c for c in new if c[0] == 'timer_add' and c[1] == PSYMS['on_retry']],
+           'the Cover Flow button orphans Albums\' worker without joining; Cover Flow shows Preparing and asks again')
+    m.call(PSYMS['cc_worker'], count=5000000)           # the orphan exits
+    new = fired(m, 'on_retry', 6000000)
+    names = [c[0] for c in new]
+    expect(names.count('pthread_join') == 1 and names.count('pthread_create') == 1 and build_state(m)['running'] == 1 and build_state(m)['orphan'] == 0,
+           'the retry reaps the orphan (one join) and Cover Flow starts its own worker (one at a time)')
+    m = albums_machine(6, missing={1, 4})
+    for w in COVER_WIDGETS:
+        if w not in m.widgets: m.widget(w)
+    open_grid(m); fired(m, 'al_on_build_start'); fired(m, 'al_on_cover', 6000000)
+    m.clock += 10000                                     # the worker never comes back out of its job
+    new = fired(m, 'on_retry', 6000000)
+    expect(m.call(PSYMS['cc_build_orphan']) == 0 and build_state(m)['orphan'] == 1 and not [c for c in new if c[0] == 'timer_add' and c[1] == PSYMS['on_retry']]
+           and 'view' in [c[0] for c in new],
+           'a worker that stays in its job for 10 s: Cover Flow stops asking and shows the covers')
     m = albums_machine(6, missing={1, 4})
     for w in COVER_WIDGETS:
         if w not in m.widgets: m.widget(w)
@@ -1417,10 +1452,13 @@ def background_build_tests(ctx):
     expect(count_of(m, 'pthread_create') == 0 and ('mkdir', '/mnt/mmc/.m1plus/covers') not in m.calls and build_state(m)['jobs'] == 0, 'a complete cache: nothing to do, no thread, no mkdir')
     m = albums_machine(8, missing={2}); open_grid(m)
     m.timer_fail = True; fired(m, 'al_on_build_start')
-    expect(count_of(m, 'pthread_create') == 1 and count_of(m, 'pthread_join') == 1 and build_state(m)['jobs'] == 0, 'a poll timer that cannot be made: the worker is joined and freed')
+    expect(count_of(m, 'pthread_create') == 1 and count_of(m, 'pthread_join') == 0 and build_state(m)['orphan'] == 1 and build_state(m)['jobs'] != 0,
+           'a poll timer that cannot be made: the worker is cancelled and orphaned, not joined')
     m = albums_machine(8, missing={2}); open_grid(m); fired(m, 'al_on_build_start')
     m.timer_fail = True; fired(m, 'al_on_build')
-    expect(count_of(m, 'pthread_join') == 1 and build_state(m)['jobs'] == 0, 'a refused re-arm: joined and freed')
+    expect(count_of(m, 'pthread_join') == 0 and build_state(m)['orphan'] == 1, 'a refused re-arm: cancelled and orphaned, not joined')
+    m.call(PSYMS['cc_worker'], count=5000000); m.call(PSYMS['cc_build_busy'])
+    expect(count_of(m, 'pthread_join') == 1 and build_state(m)['jobs'] == 0, 'once it has exited: joined and freed')
 
     # 17h. Back in front (Cover Flow, an album page closed): the build is offered again, once; not while one runs.
     m = albums_machine(8, missing={2}); open_grid(m)
@@ -1495,7 +1533,7 @@ def background_build_tests(ctx):
     m.on_lock = lambda: m.setword(PSYMS['cb'] + 4 * 7, 1)   # cancelled while the worker waits for the parser mutex
     m.call(PSYMS['cc_worker'], count=5000000)
     names = [c[0] for c in m.calls]
-    expect('lock' in names and 'unlock' in names and not [c for c in m.calls if c[0] in ('toolsGetAlbumCover', 'toolsGetExternCover', 'fopen')],
+    expect('lock' in names and 'unlock' in names and not [c for c in m.calls if c[0] in ('toolsGetAlbumCover', 'toolsGetExternCover') or c[0] == 'fopen' and not c[1].endswith('.inflight')],
            'cancelled while waiting for the parser: unlocked, nothing extracted, no marker written')
 
 

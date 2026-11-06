@@ -38,6 +38,7 @@ unreliable there: `cdripper_page_init+...`, `home_page_init+...`, `playing_page_
 | Settings pages `systemset/*` (33), `playset/*` (all but Equalizer), `audiosetting_page`, the keyboard / edit dialogs: Back 80, title (36, 14) 20 px, Now Playing (260, 0, 60, 50) | assets | stock glyphs: a plain chevron and Now Playing glyph, the title at 36 | the glass navbar (`mod_ipodrows.glass_navbar`, every ui file with the stock Back, both themes; not the Bluetooth receiver): Back keeps its 80 px button and gets `ah_nav_back` with `x_offset` +4 (the disc at 8 .. 50), Now Playing the disc `ah_nav_np` (glyph 290), the title from 58, its right end kept or before the bar's next widget (a switch: 135 / 145 px on Atmosphere LED / Equalizer) |
 | Settings > Equalizer (`playset/equalizer_page`) | asset | Now Playing (270, 0, 50, 50): glyph 295 | Now Playing (260, 0, 60, 50): `mod_ipodrows.edit_equalizer` |
 | Update music > folder picker (`systemset/specfolder_page`) | asset | Now Playing (279, 0, 41, 50): glyph 299; select-all (229, 0, 38, 50), `icon_at` 5: glyph 246 | Now Playing (260, 0, 60, 50); select-all (214, 0, 46, 50), the multi-select slot; `mod_ipodrows.edit_specfolder` |
+| Full-page volume screen (`dialog/volume_dialog`, the status bar tap): glass Back disc at y 34 .. 76 | asset | the root dialog is a 42 px strip stock never resizes, its 1 px black border (after the children, not clipped) ran across the page at y 41, through the disc | the border colour is transparent in normal / disable / focused: `mod_ipodrows.edit_volume` |
 | Settings > Screen saver, Atmosphere LED: an on/off image `image_switch` (193, 11, 57, 28) in the bar | asset | a control, not a button | left alone: it has no Pod counterpart, and a switch at the 214 slot would overlap Now Playing |
 | Equalizer's `img_switch` (203, 11, 57, 28) | asset | as above | left alone, same reason |
 | Songs, Hi-Res, Favourites, Recently played / added, Most played, a playlist's songs (`allmusic_page`) and an album's page (`albuminfo_page`) | code, builder 0x526a3c (shared) | 50 px buttons, 22 px title, slots at 120 / 170 / 220 / 270 | done before this document: 44 px buttons, slots 122 / 168 / 214, Now Playing 262 x 60, Back x 3, title 20 px, the bar view of `allmusic_page` and `albuminfo_page` at y 3 (`mod_ipodrows.center_navbar`). The multi-select button stays at 214: the device shots put its glyph on the Pod toggle's columns |
@@ -72,6 +73,10 @@ the builder 0x52c5e8), USB mode (its Back and DAC settings are the glass discs o
   `playlist_page`.
 - Assets: `tools/mod_ipodrows.py` `NAVBAR_UI_EDITS` (stock rectangles asserted).
 - Tests: `test/pod/rows.py` (every `rows.json` word) and `test/pod/navbars.py` (the stock pages' builders byte-identical to main's).
+
+## Small titles
+
+Every page with a large heading (Songs and its lists incl. Recently Added, Artists, Genres, Composers, Folders, Radio, Podcasts' Shows / Downloads / Subscriptions / Saved) shows the navbar's small title by one rule, `pod_title_gone(off, head)` (`patch/common.c`): once the scroll offset reaches `SG_COLLAPSE` (46); a page whose heading is a header's name passes its threshold (a playlist `PH_COLLAPSE` 204, a podcast show `hdr->collapse`). `pod_title_set` shows or hides the label. The large title is `SG_TITLE_X` 12, `SG_TITLE_W` 296 wide, 32 px, on every page. The small title runs from `NAV_TITLE_X` 58 to the leftmost button and is always cut with an ellipsis (`az_fit`), never hidden for width. Each page adds its own conditions (select mode, empty list, no scroll events).
 
 ## Glass navbars on our pages
 

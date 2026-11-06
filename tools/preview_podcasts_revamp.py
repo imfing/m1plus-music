@@ -480,7 +480,7 @@ def build_shows(s, shows, shelf_n, dl, refreshing):
     has_line = any(sh.key != 'local' for sh in shows)
     L = pod_show.shows_layout(len(shows), has_line, len(shelf))
     im = Image.new('RGBA', (W, L['h']), (0, 0, 0, 255)); info = dict(layout=L)
-    s.text(im, o['PP_TITLE_X'], o['PP_TITLE_H'] / 2, 'Podcasts', o['PP_TITLE_PX'], WHITE)
+    s.text(im, o['SG_TITLE_X'], o['PP_TITLE_H'] / 2, 'Podcasts', o['PP_TITLE_PX'], WHITE)
     if has_line:
         cy = o['PP_LINE_Y'] + o['PP_LINE_H'] / 2
         if refreshing: s.text(im, o['PP_LINE_X'], cy, 'Refreshing 2/5…', 15, GREY)
@@ -732,7 +732,7 @@ def subs_page(s, shows, marked=None, empty=False):
         hline(win, o['LIST_TEXT_X'] + shift, W, y + o['PC_ROW_H'] - 1)
         if marked is not None:
             _paste(win, s.img('selected' if sh.title in marked else 'unselect'), o['LIST_ART_X'] + (shift - 6 - o['SG_MARK']) // 2, y + (o['PC_ROW_H'] - o['SG_MARK']) // 2)
-    if marked is None: s.text(win, o['PP_TITLE_X'], NAV + o['PP_TITLE_H'] / 2, 'Subscriptions', o['PP_TITLE_PX'], WHITE)   # (the large heading; the navbar has no title)
+    if marked is None: s.text(win, o['SG_TITLE_X'], NAV + o['PP_TITLE_H'] / 2, 'Subscriptions', o['PP_TITLE_PX'], WHITE)   # (the large heading)
     if empty: s.text(win, W // 2, 180 + 45, 'No subscriptions', 18, WHITE, 'm')
     d = ImageDraw.Draw(win); d.rectangle((0, 0, W - 1, NAV - 1), fill=(0, 0, 0, 255))
     if marked is not None:
@@ -771,11 +771,10 @@ def downloads_page(s, ip, dl, scroll=0, marked=None, line='7 episodes · 217 MB 
     L = pod_show.downloads_layout(len(ip), len(dl), marked is not None)
     shift = o['SG_SEL_COL'] if marked is not None else 0
     im = Image.new('RGBA', (W, max(L['h'], WIN - NAV)), (0, 0, 0, 255))
-    s.text(im, o['PP_TITLE_X'], o['PP_TITLE_H'] / 2, 'Downloads', o['PP_TITLE_PX'], WHITE)   # (the large heading scrolls with the content; the navbar has no title)
-    if not empty:
-        if line: s.text(im, o['PP_LINE_X'], L['y_line'] + o['PP_LINE_H'] / 2, PS.fit(s, line, 15, W - 2 * o['PP_LINE_X']), 15, GREY)
-        if ip: s.text(im, o['PP_SHOWS_X'], L['y_ip'] + o['PP_HEAD_H'] / 2, 'In Progress', 20, WHITE)
-        if dl: s.text(im, o['PP_SHOWS_X'], L['y_dh'] + o['PP_HEAD_H'] / 2, 'Downloaded', 20, WHITE)
+    s.text(im, o['SG_TITLE_X'], o['PP_TITLE_H'] / 2, 'Downloads', o['PP_TITLE_PX'], WHITE)   # (the large heading scrolls with the content; the navbar takes the small title past SG_COLLAPSE)
+    if line: s.text(im, o['PP_LINE_X'], L['y_line'] + o['PP_LINE_H'] / 2, PS.fit(s, line, 15, W - 2 * o['PP_LINE_X']), 15, GREY)
+    if ip: s.text(im, o['PP_SHOWS_X'], L['y_ip'] + o['PP_HEAD_H'] / 2, 'In Progress', 20, WHITE)
+    if dl: s.text(im, o['PP_SHOWS_X'], L['y_dh'] + o['PP_HEAD_H'] / 2, 'Downloaded', 20, WHITE)
     for i, y in enumerate(L['rows'] if not empty else []):
         if i < len(ip): sh, title, sub = ip[i]; played = False
         else:
@@ -803,7 +802,8 @@ def downloads_page(s, ip, dl, scroll=0, marked=None, line='7 episodes · 217 MB 
     else:
         PS.glass(s, win, 'ah_nav_back', 7, 44)
         capsule(s, win, 'none' if empty else 'more')
-    if empty: s.text(win, W // 2, 180 + 45, 'No downloads', 18, WHITE, 'm')
+        if scroll > o['SG_COLLAPSE']: s.text(win, o['NAV_TITLE_X'], 25, PS.fit(s, 'Downloads', PI.title_px(s.tree), o['NAV_VIEW_X'] - o['NAV_TITLE_X']), PI.title_px(s.tree))   # (the large heading has scrolled away: the small title)
+    if empty: s.text(win, o['PP_LINE_X'], NAV + o['PDL_LINE_PITCH'] + 8 + o['PS_TITLE_PITCH'] / 2, 'No downloads', 20, DIMT)   # (painted in the content under the storage line: pg_paint_hint)
     return frame(s, win, None)
 
 
@@ -837,10 +837,10 @@ def downloads2_sheet(s, shows, workdir, path):
     shows_a = shows_frame(s, shows, shelf_n=0, dl='Downloading 42%', caps='none')[0]
     shows_b = shows_frame(s, shows, shelf_n=0, caps='none')[0]
     frames = [('Shows page: the Library rows, a download running;\nthe capsule is the plain Now Playing disc', shows_a), ('idle: "12 episodes · 1.4 GB"\n(also "2 waiting", "1 paused", "No downloads")', shows_b),
-              ('Downloads: storage line, In Progress,\nDownloaded (newest download first)', page()), ('scrolled: a partly played row ("35m left"),\nplayed rows with the check', page(scroll=played_scroll)),
+              ('Downloads: storage line, In Progress,\nDownloaded (newest download first)', page()), ('scrolled: the small title in the navbar, a partly played\nrow ("35m left"), played rows with the check', page(scroll=played_scroll)),
               ('the "..." sheet: Select, Delete Played Episodes', bottom_sheet(s, page(), sheet_rows)), ('select mode across both sections\n(the running one cannot be marked)', page(marked={1, 4, 6})),
               ('Delete Played Episodes: the confirm', confirm_frame(page(), workdir, 'Delete all played episodes?')), ('the toast after it (stock message box)', toast_frame(page(scroll=0), workdir, '2 deleted, 105 MB freed')),
-              ('nothing downloaded: No downloads', downloads_page(s, [], [], empty=True))]
+              ('nothing downloaded: No downloads', downloads_page(s, [], [], line='18 GB free', empty=True))]
     assemble(frames, 3, path)
 
 

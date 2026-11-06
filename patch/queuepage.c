@@ -163,11 +163,13 @@ static void qp_paint(void *canvas) {
         grid_blit(canvas, &qp.g, t, LIST_ART_X, y + LIST_ART_Y, QP_WIN_H);
         az_fill_h(canvas, LIST_TEXT_X, y + ROW - 1, y + ROW, room, LIST_HAIR, QP_WIN_H);
     }
-    for (pass = 0; pass < 2; ++pass) { /* titles, then artists: one text style at a time */
+    for (
+        pass = 0; pass < 2;
+        ++pass) { /* titles, then artists: one text style at a time; the scroll_view's clip cuts a text at the window's edges, as a cover */
         widget_prepare_text_style(pass ? qp.st_sub : qp.st_title, canvas);
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, qp_tile(r), pass, LIST_TEXT_X, qp_row_y(r) - off + (pass ? LIST_SUB_Y : LIST_TITLE_Y),
-                      room, pass ? LIST_SUB_H : LIST_TITLE_H, QP_WIN_H);
+                      room, pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
 }
 

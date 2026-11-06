@@ -108,6 +108,10 @@ another host, another repository, `http://`, a different path, another case, or 
 A write that fails is "Card is full" when `statfs` then shows under 1 MB free, else "Can't write to the card" (errno is not reachable from the payload). Not verified: `SHA256SUMS` (`make publish` uploads it). A first version trusts TLS to GitHub,
 curl's length check, the info lines and stock's own MD5 check; verifying `SHA256SUMS` is a follow-up.
 
+## Development channel (`patch/upver.c`, `tools/ota_server.py`)
+
+For development, a local server can stand in for GitHub (`make ota-serve`, `make ota`; the address goes in a card file, `UP_CHAN_FILE`). The package checks above still apply. Tests: `test/pod/update.py channel_tests`.
+
 ## Pins and hooks
 
 **One new pinned stock call, no hook.** `tf_update_click` is the click handler of the `listitem_sd` row ("TF card update") of `systemset/fwupdate_page` at **`0x4a7160`** (`tools/pod.py` `TF_UPDATE`, `TFUPDATE_PINS`: the prologue, the string loads,

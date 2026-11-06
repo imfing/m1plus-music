@@ -48,6 +48,7 @@ extern void pod_set_in_order(void); /* patch/shuffle.c: Shuffle and Repeat one b
 #define PG_LOAD_MS 16
 #define PG_TICK_MS 1000
 #define PG_TAP_PX SC_DRAG_PX
+#define PG_HINT_H (8 + 4 * PS_TITLE_PITCH) /* the empty page's hint: room for four lines under the header */
 #define PG_BOTTOM 20 /* the Show level's last cell has this much under it */
 #define PG_REC_SIZE 0x58
 #define PG_CELLS \
@@ -344,10 +345,24 @@ static int pg_top(void) {
 /* The Show level's cell height: PS_CELL_H, or PS_PCELL_H for the preview (no pill row under the description). */
 static int pg_cell_h(void) { return pg.preview ? PS_PCELL_H : PS_CELL_H; }
 static int pg_row_h(void) { return pg.level == L_EPS ? pg_cell_h() : PC_ROW_H; }
+static const char *pg_no_eps_key(void);
+/* The empty page's hint ("No downloads", the Show page's "No episodes yet..."), painted in the content under the header so it scrolls with it (NULL: none); pg_hint_y is its top (content y). While a Downloads scan runs nothing is
+ * said yet. */
+static const char *pg_hint(void) {
+    if (pg.det) return (const char *)0;
+    if (pg.level == L_DLS && !pg.nrows && (pg.subs || !pg.dscan_on))
+        return pg.subs ? "No subscriptions" : pg.saved ? "No saved episodes" : "No downloads";
+    if (pg.level == L_EPS && !pg.neps && !pg.preview) return pg_no_eps_key();
+    return (const char *)0;
+}
+static int pg_hint_y(void) { return pg.level == L_EPS ? pg_top() : pg_dh(); }
 static int pg_content(void) {
     if (pg.det && pg.pd) return pg.pd->h; /* (the episode page) */
     if (pg.level == L_SHOWS) return pg.home_h;
     if (pg.level == L_SRCH) return PQ_TOP + pg.srn * PC_ROW_H + (pg.srn ? PQ_BOTTOM : 0);
+    if (pg_hint())
+        return pg_hint_y() +
+               PG_HINT_H; /* (an empty page: its header and the hint, no taller, so it only scrolls when they don't fit) */
     if (pg.level == L_DLS) return pg_dh() + (pg.select && pg.nrows ? SG_BAR_H : 0);
     return (pg_count()          ? pg_top() + pg_count() * pg_row_h() + (pg.level == L_EPS ? PG_BOTTOM : 0)
             : pg.level == L_EPS ? pg_top()
@@ -1386,8 +1401,11 @@ static void pg_paint_home(void *canvas) {
         if (!pg_ylib(i)) continue;
         y = pg_ylib(i) - off;
         if (pg.press == i + 1 && !pg.select) az_fill(canvas, 0, y, y + PC_ROW_H - 1, PG_W, LIST_PRESS);
-        pg_blit_from(canvas, i == 2 ? pg_savetile() : i ? pg_subtile() : pg_dltile(), 0, 0, PA_TILE_PX, PA_TILE_PX,
-                     PP_DL_TILE_X, y + PP_DL_TILE_Y);
+        pg_blit_from(canvas,
+                     i == 2 ? pg_savetile()
+                     : i    ? pg_subtile()
+                            : pg_dltile(),
+                     0, 0, PA_TILE_PX, PA_TILE_PX, PP_DL_TILE_X, y + PP_DL_TILE_Y);
         pg_chev(canvas, PP_DL_CHEV_X, y + (PC_ROW_H - 1 - POD_CHEV_H) / 2);
         az_fill(canvas, PP_DL_TEXT_X, y + PC_ROW_H - 1, y + PC_ROW_H, PG_W - PP_DL_TEXT_X, LIST_HAIR);
     }
@@ -1525,13 +1543,27 @@ static void pg_paint_dls(void *canvas) {
     }
 }
 
+/* The empty page's hint: grey, wrapped to the margins (pg_hint), under the header. */
+static void pg_paint_hint(void *canvas, int off) {
+    const char *key = pg_hint();
+    unsigned t[160];
+    pw_line_t ln[4];
+    int n, k, nl;
+    if (!key) return;
+    n = pg_wide(t, 160, TR(key));
+    nl = pg_lines(pg.st[ST_CDIM], t, n, PG_W - 2 * PP_LINE_X, 4, ln); /* (the episode cells' dim 20 px grey) */
+    for (k = 0; k < nl; ++k)
+        pg_paint_text_at(canvas, pg.st[ST_CDIM], t + ln[k].start, ln[k].len, PP_LINE_X,
+                         pg_hint_y() + 8 + k * PS_TITLE_PITCH - off, PG_W - 2 * PP_LINE_X, PS_TITLE_PITCH);
+}
+
 static int pg_on_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     int off = pg_off();
     (void)ctx;
     if (!canvas || !pg.view || !pg.g.tiles) return RET_OK;
     I(canvas, CANVAS_OY) += off;
-    if (pg.level == L_DLS && (pg.nrows || !pg.subs))
+    if (pg.level == L_DLS)
         pg_paint_dls(canvas);
     else if (pg.level == L_SHOWS && pg.nshows)
         pg_paint_home(canvas);
@@ -1542,6 +1574,7 @@ static int pg_on_paint(void *ctx, void *e) {
             pg_paint_eps(canvas);
     } else if (pg.level == L_SRCH && pg.srn)
         pg_paint_srch(canvas);
+    pg_paint_hint(canvas, off);
     I(canvas, CANVAS_OY) -= off;
     return RET_OK;
 }
@@ -1666,13 +1699,15 @@ static void pg_tint_cover(void) {
     }
 }
 
-/* The navbar's title: on the Downloads level always; on the Shows and Show levels only once the large title / the header's name has scrolled away (the Shows level with no show has no large title); in select mode it has its own: "N Selected". */
+/* The navbar's small title: shown once the large title (the Shows, Downloads, Subscriptions and Saved levels: SG_COLLAPSE, as every large-title page) or the Show level's header name has scrolled
+ * away (pod_title_gone); in select mode it has its own: "N Selected". The search level's title is Apple Podcasts, always (empty and with results): it has no large title to scroll away. */
 static void pg_title_show(void) {
-    if (pg.title) widget_set_visible(pg.title, pg.collapsed || pg.select, 0);
+    if (pg.title) widget_set_visible(pg.title, pg.collapsed || pg.select || pg.level == L_SRCH, 0);
 }
 
 static void pg_collapse(void) {
-    int c = pg.level == L_EPS && !pg.det && pg.hdr && pg_off() >= pg.hdr->collapse;
+    int c = pg.level == L_EPS ? !pg.det && pg.hdr && pod_title_gone(pg_off(), pg.hdr->collapse)
+                              : (pg.level == L_SHOWS || pg.level == L_DLS) && pod_title_gone(pg_off(), 0);
     if (c != pg.collapsed) {
         pg.collapsed = c;
         pg_title_show();
@@ -1799,9 +1834,9 @@ static int pg_on_load(const void *unused) {
  * Levels
  */
 static void pg_title(const char *key, const char *text) {
-    if (key) { /* the Shows, Downloads and Subscriptions levels: the large heading at the top of the content (it scrolls away; the navbar shows no title) */
-        widget_set_text_utf8(pg.big, TR(key));
-        return;
+    if (key) { /* the Shows, Downloads, Subscriptions and Saved levels: the large heading at the top of the content, and the same words for the navbar's small title (shown once it has scrolled away) */
+        az_fit(pg.big, TR(key));
+        text = TR(key);
     }
     if (pg.title) az_fit(pg.title, text);
 }
@@ -1811,14 +1846,6 @@ static void pg_empty(const char *key) {
     pg_show(pg.view, 0);
     pg_show(pg.status, 1);
     widget_set_tr_text(pg.status, key);
-}
-
-/* A Show level with no episode: its header stays (the sheet holds Refresh Feed and Unsubscribe), the hint sits under it. */
-static void pg_eps_hint(const char *key) {
-    pg_show(pg.view, 1);
-    pg_show(pg.status, 1);
-    widget_set_tr_text(pg.status, key);
-    widget_move(pg.status, 20, PG_LIST_Y + pg_top() + 8);
 }
 
 static void pg_fade(void) {
@@ -1891,6 +1918,7 @@ static void pg_leave_show(void) {
 /* The navbar's right end. Shows level: the "..." (the sheet's button) only while the card has something to import (Import from Card). Show level: the "..." (its sheet). Downloads page and Subscriptions page: the "..."
  * (Select and Delete Played Episodes / Select Shows and Export OPML) while there are rows. Elsewhere all are hidden (and out of the hit test) and Now Playing is the glass disc; with a cap beside it Now Playing is the capsule's right cap.
  * The large title is the Shows level's (a child of the content view); the navbar's small one: see pg_title_show. */
+static void pg_head(void);
 static void pg_nav(void) {
     int more = !pg.select && pg.btn_more &&
                ((pg.level == L_EPS && !pg.preview && !pg.det) || (pg.level == L_SHOWS && pg.has_import) ||
@@ -1913,6 +1941,11 @@ static void pg_nav(void) {
         widget_set_visible(pg.sf, pg.level == L_SRCH,
                            0); /* (insensitive for life: a touch on the field goes to the content view) */
     pg_show(pg.big, pg.level == L_SHOWS || pg.level == L_DLS);
+    if (pg.title &&
+        !pg.select) { /* the small title ends before the leftmost button, cut with an ellipsis (pg_head sets the text again at the new width) */
+        widget_resize(pg.title, (globe ? gx : more ? NAV_VIEW_X : NAV_VIEW_X + NAV_VIEW_W) - NAV_TITLE_X, 22);
+        pg_head();
+    }
     pg_title_show();
     if (pg.np) {
         widget_set_prop_str(pg.np, "style:normal:icon", img);
@@ -2327,7 +2360,10 @@ static void pg_dls_apply(void) {
     int max;
     pg_ord_build();
     if (!pg.nrows && (pg.subs || !pg.dscan_on)) {
-        pg_empty(pg.subs ? "No subscriptions" : pg.saved ? "No saved episodes" : "No downloads");
+        pg_show(
+            pg.view,
+            1); /* (the large title and the storage line stay, the hint is painted under them: the first frame is the last) */
+        pg_show(pg.status, 0);
     } else {
         pg_show(pg.view, 1);
         pg_show(pg.status, 0);
@@ -2400,6 +2436,7 @@ static void pg_load_downloads(int keep) {
     pg_dls_apply();
     widget_set_prop_int(pg.sv, "yoffset", off);
     if (pg.saved) pg.want_off = off; /* (the rows come a show a tick: the offset is put back as they reach it) */
+    pg_collapse();
     pg_fade();
     pg_kick();
 }
@@ -2451,7 +2488,6 @@ static void pg_open_show_with(int si, int off, pc_ep_t *all, int m) {
     pg_nav();
     pg_show(pg.view, 1);
     pg_show(pg.status, 0);
-    if (!m && !pg.preview) pg_eps_hint(pg_no_eps_key());
     grid_shape(&pg.g, LIST_ART, LIST_R, 1);
     grid_shape(&pg.hg, PS_ART, PS_ART_R,
                1); /* (the corners are cut in the alpha: the page's tint shows through them) */
@@ -2490,10 +2526,7 @@ static void pg_reload_eps(void) {
     pg_det_refind(); /* (the episode page stays on its episode, wherever the list put it) */
     pg_cells_drop();
     pg_hdr_make();
-    if (!m)
-        pg_eps_hint(pg_no_eps_key());
-    else
-        pg_show(pg.status, 0);
+    pg_show(pg.status, 0);
     pg_size();
     max = pg_content() - GRID_VIEW_H;
     if (max < 0) max = 0;
@@ -2594,6 +2627,8 @@ static void pg_load_search(int fresh) {
     } else
         pg_srch_apply();
     widget_set_prop_int(pg.sv, "yoffset", 0);
+    pg_title((const char *)0, TR("Apple Podcasts")); /* after pg_nav has sized the title (az_fit cuts to the width) */
+    pg_collapse();
     pg_title_show();
     pg_fade();
     if (fresh && !pg.sq[0]) pg_srch_edit();
@@ -2980,6 +3015,8 @@ static void pg_head(void) { /* the navbar's title: "N Selected" in select mode, 
     if (!pg.select) {
         if (pg.level == L_EPS)
             pg_title((const char *)0, pg.shows[pg.sel].title);
+        else if (pg.level == L_SHOWS)
+            pg_title("Podcasts", (const char *)0);
         else if (pg.level == L_DLS)
             pg_title(pg.subs ? "Subscriptions" : pg.saved ? "Saved" : "Downloads", (const char *)0);
         return;
@@ -3004,7 +3041,9 @@ static void pg_select(int on) {
     pg_show(pg.del, on && !(pg.level == L_DLS &&
                             pg.subs)); /* the bar's one pill: Delete, or on the Subscriptions page Unsubscribe */
     pg_show(pg.unsubp, on && pg.level == L_DLS && pg.subs);
-    if (pg.title) widget_resize(pg.title, (on ? SG_SELALL_X : NAV_VIEW_X) - NAV_TITLE_X, 22);
+    if (pg.title && on)
+        widget_resize(pg.title, SG_SELALL_X - NAV_TITLE_X,
+                      22); /* (leaving select mode, pg_nav sets the width of the level) */
     if (pg.back) {
         widget_set_prop_str(pg.back, "style:normal:icon", on ? "ah_nav_close" : "ah_nav_back");
         widget_set_prop_str(pg.back, "style:over:icon", on ? "ah_nav_close" : "ah_nav_back");
@@ -3557,6 +3596,7 @@ static void pg_dls_back(void) {
         pg_load_downloads(0);
         pg.want_off = off;
         pg_dls_apply();
+        pg_collapse();
         pg_fade();
         return;
     }
@@ -3564,6 +3604,7 @@ static void pg_dls_back(void) {
     max = pg_content() - GRID_VIEW_H;
     if (max < 0) max = 0;
     widget_set_prop_int(pg.sv, "yoffset", off > max ? max : off);
+    pg_collapse();
     pg_fade();
     pg_redraw();
     pg_kick();

@@ -23,7 +23,8 @@ __asm__(".text\n.globl ft_statx\nft_statx:\nli $v0, 4366\nsyscall\njr $ra\nnop\n
 
 int ft_created(const char *path) {
     unsigned sx[64]; /* struct statx (256 bytes): stx_mask first, stx_btime.tv_sec at byte 80 */
-    if (path && access(KILL_SD, F_OK) != 0 && ft_statx(AT_FDCWD, path, 0, STATX_BTIME, sx) == 0 && (sx[0] & STATX_BTIME) && sx[20])
+    if (path && access(KILL_SD, F_OK) != 0 && ft_statx(AT_FDCWD, path, 0, STATX_BTIME, sx) == 0 &&
+        (sx[0] & STATX_BTIME) && sx[20])
         return (int)sx[20];
     return stock_file_created_trampoline(path);
 }

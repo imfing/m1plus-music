@@ -73,7 +73,7 @@ def asset_bar(s, bar, im, y0=0, vol='100', clock='12:59 PM', lo=False):
     ImageDraw.Draw(im).rectangle((0, y0, W - 1, y0 + BAR - 1), fill=tuple(int(bg[i:i + 2], 16) for i in (0, 2, 4)))
     def group(view, right):
         m = re.search(r'x=(\d+)', view.get('children_layout') or ''); sp = int(re.search(r's=(\d+)', view.get('children_layout')).group(1))
-        kids = [c for c in view.children if c.name not in ('img_synclink', 'pod_shot', 'pod_pct', 'pod_pct_dd', 'pod_lo' if not lo else 'label_volume')]      # SyncLink is only drawn while connected; the Screenshot camera while it counts down, the Battery Percentage when it is on (preview.shot_bars)
+        kids = [c for c in view.children if c.name not in ('img_synclink', 'pod_shot', 'pod_pct', 'pod_pct_dd', 'pod_sync', 'pod_lo' if not lo else 'label_volume')]      # SyncLink is only drawn while connected; the Screenshot camera while it counts down, the Battery Percentage when it is on (preview.shot_bars), the sync icon while a build runs
         total = sum(c.w for c in kids) + sp * (len(kids) - 1)
         x = view.x + view.w - total if right else view.x + int(m.group(1)) if m else view.x
         for c in kids:

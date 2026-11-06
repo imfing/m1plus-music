@@ -411,8 +411,9 @@ def run(ctx):
            f'the description wraps into two lines of 288 px at y 317 and 337 ({desc})')
     rt0 = [(t, r) for (t, r), s in zip(texts, styles) if s in ('label_dp_row', 'label_dp_artist')]
     LX, LY, LT, LW = O['LIST_ART_X'], O['LIST_ART_Y'], O['LIST_TEXT_X'], O['LIST_TEXT_W']
-    expect([r for t, r in rt0] == [(LT, ROWS_Y + O['LIST_TITLE_Y'], LW, O['LIST_TITLE_H']), (LT, ROWS_Y + O['LIST_SUB_Y'], LW, O['LIST_SUB_H'])] and [t for t, r in rt0] == [m.songs[0]['title'], m.songs[0]['artist']],
-           f'at the top the first song row (y {ROWS_Y}) is whole: its title and artist are drawn at the Albums list\'s x {LT}, {LW} px wide ({rt0})')
+    expect([r for t, r in rt0] == [(LT, ROWS_Y + i * O['LIST_ROW_H'] + y, LW, h) for y, h in ((O['LIST_TITLE_Y'], O['LIST_TITLE_H']), (O['LIST_SUB_Y'], O['LIST_SUB_H'])) for i in range(2)]
+           and [t for t, r in rt0] == [m.songs[i][k] for k in ('title', 'artist') for i in range(2)],
+           f'at the top the first song row (y {ROWS_Y}) and the second, cut by the window (the clip cuts its texts), have their titles, then their artists at the Albums list\'s x {LT}, {LW} px wide ({rt0})')
     covers0 = covers_of(blits)
     expect(len(covers0) == 2 and covers0[0][2] == (LX, ROWS_Y + LY, 52, 52) and covers0[1][2] == (LX, ROWS_Y + ROW + LY, 52, VIEW_H - (ROWS_Y + ROW + LY)),
            f'the first cover is whole at x {LX} and the second is cut by the view\'s bottom edge ({[c[2] for c in covers0]})')

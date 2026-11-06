@@ -137,15 +137,15 @@ def run(ctx):
     lock = pod.DATA['PARSE_COVER_MUTEX'][0]
     m.album_cover = 1
     m.call(PSYMS['cc_worker'], count=5000000)
-    seq = [c for c in m.calls if c[0] in ('lock', 'unlock', 'toolsGetAlbumCover', 'toolsGetExternCover', 'rename')]
-    expect(seq[0] == ('lock', lock) and seq[1][0] == 'toolsGetAlbumCover' and seq[2] == ('unlock', lock),
-           f'the art call is made under parse_cover_mutex ({seq[:3]})')
-    expect(sum(1 for c in m.calls if c[0] == 'rename') == 3, 'every album\'s thumbnail is renamed into place')
+    seq = [c for c in m.calls if c[0] in ('lock', 'unlock', 'taglib_album_picture', 'toolsGetAlbumCover', 'toolsGetExternCover')]
+    expect([c[0] for c in seq[:5]] == ['lock', 'taglib_album_picture', 'unlock', 'lock', 'toolsGetAlbumCover'] and seq[0] == ('lock', lock) and seq[5] == ('unlock', lock),
+           f'taglib and then the stock art call are each made under parse_cover_mutex ({seq[:6]})')
+    expect(sum(1 for c in m.calls if c[0] == 'rename' and c[2].endswith('.jpg')) == 3, 'every album\'s thumbnail is renamed into place')
     expect([c for c in m.calls if c[0] == 'toolsGetExternCover'] == [], 'the folder image is only a fallback')
     # the thumbnails are extracted at the larger size, into files named for it
     expect(getattr(m, 'cover_size', None) == (O['ART_SIZE'], O['ART_SIZE']),
            f'the thumbnails are {O["ART_SIZE"]} px ({getattr(m, "cover_size", None)})')
-    dst = [c[2] for c in m.calls if c[0] == 'rename']
+    dst = [c[2] for c in m.calls if c[0] == 'rename' and c[2].endswith('.jpg')]
     expect(dst and all(d.endswith(f'-{O["ART_SIZE"]}.jpg') and d in cache_paths(m, 3) for d in dst),
            f'a {O["ART_SIZE"]} px thumbnail never takes the name of a 140 px one ({dst[:1]})')
 
@@ -174,18 +174,20 @@ def run(ctx):
     # 15c. The progress timer cannot be created (audit): the screen never waits for a callback that cannot come
     m5 = cover_machine(albums=2, cached=False); m5.timer_fail = True
     m5.call(cover_open, count=5000000)
-    expect('pthread_create' in m5.names() and 'pthread_join' in m5.names(), 'initial timer refused: the worker is stopped and joined')
+    expect('pthread_create' in m5.names() and 'pthread_join' not in m5.names() and build_state(m5)['orphan'] == 1, 'initial timer refused: the worker is cancelled and orphaned, not joined')
     expect('view' in [c[0] for c in m5.calls] and ('widget_set_visible', m5.widgets['btn_cancel'], 1) not in m5.calls,
            'initial timer refused: the covers show, no Preparing screen with a Cancel nobody needs')
     m6 = cover_machine(albums=2, cached=False)
     m6.call(cover_open, count=5000000)
     m6.timer_fail = True; m6.call(PSYMS['on_poll'], count=5000000)
-    expect('pthread_join' in m6.names() and 'view' in [c[0] for c in m6.calls],
-           'a refused re-arm: the worker is joined and the covers show')
+    expect('pthread_join' not in m6.names() and build_state(m6)['orphan'] == 1 and 'view' in [c[0] for c in m6.calls],
+           'a refused re-arm: the worker is cancelled and orphaned, and the covers show')
 
-    # 16. Cancel: the thread is told to stop and joined, the timer dropped, the covers shown.
+    # 16. Cancel: the thread is told to stop (not waited for), the timer dropped, the covers shown.
     m.call(PSYMS['on_cancel'], count=5000000)
-    expect('pthread_join' in m.names(), 'Cancel joins the worker')
+    expect('pthread_join' in m.names() and build_state(m)['jobs'] == 0, 'Cancel joins a worker that has finished (it ran above) and frees the set')
+    m7 = cover_machine(albums=3, cached=False); m7.call(cover_open, count=5000000); m7.call(PSYMS['on_cancel'], count=5000000)
+    expect('pthread_join' not in m7.names() and build_state(m7)['orphan'] == 1, 'Cancel with a job in flight orphans the worker, no join')
     expect('timer_remove' in m.names(), 'Cancel drops the progress timer')
     expect('view' in [c[0] for c in m.calls], 'Cancel shows the covers')
 

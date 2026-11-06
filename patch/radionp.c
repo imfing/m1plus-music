@@ -25,7 +25,8 @@
 
 static struct {
     void *win, *title, *artist, *station, *info, *elapsed, *fav, *play, *live, *art, *art_ic, *more, *sh_scrim,
-        *sh_card, *sh_row, *sh_ic, *sh_tx, *sh_hr, *sh_info, *sh_info_hr, *logo; /* logo: the station's picture, a bitmap RN_LOGO px square */
+        *sh_card, *sh_row, *sh_ic, *sh_tx, *sh_hr, *sh_info, *sh_info_hr,
+        *logo; /* logo: the station's picture, a bitmap RN_LOGO px square */
     int sheet;
     int logo_bad;
     char favicon[RD_FAV_MAX + 1];

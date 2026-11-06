@@ -37,8 +37,8 @@ extern unsigned ip_fit(void *canvas, unsigned *s,
 #define TEXELS (ART_SIZE * ART_SIZE)
 #define PLACE (ipcf.tex + IPCF_SLOTS * TEXELS)
 
-static const cfg_t shelf = {IP_W,    IPCF_FRAME_H, IP_W / 2, IPCF_TOP,     IPCF_ART, IPCF_EYE,  IPCF_X1,
-                            IPCF_XS, IPCF_Z1,      IPCF_ZS,  IPCF_REFLECT, 0,        IPCF_TURN, IPCF_TAIL, IPCF_BG};
+static const cfg_t shelf = {IP_W,    IPCF_FRAME_H, IP_W / 2,     IPCF_TOP, IPCF_ART,  IPCF_EYE,  IPCF_X1, IPCF_XS,
+                            IPCF_Z1, IPCF_ZS,      IPCF_REFLECT, 0,        IPCF_TURN, IPCF_TAIL, IPCF_BG};
 
 static struct {
     int pos, target; /* the slide's position and where it goes, 16.16 albums (first: test/pod/ipod_cf.py reads them) */

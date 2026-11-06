@@ -1203,14 +1203,14 @@ def levels_tests(ctx):
     expect(vis(m, 'btn_more') == (0, 0) and vis(m, 'btn_search') == (0, 0), 'the root has neither "..." nor Search')
     m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m)
     tap_row(m, 0, root=True)
-    expect(grid_titles(m) == ['Fav One', 'Fav Two'] and grid_subs(m) == ['Germany · MP3 128k'] and text_of(m, 'sg_title') == 'My Stations',
-           f'Stations: the stations as a grid, the name and the caption of each (a text is drawn only whole inside the window: the third cell\'s are below it) ({grid_titles(m)}, {grid_subs(m)})')
+    expect(grid_titles(m) == ['Fav One', 'Fav Two', 'Fav Three'] and grid_subs(m) == ['Germany · MP3 128k', 'France · AAC 64k'] and text_of(m, 'sg_title') == 'My Stations',
+           f'Stations: the stations as a grid, the name and the caption of each (the third cell\'s too, cut by the window: the clip cuts them) ({grid_titles(m)}, {grid_subs(m)})')
     blits, texts, fills = paint(m)
     covers = [(b[2][0], b[2][1], b[2][2]) for b in blits if b[2][2] == 144]
     expect(covers == [(12, TOP, 144), (164, TOP, 144), (12, TOP + 200, 144)] and not [b for b in blits if b[2][2] == 10], f'two columns of 144 px covers (x 12 and 164, rows 200 apart), no chevron, no "..." ({covers})')
     ts = [r for (t, r), st in texts if st == 'label_grid_title']
     ss = [r for (t, r), st in texts if st == 'label_grid_sub']
-    expect(ts == [(12, TOP + 148, 144, 22), (164, TOP + 148, 144, 22)] and ss[0] == (12, TOP + 170, 144, 20), f"the Albums grid's text: the name 4 px under the cover (22 px), the caption under it (20 px) ({ts}, {ss})")
+    expect(ts == [(12, TOP + 148, 144, 22), (164, TOP + 148, 144, 22), (12, TOP + 348, 144, 22)] and ss[0] == (12, TOP + 170, 144, 20), f"the Albums grid's text: the name 4 px under the cover (22 px), the caption under it (20 px) ({ts}, {ss})")
     ph = m.bitmaps[next(b[0] for b in blits if b[2][2] == 144)]
     px = lambda x, y: struct.unpack('<I', bytes(m.u.mem_read(ph[0] + 4 * (y * ph[1] + x), 4)))[0]
     expect((px(0, 0), px(20, 20), px(72, 72)) == (0xff000000, 0xff2e2c2c, 0xff938e8e), f'a station without a logo: a #2C2C2E card, the radio glyph in the middle, the corners blended into black ({px(0, 0):#x} {px(20, 20):#x} {px(72, 72):#x})')
@@ -1245,6 +1245,23 @@ def levels_tests(ctx):
     m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.out_way = 1
     tap_row(m, 0, root=True); calls = tap_cell(m, 0)
     expect(('window_open', 'm1plus_radionp') in calls and m.call(PSYMS['rd_state']) == ST['ERROR'], 'a station that cannot start leaves its reason to Now Playing')
+    # the Now Playing row never starts a station: nothing active, a toast and nothing else
+    def idle_row(m):
+        calls = tap_row(m, 0, root=True)
+        return [c[1] for c in calls if c[0] == 'toast'], ('window_open', 'm1plus_radionp') in calls, bool(m.proc)
+    m = page_machine(); m.put_text(RECENT, '#EXTM3U\n#EXTINF:-1,Rec One\nhttp://rec.example/1\n'); open_radio(m); np_widgets(m)
+    expect(rows_text(m)[0] == 'Now Playing' and idle_row(m) == (['No radio is playing'], False, False) and m.call(PSYMS['rd_state']) == ST['IDLE'], 'idle with a recent station: the Now Playing row toasts "No radio is playing", opens no page and starts nothing')
+    m = opened(); l, r = play(m); poll(m); m.call(PSYMS['rd_stop'], count=40000000); m.proc = []
+    m.call(PSYMS['rp_on_fg'], a0=0, count=40000000)
+    expect(rows_text(m)[0] == 'Now Playing' and idle_row(m) == (['No radio is playing'], False, False) and m.call(PSYMS['rd_state']) == ST['STOPPED'], 'stopped: the same toast, no page, the station is not started again')
+    m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.out_way = 1
+    tap_row(m, 0, root=True)
+    back = m.bound[(m.widgets['btn_return'], O['EVT_CLICK'])]
+    tap_cell(m, 0)
+    m.bound[(m.widgets['btn_return'], O['EVT_CLICK'])] = back
+    click(m, 'btn_return'); destroy_np(m); m.proc = []
+    st_, got_ = m.call(PSYMS['rd_state']), (rows_text(m), idle_row(m))
+    expect(st_ == ST['ERROR'] and got_[1] == (['No radio is playing'], False, False), f'error: the same toast, no page, no new start ({st_}, {got_})')
     # the scroll offset a level was left at comes back
     big = '#EXTM3U\n' + ''.join(f'#EXTINF:-1,S{i}\nhttp://s.example/{i}\n' for i in range(30))
     m = page_machine(); m.put_text(FAVS, big); open_radio(m)
@@ -1603,7 +1620,7 @@ def favs_tests(ctx):
     expect = ctx.expect
     m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m)
     tap_row(m, 0, root=True)
-    expect(grid_titles(m) == ['Fav One', 'Fav Two'], 'Stations: the stations')
+    expect(grid_titles(m) == ['Fav One', 'Fav Two', 'Fav Three'], 'Stations: the stations')
     m.proc = []
     calls = tap_cell(m, 1)
     expect(('window_open', 'm1plus_radionp') in calls and m.call(PSYMS['rd_at']) == 1, 'a tap anywhere on a tile plays it (the right edge too: there is no "...")')

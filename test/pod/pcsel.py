@@ -184,7 +184,7 @@ def select_tests(ctx):
     PCP.click(m, 'pg_del')
     expect(sorted(unlinks(m)) == sorted(['Alpha Show/ep1.mp3', 'Alpha Show/ep1.mp3.part', 'Alpha Show/ep2.mp3', 'Alpha Show/ep2.mp3.part']) and title(m) == 'Alpha Show',
            f'Alpha Show: both files deleted; the page is empty ({unlinks(m)})')
-    expect(('widget_set_tr_text', m.widgets['label_status'], 'No episodes yet. Choose Refresh Feed in the menu at the top right.') in m.calls, 'and says so under its header (a subscription: use Refresh Feed in the menu)')
+    expect('No episodes yet. Choose Refresh Feed in the menu at the top right.' in PCP.hint(m), 'and says so under its header (a subscription: use Refresh Feed in the menu)')
     PCP.click(m, 'btn_return')
     expect(PCP.show_at(m, 'Alpha')[2] >= 0 and title(m) == 'Podcasts', 'Back: the Shows level still lists it (a subscription is a show without a file; every show is listed)')
     m = page()

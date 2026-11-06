@@ -136,14 +136,17 @@ Settings > Developer > Tools > **Settings Files** (a link row, glyph Lucide `fil
 
 `cc_album_order` keeps the stock deque unchanged and creates an `order[]` of stock row numbers:
 
-- **Album:** stock title order, ASCII case-insensitive.
-- **Artist:** representative track's `songer`, then album title; ASCII case-folded with a
-  leading `The ` removed, ties resolved by stock position. There is no album-artist fallback
+- **Album:** the stock list (`getAllAlbum` `group by album COLLATE NOCASE`, then `toolsQueryDbTable`'s in-memory title sort).
+- **Artist:** representative track's `songer`, then album title, each by the name order of
+  `docs/modules/artists.md` (digit runs by value, ASCII case folded, digits and symbols before letters, CJK
+  by pinyin initials among the Latin names, leading white space and `The ` removed); ties resolved by stock position. There is no album-artist fallback
   because the query does not fetch that field. Unknown Album (ID -1) goes last.
 
 The permutation uses heapsort; access goes through `cc_row`, and stock album opens receive
 `order[i]`. Albums and main Cover Flow share it. Per-artist Cover Flow retains its stock album
-title order. Cache keys remain artist + album title.
+title order. Cache keys remain artist + album title. Cost: 4000 albums sort in 30.8 M payload instructions
+(two keys per row; stock's own in-memory sort of the same list, which runs first, is over 10x that:
+`docs/modules/artists.md` "Cost against stock's sort").
 
 At open, `find_playing` checks `cc_playing`: `mclGetPlayPos` `0x5d4290` and `PLAY_QUEUE`
 `0xa0394c`, bounded by `deque_size`. It matches the album by `cc_album_key` (FNV of artist/title),

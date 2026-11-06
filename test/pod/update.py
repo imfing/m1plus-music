@@ -302,6 +302,83 @@ def dev_tests(ctx):
     expect(download(m) == PN['CARDFULL'] and m.fs.get(FILE) == OLD, 'a development build: the space check applies')
 
 
+CHAN, BASE, DEVTAG = '/mnt/mmc/m1plus-update-url', 'http://192.168.1.20:8765', 'V2.1zABCDAAAB'
+
+
+class ChanSite(Site):
+    """The development channel's server (tools/ota_server.py): GitHub's paths under BASE."""
+    def __init__(self, tag=DEVTAG, notes=b'{"body": "dev notes"}', **kw):
+        super().__init__(tag, pkg=kw.pop('pkg', None) or package(tag, line2=tag if tag.startswith('V2.1z') else None), notes=notes, **kw)
+        self.latest = kw.get('latest') or {'code': 302, 'redirect_url': f'{BASE}/releases/tag/{tag}', 'body': b''}
+
+    def __call__(self, url, o):
+        self.order.append(url)
+        if url.startswith(BASE + '/releases/tags/'):
+            self.nreqs.append((url, dict(o)))
+            return {'body': self.notes}
+        self.reqs.append((url, dict(o)))
+        if url == BASE + '/releases/latest': return dict(self.latest)
+        return {'body': self.pkg, 'chunk': 1000, 'length': len(self.pkg), **self.asset}
+
+
+def channel_tests(ctx):
+    """The development channel: a card file names a server answering GitHub's paths; http allowed, a development tag offered when it is not the installed build, the package still checked."""
+    expect, m = ctx.expect, Machine()
+    for s, want in (('V2.1zABCDAAAB', 1), ('V2.1zA', 1), ('V2.1zABCDEFGHIJKL', 1), ('V2.1z', 0), ('V2.1zABCDEFGHIJKLM', 0), ('V2.1zabcd', 0), ('V2.1zABCD1', 0), ('V2.1-1.0.0', 0), ('1.0.0', 0), ('V2.1zABCD\n', 0), ('', 0)):
+        expect(fn(m, 'up_devtag', m.cstr(s)) == want, f'{s!r} is {"" if want else "not "}a development tag')
+
+    def chan(text):
+        m.fs[CHAN] = text
+        out = m.alloc(100)
+        r = fn(m, 'up_chan_read', m.cstr(CHAN), out)
+        return r - (1 << 32) if r >= 1 << 31 else r, m.read_cstr(out)
+    for text, want in ((BASE.encode(), (1, BASE)), (BASE.encode() + b'\n', (1, BASE)), (BASE.encode() + b'/\r\n', (1, BASE)), (b'https://dev.local', (1, 'https://dev.local')), (b'', (-1, '')), (b'\n', (-1, '')),
+                       (b'192.168.1.20:8765', (-1, '')), (b'ftp://x', (-1, '')), (b'http://', (-1, '')), (b'http://a b', (-1, '')), (b'http://a\nhttp://b', (-1, '')), (b'http://' + b'a' * 89, (1, 'http://' + 'a' * 89)),
+                       (b'http://' + b'a' * 90, (-1, '')), (b'http://' + b'a' * 500, (-1, '')), ('http://é'.encode(), (-1, ''))):
+        expect(chan(text) == want, f'channel file {text[:40]!r}: {want} ({chan(text)})')
+    del m.fs[CHAN]
+    expect(fn(m, 'up_chan_read', m.cstr(CHAN), m.alloc(100)) == 0, 'no channel file: GitHub')
+
+    def ctag(loc):
+        out = m.alloc(24)
+        return m.read_cstr(out) if fn(m, 'up_chan_tag', m.cstr(loc), m.cstr(BASE), out, 24) else None
+    for loc, want in ((f'{BASE}/releases/tag/{DEVTAG}', DEVTAG), (f'{BASE}/releases/tag/1.2.0', '1.2.0'), (f'{BASE}/releases/tag/v1.2.0', None), (f'{BASE}/releases/tag/{DEVTAG}\r', None),
+                      (f'http://192.168.1.21:8765/releases/tag/{DEVTAG}', None), (f'{BASE}/release/tag/{DEVTAG}', None), (f'https://github.com/{REPO}/releases/tag/1.2.0', None), (f'{BASE}/releases/tag/', None)):
+        expect(ctag(loc) == want, f'channel redirect {loc!r}: {want}')
+    for tag, about, want in ((DEVTAG, DEVTAG, 1), (DEVTAG, 'V2.1zABCDAAAA', 2), ('1.2.0', DEVTAG, 2), ('1.2.0', '1.2.0', 1), ('1.1.0', '1.2.0', 2), ('V2.1zABCDAAA', DEVTAG, 2), ('v1.2.0', '1.0.0', 0)):
+        expect(fn(m, 'up_chan_offer', m.cstr(tag), m.cstr(about)) == want, f'channel tag {tag} on build {about}: {want}')
+    expect(info_ok(m, package(DEVTAG, line2=DEVTAG), DEVTAG) == 1, 'a development package says its tag on line 2: accepted')
+    for line2, why in (('V2.1-' + DEVTAG, 'the release prefix'), ('V2.1zABCDAAAC', 'another development tag'), ('V2.1', 'the stock version')):
+        expect(info_ok(m, package(DEVTAG, line2=line2), DEVTAG) == 0, f'a development package with {why} on line 2: refused')
+
+    # the jobs: a check, the notes and the download all go to the channel, http allowed, the CA bundle still set
+    site = ChanSite()
+    m = machine(site, own='1.2.0', dev=1)
+    m.u.mem_write(PSYMS['up_about'], cs('V2.1zABCDAAAA'))
+    m.put(CHAN, BASE.encode() + b'\n')
+    check(m)
+    expect(st(m) == (U['CHECKED'], 0, 1, 2, DEVTAG), f'the channel offers {DEVTAG} to another build ({st(m)})')
+    o = site.reqs[0][1]
+    expect(site.reqs[0][0] == BASE + '/releases/latest' and o[44] == 1 and o[52] == 0 and o[181] == 3 and o[182] == 3 and o[10065] == PCN.CA and 64 not in o and 81 not in o,
+           'header only, not followed, http or https, the CA bundle, verification never switched off')
+    expect([u for u, _ in site.nreqs] == [f'{BASE}/releases/tags/{DEVTAG}'] and m.read_cstr(fn(m, 'pn_up_notes')) == 'dev notes', 'the notes come from the channel')
+    expect(download(m) == 0 and st(m)[:2] == (U['DOWNLOADED'], 0) and m.fs.get(FILE) == site.pkg and PART not in m.fs and site.reqs[1][0] == f'{BASE}/releases/download/{DEVTAG}/update.bin',
+           'the download fetches the tag\'s update.bin from the channel')
+    m = machine(ChanSite(), own='1.2.0', dev=1); m.u.mem_write(PSYMS['up_about'], cs(DEVTAG)); m.put(CHAN, BASE.encode()); check(m)
+    expect(st(m) == (U['CHECKED'], 0, 1, 1, ''), f'the installed build: Up to Date ({st(m)})')
+    site = ChanSite(pkg=package(DEVTAG, line2='V2.1zABCDAAAC'))
+    m = machine(site, own='1.2.0', dev=1); m.put(CHAN, BASE.encode()); check(m)
+    expect(download(m) == 0 and st(m)[:2] == (U['FAILED'], PN['UPBAD']) and m.fs.get(FILE) == OLD and PART not in m.fs, 'a package of another build is refused, the old update.bin stays')
+    m = machine(ChanSite(latest={'code': 302, 'redirect_url': f'https://github.com/{REPO}/releases/tag/1.2.0'}), own='1.2.0', dev=1); m.put(CHAN, BASE.encode()); check(m)
+    expect(st(m)[:2] == (U['FAILED'], PN['UPCHECK']), 'a channel redirect elsewhere is "can\'t check"')
+    m = machine(ChanSite(), own='1.2.0', dev=1); m.put(CHAN, b'192.168.1.20:8765')
+    expect(check(m) == PN['UPCHECK'] and st(m)[:3] == (U['FAILED'], PN['UPCHECK'], 1) and not site_calls(m), 'a channel file that is no address: "can\'t check", no request')
+    site = Site('1.0.1')
+    m = machine(site, own='1.0.0', dev=0); m.put(CHAN, BASE.encode()); check(m)
+    m.fs.pop(CHAN); m.curl_site = site; check(m)
+    expect(st(m)[4] == '1.0.1' and site.reqs[-1][0] == LATEST and site.reqs[-1][1][181] == 2, 'the file removed: the next check asks GitHub again, https only')
+
+
 def download_tests(ctx):
     expect = ctx.expect
     pkg = package('1.0.1', extra=bytes(range(256)) * 30)
@@ -583,7 +660,7 @@ def notes_check_tests(ctx):
     expect(notes_of(m) == want, 'three checks in a row: the notes of the last')
 
 
-SECTIONS = [parse_tests, redirect_tests, build_tests, info_tests, check_tests, dev_tests, download_tests, notes_parse_tests, notes_check_tests]   # tools/check.py runs each as its own task
+SECTIONS = [parse_tests, redirect_tests, build_tests, info_tests, check_tests, dev_tests, channel_tests, download_tests, notes_parse_tests, notes_check_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

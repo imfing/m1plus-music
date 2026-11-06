@@ -2198,7 +2198,8 @@ int pn_unsubscribe_show(const char *root, const pc_show_t *s) {
  *
  * Two jobs of the one worker slot (PN_KIND_UPDATE). The check asks GitHub where /releases/latest goes and reads the tag from that address: the answer is not followed and nothing else is read. The download fetches
  * that tag's update.bin (/releases/download/<tag>/update.bin, never "latest": the file is the version the page showed) into /mnt/mmc/update.bin.part, checks that the package says it is that version, and only
- * then renames it over update.bin. A failure removes the .part and leaves the card's update.bin as it was. Every request keeps verification on and allows https only.
+ * then renames it over update.bin. A failure removes the .part and leaves the card's update.bin as it was. Every request keeps verification on; the addresses, the verdict and https-only come from
+ * patch/upver.c (GitHub, or the development channel).
  */
 
 static unsigned pn_unull(char *d, unsigned size, unsigned nmemb, void *user) {
@@ -2242,6 +2243,7 @@ static void pn_up_end(int state, int code) {
 }
 
 static void pn_up_https(void *h) {
+    if (!up_https_only()) return; /* (upver.c says where the jobs ask) */
     curl_easy_setopt(h, CURLOPT_PROTOCOLS,
                      CURLPROTO_HTTPS); /* an address that is not https, or a redirect to one, is refused */
     curl_easy_setopt(h, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
@@ -2273,7 +2275,7 @@ static void pn_up_notes_fetch(const char *tag) {
     x.total = 0;
     x.buf = calloc(PN_UP_API_CAP + 1, 1);
     notes = calloc(UP_NOTES_MAX + 1, 1);
-    snprintf(url, sizeof url, "https://api.github.com/repos/%s/releases/tags/%s", up_repo, tag);
+    up_url(UP_URL_NOTES, tag, url, sizeof url);
     h = x.buf && notes ? pn_easy(url, pn_unwrite, &x, err, (void *)0) : (void *)0;
     if (h) {
         pn_up_https(h);
@@ -2295,7 +2297,7 @@ static void pn_up_check_run(void) {
     long http = 0;
     int rc, code = PN_UPCHECK, res = 0;
     void *h;
-    snprintf(url, sizeof url, "https://github.com/%s/releases/latest", up_repo);
+    up_url(UP_URL_LATEST, "", url, sizeof url);
     h = pn_easy(url, pn_unull, (void *)0, err, (void *)0);
     if (!h) {
         pn_up_end(PN_U_FAILED, PN_MEM);
@@ -2308,9 +2310,8 @@ static void pn_up_check_run(void) {
     curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &http);
     curl_easy_getinfo(h, CURLINFO_REDIRECT_URL, &loc);
     if (rc == 0) {
-        if ((http == 301 || http == 302 || http == 303 || http == 307 || http == 308) &&
-            up_redirect_tag(loc, up_repo, tag, sizeof tag))
-            res = up_offer(tag, up_own, up_dev);
+        if (http == 301 || http == 302 || http == 303 || http == 307 || http == 308)
+            res = up_latest(loc, tag, sizeof tag);
         if (res) code = PN_OK;
     } else {
         code = pn_rc(rc, http);
@@ -2358,7 +2359,7 @@ static void pn_up_download_run(void) {
         pn_up_end(PN_U_FAILED, PN_STORAGE);
         return;
     }
-    snprintf(url, sizeof url, "https://github.com/%s/releases/download/%s/update.bin", up_repo, tag);
+    up_url(UP_URL_ASSET, tag, url, sizeof url);
     h = pn_easy(url, pn_uwrite, &x, err, (void *)0);
     if (!h) {
         close(x.fd);
@@ -2407,13 +2408,14 @@ static void *pn_umain(void *arg) {
 
 /* The guards, then the worker. A guard that fails is the job's failure too, so the page reads one place. */
 static int pn_up_start(int mode) {
-    unsigned kb = 0, v[3];
+    unsigned kb = 0;
     int g;
     if (pn.busy) return PN_BUSY;
     pn.ustage = mode + 1;
     g = pn_guard();
+    if (!g && !mode && up_source() < 0) g = PN_UPCHECK; /* a channel file that names no address */
     if (!g && mode) {
-        if (pn.ures != PN_U_AVAILABLE || !up_parse((const char *)pn.utag, v))
+        if (pn.ures != PN_U_AVAILABLE || !up_tag_ok((const char *)pn.utag))
             g = PN_UPCHECK; /* no release was offered */
         else if (!pn_free_kb(PN_UP_DIR, &kb))
             g = PN_STORAGE;

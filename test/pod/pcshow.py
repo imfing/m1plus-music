@@ -482,11 +482,9 @@ def latest_tests(ctx):
     expect(len([c for c in m.calls if c[0] == 'navigator_to_with_context']) == 1, 'and a tap plays it')
     # a started newest episode: still the white play pill; a show with no episode has no pill
     m = shown(entries=[])
-    st = m.widgets['label_status']
-    moved = [c for c in m.calls if c[0] == 'widget_move' and c[1] == st]
     expect(not texts_of(m, 'label_ps_latest') and not texts_of(m, 'label_ps_latestw'), 'a show with no episode has no pill')
-    expect(m.props.get((st, 'visible')) == 1 and m.props.get((m.view, 'visible')) == 1 and moved and moved[-1][2:] == (20, 50 + PCP.hdr(m) + 8),
-           f'the hint sits under its header (the header stays: its sheet has Refresh Feed and Unsubscribe) ({moved})')
+    expect(m.props.get((m.view, 'visible')) == 1 and 'No episodes yet' in PCP.hint(m),
+           'the hint is painted under its header, in the content (the header stays: its sheet has Refresh Feed and Unsubscribe)')
     expect(PCP.hdr(m) == pod_show.header(font(), SHOW_TITLE, SHOW_DESC, 'Technology', 'All-In Podcast', False)['h'], 'the header has no pill then')
 
 

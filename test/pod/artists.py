@@ -242,8 +242,8 @@ def ar_paint(m, off=0):
 
 
 def rank_of(name):
-    n = skip(name)
-    return ord(n[0].upper()) - 64 if n[:1].isascii() and n[:1].isalpha() else 0
+    k = name_sort_key(name)
+    return ord(k[0][1].upper()) - 64 if k and k[0][0] == 2 else 0
 
 
 def sections_of(ranks):
@@ -423,7 +423,7 @@ def page_tests(expect, cover_asset):
     mm = artists_machine(); mm.widget_on_fail = frozenset({O['EVT_SCROLL']}); mm.call(open_, count=5000000)
     expect(('widget_set_visible', mm.widgets['label_title'], 1) in mm.calls, 'without the scroll events the navbar keeps its title')
 
-    # 29e. The titles in every language, cut with an ellipsis to the large label (250 px, 32 px) and the navbar's room (156 px): measured in the real font
+    # 29e. The titles in every language, cut with an ellipsis to the large label (296 px, 32 px) and the navbar's room (156 px): measured in the real font
     from awtk_text import Ttf, StbText
     raw = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw')
     font = Ttf(os.path.join(raw, 'fonts', 'default.ttf'))
@@ -435,7 +435,7 @@ def page_tests(expect, cover_asset):
     for loc in pod_i18n.LOCALES:
         for key, home, kw, album in (('Artists', 0, {}, 0), ('Album Artists', 0, {}, 1), ('Genres', pod_pages.HOME_GENRE, {'genres': ('Rock',)}, 0),
                                      ('Composers', pod_pages.HOME_COMPOSER, {'composers': ('Bach',)}, 0)):
-            for name, room, px in (('ar_title', 250, 32), ('label_title', O['NAV_VIEW_X'] - O['NAV_TITLE_X'], npx)):
+            for name, room, px in (('ar_title', O['SG_TITLE_W'], 32), ('label_title', O['NAV_VIEW_X'] - O['NAV_TITLE_X'], npx)):
                 mm = artists_machine(**kw); mm.set_language(loc); mm.setword(AT, album)
                 st = StbText(font, px); mm.measure = lambda s, st=st: st.layout(s)[1]
                 mm.call(open_, a0=home, count=5000000)
@@ -454,7 +454,7 @@ def page_tests(expect, cover_asset):
     sv = lv.children[0]
     expect(sv.name == 'artists_scrollview' and [c.name for c in sv.children] == ['view_grid'] and sv.w == 310, 'the scroll_view holds the one content view')
     vg = sv.children[0]
-    expect([c.name for c in vg.children] == ['ar_title'] and vg.children[0].get('sensitive') == 'false' and (vg.children[0].x, vg.children[0].w, vg.children[0].h) == (O['SG_TITLE_X'], 250, O['SG_TITLE_H']),
+    expect([c.name for c in vg.children] == ['ar_title'] and vg.children[0].get('sensitive') == 'false' and (vg.children[0].x, vg.children[0].w, vg.children[0].h) == (O['SG_TITLE_X'], O['SG_TITLE_W'], O['SG_TITLE_H']),
            'the content view holds the large title only (insensitive, as the Songs page\'s)')
     for name in ('label_status', 'img_nb_fade', 'label_row_title', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'label_title'):
         w = tree.find(name)
@@ -545,21 +545,13 @@ def shown(m):
     return [names[y] for y in sorted(names)]
 
 
-def fold(s): return ''.join(chr(ord(c) + 32) if 'A' <= c <= 'Z' else c for c in s)
-def skip(s): return s[4:] if len(s) > 4 and fold(s[:4]) == 'the ' else s
 
 
 def sort_model(names):
-    """Independent model: runs of ASCII-initial names (not Unknown Artist) sorted by (folded name without "The ", stock
-    position); every other row stays at its stock position."""
-    out, i = [], 0
-    ok = lambda n: n != 'Unknown Artist' and ord(n[:1] or 'a') < 128
-    while i < len(names):
-        j = i
-        while j < len(names) and ok(names[j]): j += 1
-        out += sorted(range(i, j), key=lambda k: (fold(skip(names[k])), k))
-        if j == i: out.append(i); j += 1
-        i = j
+    """Independent model: every row but Unknown Artist sorted by (name_sort_key, stock position); Unknown Artist rows keep their stock positions."""
+    fixed = [i for i, n in enumerate(names) if n == 'Unknown Artist']
+    rest = iter(sorted((i for i in range(len(names)) if i not in fixed), key=lambda k: (name_sort_key(names[k]), k)))
+    out = [i if i in fixed else next(rest) for i in range(len(names))]
     return [names[k] for k in out], out
 
 
@@ -588,31 +580,47 @@ def sort_tests(ctx):
         la = [c for c in m2.calls if c[0] == 'loadAlbumList']
         expect(la and la[0][3] == got[k], f'a tap on row {k} opens {got[k]!r} ({la[:1]})')
 
-    # 41. Non-Latin names keep stock's placement: the sortable runs are sorted around them, in place.
+    # 41. Non-Latin names: a CJK name is placed by its pinyin initials among the Latin names, any other script follows the Latin ones; only Unknown Artist is fixed.
     stock = ['Zed', '周杰伦', 'The Beatles', 'Abba', 'Мумий Тролль', 'Bob', 'Éric', 'Aaa', 'あいみょん', 'Unknown Artist']
     want, _ = sort_model(stock)
     m = artists_machine(stock); m.call(open_, count=20000000)
     got = shown(m)
     expect(got == want, f'mixed scripts: {got}')
-    expect(got[1] == '周杰伦' and got[4] == 'Мумий Тролль' and got[6] == 'Éric' and got[8] == 'あいみょん' and got[9] == 'Unknown Artist'
-           and got[0] == 'Zed' and got[2:4] == ['Abba', 'The Beatles'] and got[5] == 'Bob' and got[7] == 'Aaa',
-           'a non-ASCII-initial name (and Unknown Artist) stays at its stock position; the runs between are sorted')
+    expect(got == ['Aaa', 'Abba', 'The Beatles', 'Bob', 'Zed', '周杰伦', 'Éric', 'Мумий Тролль', 'あいみょん', 'Unknown Artist'],
+           'Latin names first (Zed before 周杰伦 = "zjl"), then the other scripts by byte; Unknown Artist last')
     m2 = artists_machine(stock); m2.call(open_, count=20000000)
-    m2.call(PSYMS['ar_open'], a0=3, count=8000000)   # display 3 is stock row 2
+    m2.call(PSYMS['ar_open'], a0=2, count=8000000)   # display 2 is stock row 2
     la = [c for c in m2.calls if c[0] == 'loadAlbumList']
-    expect(la and la[0][3] == 'The Beatles', 'a tap in a sorted run opens the right artist')
-    # stock order already as a library sorts by bytes: CJK after the Latin block; sorting leaves that block placement
-    stock = ['Zed', 'abc', 'The Beatles', '周杰伦', '孙燕姿']
+    expect(la and la[0][3] == 'The Beatles', 'a tap opens the right artist')
+    stock = ['Zed', 'Zebra', '周杰伦', 'Abc', '孙燕姿', 'Sam', 'Bob', '陈奕迅', 'Yo', 'The Chef']
     m = artists_machine(stock); m.call(open_, count=20000000)
-    expect(shown(m) == ['abc', 'The Beatles', 'Zed', '周杰伦', '孙燕姿'], 'CJK after the Latin block, in stock order, as stock places them')
+    got = shown(m)
+    expect(got == ['Abc', 'Bob', 'The Chef', '陈奕迅', 'Sam', '孙燕姿', 'Yo', 'Zebra', 'Zed', '周杰伦'] and got == sort_model(stock)[0],
+           f'CJK names sort by pinyin initials among the Latin ones (陈奕迅 "cyx" after "Chef", 孙燕姿 "syz" after Sam; Zed before 周杰伦 "zjl"): {got}')
+    mod = Model(got)
+    expect(headers(m) == {mod.hdr_y(s): l for s, (_, l) in enumerate(mod.secs)} and [l for _, l in mod.secs] == ['A', 'B', 'C', 'S', 'Y', 'Z'],
+           f'sections: a CJK name files under its pinyin initial, not "#" ({sorted(headers(m).values())})')
+    # The Beatles reaches B across a fixed row
+    stock = ['Zed', 'Unknown Artist', 'The Beatles', 'Abba', 'Unknown Artist']
+    m = artists_machine(stock); m.call(open_, count=20000000)
+    expect(shown(m) == ['Abba', 'Unknown Artist', 'The Beatles', 'Zed', 'Unknown Artist'], f'ASCII names are one set across the fixed rows ({shown(m)})')
+    # digit runs by value, digits before letters, symbols before letters, leading white space skipped, ties stable
+    stock = ['Vol. 10', 'vol. 2', 'Vol. 1', '  Zed', '2 Pac', '10 Pac', '_Under', 'Abc', '007', '7', '  Abc']
+    m = artists_machine(stock); m.call(open_, count=20000000)
+    got = shown(m)
+    expect(got == sort_model(stock)[0], f'natural order: {got}')
+    expect(got.index('Vol. 1') < got.index('vol. 2') < got.index('Vol. 10'), 'digit runs compare by value ("Vol. 2" before "Vol. 10")')
+    expect(got.index('2 Pac') < got.index('10 Pac') < got.index('_Under') < got.index('Abc'), 'digits before symbols before letters')
+    expect(got.index('Abc') < got.index('  Abc') < got.index('Vol. 1') and got[-1] == '  Zed', 'leading white space is skipped; the equal names keep the stock order (Abc 7, "  Abc" 10)')
+    expect(got.index('007') < got.index('7'), 'equal values keep the stock order ("007" is stock row 8, "7" row 9)')
 
     # 42. Both modes and the toggle: each mode's list is sorted, a tap opens the right one, the toggle re-sorts.
     m = artists_machine(); m.album_artists = [artist_rec(m, a, i + 1) for i, a in enumerate(('The Zed', 'Various Artists', 'the Abba', '周'))]
     m.call(open_, count=20000000)
     m.calls = []
     m.call(PSYMS['ar_on_toggle'], count=20000000)
-    expect(shown(m) == ['the Abba', 'Various Artists', 'The Zed', '周'],
-           'Album Artist mode is sorted too (The Zed files under Z); the CJK name keeps its place')
+    expect(shown(m) == ['the Abba', 'Various Artists', '周', 'The Zed'],
+           'Album Artist mode is sorted too (The Zed files under Z, after 周 "z")')
     m.calls = []
     m.call(PSYMS['ar_open'], a0=0, count=8000000)
     expect([c for c in m.calls if c[0] == 'loadAlbumList'][:1] and [c for c in m.calls if c[0] == 'loadAlbumList'][0][3] == 'the Abba',
@@ -632,7 +640,7 @@ def sort_tests(ctx):
     expect(len(got) == cap and got == sort_model(big[:cap])[0], '3000 artists: all are listed, sorted')
     print(f'  sort of {cap} artists on open: {spent:,} payload instructions')
     expect(spent < 150000000, f'the sort and the rows are bounded ({spent:,} payload instructions)')
-    expect(sorted(c[1] for c in callocs if c[1] in (cap * 4,)) == [cap * 4] * 3, 'three arrays of 4 bytes per artist: the order, the row pointers, the sections\' scratch (the ranks are a byte each)')
+    expect(sorted(c[1] for c in callocs if c[1] in (cap * 4,)) == [cap * 4] * 4, 'four arrays of 4 bytes per artist: the order, the row pointers, the keys, the sections\' scratch (the ranks are a byte each)')
     m.call(PSYMS['ar_on_destroy'], count=200000)
     expect('free' in m.names(), 'closing frees the order')
 
@@ -641,6 +649,12 @@ def sort_tests(ctx):
     m = artists_machine(stock); m.calloc_fail_size = 4 * len(stock)   # the order and the row pointers (and the sections' scratch): refused
     expect(m.call(open_, count=20000000) == 0 and shown(m) == stock, 'allocation failure: the stock order')
     m.call(PSYMS['ar_open'], a0=1, count=8000000)
+    la = [c for c in m.calls if c[0] == 'loadAlbumList']
+    expect(la and la[0][3] == 'The Beatles', 'and a tap opens the right artist')
+    stock = ['Zed', '周杰伦', 'The Beatles', 'Abba']
+    m = artists_machine(stock); m.calloc_fail_size = 4 * len(stock) + len('周杰伦'.encode()) + 1   # only the keys (with the copy of the CJK name): refused
+    expect(m.call(open_, count=20000000) == 0 and shown(m) == stock, 'no memory for the keys: the stock order')
+    m.call(PSYMS['ar_open'], a0=2, count=8000000)
     la = [c for c in m.calls if c[0] == 'loadAlbumList']
     expect(la and la[0][3] == 'The Beatles', 'and a tap opens the right artist')
     m = artists_machine(['Solo']); m.call(open_, count=20000000)

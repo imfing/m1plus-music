@@ -38,12 +38,23 @@
 #define SCREEN_W 320
 #define WIN_H 450
 #define HOME_PAD 10        /* the Home instance of the pod menu keeps this much air above its first row and below its last (patch/home.c hm_fill_window) */
-/* the cover build's progress line of the Home instance (patch/homecover.c, tools/pod_ui.py cover_progress): a label HC_W x HC_H at (HC_X, HC_Y) above the list while covers are built; the list then starts HC_H lower */
-#define HC_X 10
-#define HC_Y 8
-#define HC_W 300
-#define HC_H 20
+/* the cache pill of the Home instance (patch/homecover.c, tools/pod_ui.py cache_pill): a capsule HC_W x HC_PH at (HC_X, HC_Y) above the list while covers are built or tracks measured; the list then starts HC_H lower (the pill and 8 px of air).
+ * Inside it (pill coordinates): the 15 px text, a HC_BH px progress bar HC_BW wide under it (the fill is resized to done/total, at least HC_BH), and the stop button (a HC_XW px square touch box at HC_XX, HC_XY, drawing the 28 px disc pod_cache_x centred) */
+#define HC_X 12
+#define HC_Y 10
+#define HC_W 296
+#define HC_PH 40
+#define HC_H 48
 #define HC_PX 15
+#define HC_TX 18
+#define HC_TY 5
+#define HC_TH 18
+#define HC_BW 230
+#define HC_BY 26
+#define HC_BH 4
+#define HC_XX 256
+#define HC_XY 0
+#define HC_XW 40
 
 /* ---------------------------------------------------------------------------
  * Cover Flow (patch/coverflow.c). Event ids, record layout and widget fields
@@ -767,6 +778,7 @@
 #define NAV_SEARCH_X 122        /* the Songs page's capsule starts here: Search 122, Sort 168, Select 214, Now Playing 260 */
 #define SG_SELALL_X 208         /* the select mode's Select All text button (to the right edge) */
 #define SG_TITLE_X 12
+#define SG_TITLE_W 296          /* the large title's width on every page: the screen less its margin on both sides, cut with an ellipsis */
 #define SG_TITLE_H 52
 #define SG_PILL_Y 52
 #define SG_PILL_H 40
@@ -1186,12 +1198,11 @@
 #define PA_PLAYB_Y 112
 #define PA_PLAYB_PX 28
 /* The Podcasts Shows page (Apple Podcasts style; patch/podcasts.c, docs/modules/podcasts.md "The Shows page"; tools/pod_show.py shows_layout is the model the tests and tools/preview_podcasts_revamp.py use). Content y from the list's top
- * (window row PG_LIST_Y), x the window's. In order: the large title (a label, PP_TITLE_H high at x PP_TITLE_X, PP_TITLE_PX px, shared by the Downloads and Subscriptions pages; it scrolls away with the content and the navbar shows no title), the refresh line (PP_LINE_H high at PP_LINE_Y, 15 px: "Updated
+ * (window row PG_LIST_Y), x the window's. In order: the large title (a label, PP_TITLE_H high at x SG_TITLE_X, SG_TITLE_W wide, PP_TITLE_PX px, shared by the Downloads, Subscriptions and Saved pages; it scrolls away with the content and the navbar shows the small title past SG_COLLAPSE), the refresh line (PP_LINE_H high at PP_LINE_Y, 15 px: "Updated
  * 1h ago · Refresh", only when a show has a feed; PP_LINE_PITCH to the next block, PP_NOLINE_PITCH when there is no line; its touch is PP_LINE_HIT high around the text's middle), Continue Listening (PP_HEAD_H header at x PP_HEAD_X, 20 px, then PP_HEAD_PITCH to the
  * covers: at most PP_SHELF_MAX PP_SHELF_ART px covers at x PP_SHELF_X + i * PP_SHELF_PITCH, the title (14 px, one line, PP_SHELF_W wide) PP_SHELF_TITLE_Y under the cover's top and the "35m left" (13 px) at PP_SHELF_LEFT_Y; PP_SHELF_PITCH_Y the block's height; each cover has the atlas' PA_PLAYB_PX play disc PP_SHELF_PLAY_INSET from its right and bottom edges),
  * the Library rows, last, PP_LIB_GAP under the grid (the Downloads row: PC_ROW_H high: the PA_TILE_PX tile (an image of its own) at x PP_DL_TILE_X, PP_DL_TILE_Y down, the texts from PP_DL_TEXT_X, PP_DL_TEXT_W wide at LIST_TITLE_Y / LIST_SUB_Y, the shared chevron at PP_DL_CHEV_X, hairline from the text),
  * after the shelf PP_SEC_GAP of air and the "Shows" header (at x PP_SHOWS_X), then the Albums grid (GRID_*: GRID_COVER covers, the title and the grey line under each) from the grid's top; PP_BOTTOM under the last row. */
-#define PP_TITLE_X 16
 #define PP_TITLE_H 52
 #define PP_TITLE_PX 32
 #define PP_LINE_Y 52

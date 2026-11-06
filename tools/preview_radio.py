@@ -77,7 +77,7 @@ def credit(s, im, x, y):
 
 def new_page(s, title, big=True):
     im = Image.new('RGBA', (W, WIN), (0, 0, 0, 255))
-    if big: s.text(im, O['SG_TITLE_X'], NAV + O['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, title), 32, 250), 32)
+    if big: s.text(im, O['SG_TITLE_X'], NAV + O['SG_TITLE_H'] / 2, PS.fit(s, PS.tr(s, title), 32, O['SG_TITLE_W']), 32)
     return im
 
 

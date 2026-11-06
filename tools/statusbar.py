@@ -18,6 +18,7 @@ EDGE, GAP = 10, 4                # left margin of the left group and right margi
 SMALL_PX, CLOCK_PX = 16, 18      # volume number, clock
 PCT_PX = 13                      # the battery percentage label (patch/battery.c; hidden unless Settings > Home Screen > Battery Percentage is on): white, right-aligned in the right group
 LO_WIDGET, LO_IMAGE, LO_W = 'pod_lo', 'pod_bar_lo', 26   # the Line Out pill (patch/lineout.h LO_PILL; tools/mod_icons.py LO_BAR, 26 x 16): in view_bar_left right after label_volume, in both bar copies; the widget is label_volume's VOLUME_W wide with the image centred, so the icons after it do not move
+SYNC_WIDGET, SYNC_IMAGE, SYNC_W = 'pod_sync', 'pod_bar_sync', 18   # the sync icon (patch/lineout.h SYNC_IND; tools/mod_icons.py SYNC_BAR, 18 x 18): in view_bar_right right after img_btclass, in both bar copies, hidden and insensitive until patch/lineout.c shows it while a cover or duration build runs
 VOLUME_W = 30                 # the volume label's box ("100" at 16 px)
 CLOCK_X, CLOCK_W = 104, 90       # centre 149: "12:59 PM" (66 px at 18) spans 116..182
 BAR_BG = '#000000'               # the bar's colour (system_bar's own style; the pull-down panel behind it is #141414)
@@ -43,3 +44,8 @@ def apply(bar):
     assert left.find(LO_WIDGET) is None, 'the Line Out pill is already in the bar'
     pill = Widget('image', 0, 0, VOLUME_W, 0, [('name', LO_WIDGET), ('image', LO_IMAGE), ('draw_type', 'center'), ('visible', 'false'), ('sensitive', 'false')])
     left.children.insert(left.children.index(vol) + 1, pill)   # right after label_volume: hidden and insensitive, the layouter skips it until patch/lineout.c swaps it for the label
+    assert right.find(SYNC_WIDGET) is None, 'the sync icon is already in the bar'
+    bt = right.find('img_btclass')
+    assert bt is not None, 'unexpected status bar layout'
+    sync = Widget('image', 0, 0, SYNC_W, 0, [('name', SYNC_WIDGET), ('image', SYNC_IMAGE), ('draw_type', 'center'), ('visible', 'false'), ('sensitive', 'false')])
+    right.children.insert(right.children.index(bt) + 1, sync)   # after the Bluetooth box (its 47 px box ends in the glyph, so the icon sits right of the glyph: left of the box would be over the clock); the layouter skips it while hidden

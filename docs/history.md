@@ -16,6 +16,8 @@ and [UI reference](ui.md). Hardware observations below do not validate later bui
   artist albums on the Albums page and the RTC kept as UTC for stock auto time.
 - **1.2.0, 2026-11-05:** Internet Radio, accent colours, an Apple-style shuffled queue with
   Play Next / Play After and Queue Clear, Control Center tiles and 43 time zones.
+- **1.2.1, 2026-11-05:** a sturdier, visible Home cover build (progress pill, stop, skip of hung
+  albums, unchanged-library stamp) and list, title and Radio fixes.
 
 ## Device findings
 

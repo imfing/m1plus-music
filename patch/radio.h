@@ -7,7 +7,8 @@
 
 #define RD_MAX 300 /* stations, countries or genres one list holds (the directory has some 250 countries) */
 #define RD_FETCH_MAX (256 << 10) /* the directory's answer is cut here */
-#define RD_DIR "/mnt/mmc/Radio" /* favourites.m3u (the Stations list), the user's own .m3u / .pls (read only by Import from Card) */
+#define RD_DIR \
+    "/mnt/mmc/Radio" /* favourites.m3u (the Stations list), the user's own .m3u / .pls (read only by Import from Card) */
 #define RD_FAVS RD_DIR "/favourites.m3u"
 #define RD_FAVS_TMP RD_DIR "/favourites.m3u.tmp"
 #define RD_RECENT_FILE \
@@ -69,7 +70,9 @@ void rd_list_move(rd_list_t *to, rd_list_t *from); /* to takes from's text (its 
 int rd_list_set(rd_list_t *l, const char *text, unsigned len, int kind);
 
 /* ---- the card ---- */
-int rd_favs_read(rd_list_t *l); /* favourites.m3u (the Stations list); 0 when there was no memory or the file is cut or holds a NUL */
+int rd_favs_read(
+    rd_list_t
+        *l); /* favourites.m3u (the Stations list); 0 when there was no memory or the file is cut or holds a NUL */
 int rd_fav_index(const rd_list_t *favs, const char *url); /* url's row, else -1 */
 /* l's station i out of favourites.m3u when it is there, else appended: 1 added, 0 removed, -1 not written (nothing changed). */
 int rd_fav_toggle(const rd_list_t *l, int i);
@@ -78,26 +81,50 @@ int rd_fav_has(const char *url);
  * from an earlier file) skipped, written once; the files are never touched. Returns the stations added (0 = none new), -1 not written (no card, write failed; nothing changed), -2 no playlist
  * in the folder. *full is 1 when RD_MAX stopped it (what fitted is added). */
 int rd_fav_import(int *full);
-unsigned rd_serial(void); /* bumped by every start and every favourites change: the Stations list and Now Playing's sheet re-read */
+unsigned rd_serial(
+    void); /* bumped by every start and every favourites change: the Stations list and Now Playing's sheet re-read */
 int rd_recent_read(rd_list_t *l);
 void rd_recent_push(const rd_list_t *l, int i); /* the station first, once, at most RD_RECENT_MAX */
-int rd_recent_clear(void); /* radio-recent emptied (a header and no station); 1 written, 0 not. Touches no playing station */
-int rd_last_read(rd_list_t *l); /* the first entry of radio-recent (the station last played) as a one-station list; 1 when there is one */
+int rd_recent_clear(
+    void); /* radio-recent emptied (a header and no station); 1 written, 0 not. Touches no playing station */
+int rd_last_read(
+    rd_list_t
+        *l); /* the first entry of radio-recent (the station last played) as a one-station list; 1 when there is one */
 
 /* ---- playing ---- */
 enum { RD_IDLE = 0, RD_CONNECTING = 1, RD_PLAYING = 2, RD_ERROR = 3, RD_STOPPED = 4, RD_PAUSED = 5 };
 /* Events of the state machine (the table is in patch/radio.c and docs/modules/radio.md) and its actions. */
-enum { RD_EV_PLAY, RD_EV_BAD, RD_EV_BT, RD_EV_FAILSTART, RD_EV_STOP, RD_EV_LOCAL, RD_EV_REROUTE, RD_EV_REROUTE_PAUSED, RD_EV_HEAR, RD_EV_PAUSE, RD_EV_RESUME, RD_EV_ENDED, RD_EV_STALL, RD_EV_TIMEOUT, RD_EV_NOWIFI, RD_EV_N };
+enum {
+    RD_EV_PLAY,
+    RD_EV_BAD,
+    RD_EV_BT,
+    RD_EV_FAILSTART,
+    RD_EV_STOP,
+    RD_EV_LOCAL,
+    RD_EV_REROUTE,
+    RD_EV_REROUTE_PAUSED,
+    RD_EV_HEAR,
+    RD_EV_PAUSE,
+    RD_EV_RESUME,
+    RD_EV_ENDED,
+    RD_EV_STALL,
+    RD_EV_TIMEOUT,
+    RD_EV_NOWIFI,
+    RD_EV_N
+};
 enum { RD_A_STOP = 1, RD_A_START = 2, RD_A_RETRY = 4, RD_A_PAUSE = 8 };
 /* The pure step: state | actions << 8 | error words index << 16 for an event in a state (tries = restarts used by this play, wifi = a connection exists). */
 int rd_step(int state, int ev, int tries, int wifi);
-int rd_play(const rd_list_t *l, int i); /* stops what plays, readies the DAC, starts station i of a copy of l in hciplayer; 1 started, 0 refused (rd_error says why) */
+int rd_play(
+    const rd_list_t *l,
+    int i); /* stops what plays, readies the DAC, starts station i of a copy of l in hciplayer; 1 started, 0 refused (rd_error says why) */
 void rd_resume(void); /* Paused: stock's resume, or Error "No Wi-Fi" without a connection */
 void rd_stop(void); /* the radio's own stop: mclStop, idempotent from any state */
 int rd_state(void);
 int rd_running(void); /* a station is connecting, playing or paused (the engine's timer lives) */
 int rd_at(void);
-int rd_owns_bar(void); /* the radio owns the Home mini bar: a station started this session and no local track has started since (it outlives Stop) */
+int rd_owns_bar(
+    void); /* the radio owns the Home mini bar: a station started this session and no local track has started since (it outlives Stop) */
 const rd_list_t *rd_list(void); /* the list the station plays from (prev / next step along it) */
 const char *rd_error(void);
 void rd_poll(void); /* one poll (the engine's timer calls it; tests too) */

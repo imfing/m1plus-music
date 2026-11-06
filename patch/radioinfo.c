@@ -233,7 +233,8 @@ int sinfo_open(void) {
     snprintf(name, sizeof name, "%s", rd_name(l, at));
     snprintf(url, sizeof url, "%s", rd_url(l, at));
     snprintf(info, sizeof info, "%s", rd_info(l, at));
-    if (sinfo.win) { /* closing (destroyed later) or under another window: let it go, its late EVT_DESTROY finds sinfo.win changed */
+    if (sinfo
+            .win) { /* closing (destroyed later) or under another window: let it go, its late EVT_DESTROY finds sinfo.win changed */
         if (widget_is_window_opened(sinfo.win)) window_close(sinfo.win);
         if (sinfo.timer) timer_remove(sinfo.timer);
         sinfo_free();

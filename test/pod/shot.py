@@ -173,11 +173,11 @@ def run(ctx):
     cam, group = bar.find(DEFS['SHOT_IND']), bar.find('view_bar_right')
     expect(cam is not None and group.children[-1] is cam and cam.get('visible') == 'false' and cam.get('sensitive') == 'false' and cam.get('image') == 'pod_bar_shot'
            and sum(w.name == 'pod_shot' for w in bar.walk()) == 1, 'pod_shot is the last child of view_bar_right, hidden and insensitive, showing pod_bar_shot')
-    expect([c.name for c in group.children[:-2]] == ['img_btclass', 'img_synclink', 'img_wifi'] and group.children[-2].name == 'pod_pct',
+    expect([c.name for c in group.children[:-2] if c.name != 'pod_sync'] == ['img_btclass', 'img_synclink', 'img_wifi'] and group.children[-2].name == 'pod_pct',
            'the stock icons of the group are untouched and in order, then the hidden battery percentage (test/pod/battery.py)')
     expect(os.path.isfile(os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx/pod_bar_shot.png')), 'the camera image is in the tree')
     stock_bar = awtk_ui.parse(open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', 'release/assets/default/raw/ui/system_bar.bin'), 'rb').read())
-    expect({w.name for w in stock_bar.walk()} == {w.name for w in bar.walk()} - {'pod_shot', 'pod_pct', 'pod_lo'}, 'no stock widget is renamed or removed')
+    expect({w.name for w in stock_bar.walk()} == {w.name for w in bar.walk()} - {'pod_shot', 'pod_pct', 'pod_lo', 'pod_sync'}, 'no stock widget is renamed or removed')
     # layout: the group's icons are laid out right-aligned from its right edge, the camera last, 4 px between; in the worst case
     # (Bluetooth 47, SyncLink 16, Wi-Fi 24 and the camera 16 at 4 px) the boxes start 111 px before the battery gap, but the
     # Bluetooth image is right-aligned art (its ink is the right 11 of 47 px), so every icon's ink starts right of the clock's text
@@ -186,7 +186,7 @@ def run(ctx):
     font = Ttf(os.path.join(WORK, 'rootfs/release/assets/default/raw/fonts/default.ttf'))
     clock = bar.find('bar_dclock')
     clock_px = int(clock.get('style:normal:font_size'))
-    sizes = {w.name: w.w for w in group.children if w.name != 'pod_pct'}   # (the battery percentage is hidden here; its layout is test/pod/battery.py's)
+    sizes = {w.name: w.w for w in group.children if w.name not in ('pod_pct', 'pod_sync')}   # (the battery percentage and the sync icon are hidden here; their layout is test/pod/battery.py's and test/pod/lineout.py's)
     from PIL import Image
     imgs = {'img_btclass': 'bar_bt', 'img_synclink': 'bar_synclink', 'img_wifi': 'bar_wifi0', 'pod_shot': 'pod_bar_shot'}
     ink_left = {n: Image.open(os.path.join(WORK, 'rootfs/release/assets/default/raw/images/xx', f'{f}.png')).convert('RGBA').getchannel('A').getbbox()[0]

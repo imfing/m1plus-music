@@ -13,7 +13,8 @@
 
 extern void pod_toast(const char *text); /* patch/shuffle.c: the stock message box */
 extern void pod_set_in_order(void); /* patch/shuffle.c: Shuffle and Repeat one become List play */
-extern void pod_set_mode_for_queue(int mode); /* patch/shuffle.c: the play mode right before a queue load (the old queue is not reordered) */
+extern void pod_set_mode_for_queue(
+    int mode); /* patch/shuffle.c: the play mode right before a queue load (the old queue is not reordered) */
 extern void pod_set_in_order_for_queue(void); /* the same for Play */
 extern unsigned pod_rand(unsigned n); /* patch/shuffle.c: 0 .. n - 1 */
 

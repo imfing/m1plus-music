@@ -108,6 +108,9 @@ def run(ctx):
     expect(with_btn == ['m1plus_extras'] and (cb.x, cb.y, cb.w, cb.h) == (214, 0, 46, 50) and cb.get('style') == 'img_btn_style' and cb.get('enable') == 'true'
            and cb.get('style:normal:icon') == cb.get('style:over:icon') == 'pod_nav_settings' and cb.get('style:pressed:icon') == 'pod_nav_settings_down'
            and lb.x + lb.w == 214, 'only the Extras page has btn_settings: a 46 px button on the 214 slot with the pod_nav_settings pieces, the title ends at 214')
+    vol = awtk_ui.parse(open(os.path.join(stock_ui, 'dialog', 'volume_dialog.bin'), 'rb').read())
+    expect(all(vol.get(f'style:{st}:border_color') == '#00000000' for st in ('normal', 'disable', 'focused')) and (vol.x, vol.y, vol.w, vol.h) == (0, 0, 320, 42),
+           'volume_dialog: the 42 px strip\'s border is transparent (it was black at y 41, through the full-page screen\'s Back disc)')
     # ------------------------------------------------------------------ images
     for n, pos in mod_icons.NAV_VIEW_POS.items():
         for suffix, pressed in (('', False), ('_down', True)):

@@ -57,7 +57,7 @@ def content(s, title, rows, select=None, playing=()):
     top = rows_top(rows)
     end = top + len(rows) * ROW_H + F['FO_END'] + (O['SG_BAR_H'] if select is not None else 0)
     im = Image.new('RGBA', (W, max(end, WIN - NAV)), (0, 0, 0, 255)); d = ImageDraw.Draw(im)
-    s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, PS.fit(s, title, 32, 250), 32)
+    s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, PS.fit(s, title, 32, O['SG_TITLE_W']), 32)
     if top == O['SG_TOP']:
         for i, (label, g) in enumerate((('Play', 'sg_play'), ('Shuffle', 'sg_shuffle'))):
             PS.pill(s, im, (O['SG_PILL_X0'], O['SG_PILL_X1'])[i], O['SG_PILL_Y'], PS.tr(s, label), s.img(g), PS.PILL_RGB if select is None else PS.BAND)

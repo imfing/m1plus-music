@@ -49,6 +49,7 @@ The shared grid supplies tile records, rounded artwork, ellipsis fitting, painti
 testing. Recently Played uses the same helpers. Covers come from
 `r<album-key>-168.jpg`, reduced by an area average of the centered square.
 An absent file or empty “no art” marker uses the placeholder disc.
+A `.bad` marker (an album whose extraction hung, `docs/modules/coverflow.md`) also keeps it out of the missing set.
 
 Twelve resident tiles cover visible cells, prefetch and recent history. Grid artwork uses
 about 1.1 MB including the placeholder; list artwork about 130 KB for the ring. The copied
@@ -73,7 +74,11 @@ viewport first. The worker starts after the scan finishes; scrolling does not re
 A 500 ms poll makes placeholder tiles eligible for reload as files arrive.
 
 Only one page owns the worker. Opening Cover Flow releases the Albums build first.
-Destroy cancels and joins owned work, frees the set and removes timers.
+Destroy stops owned work and removes timers. `cc_build_stop` never waits for the thread: a worker
+that has exited is joined and its set freed; one still inside a job (stock's art call cannot be
+interrupted, and can be slow) is cancelled and orphaned, keeps the set and is joined and freed by the next
+`cc_build_open` / `cc_build_busy` / `cc_build_orphan` after it exits. Meanwhile `cc_build_open` refuses and
+`cc_build_busy` is true; the Albums and Songs start timers ask again every 500 ms while `cc_build_orphan` (true for 10 s after the orphaning, then they stop until the next foreground or open).
 A refused timer/thread, busy worker or less than 16 MB free space leaves placeholders.
 A completed scan with no missing files is not repeated during that page's lifetime.
 

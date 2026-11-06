@@ -437,11 +437,11 @@ def album_tests(ctx):
     expect(build_state(m)['mode'] == 2 and build_state(m)['total'] == 8 and [c for c in new if c[0] == 'timer_add' and c[1] == DURS], 'the cover done: the durations set starts at once')
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
-    # leaving the page mid-measurement: the worker is joined and the set freed; what finished is not saved by the page (the next visit measures again)
+    # leaving the page mid-measurement: the worker is cancelled without a join (it keeps the set until it exits); what finished is not saved by the page (the next visit measures again)
     m = album_with_files(); m.durations = {f'/mnt/mmc/m/{i}.flac': SECS[i] for i in range(8)}
     AP.open_album(m)
     m.call(PSYMS['ab_on_destroy'], count=8000000)
-    expect(build_state(m)['jobs'] == 0 and 'pthread_join' in m.names(), 'destroyed mid-measurement: joined and freed')
+    expect(build_state(m)['orphan'] == 1 and 'pthread_join' not in m.names(), 'destroyed mid-measurement: cancelled, orphaned, not joined')
     expect(not [c for c in fired(m, 'ab_on_dur') if c[0] in ('timer_add', 'widget_set_text_utf8')], 'a late poll does nothing')
 
     # the kill switch: the page never opens (stock page), so nothing is measured
@@ -582,13 +582,12 @@ def home_tests(ctx):
     m = machine(6)
     new = HC.scan(m)
     expect([c for c in new if c[0] == 'timer_add' and c[1] == LSCAN] and 'pthread_create' not in [c[0] for c in new], 'a complete cover cache: no cover worker, the song scan is armed')
-    expect(not HC.shown_calls(m, new), 'the line is not shown while the songs are only looked up')
+    expect(HC.pill_up(m) and HC.texts(m, new, waiting=True)[-1:] == ['Checking library.'] and not HC.texts(m, new), 'while the songs are only looked up the pill waits: "Checking library…", no count')
     new = lscan(m)
     s = build_state(m)
     expect(s['mode'] == 2 and s['running'] == 1 and s['total'] == 6 and [j[0] for j in build_durs(m)] == paths(6), f'a CC_DURATIONS worker with the six songs ({s})')
-    expect(HC.shown_calls(m, new) == [('widget_set_visible', 1), ('widget_set_sensitive', 1)] and HC.texts(m, new) == ['Measuring tracks 0/6'], f'"Measuring tracks 0/6" is shown ({HC.texts(m, new)})')
+    expect(HC.pill_up(m) and HC.texts(m, new) == ['Measuring tracks 0/6'], f'"Measuring tracks 0/6" is shown ({HC.texts(m, new)})')
     expect([c for c in new if c[0] == 'timer_add' and c[1] == LPOLL and c[2] == 500], 'polled every 500 ms')
-    expect(('widget_move', HC.lv(m), 0, O['HOME_PAD'] + O['HC_H']) in new, 'the list makes room, as for the covers')
 
     # 2. The poll shows n/m; the end saves, hides, restores, joins
     m.setword(PSYMS['cb'] + 4 * 5, 3)
@@ -606,7 +605,7 @@ def home_tests(ctx):
     # 3. A complete table: nothing is queued, nothing is shown, and the next foreground does not read the library again
     m = machine(6, seed=[(p, 5_000_000 + i, 100 + i) for i, p in enumerate(paths(6))])
     HC.scan(m); new = lscan(m)
-    expect(build_state(m)['jobs'] == 0 and not HC.shown_calls(m, new) and 'pthread_create' not in [c[0] for c in new], 'every song in the table: no worker, no line')
+    expect(build_state(m)['jobs'] == 0 and not HC.pill_up(m) and 'pthread_create' not in [c[0] for c in new], 'every song in the table: no worker, no line')
     new = HC.hook(m, 'hc_on_foreground'); new = HC.scan(m)
     expect('loadLocalClassList' not in [c[0] for c in new if c[1:] == (O['CLASS_ALL_SONGS'],)], 'a library found complete is not read again at the next foreground')
     # ... until the library changed (another album count) or the table was cleared
@@ -617,6 +616,17 @@ def home_tests(ctx):
     expect([c for c in new if c[0] == 'loadLocalClassList' and c[1] == O['CLASS_ALL_SONGS']], 'a new album: the songs are read again')
     new = lscan(m)
     expect([j[0] for j in build_durs(m)] == ['/mnt/mmc/m/99/1.flac'], 'and only the song the table lacks is queued')
+    HC.hook(m, 'hc_on_background')
+    # ... and also when one album was replaced by another (the same count, another key sum)
+    m = machine(6, seed=[(p, 5_000_000 + i, 100 + i) for i, p in enumerate(paths(6))])
+    HC.scan(m); lscan(m)
+    m.showlist[0] = m.record(album='Album 98', artist='Artist 98', path='/mnt/mmc/m/98/1.flac', rid=98); m.present.add('/mnt/mmc/m/98/1.flac')
+    m.files[art_file(album_key('Artist 98', 'Album 98'))] = 4096; m.present.add(art_file(album_key('Artist 98', 'Album 98')))
+    m.files['/mnt/mmc/m/98/1.flac'] = 123; m.durations['/mnt/mmc/m/98/1.flac'] = 98
+    HC.hook(m, 'hc_on_foreground'); new = HC.scan(m)
+    expect([c for c in new if c[0] == 'loadLocalClassList' and c[1] == O['CLASS_ALL_SONGS']], 'an album replaced (same count): the songs are read again')
+    lscan(m)
+    expect([j[0] for j in build_durs(m)] == ['/mnt/mmc/m/98/1.flac'], 'and the new album\'s song is queued, not stamped unmeasured')
     HC.hook(m, 'hc_on_background')
 
     # 4. A song whose entry has another size is not re-measured by Home (it costs no stat per song); an entry with 0 seconds is not tried again
@@ -654,7 +664,7 @@ def home_tests(ctx):
     HC.scan(m); lscan(m)
     expect([j[0] for j in build_durs(m)] == paths(6)[2:], f'and only the four songs not yet measured are queued ({[j[0] for j in build_durs(m)]})')
     HC.hook(m, 'hc_on_destroy', count=80000000)
-    expect(build_state(m)['jobs'] == 0 and 'pthread_join' in m.names(), 'destroy stops the worker too')
+    expect(build_state(m)['orphan'] == 1 and 'pthread_join' not in m.names(), 'destroy stops the worker too (orphaned, not joined)')
     expect(not [c for c in fired(m, 'hc_on_dpoll') if c[0] in ('timer_add', 'widget_set_text_utf8')], 'a late poll does nothing')
 
     # 8. Saved as it goes: every HC_LSAVE finished songs
@@ -703,7 +713,7 @@ def home_tests(ctx):
     # 11. Kill switch: Home starts nothing
     m = Machine(); m.present.add(AP.KILL)
     m.window = m.widget('home_window')
-    for w in ('pod_cover_prog', 'pod_listview', 'pod_scrollview', 'scroll_bar_m'): m.widget(w)
+    for w in ('pod_cache_pill', 'pod_cover_prog', 'pod_cache_fill', 'pod_cache_x', 'pod_listview', 'pod_scrollview', 'scroll_bar_m'): m.widget(w)
     m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
     expect(not m.timers and not [c for c in m.calls if c[0] == 'timer_add'], 'with /mnt/mmc/m1plus-off Home arms nothing')
 

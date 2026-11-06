@@ -312,9 +312,9 @@ def rows_tests(ctx):
     ttl = [(t, r) for (t, r), s in texts if s == 'label_row_title']
     sub = [(t, r) for (t, r), s in texts if s == 'label_row_sub']
     room = O['QP_TEXT_END'] - O['LIST_TEXT_X']
-    expect(ttl == [(NAMES[2 + i], (74, row_y(i) + O['LIST_TITLE_Y'], room, 24)) for i in range(3)], f'the rows are the tracks after the playing one, never the playing track: titles from x 74 to 298 (row 3\'s line ends below the window), 24 px high LIST_TITLE_Y down ({ttl})')
-    expect(sub == [(f'Artist {(2 + i) // 3}', (74, row_y(i) + O['LIST_SUB_Y'], room, 20)) for i in range(3)], f'the artists LIST_SUB_Y down, 20 px high (row 3\'s line ends below the window): {sub}')
-    expect([s for _, s in texts] == ['label_row_title'] * 3 + ['label_row_sub'] * 3, 'the titles, then the artists: one text style at a time')
+    expect(ttl == [(NAMES[2 + i], (74, row_y(i) + O['LIST_TITLE_Y'], room, 24)) for i in range(4)], f'the rows are the tracks after the playing one, never the playing track: titles from x 74 to 298 (row 3, cut by the window\'s edge, too: the scroll_view clips), 24 px high LIST_TITLE_Y down ({ttl})')
+    expect(sub == [(f'Artist {(2 + i) // 3}', (74, row_y(i) + O['LIST_SUB_Y'], room, 20)) for i in range(4)], f'the artists LIST_SUB_Y down, 20 px high (row 3 too): {sub}')
+    expect([s for _, s in texts] == ['label_row_title'] * 4 + ['label_row_sub'] * 4, 'the titles, then the artists: one text style at a time')
     expect(fills_of(fills, O['LIST_HAIR']) == [(O['LIST_HAIR'], 74, row_y(i) + 63, room, 1) for i in range(3)], 'a 1 px hairline under the text of the rows wholly in view')
     rowcov = [b for b in blits if tuple(b[2][2:]) == (52, 52)]
     expect([tuple(b[2][:2]) for b in rowcov] == [(10, row_y(i) + O['LIST_ART_Y']) for i in range(3)], f'a 52 px cover at x 10, LIST_ART_Y down each row that is wholly in view: {[tuple(b[2]) for b in rowcov]}')
@@ -520,11 +520,11 @@ def shuffle_tests(ctx):
     # opened with Shuffle on (the flag file): the real rows, in the queue's order, and the lit button
     m = queue_machine(n=6, pos=1); m.top_main = m.window; m.fs[FLAG_FILE] = b'1\n'; open_queue(m)
     expect(vh(m) == TOP + 4 * ROW + O['QP_BOTTOM'] and not shown(m, 'qp_empty') and 'qp_shuf_img' not in m.widgets, 'opened with Shuffle on: Up Next shows the four songs after the playing one, no placeholder, "No upcoming songs" stays hidden')
-    expect(rows(m) == NAMES[2:5] and text_of(m, 'qp_title') == NAMES[1], 'the rows are the queue as it is (the header keeps the playing track)')
+    expect(rows(m) == NAMES[2:6] and text_of(m, 'qp_title') == NAMES[1], 'the rows are the queue as it is (the header keeps the playing track)')
     expect([s[2] for s in m.styled if s[0] == m.widgets['btn_shuffle'] and s[1] == 'normal:bg_color'][-1] == O['QP_PILL_ON'], 'and the Shuffle button is lit')
     expect(m.call(PSYMS['pod_play_mode'], count=100000) == SH and m.mode == OR, 'pod_play_mode (the display sites) answers Shuffle while stock\'s own mode stays List play')
     click(m, 'btn_shuffle')
-    expect(not flag_on(m) and titles(m) == NAMES[:6] and rows(m) == NAMES[2:5], 'Shuffle off from the button with no order to restore: the queue and the rows stay')
+    expect(not flag_on(m) and titles(m) == NAMES[:6] and rows(m) == NAMES[2:6], 'Shuffle off from the button with no order to restore: the queue and the rows stay')
     destroy(m)
 
     # the button turns Shuffle on: the songs after the playing one are shuffled in place, the page shows the new order
@@ -535,10 +535,10 @@ def shuffle_tests(ctx):
         after = titles(m)
         expect(flag_on(m) and after[:2] == before[:2] and sorted(after[2:]) == sorted(before[2:]) and not [c for c in m.calls if c[0] == 'mclSetPlayMode'] and m.play_pos == 1,
                f'Shuffle on (clock {clock}): the playing song and the ones before it stay, the rest is a permutation, the position is unchanged ({after})')
-        expect(rows(m) == after[2:5] and vh(m) == TOP + 4 * ROW + O['QP_BOTTOM'] and text_of(m, 'qp_title') == NAMES[1], f'Up Next shows the new order at once ({rows(m)})')
+        expect(rows(m) == after[2:6] and vh(m) == TOP + 4 * ROW + O['QP_BOTTOM'] and text_of(m, 'qp_title') == NAMES[1], f'Up Next shows the new order at once ({rows(m)})')
         if clock == 77: moved = after != before
         click(m, 'btn_shuffle')
-        expect(not flag_on(m) and titles(m) == before and m.play_pos == 1 and rows(m) == before[2:5], 'Shuffle off: the original order is back and the same song is playing')
+        expect(not flag_on(m) and titles(m) == before and m.play_pos == 1 and rows(m) == before[2:6], 'Shuffle off: the original order is back and the same song is playing')
         destroy(m)
     expect(moved, 'the shuffle moved songs')
 
@@ -548,10 +548,10 @@ def shuffle_tests(ctx):
     m.call(PSYMS['sh_set_mode'], a0=SH, count=900000000)
     expect(flag_on(m) and m.mode == OR, 'the hook turned the flag on and left stock in List play')
     tick(m)
-    expect(rows(m) == titles(m)[2:5] and m.props.get((m.sv, 'yoffset')) == 0, 'the tick shows the shuffled order, from the top')
+    expect(rows(m) == titles(m)[2:6] and m.props.get((m.sv, 'yoffset')) == 0, 'the tick shows the shuffled order, from the top')
     m.call(PSYMS['sh_set_mode'], a0=OR, count=900000000)
     tick(m)
-    expect(not flag_on(m) and rows(m) == NAMES[2:5], 'and the original one when it is turned off elsewhere')
+    expect(not flag_on(m) and rows(m) == NAMES[2:6], 'and the original one when it is turned off elsewhere')
     destroy(m)
     m = queue_machine(n=1, pos=0); m.top_main = m.window; m.fs[FLAG_FILE] = b'1\n'; open_queue(m)
     expect(shown(m, 'qp_empty') and vh(m) == WIN_H, 'one song with Shuffle on: "No upcoming songs"')

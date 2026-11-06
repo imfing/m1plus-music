@@ -9,48 +9,81 @@ import pod_i18n
 CFSORT_FILE = '/mnt/data/m1plus/album-order'
 RECENT = '/mnt/mmc/.m1plus/recently-played'
 HC_X, HC_Y, HC_W, HC_H, HOME_PAD, WIN_H = (O[k] for k in ('HC_X', 'HC_Y', 'HC_W', 'HC_H', 'HOME_PAD', 'WIN_H'))
-START_MS, POLL_MS = O['RC_RESOLVE_MS'], 500
+START_MS, POLL_MS, RESUME_MS = O['RC_RESOLVE_MS'], 500, 1000   # (HC_RESUME_MS is a #define of homecover.c, not an offset)
 
 
 def key_of(i): return album_key(f'Artist {i}', f'Album {i}')
 
 
 REQ = '/mnt/data/m1plus/covers-rebuild'
+STAMP, DB = '/mnt/mmc/.m1plus/cache-stamp', '/mnt/data/database.db'
 
 
-def home_machine(n=8, missing=(), empty=(), rebuild=False):
+def hash_of(n): return sum(key_of(i) for i in range(n)) & 0xffffffff
+
+
+def stamp_text(n, covers=True, tracks=True, h=None):
+    h = hash_of(n) if h is None else h
+    return (f'covers {n} {h:08x}\n' if covers else '') + (f'tracks {n} {h:08x}\n' if tracks else '')
+
+
+def home_machine(n=8, missing=(), empty=(), rebuild=False, stamp='stale', start=True, songs=False):
     """The Home instance's widgets (plain ones: the line, the list_view, the scroll view and its bar) and n albums in the stock list, each with a cache
-    file unless it is in missing (no file) or empty (the zero-length 'no art' marker)."""
+    file unless it is in missing (no file) or empty (the zero-length 'no art' marker). stamp: the card's stamp text; 'stale' (the default) a stamp of another library, so the pill
+    shows when the scan begins (the first open since the boot reads the library); None: no stamp (the waiting pill shows at once)."""
     m = Machine()
     m.fs[CFSORT_FILE] = b'0\n'
+    if stamp == 'stale': stamp = stamp_text(n, h=hash_of(n) ^ 0x10)
+    if stamp is not None: m.fs[STAMP] = stamp.encode()
+    m.dirs.add('/mnt/mmc/.m1plus')
+    m.db = {DB: [100, 0, 4096]}
     if rebuild: m.fs[REQ] = b'1\n'   # Settings > Library > Rebuild Covers was confirmed
     m.window = m.widget('home_window')
-    for w in ('pod_cover_prog', 'pod_listview', 'pod_scrollview', 'scroll_bar_m'): m.widget(w)
+    for w in ('pod_cache_pill', 'pod_cover_prog', 'pod_cache_fill', 'pod_cache_x', 'pod_listview', 'pod_scrollview', 'scroll_bar_m'): m.widget(w)
     m.props[(m.widgets['pod_scrollview'], 'w')] = 310
     m.props[(m.widgets['scroll_bar_m'], 'w')] = 10
-    m.class_lists[O['CLASS_ALL_SONGS']] = []   # no songs: Home's song length pass (test/pod/durations.py) has nothing to read
+    song = m.record(path='/mnt/mmc/m/0/1.cue', rid=1000); m.setword(song + O['REC_CUE_START'], 1); m.setword(song + O['REC_CUE_END'], 2)
+    m.class_lists[O['CLASS_ALL_SONGS']] = [song] if songs else []   # songs: one CUE track with both ends (nothing to measure); else the list is empty, which with albums reads as a failed query (the song pass writes no tracks line)
     m.showlist = [m.record(album=f'Album {i}', artist=f'Artist {i}', path=f'/mnt/mmc/m/{i}/1.flac', rid=i + 1) for i in range(n)]
     m.present |= {f'/mnt/mmc/m/{i}/1.flac' for i in range(n)}
     for i in range(n):
         if i not in missing:
             p = art_file(key_of(i))
             m.present.add(p); m.files[p] = 0 if i in empty else 4096
-    m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+    if start: m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
     return m
 
 
 def label(m): return m.widgets['pod_cover_prog']
+def pill(m): return m.widgets['pod_cache_pill']
 def lv(m): return m.widgets['pod_listview']
 
 
 def shown_calls(m, calls=None):
-    """[(visible, sensitive)] changes of the line in the given calls."""
+    """[(visible, sensitive)] changes of the pill in the given calls."""
     calls = m.calls if calls is None else calls
-    return [(c[0], c[2]) for c in calls if c[0] in ('widget_set_visible', 'widget_set_sensitive') and c[1] == label(m)]
+    return [(c[0], c[2]) for c in calls if c[0] in ('widget_set_visible', 'widget_set_sensitive') and c[1] == pill(m)]
 
 
-def texts(m, calls=None):
-    return [c[2] for c in (m.calls if calls is None else calls) if c[0] == 'widget_set_text_utf8' and c[1] == label(m)]
+def pill_up(m, calls=None):
+    """The pill is shown now (the last visibility change on it was to visible; m.calls holds only the last call's, so the stored property is read)."""
+    return bool(m.props.get((pill(m), 'visible'), 0))
+
+
+def list_down(m, calls=None):
+    """The list was last moved down by the pill (a move to HOME_PAD + HC_H after the last move back)."""
+    v = [c[3] for c in (m.calls if calls is None else calls) if c[0] == 'widget_move' and c[1] == lv(m)]
+    return bool(v and v[-1] != HOME_PAD)
+
+
+def texts(m, calls=None, waiting=False):
+    """The pill's text changes; the waiting texts ("Checking library." and its dots) only when asked (a count never ends in a dot)."""
+    return [c[2] for c in (m.calls if calls is None else calls) if c[0] == 'widget_set_text_utf8' and c[1] == label(m) and (waiting or not c[2].endswith('.'))]
+
+
+def adds(calls):
+    """The timer_add calls other than the waiting text's dot timer."""
+    return [c for c in calls if c[0] == 'timer_add' and c[1] != PSYMS['hc_on_dots']]
 
 
 def scan(m, limit=100):
@@ -82,7 +115,7 @@ def tests(ctx):
     m = home_machine(6, missing={2, 4})
     binds = {c[2] for c in m.calls if c[0] == 'widget_on' and c[1] == m.window}
     expect({O['EVT_DESTROY'], O['EVT_WINDOW_TO_BG'], O['EVT_WINDOW_TO_FG']} <= binds, 'destroy, to-background and to-foreground are bound')
-    expect([c for c in m.calls if c[0] == 'timer_add'] == [('timer_add', START, START_MS)], f'one start timer, {START_MS} ms out')
+    expect(adds(m.calls) == [('timer_add', START, START_MS)], f'one start timer, {START_MS} ms out')
     expect(not shown_calls(m) and build_state(m)['jobs'] == 0 and 'pthread_create' not in m.names(), 'the line is hidden and nothing is scanned at start')
     expect(not [c for c in m.calls if c[0] == 'access' and '.m1plus' in str(c[1])], 'start stats no cache file')
 
@@ -98,7 +131,7 @@ def tests(ctx):
            'the list moves down by the line and shrinks by it')
     expect(('widget_resize', m.widgets['pod_scrollview'], 310, WIN_H - 2 * HOME_PAD - HC_H) in new and ('widget_resize', m.widgets['scroll_bar_m'], 10, WIN_H - 2 * HOME_PAD - HC_H) in new,
            'and so do its scroll view and bar')
-    expect(HC_Y + HC_H <= HOME_PAD + HC_H and HC_Y >= 0, 'the line lies above the first row (it ends where the list starts)')
+    expect(HC_Y == HOME_PAD and O['HC_PH'] + 8 == HC_H and HC_X == 12 and HC_W == 296, 'the pill lies above the first row; the list starts a pill and 8 px of air lower')
     expect([c for c in new if c[0] == 'timer_add' and c[1] == POLL] == [('timer_add', POLL, POLL_MS)], 'the poll runs every 500 ms')
 
     # 3. The poll shows n/m as the done counter advances and lets the Recently Played tiles retry; the end hides the line, restores the list and stops the worker.
@@ -112,7 +145,7 @@ def tests(ctx):
     s = build_state(m)
     expect(shown_calls(m, new) == [('widget_set_visible', 0), ('widget_set_sensitive', 0)], 'done: the line is hidden and insensitive')
     expect(('widget_move', lv(m), 0, HOME_PAD) in new and ('widget_resize', lv(m), 320, WIN_H - 2 * HOME_PAD) in new, 'the list is back where it was')
-    expect(s['jobs'] == 0 and [c for c in new if c[0] == 'pthread_join'] and not [c for c in new if c[0] == 'timer_add'], f'the worker is joined, the set freed, the poll ends ({s})')
+    expect(s['jobs'] == 0 and [c for c in new if c[0] == 'pthread_join'] and not adds(new), f'the worker is joined, the set freed, the poll ends ({s})')
     expect(not [c for c in fired(m, 'hc_on_poll', 1000000) if c[0] in ('timer_add', 'widget_set_text_utf8')], 'a late poll does nothing')
 
     # 3b. Recently Played's albums are queued first, most recent first (the shelf's placeholders go first); a stale shelf key is corrected from the list.
@@ -128,14 +161,15 @@ def tests(ctx):
     expect([t for t, _ in build_jobs(m)][0] == '/mnt/mmc/m/3/1.flac' and build_state(m)['total'] == 3, f'with the artist order too ({build_jobs(m)})')
 
     # 4. Nothing missing (a picture or the marker for every album): never shown, no worker, no list move; the next foreground scans again.
-    m = home_machine(8, empty={3})
+    m = home_machine(8, empty={3}, stamp=stamp_text(8, covers=False))
     new = scan(m)
-    expect(not shown_calls(m, new) and not texts(m, new) and 'pthread_create' not in [c[0] for c in new] and build_state(m)['jobs'] == 0
-           and not [c for c in new if c[0] in ('widget_move', 'widget_resize')], 'a complete cache: no line, no worker, the list untouched')
-    expect([c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add' and c[1] == START], 'the next foreground offers the scan again (the library may have changed)')
+    expect(not pill_up(m, new) and not texts(m, new) and 'pthread_create' not in [c[0] for c in new] and build_state(m)['jobs'] == 0
+           and not list_down(m, new), 'a complete cache: the waiting pill is gone, no count, no worker, the list back')
+    expect(m.fs.get(STAMP, b'').decode().startswith('covers 8 ') and 'tracks 8 ' in m.fs[STAMP].decode(), 'and the covers line is written beside the tracks one')
+    expect(not [c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add' or (c[0] == 'access' and '.m1plus/covers' in str(c[1]))], 'the next foreground (stamp current, database untouched) arms nothing and looks at no cache file')
     # an empty library
     m = home_machine(0); new = scan(m)
-    expect(not shown_calls(m, new) and 'pthread_create' not in [c[0] for c in new], 'no albums: nothing')
+    expect(not pill_up(m, new) and 'pthread_create' not in [c[0] for c in new] and 'covers 0 ' in m.fs[STAMP].decode(), 'no albums: nothing, the stamp of an empty library')
 
     # 5. The scan is bounded per step (64 albums a tick) and the line appears only after the last one.
     m = home_machine(300, missing={250})
@@ -143,10 +177,10 @@ def tests(ctx):
     for _ in range(20):
         new = fired(m, 'hc_on_start', 400000000)
         steps += 1
-        expect(len([c for c in new if c[0] == 'access' and '.m1plus/covers' in str(c[1])]) <= 64, 'at most 64 cache files checked a step')
+        expect(len([c for c in new if c[0] == 'access' and '.m1plus/covers' in str(c[1])]) <= 128, 'at most 64 albums, two cache files each (picture, .bad), checked a step')
         if not [c for c in new if c[0] == 'timer_add' and c[1] == START]: break
-        expect(not shown_calls(m, new), 'no line while the scan runs')
-    expect(steps == 5 and shown_calls(m, new) and build_state(m)['total'] == 1, f'300 albums: five steps, then the line ({steps})')
+        expect(not texts(m, new) and pill_up(m), 'no count while the scan runs (the waiting pill is up)')
+    expect(steps == 5 and texts(m, new) == ['Preparing covers 0/1'] and build_state(m)['total'] == 1, f'300 albums: five steps, then the line ({steps})')
     # a destroy in the middle of a scan drops the set
     m = home_machine(300, missing={250}); fired(m, 'hc_on_start', 400000000)
     hook(m, 'hc_on_destroy')
@@ -156,20 +190,25 @@ def tests(ctx):
     m = home_machine(6, missing={2, 4}); scan(m)
     hook(m, 'hc_on_background')
     s = build_state(m)
-    expect(count_of(m, 'pthread_join') == 1 and s['jobs'] == 0 and ('timer_remove', 0x777) in m.calls, f'background stops the worker and removes the poll ({s})')
+    expect(count_of(m, 'pthread_join') == 0 and s['orphan'] == 1 and s['cancelled'] == 1 and ('timer_remove', 0x777) in m.calls, f'background cancels the worker without joining it and removes the poll ({s})')
     expect(shown_calls(m)[-2:] == [('widget_set_visible', 0), ('widget_set_sensitive', 0)] and ('widget_move', lv(m), 0, HOME_PAD) in m.calls, 'and hides the line and restores the list')
     expect(not [c for c in fired(m, 'hc_on_poll', 1000000) + fired(m, 'hc_on_start', 1000000) if c[0] in ('timer_add', 'pthread_create', 'access')], 'late timers in the background do nothing')
     new = hook(m, 'hc_on_foreground')
-    expect([c for c in new if c[0] == 'timer_add'] == [('timer_add', START, START_MS)], 'the foreground arms the start again')
+    expect(adds(new) == [('timer_add', START, RESUME_MS)], 'the foreground arms the start again (1 s: the pill was up when Home left)')
     expect(not [c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add'], 'and only once while it is pending')
+    new = fired(m, 'hc_on_start', 400000000)
+    expect(adds(new) == [('timer_add', START, 500)] and build_state(m)['orphan'] == 1 and 'pthread_create' not in [c[0] for c in new],
+           'the orphan still inside its job: the start asks again later, nothing starts')
+    m.present |= {f'/mnt/mmc/m/{i}/1.flac' for i in range(6)}
+    m.call(PSYMS['cc_worker'], count=5000000)       # the orphan exits
     scan(m)
-    expect(build_state(m)['running'] == 1 and shown_calls(m)[-2:] == [('widget_set_visible', 1), ('widget_set_sensitive', 1)], 'the build resumes and shows the line again')
+    expect(build_state(m)['running'] == 1 and pill_up(m), 'the build resumes and shows the line again')
     expect(not [c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add'], 'foreground while the worker runs arms nothing')
 
     # 7. Destroy: cancelled and joined, line hidden; a late callback does nothing.
     m = home_machine(6, missing={2, 4}); scan(m)
     hook(m, 'hc_on_destroy')
-    expect(count_of(m, 'pthread_join') == 1 and build_state(m)['jobs'] == 0 and ('timer_remove', 0x777) in m.calls, 'destroy cancels and joins the worker and removes the poll')
+    expect(count_of(m, 'pthread_join') == 0 and build_state(m)['orphan'] == 1 and ('timer_remove', 0x777) in m.calls, 'destroy cancels the worker without joining and removes the poll')
     expect(not [c for c in fired(m, 'hc_on_poll', 1000000) + fired(m, 'hc_on_start', 1000000) if c[0] in ('timer_add', 'pthread_create', 'access')], 'late callbacks after destroy do nothing')
     m = home_machine(6, missing={2}); hook(m, 'hc_on_destroy')
     expect(('timer_remove', 0x777) in m.calls and not shown_calls(m), 'destroy before the start fired removes the one-shot')
@@ -187,16 +226,17 @@ def tests(ctx):
 
     # 9. No space, no thread, no timer: Home unchanged, nothing held.
     m = home_machine(6, missing={2}); m.free_mb = 2; new = scan(m)
-    expect(not shown_calls(m, new) and 'pthread_create' not in [c[0] for c in new] and build_state(m)['jobs'] == 0 and not [c for c in new if c[0] in ('widget_move', 'widget_resize')], 'a full card: no line, no worker')
+    expect(not pill_up(m, new) and 'pthread_create' not in [c[0] for c in new] and build_state(m)['jobs'] == 0 and not list_down(m, new), 'a full card: the pill hides, no worker')
+    expect(f'covers 6 {hash_of(6):08x}' not in m.fs[STAMP].decode(), 'and the covers line is not written (Home asks again)')
     m = home_machine(6, missing={2}); m.thread_ok = False; new = scan(m)
-    expect(not shown_calls(m, new) and build_state(m)['jobs'] == 0 and not [c for c in new if c[0] in ('widget_move', 'widget_resize')], 'a refused thread: no line, the set freed')
+    expect(not pill_up(m, new) and build_state(m)['jobs'] == 0 and not list_down(m, new), 'a refused thread: the pill hides, the set freed')
     m = home_machine(6, missing={2}); m.timer_fail = True; fired(m, 'hc_on_start', 400000000)
-    expect(build_state(m)['jobs'] == 0 and count_of(m, 'pthread_join') == 1 and shown_calls(m)[-2:] == [('widget_set_visible', 0), ('widget_set_sensitive', 0)], 'a poll timer that cannot be made: stopped, hidden')
+    expect(build_state(m)['orphan'] == 1 and count_of(m, 'pthread_join') == 0 and shown_calls(m)[-2:] == [('widget_set_visible', 0), ('widget_set_sensitive', 0)], 'a poll timer that cannot be made: stopped, hidden')
     m = Machine(); m.widget('home_window'); m.window = m.widgets['home_window']
     m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
     expect('timer_add' not in m.names(), 'an asset without the line (not ours): nothing is armed')
     m = Machine(); m.timer_fail = True
-    for w in ('home_window', 'pod_cover_prog', 'pod_listview'): m.widget(w)
+    for w in ('home_window', 'pod_cache_pill', 'pod_cover_prog', 'pod_cache_fill', 'pod_cache_x', 'pod_listview'): m.widget(w)
     m.call(PSYMS['homecover_start'], a0=m.widgets['home_window'], count=2000000)
     new = fired(m, 'hc_on_start', 4000000)
     expect(not [c for c in new if c[0] in ('pthread_create', 'access')], 'a start timer that cannot be made: Home never builds')
@@ -217,7 +257,7 @@ def rebuild_tests(ctx):
     # 1. A complete cache is queued whole, in CC_REBUILD mode; the line says Rebuilding covers 0/3.
     m = machine(); new = scan(m); s = build_state(m)
     expect(s['running'] == 1 and s['mode'] == 1 and s['total'] == 3 and [k for _, k in build_jobs(m)] == [key_of(i) for i in range(3)], f'every album is a job, CC_REBUILD ({s})')
-    expect(texts(m, new) == ['Rebuilding covers 0/3'] and shown_calls(m, new) == [('widget_set_visible', 1), ('widget_set_sensitive', 1)], f'the line reads Rebuilding covers 0/3 ({texts(m, new)})')
+    expect(texts(m, new) == ['Rebuilding covers 0/3'] and pill_up(m), f'the line reads Rebuilding covers 0/3 ({texts(m, new)})')
     expect(REQ in m.fs, 'the request stays while the rebuild runs')
 
     # 2. The worker replaces each file (temp, rename), a marker too; the request ends only when the set is done.
@@ -228,7 +268,7 @@ def rebuild_tests(ctx):
     new = fired(m, 'hc_on_poll')
     expect(texts(m, new) == ['Rebuilding covers 1/3'] and REQ in m.fs, 'part way: 1/3, the request stays')
     m.call(PSYMS['cc_worker'], count=5000000)
-    renames = [c for c in m.calls if c[0] == 'rename']
+    renames = [c for c in m.calls if c[0] == 'rename' and c[2].endswith('.jpg')]
     expect([c[2] for c in renames] == dst[1:] and all(c[1] == c[2] + '.tmp' for c in renames) and m.files[dst[0]] == OLD and all(m.files[p] == 4096 for p in dst[1:]),
            'each cover is extracted to a temp file and renamed over the old one, the marker replaced by the new picture')
     new = fired(m, 'hc_on_poll', 40000000)
@@ -238,31 +278,110 @@ def rebuild_tests(ctx):
     scan(m2)
     expect(build_state(m2)['total'] == 0 and 'pthread_create' not in m2.names(), 'without a request the complete cache is not touched again')
 
+    # 2b. A stalled set reads as finished but did not rebuild every album: the request stays, the next foreground resumes it.
+    m = home_machine(3, rebuild=True); scan(m)
+    m.setword(PSYMS['cb'] + 4 * 13, key_of(0)); m.setword(PSYMS['cb'] + 4 * 15, 1)   # album 0 hangs inside its extraction (cur, began)
+    m.clock += 10000
+    new = fired(m, 'hc_on_poll', 40000000)
+    expect(REQ in m.fs and ('unlink', REQ) not in new and build_state(m)['orphan'] == 1 and m.call(PSYMS['cc_build_stalled']) == 1 and shown_calls(m, new)[-2:] == [('widget_set_visible', 0), ('widget_set_sensitive', 0)],
+           'a stall during Rebuild Covers keeps the request; the line ends')
+    m.call(PSYMS['cc_worker'], count=5000000)       # the hung job returns
+    for mode in (2, 0):   # other sets come and go before the foreground
+        assert m.call(PSYMS['cc_build_open'], a0=4, a1=mode) == 1
+        m.call(PSYMS['cc_build_stop'])
+    new = hook(m, 'hc_on_foreground')
+    new = scan(m)
+    expect(build_state(m)['mode'] == 1 and build_state(m)['total'] == 2 and REQ in m.fs and (art_file(key_of(0)) + '.bad' in m.fs or art_file(key_of(0)) + '.bad' in m.files), 'the next foreground resumes the rebuild without the hung album (its .bad)')
+    m.call(PSYMS['cc_worker'], count=5000000)
+    fired(m, 'hc_on_poll', 40000000)
+    expect(REQ not in m.fs, 'and the resumed rebuild completes: the request is removed')
+
     # 3. Interrupted (background, destroy): the request stays, the worker is stopped; the next foreground starts the rebuild again from the first album.
     m = machine(); scan(m)
     m.setword(PSYMS['cb'] + 4 * 5, 1)
     fired(m, 'hc_on_poll')
     hook(m, 'hc_on_background')
-    expect(REQ in m.fs and build_state(m)['jobs'] == 0 and count_of(m, 'pthread_join') == 1, 'background mid-way: stopped, the request stays')
+    expect(REQ in m.fs and build_state(m)['orphan'] == 1 and count_of(m, 'pthread_join') == 0, 'background mid-way: stopped, the request stays')
+    m.call(PSYMS['cc_worker'], count=5000000)       # the orphan exits
     new = hook(m, 'hc_on_foreground')
-    expect([c for c in new if c[0] == 'timer_add'] == [('timer_add', START, START_MS)], 'the foreground arms the scan again')
+    expect(adds(new) == [('timer_add', START, RESUME_MS)], 'the foreground arms the scan again (1 s: the pill was up)')
     new = scan(m)
     expect(build_state(m)['mode'] == 1 and build_state(m)['total'] == 3 and texts(m, new) == ['Rebuilding covers 0/3'], 'and the rebuild starts again from the beginning')
     hook(m, 'hc_on_destroy')
-    expect(REQ in m.fs and build_state(m)['jobs'] == 0, 'destroy mid-way: the request stays')
+    expect(REQ in m.fs and build_state(m)['orphan'] == 1, 'destroy mid-way: the request stays')
 
     # 4. A held worker: nothing starts, the request stays; no space or no thread likewise.
     m = machine(); m.call(PSYMS['cc_build_open'], a0=3, a1=0, count=2000000)
     new = fired(m, 'hc_on_start', 4000000)
-    expect(not shown_calls(m, new) and REQ in m.fs and not [c for c in new if c[0] == 'pthread_create'], 'a held worker: nothing, the request stays')
+    expect(not pill_up(m, new) and REQ in m.fs and not [c for c in new if c[0] == 'pthread_create'], 'a held worker: the pill hides, nothing starts, the request stays')
     m = machine(); m.free_mb = 2; scan(m)
     expect(REQ in m.fs and build_state(m)['jobs'] == 0 and 'pthread_create' not in m.names(), 'a full card: the request stays')
+
+    # 4b. More albums than one set holds: every chunk is a rebuild, the request stays until the cursor reaches the end of the list.
+    cap = 4000   # CC_MAX_JOBS
+    m = home_machine(cap + 2, rebuild=True); scan(m, 200)
+    expect(build_state(m)['mode'] == 1 and build_state(m)['total'] == cap and REQ in m.fs, 'a rebuild of 4002 albums: the first chunk holds 4000')
+    m.setword(PSYMS['cb'] + 4 * 5, cap)
+    new = fired(m, 'hc_on_poll', 400000000)
+    expect(REQ in m.fs and ('unlink', REQ) not in new and ('timer_add', START, 20) in new, 'the first chunk ended: the request stays, the next chunk is chained')
+    scan(m, 200)
+    expect(build_state(m)['mode'] == 1 and build_state(m)['total'] == 2 and [t for t, _ in build_jobs(m)][0] == f'/mnt/mmc/m/{cap}/1.flac', 'the second chunk is a rebuild too, of the two left')
+    m.setword(PSYMS['cb'] + 4 * 5, 2)
+    new = fired(m, 'hc_on_poll', 400000000)
+    expect(REQ not in m.fs and ('timer_add', START, 20) not in new and m.fs[STAMP].decode().startswith(f'covers {cap + 2} '), 'the end of the list: the request is removed, the line written, no third chunk')
+    m = home_machine(cap + 2, rebuild=True); scan(m, 200)
+    m.setword(PSYMS['cb'] + 4 * 5, cap); fired(m, 'hc_on_poll', 400000000); scan(m, 200)
+    hook(m, 'hc_on_background'); m.call(PSYMS['cc_worker'], count=5000000)
+    expect(REQ in m.fs, 'Home leaves in the second chunk: the request stays')
+    hook(m, 'hc_on_foreground'); scan(m, 200)
+    expect(build_state(m)['mode'] == 1 and build_state(m)['total'] == 2, 'the next foreground resumes the rebuild at the second chunk, not at the first album')
 
     # 5. No album has a track path: nothing to extract, nothing to wait for.
     m = home_machine(2, rebuild=True)
     for r in m.showlist: m.setword(r + O['REC_PATH'], 0)
     scan(m)
     expect(REQ not in m.fs and 'pthread_create' not in m.names(), 'nothing to extract: the request is dropped')
+
+
+def resume_tests(ctx):
+    """Back on Home after leaving it with the pill up (a build or its wait in progress): the start is armed HC_RESUME_MS out, not HC_START_MS; a silent probe, a stopped or a finished build keep the usual delay."""
+    expect = ctx.expect
+    START = PSYMS['hc_on_start']
+
+    def starts(calls): return [c for c in calls if c[0] == 'timer_add' and c[1] == START]
+
+    # 1. First open: 5 s. Leave mid-build and return: 1 s, and the build continues from there.
+    m = home_machine(6, missing={2}, stamp=None)
+    expect(starts(m.calls) == [('timer_add', START, START_MS)], 'first open: the start is 5 s out')
+    scan(m)
+    expect(pill_up(m), 'the build is running')
+    hook(m, 'hc_on_background')
+    new = hook(m, 'hc_on_foreground')
+    expect(starts(new) == [('timer_add', START, RESUME_MS)], 'back mid-build: the start is 1 s out')
+    m.call(PSYMS['cc_worker'], count=5000000)       # the orphan exits
+    new = scan(m)
+    expect(pill_up(m) and texts(m, new) == ['Preparing covers 0/1'], 'and the build continues')
+    # 2. Leave during the 5 s wait with the pill shown: 1 s on return.
+    m = home_machine(6, missing={2}, stamp=None)
+    expect(pill_up(m), 'waiting pill up')
+    hook(m, 'hc_on_background')
+    expect(starts(hook(m, 'hc_on_foreground')) == [('timer_add', START, RESUME_MS)], 'left during the wait: 1 s on return')
+    # 3. A silent probe (no pill): the full 5 s.
+    m = home_machine(6, missing={1}, stamp=stamp_text(6), songs=True)
+    expect(not pill_up(m), 'probe: no pill')
+    hook(m, 'hc_on_background')
+    expect(starts(hook(m, 'hc_on_foreground')) == [('timer_add', START, START_MS)], 'silent probe left and back: still 5 s')
+    # 4. After the x: no restart.
+    m = home_machine(6, missing={2}, stamp=None); scan(m)
+    hook(m, 'hc_on_stop')
+    hook(m, 'hc_on_background')
+    expect(not starts(hook(m, 'hc_on_foreground')) and not pill_up(m), 'after the x: no restart')
+    # 5. A finished build hides the pill: a later leave and return is the 5 s path (a changed database arms the silent probe).
+    m = home_machine(6, missing={2}, stamp=None); scan(m)
+    finish_worker(m, [2]); fired(m, 'hc_on_poll', 40000000); fired(m, 'hc_on_dscan')
+    expect(not pill_up(m), 'the build finished: the pill is gone')
+    hook(m, 'hc_on_background'); m.db[DB] = [101, 0, 4096]
+    expect(starts(hook(m, 'hc_on_foreground')) == [('timer_add', START, START_MS)], 'after a finished build: 5 s')
 
 
 def clear_tests(ctx):
@@ -283,7 +402,7 @@ def clear_tests(ctx):
         m.fs[REQ] = b'1\n'
         return m, [ART + '/' + nm for nm in names]
 
-    def unlinks(m): return [c[1] for c in m.calls if c[0] == 'unlink' and c[1] != REQ]
+    def unlinks(m): return [c[1] for c in m.calls if c[0] == 'unlink' and c[1] not in (REQ, STAMP)]
     def toasts(m): return [c[1] for c in m.calls if c[0] == 'toast']
 
     # Yes: the confirm, the request dropped at once, then ticks of at most 32 unlinks; the toast at the end.
@@ -314,7 +433,7 @@ def clear_tests(ctx):
     m, paths = machine(); m.call(PSYMS['clear_ask'], count=3000000)
     m.call(PSYMS['cc_build_open'], a0=3, a1=0, count=2000000)
     m.call(PSYMS['cl_tick'], count=4000000)
-    expect(not unlinks(m) and not toasts(m) and not [c for c in m.calls if c[0] == 'timer_add'], 'a build started meanwhile: the clearing stops quietly')
+    expect(not unlinks(m) and not toasts(m) and not adds(m.calls), 'a build started meanwhile: the clearing stops quietly')
 
     # No cache folder: nothing to delete, still the toast. A second ask while one runs starts no second timer.
     m = Machine(); m.confirm_yes = True; m.call(PSYMS['clear_ask'], count=3000000)
@@ -371,7 +490,7 @@ def cache_tests(ctx):
         per = []
         for _ in range(limit):
             new = fired(m, 'cp_tick', 40000000)
-            per.append(max(len([c for c in new if c[0] == 'fopen']), len([c for c in new if c[0] == 'access' and '/r' in str(c[1])])))
+            per.append(max(len([c for c in new if c[0] == 'fopen']), len([c for c in new if c[0] == 'access' and '/r' in str(c[1]) and not str(c[1]).endswith('.bad')])))
             if not [c for c in new if c[0] == 'timer_add' and c[1] == TICK]: return per
         raise AssertionError('the count did not end')
 
@@ -393,6 +512,11 @@ def cache_tests(ctx):
         p = art_file(key_of(i)); m.present.add(p); m.files[p] = 400000 if i < 3 else 0
     open_page(m); count_all(m)
     expect(stat(m, 3) == '4' and stat(m, 4) == '0' and stat(m, 0) == '8', 'Missing = albums with neither a picture nor a marker by the CC_MISSING rule (albums 4..7)')
+    m, names = machine(old=0)
+    for i in range(4): m.present.add(art_file(key_of(i)))
+    m.present.add(art_file(key_of(4)) + '.bad')
+    open_page(m); count_all(m)
+    expect(stat(m, 3) == '3', f'an album with a .bad marker is not missing: CC_MISSING never queues it ({stat(m, 3)})')
 
     # 3. Bounded: 143 pictures and 130 albums in steps of at most 64; the size has a decimal under 10 MB and none above.
     m, names = machine(albums=130, big=140)
@@ -624,7 +748,368 @@ def files_tests(ctx):
            'a refresh of the page (foreground) shows the values it read at open and reads no file, adds no timer')
 
 
-SECTIONS = [tests, rebuild_tests, clear_tests, cache_tests, covlist_tests, files_tests]
+def dots_tests(ctx):
+    """The waiting text's dots: one timer (hc_on_dots) cycles 1, 2, 3 dots after the translated text without its ellipsis; it ends with the waiting state."""
+    expect = ctx.expect
+    DOTS, REPEAT = PSYMS['hc_on_dots'], 8
+    ELL = '\xe2\x80\xa6'   # (the harness reads C strings as latin-1 characters)
+
+    def home(loc=None, **kw):
+        m = home_machine(6, missing={2}, stamp=None, start=False, **kw)
+        m.set_language(loc)
+        m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+        return m
+
+    def tick(m):
+        ret = m.call(DOTS, count=400000)
+        return ret, texts(m, waiting=True)
+
+    def removes(m): return len([c for c in m.calls if c == ('timer_remove', 0x777)])
+
+    # 1. Every language, both waiting texts: the label starts with one dot and the ticks cycle 2, 3, 1, 2 (the timer repeats).
+    for loc in pod_i18n.ALL_TABLES:
+        T = tr_of(loc)
+        for key, rebuild in (('Checking library…', False), ('Rebuilding covers…', True)):
+            m = home(loc, rebuild=rebuild)
+            base = T(key)[:-len(ELL)]
+            expect(texts(m, waiting=True) == [base + '.'] and [c for c in m.calls if c == ('timer_add', DOTS, 400)], f'{loc} {key}: one dot at once, the dot timer armed at 400 ms')
+            got = []
+            for _ in range(4):
+                ret, t = tick(m)
+                got.append((ret, t))
+            expect(got == [(REPEAT, [base + d]) for d in ('..', '...', '.', '..')], f'{loc} {key}: the dots cycle on the timer ({got})')
+    # 2. The count takes over: the timer goes, a late tick does nothing and is not repeated.
+    m = home(); scan(m)
+    expect(removes(m) == 1 and texts(m) == ['Preparing covers 0/1'], 'the first count removes the dot timer')
+    ret, t = tick(m)
+    expect(ret == 0 and not t, 'a stale tick: nothing written, the timer ends')
+    # 3. Background and destroy remove it (with the start timer); no timer is left, none is added by a late tick.
+    m = home(); hook(m, 'hc_on_background')
+    expect(removes(m) == 2, 'background removes the start timer and the dot timer')
+    ret, t = tick(m)
+    expect(ret == 0 and not t, 'a late tick in the background does nothing')
+    new = hook(m, 'hc_on_foreground')
+    expect([c for c in new if c == ('timer_add', DOTS, 400)] and texts(m, new, waiting=True) == ['Checking library.'], 'the foreground waits again: one dot, the timer armed once more')
+    expect(len([c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add']) == 0, 'and not twice')
+    m = home(); hook(m, 'hc_on_destroy')
+    expect(removes(m) == 2, 'destroy removes both timers')
+    # 4. The x ends the wait and the timer; a pill that hides at 5 s with nothing to do (a complete cache) leaves the timer to end itself on its next tick.
+    m = home(); hook(m, 'hc_on_stop')
+    expect(removes(m) == 2, 'the x removes the start timer and the dot timer')
+    m = home_machine(6, stamp=stamp_text(6), start=False); m.db = {DB: [100, 0, 4096]}
+    m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+    expect(not [c for c in m.calls if c[0] == 'timer_add' and c[1] == DOTS], 'no waiting pill: no dot timer')
+
+
+def pill_tests(ctx):
+    """The cache pill: its widgets in the asset, the bar fill, the x (stops Home's pass, suppresses it until Rebuild Covers), the worker's niceness."""
+    expect = ctx.expect
+    import os, awtk_ui
+    O_ = O
+    ui = awtk_ui.parse(open(os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_menu.bin'), 'rb').read())
+    p = ui.find('pod_cache_pill')
+    expect(p is not None and (p.x, p.y, p.w, p.h) == (12, 10, 296, 40) and p.get('visible') == 'false' and p.get('sensitive') == 'false' and ui.find('pod_cover_prog') is not None
+           and [c.name for c in p.children] == ['pod_cover_prog', 'pod_cache_track', 'pod_cache_fill', 'pod_cache_x'], 'the pill is a hidden, insensitive 296 x 40 capsule at (12, 10) with the label, the track, the fill and the x')
+    expect(all(p.get(f'style:{s}:bg_color') == '#1C1C1C' and p.get(f'style:{s}:round_radius') == '20' for s in ('normal', 'pressed', 'disable')), 'fill #1C1C1C, fully rounded')
+    lab, tr, fl, x = p.children
+    expect(lab.get('style:normal:font_size') == '15' and lab.get('style:normal:text_color') == '#AAAAAA' and tr.get('style:normal:bg_color') == '#FFFFFF33' and fl.get('style:normal:bg_color') == '#EBEBEB'
+           and (tr.w, tr.h, fl.h, fl.x, fl.y) == (O_['HC_BW'], 4, 4, tr.x, tr.y) and x.type == 'button' and x.get('style:normal:icon') == 'pod_cache_x' and x.get('style:pressed:icon') == 'pod_cache_x_down'
+           and x.x + x.w == p.w and tr.x + tr.w <= x.x, '15 px #AAAAAA text, a 4 px bar (track #FFFFFF33, fill #EBEBEB), the x button at the right end clear of the bar')
+    for n in ('pod_cache_x', 'pod_cache_x_down'):
+        expect(os.path.isfile(os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx', n + '.png')), f'{n}.png is in the tree')
+
+    # the fill follows done/total (at least 4 px), the pill stays until the end
+    m = home_machine(6, missing={2, 4}); new = scan(m)
+    fill, x = m.widgets['pod_cache_fill'], m.widgets['pod_cache_x']
+    resizes = lambda calls: [c[2:] for c in calls if c[0] == 'widget_resize' and c[1] == fill]
+    expect(resizes(new) == [(4, 4)], f'0/2: the fill is 4 px ({resizes(new)})')
+    m.setword(PSYMS['cb'] + 4 * 5, 1)
+    expect(resizes(fired(m, 'hc_on_poll')) == [(O_['HC_BW'] // 2, 4)], '1/2: half of the track')
+    expect(m.bound.get((x, O['EVT_CLICK'])) is not None, 'the x is bound to a click')
+
+    # the x: Home's pass stops (the worker is cancelled, not joined), the pill and the poll go, nothing starts again this boot
+    new = hook(m, 'hc_on_stop')
+    s = build_state(m)
+    expect(shown_calls(m, new)[-2:] == [('widget_set_visible', 0), ('widget_set_sensitive', 0)] and s['orphan'] == 1 and s['cancelled'] == 1 and count_of(m, 'pthread_join') == 0 and ('timer_remove', 0x777) in new,
+           f'x: pill hidden, worker cancelled without a join, poll removed ({s})')
+    expect(('widget_move', lv(m), 0, HOME_PAD) in new, 'the list is back')
+    m.call(PSYMS['cc_worker'], count=5000000)   # the orphan exits
+    expect(not [c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add'], 'the next foreground arms nothing')
+    expect(not [c for c in fired(m, 'hc_on_start', 4000000) if c[0] in ('timer_add', 'pthread_create', 'access')], 'a start that is still due does nothing')
+    # a Home rebuilt later (the menu destroyed and opened again) builds nothing either
+    m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+    expect(not adds(m.calls), 'a new Home window arms nothing after the x')
+    # Rebuild Covers (explicit) clears it
+    m.call(PSYMS['homecover_rebuild_asked'])
+    m.fs[REQ] = b'1\n'
+    m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+    new = scan(m)
+    expect(build_state(m)['running'] == 1 and build_state(m)['mode'] == 1 and pill_up(m), 'after Rebuild Covers the pass runs again (CC_REBUILD) and the pill shows')
+    # a window that is not ours is ignored; a press before the start stops it from starting
+    m = home_machine(6, missing={2}); hook(m, 'hc_on_stop', win=0x1234)
+    scan(m)
+    expect(build_state(m)['running'] == 1, 'a click bound to another window changes nothing')
+    m = home_machine(6, missing={2}); hook(m, 'hc_on_stop')
+    expect(not [c for c in fired(m, 'hc_on_start', 4000000) if c[0] in ('pthread_create', 'access')], 'x before the start: it does not start')
+    # the x also ends the durations pass
+    m = home_machine(0); m.fs['/mnt/mmc/.m1plus/durations'] = b''
+    hook(m, 'hc_on_stop')
+    expect(not [c for c in fired(m, 'hc_on_start', 4000000) if c[0] in ('pthread_create', 'cc_build_open')], 'no pass of either kind after the x')
+
+    # the worker lowers its own priority: setpriority(PRIO_PROCESS, 0, 10), once, before the first job
+    m = home_machine(6, missing={2, 4}); scan(m)
+    m.sys = []
+    m.call(PSYMS['cc_worker'], count=5000000)
+    expect(m.sys == [(4097, 0, 0, 10)], f'the worker calls setpriority(0, 0, 10) first ({m.sys})')
+
+
+def check_tests(ctx):
+    """The cheap check (the stamp and the database file's state): the waiting pill at once when work is expected, nothing at all when not; the stamp written at the end of a pass."""
+    expect = ctx.expect
+    START = PSYMS['hc_on_start']
+    WAIT, WAIT_R = 'Checking library.', 'Rebuilding covers.'   # (the first dot phase)
+
+    def reads_nothing(calls):
+        return not [c for c in calls if c[0] in ('loadLocalClassList', 'timer_add', 'pthread_create') or (c[0] == 'access' and '.m1plus/covers' in str(c[1]))]
+
+    # 1. No stamp: the waiting pill shows at once (text, no count, empty bar), the list makes room; the scan starts only at HC_START_MS.
+    m = home_machine(6, missing={2}, stamp=None)
+    expect(pill_up(m) and texts(m, waiting=True) == [WAIT] and ('widget_move', lv(m), 0, HOME_PAD + HC_H) in m.calls, 'no stamp: the pill is up at once, "Checking library…", the list moved down')
+    expect(('widget_set_visible', m.widgets['pod_cache_fill'], 0) in m.calls and adds(m.calls) == [('timer_add', START, START_MS)], 'the bar is empty (the fill hidden) and the start is still 5 s out')
+    expect(not [c for c in m.calls if c[0] in ('loadLocalClassList', 'pthread_create') or (c[0] == 'access' and '.m1plus/covers' in str(c[1]))], 'nothing is queried, scanned or started yet')
+    expect(not any(c[0] == 'sync_icon' for c in m.calls), 'the sync icon is the worker\'s: not touched by the waiting state')
+    new = scan(m)
+    expect(texts(m, new) == ['Preparing covers 0/1'] and pill_up(m) and ('widget_set_visible', m.widgets['pod_cache_fill'], 1) in new, 'at 5 s the scan and the worker run: the real count and the bar take over')
+    # only the tracks line missing: the waiting text names the tracks
+    m = home_machine(6, stamp=stamp_text(6, tracks=False))
+    expect(pill_up(m) and texts(m, waiting=True) == [WAIT], 'only the tracks line missing: the same general "Checking library…"')
+    # a pending Rebuild Covers is work too
+    m = home_machine(6, rebuild=True, stamp=stamp_text(6))
+    expect(pill_up(m) and texts(m, waiting=True) == [WAIT_R], 'a pending Rebuild Covers request: "Rebuilding covers…", the pill is up at once, whatever the stamp says')
+
+    # 2. A scan that finds nothing missing: the stamp is written and the pill hidden.
+    m = home_machine(6, stamp=stamp_text(6, covers=False))
+    expect(pill_up(m), 'waiting')
+    new = scan(m)
+    expect(not pill_up(m) and not texts(m, new) and 'pthread_create' not in m.names() and m.fs[STAMP].decode() == stamp_text(6), f'nothing missing: the pill hides, the stamp holds both lines ({m.fs.get(STAMP)})')
+
+    # 3. Stamp matches and the database is untouched since the library was read: no pill, no scan, no query. The first open after the boot reads the library once (no pill), then it is known.
+    m = home_machine(6, missing={1}, stamp=stamp_text(6), songs=True)
+    expect(not pill_up(m) and adds(m.calls) == [('timer_add', START, START_MS)], 'first open since the boot: no pill, the library is asked at 5 s')
+    new = fired(m, 'hc_on_start', 400000000)
+    expect(not pill_up(m) and not texts(m, new, waiting=True) and 'pthread_create' not in m.names() and not [c for c in new if c[0] == 'access' and '.m1plus/covers' in str(c[1])] and not adds(new),
+           'the library matches the stamp: no pill, no album scanned (an album with no file is not looked at), no worker')
+    new = hook(m, 'hc_on_background')
+    new = hook(m, 'hc_on_foreground')
+    expect(reads_nothing(new) and [c for c in new if c[0] == '__xstat'] and not pill_up(m), 'foreground, stamp current, database as it was: no pill, no timer, no query, no scan (only the database file\'s state is looked at)')
+
+    # 4. The database changed (a play, an import): no pill, the start is armed silently; at 5 s the library is read; the same albums: nothing shown, no scan; a new album: the pill appears and the scan runs.
+    m.db[DB] = [101, 0, 4096]
+    new = hook(m, 'hc_on_foreground')
+    expect(not pill_up(m) and not texts(m, new, waiting=True) and adds(new) == [('timer_add', START, START_MS)], 'database changed: no pill (a play changes it too), the start armed silently')
+    new = fired(m, 'hc_on_start', 400000000)
+    expect(not pill_up(m) and not texts(m, new, waiting=True) and not [c for c in new if c[0] == 'access' and '.m1plus/covers' in str(c[1])] and 'pthread_create' not in m.names(), 'the library is the same: the pill never showed, no album scan')
+    new = hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
+    expect(not pill_up(m) and reads_nothing(new), 'and the new database state is remembered: the next foreground is quiet')
+    m.db[DB] = [102, 0, 4096]
+    m.showlist.append(m.record(album='Album 6', artist='Artist 6', path='/mnt/mmc/m/6/1.flac', rid=7)); m.present.add('/mnt/mmc/m/6/1.flac')
+    new = hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
+    expect(not pill_up(m), 'database changed again: still silent')
+    new = scan(m)
+    expect(pill_up(m) and build_state(m)['total'] == 2 and texts(m, new) == ['Preparing covers 0/2'], 'a library with one more album: the scan queues it (and album 1, which has no file), the count takes over')
+    m.db[DB] = [100, 0, 8192]
+    expect('covers 6 ' in m.fs[STAMP].decode() and 'covers 7 ' not in m.fs[STAMP].decode(), 'the stamp is not written while the worker runs')
+    finish_worker(m, [1, 6])
+    new = fired(m, 'hc_on_poll', 40000000)
+    new += fired(m, 'hc_on_dscan')   # (the songs: one CUE track, nothing to measure)
+    expect(m.fs[STAMP].decode().startswith('covers 7 ') and 'tracks 7 ' in m.fs[STAMP].decode() and not pill_up(m), 'the pass done: the stamp holds the new count and hash for both parts, the pill hidden')
+
+    # 5. The size of the -wal file counts too.
+    m = home_machine(4, stamp=stamp_text(4)); m.db[DB + '-wal'] = [5, 0, 100]
+    fired(m, 'hc_on_start', 400000000)
+    hook(m, 'hc_on_background'); m.db[DB + '-wal'] = [5, 0, 200]
+    expect(pill_up(m) is False and [c for c in hook(m, 'hc_on_foreground') if c[0] == 'timer_add'] and not pill_up(m), 'a changed WAL file is a change (the start is armed, silently)')
+
+    # 6. The x in the waiting state cancels the pending timer, hides the pill and suppresses until Rebuild Covers; no stamp is written.
+    m = home_machine(6, missing={2}, stamp=None)
+    new = hook(m, 'hc_on_stop')
+    expect(('timer_remove', 0x777) in new and not pill_up(m) and STAMP not in m.fs and ('widget_move', lv(m), 0, HOME_PAD) in new, 'x while waiting: the 5 s timer is removed, the pill hides, the list is back, no stamp')
+    expect(not [c for c in hook(m, 'hc_on_foreground') if c[0] in ('timer_add', '__xstat')] and not pill_up(m), 'and the next foreground waits for nothing')
+    # x during the build: no stamp either
+    m = home_machine(6, missing={2}, stamp=None); scan(m)
+    hook(m, 'hc_on_stop')
+    expect(STAMP not in m.fs, 'x during the build writes no stamp (the pill comes back after a reboot)')
+
+    # 7. A stalled set: the hung album has its .bad but the rest of the pass may not have been looked at: no covers line (the next foreground scans again).
+    m = home_machine(3, stamp=None, missing={0}); scan(m)
+    m.setword(PSYMS['cb'] + 4 * 13, key_of(0)); m.setword(PSYMS['cb'] + 4 * 15, 1)
+    m.clock += 10000
+    fired(m, 'hc_on_poll', 40000000)
+    expect(m.call(PSYMS['cc_build_stalled']) == 1 and 'covers' not in m.fs.get(STAMP, b'').decode(), 'a stalled set: no covers line')
+
+    # 7b. A truncated pass (more albums missing than CC_MAX_JOBS): no covers line, another pass follows at once, and the stamp comes when one finishes untruncated.
+    cap = 4000   # CC_MAX_JOBS
+    m = home_machine(cap + 2, stamp=None, missing=range(cap + 2))
+    scan(m, 200)
+    expect(build_state(m)['total'] == cap and m.call(PSYMS['cc_build_truncated']) == 1, 'more albums missing than one set holds: the set is full and truncated')
+    for i in range(cap): m.present.add(art_file(key_of(i))); m.files[art_file(key_of(i))] = 4096
+    m.setword(PSYMS['cb'] + 4 * 5, cap)
+    new = fired(m, 'hc_on_poll', 400000000)
+    expect('covers' not in m.fs.get(STAMP, b'').decode() and ('timer_add', START, 20) in new, 'a truncated pass is not stamped and chains a second pass')
+    scan(m, 200)
+    expect(build_state(m)['total'] == 2 and m.call(PSYMS['cc_build_truncated']) == 0, 'the second pass queues the two that did not fit')
+    finish_worker(m, [cap, cap + 1])
+    fired(m, 'hc_on_poll', 400000000)
+    expect(m.fs[STAMP].decode().startswith(f'covers {cap + 2} '), 'the pass that ends untruncated writes the covers line')
+
+    # 7c. A failed copy is not an empty library: no line, the pill hides. Stock answers empty to a failed query too, so empty is made safe instead (7e).
+    m = home_machine(3, stamp=None); m.deque_fail = True
+    scan(m)
+    expect(STAMP not in m.fs and not pill_up(m) and 'pthread_create' not in m.names(), 'the album list could not be copied: nothing is stamped, the pill hides')
+    m = home_machine(3, stamp=stamp_text(3, tracks=False)); scan(m)
+    expect('tracks' not in m.fs[STAMP].decode() and not pill_up(m), 'no songs although there are albums: a failed read, no tracks line, the pill hides')
+    m = home_machine(3, stamp=stamp_text(3, tracks=False), songs=True); m.deque_fail = False; scan(m); fired(m, 'hc_on_dscan')
+    expect(m.fs[STAMP].decode() == stamp_text(3), 'songs read: the tracks line is written')
+
+    # 7d. A chain of chunks resumes from a cursor: 4002 albums missing, the first 4000 tracks gone (the worker leaves no file): the second chunk queues the other two, then the line is written, no third pass.
+    m = home_machine(cap + 2, missing=range(cap + 2))   # (the default stamp is of another library: it has a covers line)
+    m.present -= {f'/mnt/mmc/m/{i}/1.flac' for i in range(cap)}
+    scan(m, 200)
+    expect(build_state(m)['total'] == cap and 'covers' not in m.fs[STAMP].decode(), 'the first chunk is full and drops the covers line of the stale stamp (a matching line would skip the chain)')
+    m.setword(PSYMS['cb'] + 4 * 5, cap)   # the worker finished them all and made no file
+    new = fired(m, 'hc_on_poll', 400000000)
+    expect(('timer_add', START, 20) in new and 'covers' not in m.fs[STAMP].decode(), 'chunk one ended: no line, the next chunk is chained')
+    scan(m, 200)
+    expect(build_state(m)['total'] == 2 and [t for t, _ in build_jobs(m)] == [f'/mnt/mmc/m/{cap}/1.flac', f'/mnt/mmc/m/{cap + 1}/1.flac'] and m.call(PSYMS['cc_build_truncated']) == 0,
+           'the second chunk resumes at the album that did not fit: the two left, not the 4000 gone ones again')
+    finish_worker(m, [cap, cap + 1])
+    new = fired(m, 'hc_on_poll', 400000000)
+    expect(m.fs[STAMP].decode().startswith(f'covers {cap + 2} ') and ('timer_add', START, 20) not in new and build_state(m)['jobs'] == 0, 'the scan reached the end: the line is written, no third pass')
+
+    # 7d2. Home leaves in the middle of the second chunk: the next foreground resumes at the chunk's start (not from 0, not skipped by the stamp); another album order starts again from 0.
+    def chain_to_chunk_two():
+        m = home_machine(cap + 2, missing=range(cap + 2))
+        scan(m, 200)
+        m.setword(PSYMS['cb'] + 4 * 5, cap)
+        fired(m, 'hc_on_poll', 400000000)
+        scan(m, 200)
+        return m
+    m = chain_to_chunk_two()
+    expect(build_state(m)['total'] == 2, 'chunk two is running')
+    hook(m, 'hc_on_background')
+    m.call(PSYMS['cc_worker'], count=5000000)   # the orphan exits
+    expect('covers' not in m.fs[STAMP].decode(), 'interrupted: still no covers line')
+    new = hook(m, 'hc_on_foreground')
+    expect(pill_up(m) and adds(new) == [('timer_add', START, RESUME_MS)], 'the next foreground waits with the pill, 1 s out (nothing says the covers are done)')
+    scan(m, 200)
+    expect(build_state(m)['total'] == 2 and [t for t, _ in build_jobs(m)][0] == f'/mnt/mmc/m/{cap}/1.flac', 'and the chunk is redone from its start')
+    m = chain_to_chunk_two()
+    hook(m, 'hc_on_background'); m.call(PSYMS['cc_worker'], count=5000000)
+    m.fs[CFSORT_FILE] = b'1\n'   # Albums lists by artist now: Home's scan keeps the stored order, so the chain resumes
+    hook(m, 'hc_on_foreground'); scan(m, 200)
+    expect(build_state(m)['total'] == 2 and [t for t, _ in build_jobs(m)][0] == f'/mnt/mmc/m/{cap}/1.flac', 'Album Order changed: the scan order is not the display order, the chain resumes at its chunk')
+
+    # 7d3. A reorder that keeps the album at the cursor: albums 0 and cap + 1 swap (a sort change can do that). The chain starts again from 0, so album cap + 1 is processed before any line is written.
+    m = home_machine(cap + 2, missing=range(cap + 2))
+    scan(m, 200)
+    m.setword(PSYMS['cb'] + 4 * 5, cap)
+    fired(m, 'hc_on_poll', 400000000)
+    m.showlist[0], m.showlist[cap + 1] = m.showlist[cap + 1], m.showlist[0]
+    scan(m, 200)
+    expect(build_state(m)['total'] == cap and [t for t, _ in build_jobs(m)][0] == f'/mnt/mmc/m/{cap + 1}/1.flac' and 'covers' not in m.fs[STAMP].decode(),
+           'two albums swapped around an unchanged cursor album: the chain starts again from the first, album 4001 is queued, no line yet')
+
+    # 7d3b. The shelf's order cannot be made for the next chunk (no memory): not scanned in the stored order (the cursor fits only the shelf's), deferred; the next foreground resumes it.
+    m = home_machine(cap + 2, missing=range(cap + 2))
+    m.fs[RECENT] = pod_recent.dump([(pod_recent.identity(f'Album {cap + 1}'), key_of(cap + 1), 1, f'Album {cap + 1}', f'Artist {cap + 1}', '/x/a.flac')])
+    scan(m, 200)
+    expect([t for t, _ in build_jobs(m)][:2] == [f'/mnt/mmc/m/{cap + 1}/1.flac', '/mnt/mmc/m/0/1.flac'], 'the shelf album first, then the stored order')
+    m.setword(PSYMS['cb'] + 4 * 5, cap)
+    m.calloc_fail_size = 4 * (cap + 2)
+    fired(m, 'hc_on_poll', 400000000); scan(m, 200)
+    expect(build_state(m)['jobs'] == 0 and not pill_up(m) and 'covers' not in m.fs[STAMP].decode(), 'no memory for the shelf order: no chunk in another order, no line, the pill hides')
+    m.calloc_fail_size = 0
+    hook(m, 'hc_on_background'); hook(m, 'hc_on_foreground'); scan(m, 200)
+    expect(sorted(t for t, _ in build_jobs(m)) == sorted([f'/mnt/mmc/m/{cap - 1}/1.flac', f'/mnt/mmc/m/{cap}/1.flac']), f'the next foreground resumes in the shelf order: albums {cap - 1} and {cap}, none skipped ({build_jobs(m)[:3]})')
+
+    # 7d4. The UI thread's cost: the first hc_on_start callback of a chunk (album query + copy + signature + order + the first HC_BATCH step), a later scan step, and the silent probe (hc_expect, then the same query at HC_START_MS).
+    for n in (1000, 4000):
+        m = home_machine(n, start=False, missing=range(n)); m.fs[CFSORT_FILE] = b'1\n'   # Album Order by artist: Home does not sort
+        m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+        m.count(); fired(m, 'hc_on_start', 900000000); first = m.icount
+        fired(m, 'hc_on_start', 900000000); later = m.icount
+        m = home_machine(n, stamp=stamp_text(n), start=False); m.count()
+        m.call(PSYMS['homecover_start'], a0=m.window, count=2000000); armed = m.icount
+        fired(m, 'hc_on_start', 900000000); probe = m.icount
+        print(f'  Home, {n} albums: first chunk callback {first:,}, later scan step {later:,}, probe {probe:,} (arming it {armed:,}) payload instructions')
+        expect(first < 400 * n and later < 50000 and probe < 400 * n, f'{n} albums: one UI-thread callback stays bounded ({first:,} / {later:,} / {probe:,})')
+    # ... and a truncated chunk: the heaviest scan step (the last, which fingerprints the order) and the next chunk's first callback (query, copy, fingerprint check)
+    n = cap + 2
+    m = home_machine(n, missing=range(n)); m.fs[CFSORT_FILE] = b'1\n'; m.count()
+    steps = []
+    for _ in range(200):
+        new = fired(m, 'hc_on_start', 900000000); steps.append(m.icount)
+        if not [c for c in new if c[0] == 'timer_add' and c[1] == START]: break
+    m.setword(PSYMS['cb'] + 4 * 5, cap)
+    fired(m, 'hc_on_poll', 400000000)
+    fired(m, 'hc_on_start', 900000000); resume = m.icount
+    print(f'  Home, {n} albums truncated: last scan step {steps[-1]:,}, heaviest step {max(steps):,}, next chunk first callback {resume:,} payload instructions')
+    expect(build_state(m)['total'] == 2 and max(steps) < 400 * n and resume < 400 * n, f'a truncated chunk and its resume stay bounded ({max(steps):,} / {resume:,})')
+
+    # 7e. An empty album list may be a failed query (stock cannot tell): stamped as 0 albums (no real library matches it) and asked again, silently, at every foreground.
+    m = home_machine(0, stamp=None); scan(m)
+    expect(m.fs[STAMP].decode() == 'covers 0 00000000\ntracks 0 00000000\n' and not pill_up(m), 'an empty library is stamped 0/0 and the pill hides')
+    for _ in range(2):
+        hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
+        expect(not pill_up(m) and adds(new) == [('timer_add', START, START_MS)], 'the next foreground asks again, without the pill')
+        new = fired(m, 'hc_on_start', 400000000)
+        expect(not pill_up(m) and not texts(m, new, waiting=True) and 'pthread_create' not in m.names() and not adds(new), 'a still empty library: no pill, no scan, nothing more')
+    m = home_machine(3, missing={0, 1, 2}, start=False)
+    albums, m.showlist = m.showlist, []
+    m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
+    scan(m)
+    expect(m.fs[STAMP].decode().startswith('covers 0 ') and not pill_up(m), 'the album query failed (empty): stamped 0/0, no pill')
+    m.showlist = albums
+    hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
+    expect(not pill_up(m) and adds(new) == [('timer_add', START, START_MS)], 'the next foreground asks again silently')
+    new = scan(m)
+    expect(pill_up(m) and build_state(m)['total'] == 3 and texts(m, new) == ['Preparing covers 0/3'], 'the albums are there now: 0/0 matches no library, the pill shows and the covers are built')
+
+    # 8. Background in the waiting state: the timer goes, the pill hides; the foreground shows it again.
+    m = home_machine(6, stamp=None)
+    new = hook(m, 'hc_on_background')
+    expect(('timer_remove', 0x777) in new and not pill_up(m), 'background while waiting: timer removed, pill hidden')
+    new = hook(m, 'hc_on_foreground')
+    expect(pill_up(m) and adds(new) == [('timer_add', START, RESUME_MS)], 'foreground: waiting again, 1 s out')
+
+    # 9. The held worker at 5 s: the pill hides (the next foreground offers again).
+    m = home_machine(6, stamp=None)
+    m.call(PSYMS['cc_build_open'], a0=6, a1=0, count=2000000)
+    fired(m, 'hc_on_start', 4000000)
+    expect(not pill_up(m), 'a held worker: the waiting pill hides')
+
+    # 10. No card: nothing is expected.
+    m = Machine(); m.card_mounted = False
+    for w in ('home_window', 'pod_cache_pill', 'pod_cover_prog', 'pod_cache_fill', 'pod_cache_x', 'pod_listview'): m.widget(w)
+    m.call(PSYMS['homecover_start'], a0=m.widgets['home_window'], count=2000000)
+    expect(not [c for c in m.calls if c[0] in ('timer_add', 'widget_set_visible')], 'no card: no pill, no timer')
+
+    # 11. Clear Cover Cache forgets the covers line, Clear Track Durations the tracks line; the pill is waiting at the next Home open.
+    m = home_machine(3, stamp=stamp_text(3), start=False)
+    m.call(PSYMS['homecover_stamp_drop'], a0=1, count=2000000)
+    expect(m.fs[STAMP].decode() == stamp_text(3, covers=False), 'drop(1) keeps the tracks line only')
+    m.call(PSYMS['homecover_stamp_drop'], a0=2, count=2000000)
+    expect(STAMP not in m.fs, 'drop(2) leaves no line: the file goes')
+    m = home_machine(2, stamp=stamp_text(2), start=False)
+    m.fs['/mnt/mmc/.m1plus/covers'] = b''
+    m.call(PSYMS['homecover_clear'], count=2000000)
+    expect(m.fs[STAMP].decode() == stamp_text(2, covers=False), 'Clear Cover Cache drops the covers line')
+    m = home_machine(2, stamp=stamp_text(2), start=False); m.confirm_yes = True
+    m.call(PSYMS['durations_clear_ask'], count=3000000)
+    expect(m.fs[STAMP].decode() == stamp_text(2, tracks=False), 'Clear Track Durations drops the tracks line')
+
+
+SECTIONS = [tests, dots_tests, pill_tests, rebuild_tests, check_tests, resume_tests, clear_tests, cache_tests, covlist_tests, files_tests]
 
 
 def run(ctx):

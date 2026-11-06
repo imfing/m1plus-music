@@ -1,4 +1,4 @@
-# The Line Out pill (`patch/lineout.c`, `patch/lineout.h`, `test/pod/lineout.py`; hook 20 in [payload](payload.md))
+# The Line Out pill and the sync icon (`patch/lineout.c`, `patch/lineout.h`, `test/pod/lineout.py`; hook 20 in [payload](payload.md))
 
 **Behaviour.** While Line Out is on (stock's byte `0xa05aa7`), the status bar shows an amber pill with a black "LO" in place of stock's white "LO" text, and the same in the
 pull-down's own bar copy. Always on: no setting. Everything else is stock: the volume glyph beside it, the volume number in PO mode, the pull-down's Output tile, and the "Line Out sets max volume" confirm.
@@ -18,3 +18,20 @@ the same page-init dispatcher as the battery hook). Each site is pinned with its
 (not in `ACCENT_*` or the glyph prefixes) and Light Mode's flip leaves it (it has colour). `tools/preview.py` writes `lineout.png` (bar off, bar on, the pull-down's bar on).
 
 **Limits.** Device untested ([device checks](device-checks.md) LO-01). The pill is an asset swap, so the pull-down's bar shows it up to a second after Line Out changes, as stock's text did.
+
+## Sync icon
+
+**Behaviour.** While the shared cover worker runs a set with work left (a cover build, Rebuild Covers or a track-duration pass, whichever page owns it: Home, Albums, Songs, Cover Flow, an album page), the status bar shows a static white sync glyph
+(Lucide `refresh-cw`, 18 x 18, 1.5 px stroke), and the pull-down's bar copy shows it too. It is the same glyph colour as the other white status icons (not Accent-tinted; Light Mode flips it with them). Hidden otherwise. No setting.
+
+**Implementation.** No new hook: `lo_set_text` (hook 20, both bars' 1 s timers) first looks up `pod_sync` in the bar (`widget_lookup(bar, "pod_sync", 1)`, the bar is `label_volume`'s parent's parent, `LO_W_PARENT` twice) and sets it visible and sensitive together when
+`cc_build_active()` (`patch/covercache.c`: `running`, not `cancelled`, `done < total`, a cache or duration set rather than the Pod cover pane's key-0 file job; volatile reads, no lock, no file) is true and the kill switch is absent, hidden and insensitive otherwise.
+It sets only on a change (`widget_get_visible` differs), so a steady state costs no relayout. A bar without `pod_sync` (an older asset) is left as it is. Cost per tick per bar: one extra lookup and a handful of loads. Not on the boot path.
+The widget is added by `tools/statusbar.py` `apply` to both copies (`test/pod/assets.py` compares them): an `image` (`pod_bar_sync`, 18 px wide, `draw_type center`, hidden and insensitive) in `view_bar_right` right after `img_btclass`. Image `pod_bar_sync` (`tools/mod_icons.py` `SYNC_BAR`, committed PNG).
+
+**Placement.** Right group, between the Bluetooth glyph and Wi-Fi (the layouter skips it while hidden, so nothing moves otherwise). Left of the Bluetooth glyph itself is not possible: the stock `img_btclass` box is 47 px wide with its glyph at the right
+end (ink x 35..47), so the slot left of the box lies over the clock text. Shown, the icon moves Bluetooth's glyph 22 px left: with Bluetooth and Wi-Fi lit the ink starts clear of the 12 h and 24 h clock (`test/pod/lineout.py`); with the Battery Percentage at 4 characters and the Screenshot camera counting down as well it would not (rare, accepted).
+
+**Priority.** The worker runs at nice 10, see [Home cover build](homecover.md).
+
+**Limits.** Device untested ([device checks](device-checks.md) HOME-05).

@@ -884,8 +884,7 @@ static void oa_paint_rows(void *canvas, int off) {
         const pn_lyr_t *c = pn_lyr_get(r);
         if (oa.press == r + 1) az_fill_h(canvas, 0, y, y + SE_ROW_H - 1, 320, LIST_PRESS, SE_LIST_H);
         az_fill_h(canvas, OA_ROW_X, y + SE_ROW_H - 1, y + SE_ROW_H, OA_ROW_END - OA_ROW_X, LIST_HAIR, SE_LIST_H);
-        if (c && (c->synced || oa_row_saved(r)) && y + SE_TITLE_Y >= 0 &&
-            y + SE_TITLE_Y + LIST_TITLE_H <= SE_LIST_H)
+        if (c && (c->synced || oa_row_saved(r)) && y + SE_TITLE_Y >= 0 && y + SE_TITLE_Y + LIST_TITLE_H <= SE_LIST_H)
             oa_badge_fill(canvas, OA_ROW_END - oa.bw, y + SE_TITLE_Y + (LIST_TITLE_H - OA_BADGE_H) / 2, oa.bw,
                           oa_row_saved(r) ? OA_BADGE_ON_RGB : OA_BADGE_RGB);
     }

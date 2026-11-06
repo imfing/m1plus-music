@@ -268,12 +268,14 @@ void grid_paint(void *canvas, grid_t *g, int first, int last, int origin_y, int 
     int a, pass;
     for (a = first; a < last; ++a)
         grid_blit(canvas, g, tile_of(ctx, a), grid_cell_x(a), grid_cell_y(a, origin_y), view_h);
-    for (pass = 0; pass < 2; ++pass) { /* albums, then artists: one text style at a time */
+    for (
+        pass = 0; pass < 2;
+        ++pass) { /* albums, then artists: one text style at a time, cut at the view's edges by the scroll_view's clip */
         widget_prepare_text_style(pass ? g->st_sub : g->st_title, canvas);
         for (a = first; a < last; ++a)
             grid_text(canvas, tile_of(ctx, a), pass, grid_cell_x(a),
                       grid_cell_y(a, origin_y) + GRID_COVER + GRID_TITLE_GAP + (pass ? GRID_TITLE_H : 0), GRID_COVER,
-                      pass ? GRID_SUB_H : GRID_TITLE_H, view_h);
+                      pass ? GRID_SUB_H : GRID_TITLE_H, 0);
     }
 }
 
@@ -306,7 +308,9 @@ void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int 
             }
         }
     }
-    for (pass = 0; pass < 2; ++pass) { /* titles, then subtitles: one text style at a time */
+    for (
+        pass = 0; pass < 2;
+        ++pass) { /* titles, then subtitles: one text style at a time, cut at the view's edges by the scroll_view's clip */
         widget_prepare_text_style(pass ? st_sub : st_title, canvas);
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, tile_of(ctx, r), pass, LIST_TEXT_X + shift,
@@ -314,7 +318,8 @@ void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int 
                           (pass                   ? LIST_SUB_Y
                            : tile_of(ctx, r)->mid ? (LIST_ROW_H - LIST_TITLE_H) / 2
                                                   : LIST_TITLE_Y),
-                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV : LIST_TEXT_W) - shift, pass ? LIST_SUB_H : LIST_TITLE_H, view_h);
+                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV : LIST_TEXT_W) - shift,
+                      pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
 }
 

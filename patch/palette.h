@@ -5,7 +5,11 @@
  */
 #pragma once
 
-enum { PAL_BLACK = 0, PAL_LIGHT = 1, PAL_TINTED = 2 }; /* the effective background (Tinted needs an accent: Tinted + Neutral is Black) */
+enum {
+    PAL_BLACK = 0,
+    PAL_LIGHT = 1,
+    PAL_TINTED = 2
+}; /* the effective background (Tinted needs an accent: Tinted + Neutral is Black) */
 /* The accent: the saved index (appearance-accent), in the order of tools/palette.py ACCENTS and the picker. Neutral is stock's colours. */
 enum { PAL_NEUTRAL = 0, PAL_RED, PAL_ORANGE, PAL_GREEN, PAL_TEAL, PAL_PURPLE, PAL_CHAMPAGNE, PAL_ACCENTS };
 

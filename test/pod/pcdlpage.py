@@ -489,7 +489,8 @@ def played_tests(ctx):
     # the empty page: no rows, no "..."
     m = page(lambda mm: mm.put(f'{RP}/Fresh/.show', f'M1PLUS-SHOW 1\ntitle=Fresh\nfeed={PCS.F["three"]}\nimage=\nchecked=0\n'.encode()), lambda mm: None)
     to_page(m)
-    expect(flags(m, 'label_status') == (1, 1) and flags(m, 'btn_more') == (0, 0) and m.props.get((m.view, 'visible')) == 0 and m.wtext.get(m.widgets['label_status'], 'No downloads') == 'No downloads', 'nothing downloaded and nothing under way: "No downloads", no "..."')
+    expect(flags(m, 'label_status')[0] == 0 and flags(m, 'btn_more') == (0, 0) and m.props.get((m.view, 'visible')) == 1 and 'No downloads' in PCP.hint(m), 'nothing downloaded and nothing under way: the header and storage line stay, "No downloads" is painted under them, no "..."')
+    expect(m.props.get((m.sv, 'virtual_h'), 0) <= 400, 'and the empty page fits the view: it does not scroll')
 
 
 def off_tests(ctx):

@@ -370,7 +370,9 @@ static int mb_local_alive(void) {
 static int mb_radio(void) {
     if (rd_running()) return 1;
     if (!rd_list()->n || rd_at() >= rd_list()->n || mb_local_alive()) return 0;
-    return rd_state() == RD_ERROR || (rd_state() == RD_STOPPED && rd_owns_bar()); /* a Stopped station stays on the bar (a tap plays it again) until a local track starts */
+    return rd_state() == RD_ERROR ||
+           (rd_state() == RD_STOPPED &&
+            rd_owns_bar()); /* a Stopped station stays on the bar (a tap plays it again) until a local track starts */
 }
 
 /* The station's favicon address ("" for none). */
@@ -431,7 +433,8 @@ static void mb_radio_cover(const rd_list_t *l, int at) {
     if (!ok) {
         for (i = 0; i < MB_ART * MB_ART; ++i) px[i] = MB_RADIO_CARD;
         memset(g, 0, sizeof g);
-        if (cc_decode(mb.win, "pod_ic_rd_art", 0, MB_GLYPH, 1, g)) { /* decoded over black: per channel the lighter of the glyph and the card */
+        if (cc_decode(mb.win, "pod_ic_rd_art", 0, MB_GLYPH, 1,
+                      g)) { /* decoded over black: per channel the lighter of the glyph and the card */
             o = (MB_ART - MB_GLYPH) / 2;
             for (y = 0; y < MB_GLYPH; ++y)
                 for (x = 0; x < MB_GLYPH; ++x) {

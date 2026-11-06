@@ -126,7 +126,7 @@ def folder_machine(window=0x20001000, usb=False):
     m.setword(sv + 8, 310)
     m.widgets['folders_scrollview'] = sv
     for off, v in ((4, 0), (8, 320), (0xc, VIEW_H), (0x44, sv)): m.setword(view + off, v)
-    m.setword(m.widgets['label_title'] + 8, 156); m.setword(m.widgets['sg_title'] + 8, 250)
+    m.setword(m.widgets['label_title'] + 8, 156); m.setword(m.widgets['sg_title'] + 8, O['SG_TITLE_W'])
     m.mem_geometry, m.live_scroll = True, frozenset({sv})
     for n, t in (('btn_play', 'Play'), ('btn_shuffle', 'Shuffle'), ('sg_add', 'Add to Playlist'), ('sg_del', 'Delete')): m.wtext[m.widgets[n]] = t
     m.sv, m.view = sv, view

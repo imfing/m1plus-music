@@ -49,16 +49,18 @@ songs_open_artist(void *artist); /* patch/songs.c: our Songs page on all the art
  */
 
 /* cos and sin of 0 to 90 degrees in 3.75 degree steps, 16.16 (a shelf turns its side covers cfg_t.turn steps) */
-static const int cf_cos[25] = {65536, 65396, 64975, 64277, 63303, 62058, 60547, 58777, 56756, 54491, 51993, 49273, 46341,
-                               43211, 39896, 36410, 32768, 28986, 25080, 21066, 16962, 12785, 8554,  4286,  0};
-static const int cf_sin[25] = {0,     4286,  8554,  12785, 16962, 21066, 25080, 28986, 32768, 36410, 39896, 43211, 46341,
-                               49273, 51993, 54491, 56756, 58777, 60547, 62058, 63303, 64277, 64975, 65396, 65536};
+static const int cf_cos[25] = {65536, 65396, 64975, 64277, 63303, 62058, 60547, 58777, 56756,
+                               54491, 51993, 49273, 46341, 43211, 39896, 36410, 32768, 28986,
+                               25080, 21066, 16962, 12785, 8554,  4286,  0};
+static const int cf_sin[25] = {0,     4286,  8554,  12785, 16962, 21066, 25080, 28986, 32768,
+                               36410, 39896, 43211, 46341, 49273, 51993, 54491, 56756, 58777,
+                               60547, 62058, 63303, 64277, 64975, 65396, 65536};
 
 /* cfg_t (a shelf's geometry) is in coverflow.h. */
-const cfg_t cf_portrait = {CF_VIEW_W, CF_VIEW_H, CF_CX, CF_TOP,     ART_SIZE, CF_EYE, CF_X1,
-                           CF_XS,     CF_Z1,     CF_ZS, CF_REFLECT, 0,        CF_TURN, 0,     0};
-const cfg_t cf_land = {CFL_W,  CFL_H, CFL_CX, CFL_TOP,    ART_SIZE, CF_EYE, CFL_X1,
-                       CFL_XS, CF_Z1, CF_ZS,  CF_REFLECT, 1,        CF_TURN, 0,     0};
+const cfg_t cf_portrait = {CF_VIEW_W, CF_VIEW_H, CF_CX,      CF_TOP, ART_SIZE, CF_EYE, CF_X1, CF_XS,
+                           CF_Z1,     CF_ZS,     CF_REFLECT, 0,      CF_TURN,  0,      0};
+const cfg_t cf_land = {CFL_W, CFL_H, CFL_CX,     CFL_TOP, ART_SIZE, CF_EYE, CFL_X1, CFL_XS,
+                       CF_Z1, CF_ZS, CF_REFLECT, 1,       CF_TURN,  0,      0};
 
 /* A right-hand cover t (16.16, >= 0) from the visual position: centre xc and depth zc (1/16 px),
  * rotation c, s (16.16) and brightness (of 256). Left covers mirror it. */
@@ -81,12 +83,12 @@ static void pose(const cfg_t *g, int t, pose_t *p) {
         int e = t - CF_ONE;
         p->xc = 16 * g->x1 + (16 * g->xs * e >> 16);
         p->zc = 16 * g->z1 + (16 * g->zs * e >> 16);
-        p->bright = e < CF_ONE ? CF_BRIGHT1 - ((CF_BRIGHT1 - CF_BRIGHT2) * e >> 16)
+        p->bright = e < CF_ONE       ? CF_BRIGHT1 - ((CF_BRIGHT1 - CF_BRIGHT2) * e >> 16)
                     : e < 2 * CF_ONE ? CF_BRIGHT2 * (2 * CF_ONE - e) >> 16
                                      : 0;
     }
     if (g->tail) /* the iPod page's longer shelf: a light dim to g->tail at three out, gone by 3.5 */
-        p->bright = t < 3 * CF_ONE ? 256 - (int)((256 - g->tail) * (unsigned)t / (3 * CF_ONE))
+        p->bright = t < 3 * CF_ONE       ? 256 - (int)((256 - g->tail) * (unsigned)t / (3 * CF_ONE))
                     : t < 7 * CF_ONE / 2 ? g->tail * (7 * CF_ONE - 2 * t) >> 16
                                          : 0;
 }
@@ -148,7 +150,8 @@ static void column(shelf_t *f, int col, const unsigned *tex, int h, int bright) 
     int y = top >> 8, end = (bottom + 255) >> 8, last = end < g->h ? end : g->h;
     int first = y, final = end - 1; /* the rows the edges cross */
     int v = (((y << 8) + 128 - top) >> 4) * step >> 4, pitch = f->rs; /* v: 16.16 texel row */
-    unsigned *px, haze = shade(g->bg, 256 - (unsigned)bright); /* the fade: towards black, or towards bg (still opaque) */
+    unsigned *px,
+        haze = shade(g->bg, 256 - (unsigned)bright); /* the fade: towards black, or towards bg (still opaque) */
     if (y < 0) v -= y * step, y = 0;
     px = d + y * pitch;
     while (y < last) {
@@ -382,7 +385,7 @@ static void stop_timer(void) {
     cf.timer = 0;
 }
 
-/* This page's job set released: a running worker is cancelled and joined (bounded by one album's art). */
+/* This page's job set released: a running worker is cancelled (joined if it has finished, else left to exit on its own, cc_build_stop). */
 static void build_end(void) {
     if (cf.owns) cc_build_stop();
     cf.owns = 0;
@@ -1133,7 +1136,7 @@ static int on_poll(const void *unused) {
     (void)unused;
     cf.timer = 0;
     if (cc_build_done() >= cc_build_total()) {
-        build_end(); /* joins the thread's last steps */
+        build_end(); /* the thread has finished: joined and freed */
         to_covers();
         return RET_OK;
     }
@@ -1152,7 +1155,7 @@ static int on_cancel(void *ctx, void *e) {
     (void)e;
     if (cf.screen != CF_PREPARING) return RET_OK;
     stop_timer();
-    build_end(); /* cancels and joins: what was written stays, the rest is left as it was */
+    build_end(); /* what was written stays, the rest is left as it was */
     to_covers();
     return RET_OK;
 }
@@ -1278,12 +1281,36 @@ static int load_artist(void) {
     return (int)cf.count;
 }
 
+static int start_build(void);
+
+static void show_preparing(void) {
+    cf.screen = CF_PREPARING;
+    show(cf.covers, 0);
+    show(cf.status, 1);
+    show(cf.cancel, 1);
+    widget_set_tr_text(cf.status, "Preparing covers...");
+}
+
+/* The worker of a page left a moment ago is still inside its last album (cc_build_stop orphans it): ask again. */
+static int on_retry(const void *unused) {
+    (void)unused;
+    cf.timer = 0;
+    if (cf.screen == CF_PREPARING && !start_build()) to_covers();
+    return RET_OK;
+}
+
 /* Jobs for the albums with no cache file yet. 1 when a
- * build is running and the preparing screen is up, 0 when there is nothing to build (or no card, no space, no thread,
+ * build is running (or about to start, behind a stopped worker's last album) and the preparing screen is up, 0 when there is nothing to build (or no card, no space, no thread,
  * or the shared worker is busy with another page's set). */
 static int start_build(void) {
     unsigned n = album_count(), i;
-    if (!cc_build_open(n, CC_MISSING)) return 0;
+    if (!cc_build_open(n, CC_MISSING)) {
+        if (!cc_build_orphan()) return 0;
+        cf.timer = timer_add(on_retry, (void *)0, POLL_MS);
+        if (!cf.timer) return 0;
+        show_preparing();
+        return 1;
+    }
     cf.owns = 1;
     for (i = 0; i < n; ++i) {
         unsigned key = key_at(i);
@@ -1298,11 +1325,7 @@ static int start_build(void) {
         build_end(); /* no completion callback possible: stop the worker, show what is cached */
         return 0;
     }
-    cf.screen = CF_PREPARING;
-    show(cf.covers, 0);
-    show(cf.status, 1);
-    show(cf.cancel, 1);
-    widget_set_tr_text(cf.status, "Preparing covers...");
+    show_preparing();
     return 1;
 }
 

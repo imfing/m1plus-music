@@ -799,7 +799,7 @@ static void se_paint_rows(void *canvas) {
         for (r = r0; r <= r1; ++r) {
             int end = se.rows[r].kind == SE_SONG ? SE_END_PLAIN : SE_END_CHEV;
             grid_text(canvas, se_tile(r), pass, SE_TEXT_LEFT, r * SE_ROW_H - off + (pass ? SE_SUB_Y : SE_TITLE_Y),
-                      end - SE_TEXT_LEFT, pass ? LIST_SUB_H : LIST_TITLE_H, SE_LIST_H);
+                      end - SE_TEXT_LEFT, pass ? LIST_SUB_H : LIST_TITLE_H, 0);
         }
     }
 }
@@ -824,12 +824,12 @@ static void se_paint_recent(void *canvas) {
         widget_prepare_text_style(pass ? se.st_sub : se.st_title, canvas);
         if (pass)
             grid_text(canvas, &se.rt[SE_REC_MAX], 1, SE_REC_TEXT_X, SE_REC_HEAD_H - LIST_SUB_H - 6 - off,
-                      SE_REC_TEXT_END - SE_REC_TEXT_X, LIST_SUB_H, SE_LIST_H);
+                      SE_REC_TEXT_END - SE_REC_TEXT_X, LIST_SUB_H, 0);
         else
             for (i = 0; i < se.nrec; ++i)
                 grid_text(canvas, &se.rt[i], 0, SE_REC_TEXT_X,
                           SE_REC_HEAD_H + i * SE_REC_ROW_H + (SE_REC_ROW_H - LIST_TITLE_H) / 2 - off,
-                          SE_REC_TEXT_END - SE_REC_TEXT_X, LIST_TITLE_H, SE_LIST_H);
+                          SE_REC_TEXT_END - SE_REC_TEXT_X, LIST_TITLE_H, 0);
     }
 }
 

@@ -578,7 +578,7 @@ def rebuild_tests(ctx):
     src = open(os.path.join(ROOT, 'patch', 'covercache.c')).read()
     i = src.index('static void build_art')
     body = src[i:src.index('static void *cc_worker')]
-    expect('cc_path(pick, sizeof pick, j->key, ".pick")' in body and body.index('".pick"') < body.index('pthread_mutex_lock'), 'build_art looks for the .pick marker before it takes the parser\'s lock')
+    expect('cc_path(pick, sizeof pick, j->key, ".pick")' in body and body.index('".pick"') < body.index('art_make('), 'build_art looks for the .pick marker before it extracts')
     expect('if (!access(pick, F_OK) && !access(dst, F_OK))\n        return;' in body, 'a marker with its cache file present ends the job: no extraction, no marker, no replacement (a marker whose cache file is gone does not)')
 
 

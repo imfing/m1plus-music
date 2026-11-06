@@ -18,8 +18,8 @@
  *              virtual_h is set to match (the list_view layouter sums its children's heights into it too); the scroll_view shows it through its
  *              GRID_VIEW_H window at yoffset. The paint moves the canvas origin down by yoffset, so what it draws is in window coordinates (the
  *              top of the window is 0) and only what intersects [0, GRID_VIEW_H) is drawn: a cover with canvas_draw_image (clipped by hand to
- *              the window; the scroll_view also sets the canvas clip to its rectangle), text with canvas_draw_text_in_rect, only when it lies
- *              wholly inside the window.
+ *              the window; the scroll_view also sets the canvas clip to its rectangle), text with canvas_draw_text_in_rect, cut at the window's
+ *              edges by that clip.
  *   tiles      GRID_TILES (12) entries. A tile is the album's cover reduced from the Cover Flow cache file (168 px,
  *              box filter) to the mode's cover size (the finished bitmap is kept, not the JPEG). PAINT NEVER DECODES:
  *              it draws the resident tiles and the placeholder for the rest. A page-owned timer (al_on_load, armed
@@ -374,7 +374,7 @@ static void al_retry(void) {
     if (any) al_kick();
 }
 
-/* The page's build set released: a running worker is cancelled and joined (bounded by one album's art). */
+/* The page's build set released: a running worker is cancelled (joined if it has finished, else left to exit on its own, cc_build_stop). */
 static void al_build_end(void) {
     if (al.build_timer) timer_remove(al.build_timer);
     al.build_timer = 0;
@@ -407,7 +407,12 @@ static int al_on_build_start(const void *unused) {
     al.build_timer = 0;
     if (!al.view || !al.count) return RET_OK;
     if (!al.scanning) {
-        if (al.own || al.scanned || !cc_build_open(al.count, CC_MISSING)) return RET_OK;
+        if (al.own || al.scanned) return RET_OK;
+        if (!cc_build_open(al.count, CC_MISSING)) {
+            if (cc_build_orphan()) /* a worker stopped by the page before is still inside a job: ask again shortly */
+                al.build_timer = timer_add(al_on_build_start, (void *)0, AL_BUILD_MS);
+            return RET_OK;
+        }
         al.own = al.scanning = 1;
         al.scan_cur = 0, al.scan_centre = (unsigned)al_first();
     }
@@ -544,7 +549,7 @@ static int al_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (al.more_timer) timer_remove(al.more_timer);
-    al_build_end(); /* the timer removed, the worker cancelled and joined */
+    al_build_end(); /* the timer removed, the worker cancelled (cc_build_stop) */
     grid_free(&al.g);
     if (al.albums) deque_destroy(al.albums);
     if (al.artist_row) deque_destroy(al.artist_row);

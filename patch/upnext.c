@@ -43,7 +43,8 @@ int upnext_add(void *rows, int after) {
     unsigned n = rows ? deque_size(rows) : 0, size = q ? deque_size(q) : 0, i;
     int pos = mclGetPlayPos(), t, r;
     if (!n) return UPNEXT_EMPTY;
-    if (rd_running()) return UPNEXT_STREAM; /* a station connects, plays or is paused: Radio sets no stock play type, so up_play_type() cannot see it, and the local queue (if any) is dormant */
+    if (rd_running())
+        return UPNEXT_STREAM; /* a station connects, plays or is paused: Radio sets no stock play type, so up_play_type() cannot see it, and the local queue (if any) is dormant */
     for (i = 0; i < n; ++i) { /* every row: a local song whose file is there */
         const char *path = cc_str(deque_at(rows, i), REC_PATH);
         if (pc_is_path(path)) return UPNEXT_PODCAST;

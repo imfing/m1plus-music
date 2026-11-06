@@ -2098,7 +2098,7 @@ static void dp_paint_rows(void *canvas, int s) {
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, dp_tile(r), pass, LIST_TEXT_X,
                       DP_ROWS_Y + r * LIST_ROW_H - s + (pass ? LIST_SUB_Y : LIST_TITLE_Y), LIST_TEXT_W,
-                      pass ? LIST_SUB_H : LIST_TITLE_H, DP_VIEW_H);
+                      pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
 }
 

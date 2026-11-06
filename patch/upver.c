@@ -14,6 +14,8 @@ char up_own[UP_TAG] = M1PLUS_VERSION;
 int up_dev __attribute__((section(".data.up_dev"))) =
     M1PLUS_DEV; /* (a zero would be .bss, which the payload does not have) */
 char up_repo[48] = M1PLUS_REPO;
+char up_about[UP_TAG] = M1PLUS_TAG;
+char up_base[UP_BASE] __attribute__((section(".scratch")));
 
 static unsigned up_len(const char *s) {
     unsigned n = 0;
@@ -77,6 +79,101 @@ int up_redirect_tag(const char *loc, const char *repo, char *out, unsigned size)
     return 1;
 }
 
+int up_devtag(const char *s) {
+    static const char head[] = "V2.1z";
+    unsigned i, n;
+    if (!s) return 0;
+    for (i = 0; head[i]; ++i)
+        if (s[i] != head[i]) return 0;
+    for (n = 0; s[i + n] >= 'A' && s[i + n] <= 'Z'; ++n) {
+    }
+    return n >= 1 && n <= 12 && !s[i + n];
+}
+
+int up_chan_read(const char *path, char *base) {
+    char buf[UP_BASE + 32];
+    unsigned got = 0, n, i;
+    int fd = open(path, O_RDONLY, 0), r;
+    base[0] = 0;
+    if (fd < 0) return 0;
+    while (got < sizeof buf && (r = read(fd, buf + got, sizeof buf - got)) > 0) got += (unsigned)r;
+    close(fd);
+    if (got == sizeof buf) return -1; /* longer than any address it may hold */
+    n = got;
+    while (n &&
+           (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ' || buf[n - 1] == '\t' || buf[n - 1] == '/'))
+        --n;
+    if (n >= UP_BASE) return -1;
+    for (i = 0; i < n; ++i)
+        if (buf[i] <= ' ' || buf[i] > '~') return -1;
+    buf[n] = 0;
+    for (i = 0; "http://"[i] && buf[i] == "http://"[i]; ++i) {
+    }
+    if (i < 7) {
+        for (i = 0; "https://"[i] && buf[i] == "https://"[i]; ++i) {
+        }
+        if (i < 8) return -1;
+    }
+    if (n == i) return -1; /* no host */
+    for (i = 0; i <= n; ++i) base[i] = buf[i];
+    return 1;
+}
+
+int up_chan_tag(const char *loc, const char *base, char *out, unsigned size) {
+    static const char mid[] = "/releases/tag/";
+    unsigned v[3], i, n;
+    if (!loc || !base || !out || size < UP_TAG) return 0;
+    n = up_len(base);
+    for (i = 0; i < n; ++i)
+        if (loc[i] != base[i]) return 0;
+    loc += n;
+    for (i = 0; mid[i]; ++i)
+        if (loc[i] != mid[i]) return 0;
+    loc += i;
+    if (!up_parse(loc, v) && !up_devtag(loc)) return 0;
+    n = up_len(loc);
+    for (i = 0; i <= n; ++i) out[i] = loc[i];
+    return 1;
+}
+
+int up_chan_offer(const char *tag, const char *about) {
+    unsigned v[3], i;
+    if (!up_parse(tag, v) && !up_devtag(tag)) return 0;
+    for (i = 0; tag[i] && tag[i] == about[i]; ++i) {
+    }
+    return tag[i] == about[i] ? 1 : 2;
+}
+
+int up_source(void) { return up_chan_read(UP_CHAN_FILE, up_base) < 0 ? -1 : 0; }
+
+void up_url(int what, const char *tag, char *out, unsigned size) {
+    if (up_base[0]) {
+        if (what == UP_URL_LATEST)
+            snprintf(out, size, "%s/releases/latest", up_base);
+        else if (what == UP_URL_NOTES)
+            snprintf(out, size, "%s/releases/tags/%s", up_base, tag);
+        else
+            snprintf(out, size, "%s/releases/download/%s/update.bin", up_base, tag);
+    } else if (what == UP_URL_LATEST)
+        snprintf(out, size, "https://github.com/%s/releases/latest", up_repo);
+    else if (what == UP_URL_NOTES)
+        snprintf(out, size, "https://api.github.com/repos/%s/releases/tags/%s", up_repo, tag);
+    else
+        snprintf(out, size, "https://github.com/%s/releases/download/%s/update.bin", up_repo, tag);
+}
+
+int up_https_only(void) { return !up_base[0]; }
+
+int up_latest(const char *loc, char *tag, unsigned size) {
+    if (up_base[0]) return up_chan_tag(loc, up_base, tag, size) ? up_chan_offer(tag, up_about) : 0;
+    return up_redirect_tag(loc, up_repo, tag, size) ? up_offer(tag, up_own, up_dev) : 0;
+}
+
+int up_tag_ok(const char *tag) {
+    unsigned v[3];
+    return up_parse(tag, v) || up_devtag(tag);
+}
+
 /* Octal digits of a tar header field (spaces and NULs after them), -1 when it is anything else. */
 static long up_oct(const unsigned char *f, unsigned n) {
     long v = 0;
@@ -95,9 +192,9 @@ int up_info_ok(const char *path, const char *tag) {
     unsigned i, sum = 0, got = 0, size, w = 0;
     unsigned v[3];
     long n, chk;
-    int fd, r, ok = 0;
+    int fd, r, ok = 0, dev = up_devtag(tag);
     static const char pre[] = UP_MODEL "\n" UP_PKG_PREFIX;
-    if (!up_parse(tag, v)) return 0;
+    if (!dev && !up_parse(tag, v)) return 0;
     fd = open(path, O_RDONLY, 0);
     if (fd < 0) return 0;
     while (got < sizeof hdr && (r = read(fd, hdr + got, sizeof hdr - got)) > 0) got += (unsigned)r;
@@ -115,7 +212,10 @@ int up_info_ok(const char *path, const char *tag) {
             got = 0;
             while (got < size && (r = read(fd, body + got, size - got)) > 0) got += (unsigned)r;
             if (got == size) {
-                for (i = 0; pre[i]; ++i) want[w++] = pre[i];
+                for (i = 0; pre[i]; ++i) {
+                    want[w++] = pre[i];
+                    if (dev && pre[i] == '\n') break; /* a development package's line 2 is its tag */
+                }
                 for (i = 0; tag[i] && w < sizeof want - 2; ++i) want[w++] = tag[i];
                 want[w++] = '\n';
                 ok = size >= w;

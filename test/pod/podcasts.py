@@ -650,6 +650,7 @@ def page_machine(card=page_card, cls=None):
     m.sv, m.view = sv, view
     m.canvas = m.alloc(0x80); m.oy_canvas = m.canvas
     m.setword(m.widgets['label_title'] + 8, 156)
+    m.setword(m.widgets['pg_big'] + 8, O['SG_TITLE_W'])
     m.clock = 5000
     m.images['pc_atlas'] = atlas_image()
     m.images['pod_ic_dltile'] = atlas_image('pod_ic_dltile')
@@ -673,6 +674,11 @@ def paint(m, off=0):
     fn, ctx = m.bound[(m.view, O['EVT_AFTER_PAINT'])]
     m.call(fn, a0=ctx, a1=ev, count=400000000)
     return list(m.blits), list(m.texts), list(m.text_styles), list(m.fills)
+
+
+def hint(m, off=0):
+    """The empty page's hint as painted in the content (its wrapped lines in the dim 20 px grey style, joined), '' for none."""
+    return ' '.join(' '.join(t.split()) for t, _ in drawn(m, off, 'label_ps_cdim'))
 
 
 def paint_bottom(m):
@@ -1059,7 +1065,7 @@ def asset_tests(ctx):
     sv = lv.children[0]
     expect(sv.name == 'podcasts_scrollview' and [c.name for c in sv.children] == ['view_grid'] and sv.w == 310, 'the scroll_view holds the one content view')
     big = tree.find('pg_big')
-    expect(sv.children[0].name == 'view_grid' and [c.name for c in sv.children[0].children] == ['pg_big', 'ps_field'] and big.get('tr_text') == 'Podcasts' and big.get('sensitive') == 'false' and big.x == O['PP_TITLE_X'] and big.y == 0 and big.h == O['PP_TITLE_H']
+    expect(sv.children[0].name == 'view_grid' and [c.name for c in sv.children[0].children] == ['pg_big', 'ps_field'] and big.get('tr_text') == 'Podcasts' and big.get('sensitive') == 'false' and big.x == O['SG_TITLE_X'] and big.y == 0 and big.h == O['PP_TITLE_H']
            and big.get('style:normal:font_size') == str(O['PP_TITLE_PX']), 'the content view holds the large title (a label, as the Songs page\'s: it scrolls and is clipped with the content), insensitive')
     for name in ('label_status', 'img_nb_fade', 'label_row_title', 'label_row_sub', 'img_ah_tint', *[n for n, *_ in pod_ui.PS_STYLES]):
         w = tree.find(name)

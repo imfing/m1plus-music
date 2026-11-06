@@ -399,7 +399,7 @@ def build_podcasts_page(page):
     for w in (lv, sv):
         for st in ('normal', 'disable', 'focused'): w.set(f'style:{st}:bg_color', '#00000000')
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])   # the content: the payload sizes it to the level's rows
-    big = Widget('label', OFFSETS['PP_TITLE_X'], 0, SCREEN_W - 2 * OFFSETS['PP_TITLE_X'], OFFSETS['PP_TITLE_H'], [('name', 'pg_big'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])   # the large heading of the Shows, Downloads and Subscriptions levels (the Songs page's): a child of the content, so it scrolls and is clipped with it
+    big = Widget('label', OFFSETS['SG_TITLE_X'], 0, OFFSETS['SG_TITLE_W'], OFFSETS['PP_TITLE_H'], [('name', 'pg_big'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])   # the large heading of the Shows, Downloads and Subscriptions levels (the Songs page's): a child of the content, so it scrolls and is clipped with it
     styled(big, ('normal',), 'text_color', '#FFFFFF')
     styled(big, ('normal',), 'font_size', str(OFFSETS['PP_TITLE_PX']))
     styled(big, ('normal',), 'text_align_h', 'left')
@@ -862,7 +862,7 @@ def build_artists_page(page):
     sv.set('name', 'artists_scrollview')
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
-    title = Widget('label', o['SG_TITLE_X'], 0, 250, o['SG_TITLE_H'], [('name', 'ar_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
+    title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'ar_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
     styled(title, ('normal',), 'text_color', '#FFFFFF')
     styled(title, ('normal',), 'font_size', str(SG_TITLE_PX))
     styled(title, ('normal',), 'text_align_h', 'left')
@@ -1046,7 +1046,7 @@ def build_songs_page(page):
     sv.set('name', 'songs_scrollview')
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
-    title = Widget('label', o['SG_TITLE_X'], 0, 250, o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
+    title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
     styled(title, ('normal',), 'text_color', '#FFFFFF')
     styled(title, ('normal',), 'font_size', str(SG_TITLE_PX))
     styled(title, ('normal',), 'text_align_h', 'left')
@@ -1828,16 +1828,35 @@ def shelf():
     return sh
 
 
-# The cover build's progress line of the Home instance (patch/homecover.c, docs/modules/homecover.md; HC_* of patch/offsets.inc): a plain 15 px #AAAAAA label above the list, hidden and
-# insensitive until the payload shows it (and moves the list down by HC_H); the payload sets its text ("Preparing covers 120/840").
-COVER_PROG = 'pod_cover_prog'
+# The cache pill of the Home instance (patch/homecover.c, docs/modules/homecover.md; HC_* of patch/offsets.inc): a 296 x 40 capsule (#1C1C1C, fully rounded) above the list, hidden and insensitive until the payload
+# shows it (and moves the list down by HC_H). Children: the text label pod_cover_prog (15 px #AAAAAA, "Preparing covers 120/840"), a 4 px progress bar (pod_cache_track #FFFFFF33, pod_cache_fill #EBEBEB, the
+# payload resizes the fill like the Podcasts refresh card's) and the stop button pod_cache_x (the disc pod_cache_x / _down; a 40 px touch box).
+COVER_PROG, CACHE_PILL, CACHE_FILL, CACHE_X = 'pod_cover_prog', 'pod_cache_pill', 'pod_cache_fill', 'pod_cache_x'
 HC_PX = OFFSETS['HC_PX']
 
 
-def cover_progress():
-    lab = hidden(label(COVER_PROG, OFFSETS['HC_X'], OFFSETS['HC_Y'], OFFSETS['HC_W'], OFFSETS['HC_H'], '', HC_PX, SH_SUB_RGB, 'left'))
+def cache_pill():
+    o = OFFSETS
+    pill = hidden(Widget('view', o['HC_X'], o['HC_Y'], o['HC_W'], o['HC_PH'], [('name', CACHE_PILL)]))
+    for st in STATES:
+        styled(pill, (st,), 'bg_color', '#1C1C1C')
+        styled(pill, (st,), 'border_width', '0')
+        styled(pill, (st,), 'round_radius', str(o['HC_PH'] // 2))
+    lab = label(COVER_PROG, o['HC_TX'], o['HC_TY'], o['HC_BW'], o['HC_TH'], '', HC_PX, SH_SUB_RGB, 'left')
     styled(lab, ('normal',), 'text_align_v', 'middle')
-    return lab
+    lab.set('sensitive', 'false')
+    pill.children.append(lab)
+    for name, w, rgb in (('pod_cache_track', o['HC_BW'], PD_TRACK_RGB), (CACHE_FILL, o['HC_BH'], PD_FILL_RGB)):
+        bar = Widget('view', o['HC_TX'], o['HC_BY'], w, o['HC_BH'], [('name', name), ('sensitive', 'false')])
+        for st in STATES:
+            styled(bar, (st,), 'bg_color', rgb)
+            styled(bar, (st,), 'border_width', '0')
+            styled(bar, (st,), 'round_radius', str(o['HC_BH'] // 2))
+        pill.children.append(bar)
+    pill.children.append(Widget('button', o['HC_XX'], o['HC_XY'], o['HC_XW'], o['HC_PH'], [
+        ('name', CACHE_X), ('enable', 'true'), ('style', 'img_btn_style'),
+        ('style:over:icon', CACHE_X), ('style:normal:icon', CACHE_X), ('style:pressed:icon', CACHE_X + '_down')]))
+    return pill
 
 
 # The Daily Mix section of the menu's Home instance (patch/dailymix.c, docs/modules/dailymix.md; the DM_* numbers are tools/pod_dailymix.py's, patch/offsets.inc has the
@@ -1990,7 +2009,7 @@ def build_folders_page(page):
     sv.set('name', 'folders_scrollview')
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
-    title = Widget('label', o['SG_TITLE_X'], 0, 250, o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
+    title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
     styled(title, ('normal',), 'text_color', '#FFFFFF')
     styled(title, ('normal',), 'font_size', str(SG_TITLE_PX))
     styled(title, ('normal',), 'text_align_h', 'left')
@@ -2042,7 +2061,7 @@ def build_radio_page(page):
     sv.set('name', 'radio_scrollview')
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
-    title = Widget('label', o['SG_TITLE_X'], 0, SCREEN_W - 2 * o['SG_TITLE_X'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
+    title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
     styled(title, ('normal',), 'text_color', '#FFFFFF')
     styled(title, ('normal',), 'font_size', str(SG_TITLE_PX))
     styled(title, ('normal',), 'text_align_h', 'left')
@@ -2241,7 +2260,7 @@ def build_page(page):
         sv.children.append(daily())   # after the rows, before the shelf: the Daily Mix card (the payload moves it below the last shown row and shows it when there is a mix)
         sv.children.append(shelf())   # then the shelf (the payload moves it below the last shown row and shows it when there are albums to show)
         sv.children.append(hidden(Widget('view', 0, len(page.rows) * ROW_H, sv.w, MB_PAD, [('name', 'pod_pad')])))   # last child; the payload shows it with the bar
-        root.children.append(cover_progress())   # (hidden; the bar stays the last child: it paints over everything)
+        root.children.append(cache_pill())   # (hidden; the bar stays the last child: it paints over everything)
         root.children.append(minibar())
     return root
 

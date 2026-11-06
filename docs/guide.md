@@ -64,8 +64,11 @@ To show, hide or reorder the tiles of the pull-down, open **Settings → System 
 | Developer → Startup | Boot to M1+ Music; Open Shanling Home |
 | Developer → Tools | Screenshot, Cover Cache, Clear Track Durations and stock System Update |
 
-**Rebuild Covers** asks for confirmation, then Home rebuilds in the background with
-"Rebuilding covers n/m" progress. Leaving Home restarts it on the next visit. **Cover Cache**
+Home builds missing album covers (and measures track lengths) in the background. A pill at the top
+of Home shows the progress, and a sync icon in the status bar shows while it runs; the pill's **×**
+stops it until the next restart. Nothing is scanned when the library has not changed, and an
+album whose cover hangs the build is skipped. **Rebuild Covers** asks for confirmation, then
+Home rebuilds every cover the same way. **Cover Cache**
 shows cached/missing/stale counts and current work; **Clear Cover Cache** asks before deleting,
 then Home regenerates covers.
 

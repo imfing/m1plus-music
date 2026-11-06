@@ -1562,21 +1562,21 @@ def pane_sharp_tests(ctx):
     for _ in range(40): allc += tick(m)
     expect(('pthread_create',) not in allc and not [x for x in allc if x[0] == 'toolsGetAlbumCover'] and len([x for x in allc if x[0] == 'widget_load_image']) >= 1, 'with the job set held by another page the rotation keeps the 168 px file and starts no extraction')
     m.call(PSYMS['cc_build_stop'])
-    # leaving the pane stops the worker (joined) and removes the file
+    # leaving the pane cancels the worker (never joined while inside its job) and removes the file
     m = prepare()
     run_to_extraction(m)
     m.tap(CX, CY); m.turn(0, STEP_DEG + 5); m.calls = []; m.tap(CX, CY)   # Music > Albums: not a split page
     c = tick(m)
-    expect(('pthread_join',) in m.calls + c and m.call(PSYMS['cc_build_busy']) == 0 and not [p for p in m.present if p.startswith('/tmp/m1plus-pane')], 'a level without the pane: the extraction is stopped (joined) and its file removed')
+    expect(orphaned(m, c) and not [p for p in m.present if p.startswith('/tmp/m1plus-pane')], 'a level without the pane: the extraction is cancelled (not joined) and its file removed')
     m = prepare(); run_to_extraction(m); m.calls = []
     m.fire(EVT_BG, WIN)
-    expect(('pthread_join',) in m.calls and m.call(PSYMS['cc_build_busy']) == 0, 'to the background: stopped and joined')
+    expect(orphaned(m), 'to the background: cancelled, not joined, reaped once it exits')
     m = prepare(); run_to_extraction(m); m.screen(False); m.calls = []
     tick(m)
-    expect(('pthread_join',) in m.calls and m.call(PSYMS['cc_build_busy']) == 0, 'screen off: stopped and joined')
+    expect(orphaned(m), 'screen off: cancelled, not joined, reaped once it exits')
     m = prepare(); run_to_extraction(m); m.calls = []
     m.fire(EVT_DESTROY, WIN)
-    expect(('pthread_join',) in m.calls and m.call(PSYMS['cc_build_busy']) == 0, 'destroy: stopped and joined, no leak')
+    expect(orphaned(m), 'destroy: cancelled, not joined, reaped once it exits, no leak')
     # the playing album: demo's full-resolution file, after the 168 px one, once demo is done with it
     m = with_covers(); m.clock = 100000
     m.images['file:///tmp/coverpic.jpg'] = solid((10, 10, 220)); m.present.add('/tmp/coverpic.jpg'); m.files['/tmp/coverpic.jpg'] = 5000
@@ -1610,6 +1610,13 @@ def pane_sharp_tests(ctx):
     expect(seen.count('file:///tmp/coverpic.jpg') == 1, f'after IP_PANE_SHARP_MS it is ({O["IP_PANE_SHARP_MS"]} ms)')
 
 
+def orphaned(m, c=()):
+    """The worker is cancelled and orphaned (busy, no join); once it has exited the next call reaps it."""
+    ok = ('pthread_join',) not in list(m.calls) + list(c) and build_state(m)['orphan'] == 1 and m.call(PSYMS['cc_build_busy']) == 1
+    m.call(PSYMS['cc_worker'], count=5000000)
+    return ok and m.call(PSYMS['cc_build_busy']) == 0 and build_state(m)['jobs'] == 0
+
+
 def fresh_art_tests(ctx):
     expect = ctx.expect
     m = machine(albums=[('Fresh', 'Artist')]); m.open(); m.timers = []; music(m)
@@ -1623,7 +1630,7 @@ def fresh_art_tests(ctx):
     _, _, blits = m.paint()
     expect(any(b[2] == (0, BARH, 54, 54) for b in blits), 'a newly extracted cover replaces the visible placeholder')
     m.fire(EVT_BG, WIN)
-    expect(m.call(PSYMS['cc_build_busy']) == 0, 'background cancels and joins this page own extraction job')
+    expect(orphaned(m), 'background cancels this page own extraction job (reaped once it exits)')
     m = machine(albums=[('No card', 'Artist')]); m.card_mounted = False; m.open(); m.timers = []; music(m)
     m.turn(0, STEP_DEG + 5); m.tap(CX, CY)
     for _ in range(4): tick(m)

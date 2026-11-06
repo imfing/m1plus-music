@@ -229,7 +229,7 @@ def unsub_tests(ctx):
     expect(f'{RP}/Alpha Show' in m.dirs, 'and its folder')
     expect(not [p for p in m.fs if p.startswith(f'{RP}/Sub One/')] and f'{RP}/Sub One' not in m.dirs and ('rmdir', f'{RP}/Sub One') in m.calls, 'a show with nothing on the card: its .show, its .episodes and its .part are deleted and the folder is removed')
     expect(f'{RP}/Sub Two/notes.txt' in m.fs and f'{RP}/Sub Two/.show' not in m.fs and f'{RP}/Sub Two' in m.dirs, 'the user\'s own note in a folder stays, and so does the folder (rmdir refuses); the show is no subscription')
-    expect(title(m) == 'Subscriptions' and flags(m, 'pg_bar') == (0, 0) and lines(m) == [] and PCS.fixed(m.wtext.get(m.widgets['label_status'])) == 'No subscriptions' and flags(m, 'label_status')[0] == 1,
+    expect(title(m) == 'Subscriptions' and flags(m, 'pg_bar') == (0, 0) and lines(m) == [] and 'No subscriptions' in PCP.hint(m),
            'select mode ends and the page is read again: no subscription left, the empty state says so')
     expect(flags(m, 'btn_more') == (0, 0) and m.props[(m.widgets['btn_backtoplayer'], 'style:normal:icon')] == 'ah_nav_np', 'with nothing to select or export the "..." is gone, Now Playing is the disc')
     expect(not toasts(m), 'no toast')

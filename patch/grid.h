@@ -99,10 +99,11 @@ int grid_cell_at(int x, int y, int origin_y, int count);
 
 /* A cover of the tile (its bitmap, else the placeholder) at (x, y) in the view; rows beyond view_h (> 0) are cut by hand. */
 void grid_blit(void *canvas, grid_t *g, grid_tile_t *t, int x, int y, int view_h);
-/* The tile's album (pass 0) or artist (pass 1) in rect (x, y, w, h), cut once; drawn only when wholly inside view_h (> 0). The canvas has the style. */
+/* The tile's album (pass 0) or artist (pass 1) in rect (x, y, w, h), cut once; drawn only when wholly inside view_h (> 0); 0: always, for a paint inside a
+ * scroll_view, whose canvas clip cuts it at the view's edges (as a cover). The canvas has the style. */
 void grid_text(void *canvas, grid_tile_t *t, int pass, int x, int y, int w, int h, int view_h);
 /* The list mode's rows [r0, r1] (row r is tile_of(ctx, r)) of a view scrolled `off` px: the pressed fill (row press - 1, 0 none), the cover, the hairline,
- * then the titles (style label st_title) and the subtitles (st_sub), each drawn only when wholly inside view_h. Shared by the Albums and Playlists lists. shift: the
+ * then the titles (style label st_title) and the subtitles (st_sub), cut at the view's edges by the scroll_view's canvas clip (the callers paint inside one). Shared by the Albums and Playlists lists. shift: the
  * cover, the texts (and their width) and the hairline's start move right by it (the Playlists page's select mode makes room for the mark; 0 elsewhere); the pressed fill stays.
  * The hairline runs from the text to LIST_HAIR_END (Apple's inset). chev: the row opens a page: the shared grey chevron (pod_make_chevron) at LIST_CHEV_X and the texts end LIST_TEXT_W_CHEV after LIST_TEXT_X (0: no chevron, the texts to LIST_TEXT_W). */
 void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int r0, int r1, int off, int view_h,

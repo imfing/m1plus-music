@@ -17,8 +17,8 @@ or closes) between the songs and the newest-first Albums grid. Only this list ha
   cover corners, loader and cover-cache build) from y 52 where the pills begin, newest first. No Play / Shuffle pills and no song count. A tap opens our album page.
   No albums (every recent song untagged): the "No albums" line.
 - The capsules are the real glass pieces (`mod_icons.py`: left cap `pod_nav_search`, middles `pod_nav_select` and `pod_nav_grid` / `pod_nav_list`, right cap `ah_nav_play`).
-- **Small navbar title**: hidden on this page. "Recently Added" is 127 px at 20 px in English and the room before the capsule (x 122) is 64 px; Chinese "最近添加" alone is
-  80 px. The large title carries the name (the library Songs page hides Spanish "Canciones" the same way). `sg_recent()` makes `title_fits` 0 and keeps the title off without scroll events.
+- **Small navbar title**: collapses in like the other lists'. "Recently Added" is 127 px at 20 px in English and the room before the capsule (x 122) is 64 px, so it is cut with an
+  ellipsis to that room (`az_fit`).
 - **Remembered choice**: `/mnt/data/m1plus/recently-added-view` (`RECENTADD_VIEW_FILE`): `1` albums; anything else, or missing, the songs. Written on every toggle with `home_write_atomic`.
   Read when the page opens (an open in the album view runs the 0xf009 query first, then the album query). A Settings Files row (after `playlists-view`).
 

@@ -81,7 +81,7 @@ def undo(s):
 
 
 def text(m, n): return undo(m.wtext.get(m.widgets[n], ''))
-def at_search(m): return flags(m, 'ps_field')[0] == 1 and flags(m, 'pg_big')[0] == 0 and flags(m, 'label_title')[0] == 0   # (the search level has no title: neither the navbar's nor a large one)
+def at_search(m): return flags(m, 'ps_field')[0] == 1 and flags(m, 'pg_big')[0] == 0 and flags(m, 'label_title')[0] == 1 and text(m, 'label_title') == 'Apple Podcasts'   # (the search level's title is the navbar's Apple Podcasts, no large one)
 
 
 def tick(m): return PCS.tick(m)
@@ -175,7 +175,8 @@ def entry_tests(ctx):
             if n != 'btn_more': expect(moves(m, n)[-1] == (x, 0), f'{name}: {n} is on slot {x} ({moves(m, n)[-1:]})')
         expect(icon(m, 'btn_more') == ('pod_nav_moremid' if on and imp else 'pod_nav_more'), f'{name}: the \"...\" is the middle piece beside the globe, else the left cap')
         w = [c for c in m.calls if c[0] == 'widget_resize' and c[1] == m.widgets['label_title']]
-        expect(not w and flags(m, 'label_title')[0] == 0 and PCP.title_text(m) == 'Podcasts', f'{name}: the navbar title is hidden and never resized for the pieces ({w[-1][2:] if w else None}); the large heading is the title')
+        right = min([x for _, x in slots] or [O['NAV_VIEW_X'] + O['NAV_VIEW_W']])
+        expect(w and w[-1][2:] == (right - O['NAV_TITLE_X'], 22) and flags(m, 'label_title')[0] == 0 and PCP.title_text(m) == 'Podcasts', f'{name}: the small title is hidden at rest and ends before the leftmost piece ({w[-1][2:] if w else None}); the large heading is the title')
         xs = [x for _, x in slots]
         expect(all(b - a == W for a, b in zip(xs, xs[1:])) and (not xs or xs[-1] == X), f'{name}: the glyphs are 46 apart (the glass capsule rules)')
     m = opened(on=False, imp=False, subs=True)
@@ -217,7 +218,7 @@ def search_tests(ctx):
     m = opened(site=site)
     calls = enter(m)
     expect(('window_open', 'm1plus_keyboard') in calls and at_search(m) and flags(m, 'ps_field')[0] == 1 and flags(m, 'pg_big')[0] == 0 and flags(m, 'btn_globe') == (0, 0)
-           and m.props.get((m.widgets['label_title'], 'visible')) == 0, 'a tap on Search: the level opens with no title (neither the navbar\'s nor a large one: the field keeps the keyboard page\'s place), the field (insensitive widgets), the keyboard is asked for at once; the Shows level\'s large title and buttons go')
+           and m.props.get((m.widgets['label_title'], 'visible')) == 1 and text(m, 'label_title') == 'Apple Podcasts', 'a tap on Search: the level opens with the navbar title Apple Podcasts (no large one: the field keeps the keyboard page\'s place), the field (insensitive widgets), the keyboard is asked for at once; the Shows level\'s large title and buttons go')
     expect(('widget_set_tr_text', m.widgets['ps_hint'], 'Search Apple Podcasts') in m.calls or text(m, 'ps_hint') == 'Search Apple Podcasts', 'the field\'s hint reads Search Apple Podcasts')
     expect(m.props.get((m.sv, 'virtual_h')) == pod_show.search_layout(0)['h'] and flags(m, 'label_status')[0] == 0, 'no results yet: the content is the field\'s height, no status line')
     # the keyboard's Back with nothing typed: the Shows level
@@ -240,6 +241,7 @@ def search_tests(ctx):
     docs = json.loads(ALL_IN)['results']
     names = [d['collectionName'] for d in docs]
     expect(m.props.get((m.sv, 'virtual_h')) == pod_show.search_layout(25)['h'] and flags(m, 'label_status')[0] == 0, f'the answer: 25 rows ({m.props.get((m.sv, "virtual_h"))}), the status line gone')
+    expect(flags(m, 'label_title')[0] == 1 and text(m, 'label_title') == 'Apple Podcasts' and flags(m, 'pg_big')[0] == 0, 'with the results shown the navbar title Apple Podcasts is still there')
     expect(all(same(r[0], n) for r, n in zip(rows, names)) and same(rows[0][1], docs[0]['artistName']) and len(rows) >= 5, f'rows: the show name and its author in grey ({rows[:2]})')
     # geometry of the first rows against the model
     _, texts, styles, fills = PCP.paint(m, 0)

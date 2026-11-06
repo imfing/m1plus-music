@@ -48,6 +48,7 @@ make test PERF=1               # the same plus instruction budgets and stress-sc
 make dev                       # fresh dev tag, one tree, full tests and verified package
 make preview                   # approximate render of that dev tree
 make flash                     # verified SD copy, then eject
+make ota                       # push that build to the local update server (make ota-serve; docs/modules/update.md)
 ```
 
 Dev artifacts stay in `out/dev/<tag>/`: `tree/`, `update.bin`, logs and `results.json`.

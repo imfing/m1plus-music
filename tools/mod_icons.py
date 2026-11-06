@@ -240,6 +240,9 @@ CHEVRON, CHEVRON_DOWN = (0x8A,) * 3, (0x6E,) * 3     # every list chevron (stock
 # The status bar's Screenshot camera (patch/shot.c shows it while the 5 s countdown runs; tools/pod_ui.py adds the hidden widget): 16 px, white
 SHOT_BAR = ('pod_bar_shot', 'camera')
 SHOT_BAR_PX = 16
+# The status bar's sync icon (patch/lineout.c shows it on every page while a cover or duration build runs; tools/statusbar.py adds the hidden widget pod_sync to both bar copies): Lucide refresh-cw, white, 18 x 18, 1.5 px stroke, static
+SYNC_BAR = ('pod_bar_sync', 'refresh-cw')
+SYNC_BAR_PX = 18
 # The status bar's Line Out pill (patch/lineout.c swaps it for stock's white "LO" text while Line Out is on): an amber #FFD60A (not the Accent Orange #FF9F0A) pill, fully rounded
 # ends, black "LO" in Inter. A saturated image: Light Mode's flip (chroma over LIGHT_CHROMA) and the accent tints (named lists) leave it as drawn.
 LO_BAR = 'pod_bar_lo'
@@ -340,7 +343,7 @@ def is_badge(g): return g.startswith('badge:')
 def used_glyphs():
     """(Lucide names, Tabler names) of every glyph the tables use; custom ones excluded."""
     gl = [e[2] for e in HOME + SETTINGS + LISTS] + list(PULLDOWN.values()) + list(STATUS.values()) + \
-        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1]] + list(NAV_VIEW.values()) + list(SUBSONIC_ICONS.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
+        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1], SYNC_BAR[1]] + list(NAV_VIEW.values()) + list(SUBSONIC_ICONS.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
         [g for _, g, _ in GLYPHS] + [v[0] for v in SONGS_IMAGES.values()] + [v[0] for v in KEYBOARD_IMAGES.values()] + [KB_CLEAR[1], DP_ADD_GLYPH] + list(PC_GLYPHS) + [g for _, g in DISCS] + [v[0] for v in NP.values() if not v[0].startswith('pil:')] + ['lock:filled'] + R3_GLYPHS
     names = {gname(g) for g in gl if g and not is_custom(g) and not is_badge(g)}
     return sorted(n for n in names if not n.startswith('T:')), sorted(n[2:] for n in names if n.startswith('T:'))
@@ -750,6 +753,7 @@ def generate_all(sizes):
         f[n + '_down'] = capsule_piece(pos, g, True)
     f[SHOT_BAR[0]] = fit(lambda p: glyph(SHOT_BAR[1], p, 'small'), SHOT_BAR_PX, SHOT_BAR_PX, SHOT_BAR_PX)
     f[LO_BAR] = lo_pill()
+    f[SYNC_BAR[0]] = glyph_fit(SYNC_BAR[1], SYNC_BAR_PX, SYNC_BAR_PX, WHITE, 1, 1.5)
     # round 2: glyph images at the stock size, discs, recoloured line art, badges, pills
     for n, g, down in GLYPHS:
         grey = (GREY_GLYPHS[n],) * 3 if n in GREY_GLYPHS else WHITE
@@ -795,6 +799,9 @@ ALBUM += sorted(KEYBOARD_IMAGES) + [KB_CLEAR[0]]
 # the Search page's X (patch/search.h SE_CLOSE_*): a flat disc as high as the field, in the field's grey (pressed lighter), a white 13 px x; not the 42 px glass
 SE_CLOSE = ('se_close', 'x', WHITE, 13, 36, (0x1C, 0x1C, 0x1E), (0x3A, 0x3A, 0x3C))   # name, glyph, its colour, its ink px, the disc's diameter, the disc, pressed
 ALBUM += [SE_CLOSE[0], SE_CLOSE[0] + '_down']
+# the Home cache pill's stop button (tools/pod_ui.py cache_pill): a flat 28 px disc #2C2C2E (pressed #3A3A3C) with a white 14 px x
+CACHE_X = ('pod_cache_x', 'x', WHITE, 14, 28, (0x2C, 0x2C, 0x2E), (0x3A, 0x3A, 0x3C))
+ALBUM += [CACHE_X[0], CACHE_X[0] + '_down']
 
 def keyboard_images():
     f = {n: glyph_fit(g, cw, ch, rgb, 1 if n != 'qk_mag' else 0) for n, (g, rgb, cw, ch) in KEYBOARD_IMAGES.items()}
@@ -802,6 +809,8 @@ def keyboard_images():
     f[n] = clear_disc(ink, d, fill, rgb)
     n, g, rgb, ink, d, fill, down = SE_CLOSE
     f[n], f[n + '_down'] = (on_disc(glyph_fit(g, ink, ink, rgb, 0), d, c) for c in (fill, down))
+    n, g, rgb, ink, d, fill, down = CACHE_X
+    f[n], f[n + '_down'] = (on_disc(glyph_fit(g, ink, ink, rgb, 0, 1.5), d, c) for c in (fill, down))
     return f
 
 def clear_disc(ink, d, fill, rgb, stroke=2.0, ss=16):
@@ -1600,7 +1609,7 @@ def replaced_names():
 
 def pod_row_names(): return sorted({n for n, _ in POD_ROWS.values()})
 def nav_names(): return sorted(set(NAV_VIEW) | {n + '_down' for n in NAV_VIEW})
-def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(SUBSONIC_ICONS) | set(SUBSONIC_ART) | set(RADIO_ROWS) | {RADIO_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_DOTS[0]})
+def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(SUBSONIC_ICONS) | set(SUBSONIC_ART) | set(RADIO_ROWS) | {RADIO_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR, SYNC_BAR[0]} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_DOTS[0]})
 def np_names(): return sorted(set(NP) | {v[4] for v in NP.values() if v[4]})
 
 def added_rels(stock_rootfs=None, *args):
@@ -1774,7 +1783,7 @@ def add_nav_icons(out):
     the status bar's Screenshot camera (the hidden pod_shot image tools/pod_ui.py adds to ui/system_bar.bin) and the Playlists
     page's menu glyphs (ui/m1plus_playlists.bin)."""
     d = os.path.join(out, IMG)
-    for n in nav_names() + [SHOT_BAR[0], LO_BAR] + [n for n, _ in PL_MENU_ICONS] + [n for n, _ in RM_MENU_ICONS] + [RM_DOTS[0]]:
+    for n in nav_names() + [SHOT_BAR[0], LO_BAR, SYNC_BAR[0]] + [n for n, _ in PL_MENU_ICONS] + [n for n, _ in RM_MENU_ICONS] + [RM_DOTS[0]]:
         q = os.path.join(d, n + '.png'); assert not os.path.exists(q), f'{n}.png already in the tree'
         shutil.copyfile(os.path.join(PNG, n + '.png'), q); os.chmod(q, IMG_MODE); os.utime(q, (IMG_MTIME, IMG_MTIME))
 

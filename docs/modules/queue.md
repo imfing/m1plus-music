@@ -43,7 +43,8 @@ y   0   (back)                                                  glass Back (band
         [cover] Artist                                           (or "No upcoming songs", 16 px #9C9C9C at x 10, where the first row would be)
 ```
 
-- **Up Next** is the tracks after the play position, **in queue order**, which is the real play order (Shuffle reorders the queue itself, stock plays it in order). The playing track is only in the header. A row's text rules are the stock drawer's (CUE: file name; no title: file name). Covers are
+- **Up Next** is the tracks after the play position, **in queue order**, which is the real play order (Shuffle reorders the queue itself, stock plays it in order). The playing track is only in the header. A row's text rules are the stock drawer's (CUE: file name; no title: file name). A row cut by the window's edge shows its texts cut too (no "wholly inside" rule: the
+  list is the whole window, so the `scroll_view`'s canvas clip cuts them, as on the Recently Played shelf). Covers are
   the Cover Flow cache file of the row's artist and album (`cc_album_key`), one per 16 ms tick on the page's timer, none while the list moves, nearest to the middle first (the Songs page's loader, `patch/grid.c`
   ring of `GRID_TILES`); a row with no file shows the placeholder disc. No drag handles, no marker, no count (stock cannot remove or reorder).
 - **Header**: the track at the play position (title, artist, cover). No tint: the page is black.

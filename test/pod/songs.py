@@ -426,7 +426,7 @@ def open_and_paint_tests(ctx):
            f'the list and the rail show, the status line is hidden; the bar and Select All stay as the asset has them (hidden): {[vis(m, n) for n in ("sg_rail", "view_grid", "label_status")]}')
     expect(not [c for c in m.calls if c[0] == 'widget_load_image' and c[1] not in ('p_default', 'unselect', 'selected')] and not any(c[0] == 'deque_at_oob' for c in m.calls),
            'no cover is decoded in the open (the placeholder and the two marks only)')
-    expect(('widget_set_tr_text', m.widgets['label_title'], 'Songs') in m.calls and m.wtext[m.widgets['label_title']] == 'Songs', 'the title says Songs')
+    expect(m.wtext[m.widgets['label_title']] == 'Songs', 'the title says Songs')
     expect(m.word(G_CLASS) == ALL, 'the browsing class is the Songs page\'s, as allmusic_page_init leaves it')
     # the letters: '#' (digits '*' and symbols '#') first, then A.., the CJK title under its pinyin initial C
     expect([l for _, l in lay.secs] == ['#', 'A', 'B', 'C', 'D', 'H', 'K', 'L', 'M', 'T', 'Z'] and [s for s, _ in lay.secs] == [0, 3, 6, 8, 11, 12, 13, 14, 15, 16, 18], 'the model: 11 sections, the CJK title in C')
@@ -814,7 +814,7 @@ def collapse_and_select_tests(ctx):
     expect(shown() == [0], 'back at the top it goes')
     m = songs_machine(TITLES); m.measure = lambda t: 85 if t else 0; open_page(m)   # a language whose word is wider than the 64 px room (Spanish "Canciones", 85 px)
     scroll_to(m, 100)
-    expect(not [c for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['label_title'] and c[2] == 1], 'a title that does not fit its room is never shown (no truncated word)')
+    expect([c[2] for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['label_title']] == [1] and m.wtext[m.widgets['label_title']].endswith(fitted('…', 0)), 'a title that does not fit its room is cut with an ellipsis and shown all the same')
     m = songs_machine(TITLES); m.widget_on_fail = frozenset({O['EVT_SCROLL']}); open_page(m)
     expect(('widget_set_visible', m.widgets['label_title'], 1) in m.calls, 'without the scroll events the navbar keeps its title (no collapse)')
     lt = ui().find('label_title')
@@ -839,8 +839,8 @@ def collapse_and_select_tests(ctx):
     expect(not over, f'"9999 Selected" fits between the title\'s x 58 and Select All in all languages ({over[:3]})')
     over = [(loc, StbText(font, 18).layout(built[loc]['Select All'])[1]) for loc in pod_i18n.LOCALES if StbText(font, 18).layout(built[loc]['Select All'])[1] > 104 - 8]
     expect(not over, f'"Select All" fits its button in all languages ({over[:3]})')
-    over = [(loc, w) for loc in pod_i18n.LOCALES for w in [StbText(font, 32).layout(built[loc]['Songs'])[1]] if w > 250]
-    expect(not over, f'the large title fits its 250 px label in all languages ({over})')
+    over = [(loc, w) for loc in pod_i18n.LOCALES for w in [StbText(font, 32).layout(built[loc]['Songs'])[1]] if w > O['SG_TITLE_W']]
+    expect(not over, f'the large title fits its label in all languages ({over})')
 
     # 15. Select mode
     m = songs_machine(TITLES); open_page(m); settle(m)
@@ -991,7 +991,7 @@ def loader_tests(ctx):
     m.top_main = m.window
     fired(m, 'sg_on_build_start')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
-    expect(build_state(m)['jobs'] == 0 and ('pthread_join',) in m.calls and len(m.bitmaps) == 0, 'closing the page cancels and joins the worker it holds and frees every bitmap')
+    expect(build_state(m)['orphan'] == 1 and ('pthread_join',) not in m.calls and len(m.bitmaps) == 0, 'closing the page cancels the worker it holds without joining it and frees every bitmap')
 
 def big_library_tests(ctx):
     """17. A library of 20,000 songs: the index, the content height, the clamp, the rail jump, the ring, the cost of opening."""
@@ -1037,10 +1037,10 @@ LISTS = [('Favorites', 'HOME_FAV', 'CLASS_FAV'), ('Recently Added', 'HOME_RECENT
 
 
 def list_machine(titles, cls=None, **kw):
-    """songs_machine whose songs are also the list of class cls; the large title 250 px wide as in the asset."""
+    """songs_machine whose songs are also the list of class cls; the large title full width as in the asset."""
     m = songs_machine(titles, **kw)
     if cls is not None: m.class_lists[cls] = list(m.songs)
-    m.setword(m.widgets['sg_title'] + 8, 250)
+    m.setword(m.widgets['sg_title'] + 8, O['SG_TITLE_W'])
     m.setword(m.widgets['sg_hname'] + 8, O['PH_NAME_W'])   # the playlist header's name label, as the asset sizes it
     return m
 
@@ -1077,7 +1077,7 @@ def lists_tests(ctx):
         big, lt = m.widgets['sg_title'], m.widgets['label_title']
         expect(('window_open', 'm1plus_songs') in calls and queries == [O['CLASS_ALBUMS'], cls] and m.word(G_CLASS) == cls,
                f'{label}: our Songs page reads the albums, then class {cls:#x}, and sets the browsing class as allmusic_page_init does ({queries})')
-        expect(m.wtext.get(big) == fitted(label, 250) and m.wtext.get(lt) == fitted(label, 110),
+        expect(m.wtext.get(big) == fitted(label, O['SG_TITLE_W']) and m.wtext.get(lt) == fitted(label, 110),
                f'{label}: the large title and the small one (110 px) are the row\'s text, cut with an ellipsis where too wide ({m.wtext.get(big)!r}, {m.wtext.get(lt)!r})')
         expect(vis(m, 'btn_sort') == (0, 0) and ('widget_move', m.widgets['btn_search'], O['NAV_CF_X'], 0) in calls and ('widget_resize', lt, O['NAV_CF_X'] - 58, 22) in calls,
                f'{label}: no Sort; Search (the left cap) moves to Sort\'s slot beside Select, the small title runs from 58 to it')
@@ -1148,6 +1148,9 @@ def lists_tests(ctx):
         settle(m); m.calls = []
         m.call(PSYMS['sg_on_fg'], a0=0, a1=0, count=900000000)
         expect(not any(c[0] == 'loadLocalClassList' for c in m.calls), f'{nm}: a list that cannot change while the page is behind is not read again on the way back')
+        m.calls = []
+        scroll_to(m, O['SG_COLLAPSE'] + 1)
+        expect([c[2] for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['label_title']] == [1], f'{nm}: the small title collapses in like the others (cut with an ellipsis to its room)')
         m.call(PSYMS['sg_on_destroy'], count=4000000)
     m = list_machine(titles, fav); m.class_lists[fav] = []; m.call(PSYMS['songs_open_list'], a0=O['HOME_FAV'], count=900000000)
     expect(vis(m, 'label_status') == (1, 1) and m.wtext[m.widgets['label_status']] == 'No songs' and vis(m, 'view_grid') == (0, 0), 'an empty list says "No songs"')
@@ -1166,8 +1169,8 @@ def lists_tests(ctx):
     pl_lay = lambda n: Layout(['A'] * n, sections=False, top=O['PH_TOP'])   # a playlist's rows start under its header
     expect(r == 0 and [c[1] for c in m.calls if c[0] == 'loadLocalClassList'] == [O['CLASS_ALBUMS'], pls] and m.word(ci) == 7 and m.word(G_CLASS) == pls
            and m.props[(m.sv, 'virtual_h')] == pl_lay(5).content(), 'songs_open_playlist: class 0xff13 with the playlist in classinfo[1]: its five songs')
-    expect(m.wtext[big] == fitted(name, 250) == fitted('A very long playlist name for…', 250) and m.wtext[m.widgets['label_title']] == fitted(name, 110),
-           f'the name is the title, cut with an ellipsis (no space before it) to the large title\'s 250 px and the small one\'s 110 ({m.wtext[big]!r})')
+    expect(m.wtext[big] == fitted(name, O['SG_TITLE_W']) == fitted('A very long playlist name for the ro…', O['SG_TITLE_W']) and m.wtext[m.widgets['label_title']] == fitted(name, 110),
+           f'the name is the title, cut with an ellipsis (no space before it) to the large title\'s full width and the small one\'s 110 ({m.wtext[big]!r})')
     foot = m.widgets['sg_foot']
     expect(m.wtext[foot] == '5 songs' and m.props.get((foot, 'y')) == O['PH_TOP'] + 5 * ROW + O['SG_FOOT_GAP'], f'the playlist\'s count under its last row: "5 songs" ({m.wtext.get(foot)!r})')
     m.setword(ci, 3)
@@ -1191,7 +1194,7 @@ def lists_tests(ctx):
         m = list_machine(titles); m.playlist_songs = {7: list(m.songs[:2])}
         m.call(PSYMS['songs_open_playlist'], a0=7, a1=m.cstr(nm), count=900000000)
         kept = nm.encode('utf-8')[:255].decode('utf-8', 'ignore')
-        expect(m.wtext[m.widgets['sg_title']] == fitted(kept, 250), f'a {len(nm.encode())} byte name is cut on characters ({len(kept)} kept)')
+        expect(m.wtext[m.widgets['sg_title']] == fitted(kept, O['SG_TITLE_W']), f'a {len(nm.encode())} byte name is cut on characters ({len(kept)} kept)')
         m.call(PSYMS['sg_on_destroy'], count=4000000)
 
     # A playlist over a Songs page (Search was opened from it and a playlist result tapped): ours opens over it, and the page below is itself again when ours is destroyed
@@ -1306,7 +1309,7 @@ def lists_tests(ctx):
            and m.word(G_CLASS) == gen and m.word(CI) == gen and ci_name(m) == 'Rock' and ci_unknown(m) == 0
            and m.props[(m.sv, 'virtual_h')] == Layout(['A'] * 5, sections=False).content(),
            'songs_open_genre: class 0xff09 with classinfo[0], the name at +0x30d and the Unknown byte 0 put in before the query: the genre\'s five songs')
-    expect(m.wtext[big] == fitted('Rock', 250) and m.wtext[lt] == fitted('Rock', 156), 'the genre\'s name is the title (large 250 px, small 156 px)')
+    expect(m.wtext[big] == fitted('Rock', O['SG_TITLE_W']) and m.wtext[lt] == fitted('Rock', 156), 'the genre\'s name is the title (large full width, small 156 px)')
     sel = m.widgets['btn_select']
     expect(vis(m, 'btn_search') == (0, 0) and vis(m, 'btn_sort') == (0, 0) and vis(m, 'btn_select') == (1, 1) and vis(m, 'btn_backtoplayer') == (1, 1)
            and ('widget_move', m.widgets['btn_search'], O['NAV_CF_X'], 0) not in m.calls and ('widget_resize', lt, O['NAV_VIEW_X'] - 58, 22) in m.calls,
@@ -1448,7 +1451,7 @@ def lists_tests(ctx):
     long_name = 'Miles Davis and the Quintet of Many Names'
     m, row = artist_machine(long_name)
     m.call(PSYMS['songs_open_artist'], a0=row, count=900000000)
-    expect(m.wtext[m.widgets['sg_title']] == fitted(long_name, 250) and m.wtext[m.widgets['label_title']] == fitted(long_name, 110),
+    expect(m.wtext[m.widgets['sg_title']] == fitted(long_name, O['SG_TITLE_W']) and m.wtext[m.widgets['label_title']] == fitted(long_name, 110),
            'a long artist name is cut with an ellipsis, like a playlist\'s')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
     m, row = artist_machine(); m.artist_albums = {}   # no All songs row (the stock list is empty)

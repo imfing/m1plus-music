@@ -67,9 +67,9 @@ enum { L_ROOT, L_PICK, L_LIST, L_DIR, L_N };
 enum { RR_NOW, RR_MY, RR_RECENT, RR_BROWSER, RR_TOP, RR_COUNTRY, RR_GENRE, RR_N };
 enum { RI_STATIONS, RI_TOP, RI_COUNTRY, RI_GENRE, RI_NOW, RI_RECENT, RI_BROWSER, RI_N };
 static const char *const RP_ICON_NAME[RI_N] = {"pod_ic_rd_stations", "pod_ic_rd_top",     "pod_ic_rd_country",
-                                               "pod_ic_rd_genre", "pod_ic_nowplaying", "pod_ic_recent",
+                                               "pod_ic_rd_genre",    "pod_ic_nowplaying", "pod_ic_recent",
                                                "pod_ic_rd_browser"};
-static const char *const RP_ROW_TEXT[RR_N] = {"Now Playing", "My Stations", "Recently Played", "Radio Browser",
+static const char *const RP_ROW_TEXT[RR_N] = {"Now Playing",  "My Stations", "Recently Played", "Radio Browser",
                                               "Top Stations", "By Country",  "By Genre"};
 static const int RP_ROW_ICON[RR_N] = {RI_NOW, RI_STATIONS, RI_RECENT, RI_BROWSER, RI_TOP, RI_COUNTRY, RI_GENRE};
 
@@ -354,11 +354,8 @@ static void rp_credit_place(void) {
 }
 
 static void rp_title_update(void) {
-    int on = rp.noscroll || rp.note || rp.search || !rp.nrows || rp_off() > SG_COLLAPSE;
-    if (on != rp.title_on) {
-        rp.title_on = on;
-        widget_set_visible(rp.title, on, 0);
-    }
+    pod_title_set(rp.title, &rp.title_on,
+                  rp.noscroll || rp.note || rp.search || !rp.nrows || pod_title_gone(rp_off(), 0));
     if (rp.fade) {
         widget_set_visible(rp.fade, rp_off() > 0, 0);
         widget_set_sensitive(rp.fade, 0);
@@ -385,8 +382,12 @@ static int rp_toggle_on(void) { return rp.level == L_LIST && rp.nrows && !rp.not
 /* The capsule, right to left: Now Playing (the right cap), the toggle on the 214 slot (the middle piece), Search on the 168 slot (the left cap), or on the Stations level "..." in
  * Search's place (also with no toggle: an empty Stations). Without the toggle the left cap takes the 214 slot; on the search page Search is gone and the toggle (the left cap piece)
  * takes 214 beside Now Playing, or Now Playing is the glass disc alone. */
-static int rp_find_on(void) { return !rp.search && (rp.level == L_DIR || rp.level == L_PICK || (rp.level == L_LIST && !rp.local)); }
-static int rp_more_on(void) { return !rp.search && rp.level == L_LIST && rp.local; } /* My Stations and Recently Played (also with their caption) */
+static int rp_find_on(void) {
+    return !rp.search && (rp.level == L_DIR || rp.level == L_PICK || (rp.level == L_LIST && !rp.local));
+}
+static int rp_more_on(void) {
+    return !rp.search && rp.level == L_LIST && rp.local;
+} /* My Stations and Recently Played (also with their caption) */
 
 static void rp_nav(void) {
     int tog = rp_toggle_on(), more = rp_more_on(), find = rp_find_on() || more, cap = tog || find;
@@ -649,13 +650,10 @@ static void rp_recent(void) {
 static void rp_root_action(int row) {
     switch (row) {
     case RR_NOW:
-        if (!rd_list()->n) {
-            rd_list_t last;
-            memset(&last, 0, sizeof last);
-            if (rd_last_read(&last)) rd_play(&last, 0);
-            rd_list_free(&last);
-        }
-        rn_open();
+        if (rd_running())
+            rn_open();
+        else
+            pod_toast(TR("No radio is playing")); /* never starts a station */
         break;
     case RR_BROWSER:
         rp_show_level(L_DIR, 0);
@@ -932,7 +930,9 @@ static int rp_on_back(void *ctx, void *e) {
         rp_search_leave();
         return RET_OK;
     }
-    if (rp.note && !(rp.level == L_LIST && rp.local)) { /* Loading or a caption (not the empty My Stations' hint or the empty Recently Played's caption, which are levels of their own): the transfer stops and the level it covered is back */
+    if (rp.note &&
+        !(rp.level == L_LIST &&
+          rp.local)) { /* Loading or a caption (not the empty My Stations' hint or the empty Recently Played's caption, which are levels of their own): the transfer stops and the level it covered is back */
         rd_fetch_cancel();
         rp_timer_off();
         rp.loading = 0, rp.retry = 0;
@@ -955,7 +955,9 @@ static int rp_on_fg(void *ctx, void *e) {
     if (rp.level == L_ROOT && !rp.note)
         rp_show_level(L_ROOT, 1); /* Now Playing may have appeared */
     else if (rp.level == L_LIST && rp.local && rp.favs && rd_serial() != rp.serial) {
-        if (!rp.note) rp.sel[L_LIST] = rp_off(); /* Stations changed (Now Playing's sheet): read again, a removed station leaves */
+        if (!rp.note)
+            rp.sel[L_LIST] =
+                rp_off(); /* Stations changed (Now Playing's sheet): read again, a removed station leaves */
         rp_stations(1);
     } else
         rp_redraw();
@@ -1111,7 +1113,8 @@ int radio_open(void) {
     rp.al.rail = widget_lookup(rp.win, "sg_rail", 1);
     rp.al.bubble = widget_lookup(rp.win, "sg_bubble", 1);
     rp.al.bubble_letter = widget_lookup(rp.win, "sg_bubble_letter", 1);
-    if (!rp.back || !rp.np || !rp.find || !rp.view_btn || !rp.more || !rp.sh_scrim || !rp.sh_card || !rp.sh_row || !rp.sh_hr || !rp.sh_clear || !rp.sh_clear_hr ||!rp.lv || !rp.credit || !rp.field || !rp.title || !rp.big ||
+    if (!rp.back || !rp.np || !rp.find || !rp.view_btn || !rp.more || !rp.sh_scrim || !rp.sh_card || !rp.sh_row ||
+        !rp.sh_hr || !rp.sh_clear || !rp.sh_clear_hr || !rp.lv || !rp.credit || !rp.field || !rp.title || !rp.big ||
         !rp.view || !rp.sv || !rp.status || !rp.st_title || !rp.st_sub || !rp.st_gtitle || !rp.st_gsub ||
         !rp.al.st_hdr || !rp.al.st_rail || !rp.al.st_rail_on || !rp.al.rail || !rp.al.bubble || !rp.al.bubble_letter) {
         navigator_back(); /* an asset that is not ours */

@@ -14,6 +14,8 @@ help:
 	@echo 'make dev                    Build, test and package a fresh dev version'
 	@echo 'make preview [BUILD=latest] Preview that dev build'
 	@echo 'make flash [BUILD=latest]   Copy the tested dev package to the card'
+	@echo 'make ota-serve [PORT=8765] Run the local Software Update server (the card file m1plus-update-url names it)'
+	@echo 'make ota [BUILD=latest]     Push the tested dev package to that server; then Software Update on the device'
 	@echo 'make check                  Full release + restore integration check'
 	@echo 'make accept                 Integration-only golden acceptance'
 	@echo 'make publish [PUBLISH=1]    Upload the golden package as a draft GitHub release named VERSION'
@@ -34,6 +36,10 @@ preview:
 	$(RUN) tools/preview.py --build "$(BUILD)"
 flash:
 	$(RUN) tools/flash_sd.py --build "$(BUILD)" --volume "$(VOLUME)" $(if $(DRY_RUN),--dry-run)
+ota-serve:
+	$(RUN) tools/ota_server.py serve $(if $(PORT),--port "$(PORT)")
+ota:
+	$(RUN) tools/ota_server.py push --build "$(BUILD)" $(if $(PORT),--server "http://127.0.0.1:$(PORT)")
 check: lint
 	$(RUN) tools/check.py $(if $(JOBS),--jobs "$(JOBS)")
 accept:

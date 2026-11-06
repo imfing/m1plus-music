@@ -63,8 +63,8 @@ static int cv_on_paint(void *ctx, void *e) {
     if (r1 > (int)cv.n - 1) r1 = (int)cv.n - 1;
     if (r1 < r0) return RET_OK;
     I(canvas, CANVAS_OY) += off;
-    grid_list_paint(canvas, &cv.g, cv.st_title, cv.st_sub, r0, r1, off, GRID_VIEW_H, cv.press, CV_TEXT_X - LIST_TEXT_X, 1,
-                    cv_tile, (void *)0);
+    grid_list_paint(canvas, &cv.g, cv.st_title, cv.st_sub, r0, r1, off, GRID_VIEW_H, cv.press, CV_TEXT_X - LIST_TEXT_X,
+                    1, cv_tile, (void *)0);
     I(canvas, CANVAS_OY) -= off;
     return RET_OK;
 }

@@ -43,19 +43,24 @@ static struct {
 } pal __attribute__((section(".scratch")));
 
 static const char keep_names[] = LIGHT_KEEP;
-static const char surface_names[] = TINT_SURFACE; /* the images the Tinted background tints (tools/palette.py TINT_SURFACE) */
+static const char surface_names[] =
+    TINT_SURFACE; /* the images the Tinted background tints (tools/palette.py TINT_SURFACE) */
 static const char whole_names[] = LIGHT_WHOLE;
 static const char exempt_names[] = LIGHT_EXEMPT;
-static const char cover_names[] = LIGHT_COVER; /* the cover-tinted pages (tools/palette.py COVER_PAGES), in the order of the PAL_COVER_* codes */
-static const char fill_names[] = ACCENT_FILL; /* the images the accent tints (tools/palette.py ACCENT_*): fills, the switch on, the pressed card pieces */
+static const char cover_names[] =
+    LIGHT_COVER; /* the cover-tinted pages (tools/palette.py COVER_PAGES), in the order of the PAL_COVER_* codes */
+static const char fill_names[] =
+    ACCENT_FILL; /* the images the accent tints (tools/palette.py ACCENT_*): fills, the switch on, the pressed card pieces */
 static const char switch_names[] = ACCENT_SWITCH;
 static const char press_names[] = ACCENT_PRESS;
 static const char disc_names[] = ACCENT_DISC;
-static const char glyph_names[] = ACCENT_GLYPH; /* the M1+ Music rows' glyphs, tinted at decode (all but the two tiles) */
+static const char glyph_names[] =
+    ACCENT_GLYPH; /* the M1+ Music rows' glyphs, tinted at decode (all but the two tiles) */
 static const char glyph_not[] = ACCENT_GLYPH_NOT;
 static const char shuf_names[] = ACCENT_SHUFDOWN; /* the pressed Shuffle disc */
 static const char tile_names[] = ACCENT_TILE; /* the Podcasts Library tiles (a grey square, a white glyph) */
-static const char glyph_stock[] = ACCENT_GLYPH_STOCK; /* the stock sheets' row glyphs and selection checks, by exact name */
+static const char glyph_stock[] =
+    ACCENT_GLYPH_STOCK; /* the stock sheets' row glyphs and selection checks, by exact name */
 
 /* ---------------------------------------------------------------------------
  * The flip (tools/palette.py is its model).
@@ -82,11 +87,11 @@ unsigned light_flip(unsigned c) {
 /* ---------------------------------------------------------------------------
  * The accent (tools/palette.py is its model). Colours of offsets.inc are 0xRRGGBB; color_t words hold r, g, b, a as bytes (red lowest).
  */
-#define RGBW(x) (0xff000000u | ((x)&0xffu) << 16 | ((x)&0xff00u) | ((x) >> 16 & 0xffu))
+#define RGBW(x) (0xff000000u | ((x) & 0xffu) << 16 | ((x) & 0xff00u) | ((x) >> 16 & 0xffu))
 #define ACC_CARD_WORD RGBW(ACC_CARD)
 #define ACC_NEUTRAL_WORD 0xffeceeeeu /* Neutral's fill, #EEEEEC (not an accent: nothing is mapped) */
 static const unsigned acc_word[ACC_COUNT] = {
-    ACC_NEUTRAL_WORD, RGBW(ACC_RED),  RGBW(ACC_ORANGE),   RGBW(ACC_GREEN),
+    ACC_NEUTRAL_WORD, RGBW(ACC_RED),    RGBW(ACC_ORANGE),    RGBW(ACC_GREEN),
     RGBW(ACC_TEAL),   RGBW(ACC_PURPLE), RGBW(ACC_CHAMPAGNE),
 };
 
@@ -135,7 +140,9 @@ static int pal_role(unsigned *c, unsigned acc) {
         surface = RGBW(ACC_QPILL);
     else
         return 0;
-    *c = (*c & 0xff000000u) | (pal_tint(pal.tint_on ? pal_mix(surface, acc, ACC_WASH) : surface, acc) & 0xffffffu); /* the pressed surface: the rest colour tinted (Tinted: the tinted rest colour, tinted again) */
+    *c = (*c & 0xff000000u) |
+         (pal_tint(pal.tint_on ? pal_mix(surface, acc, ACC_WASH) : surface, acc) &
+          0xffffffu); /* the pressed surface: the rest colour tinted (Tinted: the tinted rest colour, tinted again) */
     return 1;
 }
 
@@ -307,7 +314,13 @@ extern unsigned *stock_style_color_trampoline(unsigned *, void *, const char *, 
  * Pod and Cassette Mode, which have looks of their own): while one is the window manager's top main window the style hooks pass through. The cover-tinted pages (LIGHT_COVER: Now
  * Playing, the album page, the Podcasts Show page, the Daily Mix page) keep their background in the Tinted mode (pal_cover_page) and nothing else changes there. Both answers are kept
  * for as long as the top window and its name are the same pointers, so a style call costs a call to the window manager and two compares. */
-enum { PAL_COVER_NP = 1, PAL_COVER_AB, PAL_COVER_PG, PAL_COVER_DM, PAL_COVER_RN };/* tools/palette.py COVER_PAGES, in order */
+enum {
+    PAL_COVER_NP = 1,
+    PAL_COVER_AB,
+    PAL_COVER_PG,
+    PAL_COVER_DM,
+    PAL_COVER_RN
+}; /* tools/palette.py COVER_PAGES, in order */
 
 static void pal_look(void) {
     void *wm = window_manager(), *top;
@@ -338,7 +351,8 @@ static int pal_exempt(void) {
     return pal.exempt;
 }
 
-extern int ab_has_tone(void); /* patch/albumpage.c, patch/podcasts.c: the page shows a cover's tone now (the album page when tinted; the Show page, not the shows list or an episode) */
+extern int ab_has_tone(
+    void); /* patch/albumpage.c, patch/podcasts.c: the page shows a cover's tone now (the album page when tinted; the Show page, not the shows list or an episode) */
 extern int pg_has_tone(void);
 
 /* The top main window is a cover-tinted page showing a cover's tone: the Tinted wash leaves the background alone (the accent roles still apply). Windows opened over it follow their own name. */
@@ -347,9 +361,12 @@ static int pal_cover_page(void) {
     switch (pal.cover) {
     case PAL_COVER_NP:
     case PAL_COVER_DM:
-    case PAL_COVER_RN: return 1;
-    case PAL_COVER_AB: return ab_has_tone();
-    case PAL_COVER_PG: return pg_has_tone();
+    case PAL_COVER_RN:
+        return 1;
+    case PAL_COVER_AB:
+        return ab_has_tone();
+    case PAL_COVER_PG:
+        return pg_has_tone();
     }
     return 0;
 }
@@ -499,7 +516,8 @@ static void accent_image(int kind, void *bitmap, unsigned acc) {
     if (!px) return;
     o = at[format];
     card = kind == 6 ? RGBW(ACC_SHUF) : ACC_CARD_WORD; /* the surface that is pressed: the card, or the Shuffle disc */
-    card = pal_tint(pal.tint_on ? pal_mix(card, acc, ACC_WASH) : card, acc); /* (Tinted: the tinted surface, tinted again) */
+    card = pal_tint(pal.tint_on ? pal_mix(card, acc, ACC_WASH) : card,
+                    acc); /* (Tinted: the tinted surface, tinted again) */
     for (y = 0; y < h4; ++y)
         for (p = px + y * stride, x = 0; x < w4; ++x, p += 4) {
             a = p[o[3]];
@@ -512,7 +530,9 @@ static void accent_image(int kind, void *bitmap, unsigned acc) {
                 for (i = 0; i < 3; ++i) v[i] = acc >> (8 * i) & 255;
             } else if (kind == 2) {
                 for (i = 0; i < 3; ++i) v[i] = card >> (8 * i) & 255;
-            } else if (kind == 6) { /* the pressed Shuffle disc: the grey disc becomes the tinted disc, the white glyph stays white, between by lightness */
+            } else if (
+                kind ==
+                6) { /* the pressed Shuffle disc: the grey disc becomes the tinted disc, the white glyph stays white, between by lightness */
                 t = v[0] <= ACC_SHUF_DOWN_R ? 0 : (v[0] - ACC_SHUF_DOWN_R) * 255 / (255 - ACC_SHUF_DOWN_R);
                 if (t > 255) t = 255;
                 for (i = 0; i < 3; ++i) {
@@ -522,7 +542,9 @@ static void accent_image(int kind, void *bitmap, unsigned acc) {
             } else if (kind == 0) {
                 if (v[0] >= ACC_FILL_R) {
                     for (i = 0; i < 3; ++i) v[i] = acc >> (8 * i) & 255; /* the fill itself (or white: the check) */
-                } else if (v[0] > ACC_TRACK_R) { /* a pixel between the track and the fill (a bar's antialiased edge over its grey track): the same share t of the fill, as the accent over the track */
+                } else if (
+                    v[0] >
+                    ACC_TRACK_R) { /* a pixel between the track and the fill (a bar's antialiased edge over its grey track): the same share t of the fill, as the accent over the track */
                     t = (v[0] - ACC_TRACK_R) * 255 / (ACC_FILL_R - ACC_TRACK_R);
                     for (i = 0; i < 3; ++i) {
                         int dv = ((int)(acc >> (8 * i) & 255) - (int)(ACC_NEUTRAL_WORD >> (8 * i) & 255)) * (int)t;
@@ -531,7 +553,8 @@ static void accent_image(int kind, void *bitmap, unsigned acc) {
                         v[i] = dv < 0 ? 0 : dv > 255 ? 255 : (unsigned)dv;
                     }
                 }
-            } else if (kind == 3 || kind == 5) { /* the fixed end: the disc's #141414 glyph, or the tile's #1E1E1E square */
+            } else if (kind == 3 ||
+                       kind == 5) { /* the fixed end: the disc's #141414 glyph, or the tile's #1E1E1E square */
                 unsigned lo = kind == 3 ? ACC_KNOB_R : ACC_TILE_R;
                 t = v[0] <= lo ? 0 : (v[0] - lo) * 255 / (255 - lo);
                 if (t > 255) t = 255;

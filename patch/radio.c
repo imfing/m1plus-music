@@ -77,8 +77,7 @@ int rd_playlist(char *buf, unsigned *name, unsigned *url, unsigned *info, int ma
     char *end = buf + strlen(buf);
     unsigned named = 0, meta = 0; /* 1 + the pending #EXTINF name's offset; 1 + the pending info's */
     char *s, *next, *first = buf; /* offsets stay relative to buf; only the scan skips a BOM */
-    if ((unsigned char)buf[0] == 0xef && (unsigned char)buf[1] == 0xbb && (unsigned char)buf[2] == 0xbf)
-        first += 3;
+    if ((unsigned char)buf[0] == 0xef && (unsigned char)buf[1] == 0xbb && (unsigned char)buf[2] == 0xbf) first += 3;
     for (s = first; *s; s = next) {
         char *v, *comma;
         int file;
@@ -511,7 +510,8 @@ static int rd_read_whole(const char *path, rd_list_t *l) {
 /* A card file that is a playlist by its extension (.m3u, .m3u8, .pls), not a dot file and not favourites.m3u. */
 static int rd_card_file(const char *name) {
     const char *dot = strrchr(name, '.');
-    return name[0] != '.' && dot && (!strcasecmp(dot, ".m3u") || !strcasecmp(dot, ".m3u8") || !strcasecmp(dot, ".pls")) &&
+    return name[0] != '.' && dot &&
+           (!strcasecmp(dot, ".m3u") || !strcasecmp(dot, ".m3u8") || !strcasecmp(dot, ".pls")) &&
            strcasecmp(name, "favourites.m3u");
 }
 
@@ -541,7 +541,8 @@ int rd_fav_import(int *full) {
         unsigned n = (unsigned)strlen(name) + 1;
         if (!rd_card_file(name) || files >= RD_FILES_MAX || used + n > RD_NAMES_MAX) continue;
         memcpy(names + used, name, n);
-        for (i = files++; i > 0 && rd_name_cmp(names + at[i - 1], name) > 0; --i) at[i] = at[i - 1]; /* sorted by file name */
+        for (i = files++; i > 0 && rd_name_cmp(names + at[i - 1], name) > 0; --i)
+            at[i] = at[i - 1]; /* sorted by file name */
         at[i] = used;
         used += n;
     }
@@ -591,8 +592,7 @@ int rd_fav_import(int *full) {
         }
     }
     rd_list_free(&f);
-    if (ok && added)
-        ok = pod_card_write(RD_DIR, RD_FAVS, RD_FAVS_TMP, out, len, (const void *)0, 0) == 0;
+    if (ok && added) ok = pod_card_write(RD_DIR, RD_FAVS, RD_FAVS_TMP, out, len, (const void *)0, 0) == 0;
     free(out);
     free(names);
     rd_list_free(&favs);
@@ -651,8 +651,16 @@ int rd_owns_bar(void) { return rd.owns; }
 const rd_list_t *rd_list(void) { return &rd.list; }
 const char *rd_error(void) { return rd.error; }
 
-static const char *const RD_WHY[] = {"",         "Unsupported address", "Bluetooth is not supported", "Could not start", "Playback ended",
-                                     "Could not connect", "Stream stalled", "No response", "No Wi-Fi", "Player not ready"};
+static const char *const RD_WHY[] = {"",
+                                     "Unsupported address",
+                                     "Bluetooth is not supported",
+                                     "Could not start",
+                                     "Playback ended",
+                                     "Could not connect",
+                                     "Stream stalled",
+                                     "No response",
+                                     "No Wi-Fi",
+                                     "Player not ready"};
 
 /* The state table (docs/modules/radio.md): next state, actions and the error's words (an index into RD_WHY) for each event in each state; Z = no change. RD_AGAIN marks a restart
  * that is allowed once per play (tries) and only with Wi-Fi; otherwise the cell becomes the error state with a stop. */
@@ -666,16 +674,27 @@ typedef struct {
 #define ST 6
 /*                         IDLE   CONNECTING                      PLAYING                         ERROR   STOPPED  PAUSED */
 static const rd_cell RD_TABLE[RD_EV_N][ST] = {
-    /* PLAY      */ {C(CONNECTING, RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0), C(CONNECTING, RD_A_START, 0),
+    /* PLAY      */ {C(CONNECTING, RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0),
+                     C(CONNECTING, RD_A_STOP | RD_A_START, 0), C(CONNECTING, RD_A_START, 0),
                      C(CONNECTING, RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0)},
-    /* BAD       */ {C(ERROR, 0, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, 0, 1), C(ERROR, 0, 1), C(ERROR, RD_A_STOP, 1)},
-    /* BT        */ {C(ERROR, 0, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, 0, 2), C(ERROR, 0, 2), C(ERROR, RD_A_STOP, 2)},
-    /* FAILSTART */ {C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3)},
-    /* STOP      */ {Z, C(STOPPED, RD_A_STOP, 0), C(STOPPED, RD_A_STOP, 0), C(STOPPED, 0, 0), Z, C(STOPPED, RD_A_STOP, 0)},
+    /* BAD       */
+    {C(ERROR, 0, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, 0, 1), C(ERROR, 0, 1),
+     C(ERROR, RD_A_STOP, 1)},
+    /* BT        */
+    {C(ERROR, 0, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, 0, 2), C(ERROR, 0, 2),
+     C(ERROR, RD_A_STOP, 2)},
+    /* FAILSTART */
+    {C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3),
+     C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3)},
+    /* STOP      */
+    {Z, C(STOPPED, RD_A_STOP, 0), C(STOPPED, RD_A_STOP, 0), C(STOPPED, 0, 0), Z, C(STOPPED, RD_A_STOP, 0)},
     /* LOCAL     */ {Z, C(STOPPED, RD_A_STOP, 0), C(STOPPED, RD_A_STOP, 0), Z, Z, C(STOPPED, RD_A_STOP, 0)},
-    /* REROUTE   */ {Z, C(CONNECTING, RD_A_STOP | RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0), Z, Z, C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0)},
+    /* REROUTE   */
+    {Z, C(CONNECTING, RD_A_STOP | RD_A_START, 0), C(CONNECTING, RD_A_STOP | RD_A_START, 0), Z, Z,
+     C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0)},
     /* REROUTE_PAUSED: the same restart, then paused (stock's save_start_player(1)) */
-                  {Z, C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0), C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0), Z, Z, C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0)},
+    {Z, C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0), C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0), Z, Z,
+     C(PAUSED, RD_A_STOP | RD_A_START | RD_A_PAUSE, 0)},
     /* HEAR      */ {Z, C(PLAYING, 0, 0), Z, Z, Z, C(PLAYING, 0, 0)},
     /* PAUSE     */ {Z, C(PAUSED, 0, 0), C(PAUSED, 0, 0), Z, Z, Z},
     /* RESUME    */ {Z, Z, Z, Z, Z, C(PLAYING, 0, 0)},
@@ -683,7 +702,8 @@ static const rd_cell RD_TABLE[RD_EV_N][ST] = {
     /* STALL     */ {Z, Z, C(CONNECTING, RD_A_STOP | RD_A_START | RD_AGAIN, 6), Z, Z, Z},
     /* TIMEOUT   */ {Z, C(ERROR, RD_A_STOP, 7), Z, Z, Z, Z},
     /* NOWIFI: a start (a tap, Retry, Resume, an output change) with no connection: no attempt, "No Wi-Fi" at once; a running stream is stopped */
-                  {C(ERROR, 0, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, 0, 8), C(ERROR, 0, 8), C(ERROR, RD_A_STOP, 8)},
+    {C(ERROR, 0, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, 0, 8), C(ERROR, 0, 8),
+     C(ERROR, RD_A_STOP, 8)},
 };
 
 /* The pure step: the new state | actions << 8 | why << 16. tries = restarts used by this play, wifi = a connection exists. */
@@ -719,13 +739,15 @@ static void rd_apply(int ev) {
     rd.state = (int)(r & 255);
     if (rd.state == RD_ERROR) rd_copy(rd.error, sizeof rd.error, RD_WHY[why]);
     if (act & RD_A_STOP) mclStop(); /* synchronous; -1 at once when stock's running byte is 0, so it is idempotent */
-    if (rd_was_running(was) && !rd_running()) rd_speed_back(); /* the output goes back to local music at the user's speed */
+    if (rd_was_running(was) && !rd_running())
+        rd_speed_back(); /* the output goes back to local music at the user's speed */
     if (ev == RD_EV_PLAY) rd.tries = 0;
     if (rd.state == RD_CONNECTING && (ev == RD_EV_ENDED || ev == RD_EV_STALL)) ++rd.tries;
     if (rd.state == RD_PLAYING && was != RD_PLAYING) rd.last_hear = rd.playing_since = (unsigned)time_now_ms();
     if (act & RD_A_RETRY) rd.retry_at = (unsigned)time_now_ms() + 1000, rd.retry_at += !rd.retry_at;
     if (act & RD_A_START) rd_begin();
-    if (act & RD_A_PAUSE && rd.state == RD_PAUSED) mclSetPause(); /* a paused station restarted on another output stays paused (as stock pauses its restarted track) */
+    if (act & RD_A_PAUSE && rd.state == RD_PAUSED)
+        mclSetPause(); /* a paused station restarted on another output stays paused (as stock pauses its restarted track) */
 }
 
 /* hciplayer splits its command on '|' and ends it at '}'. */
@@ -760,7 +782,8 @@ static void rd_begin(void) {
     }
     rd_dac();
     *(volatile int *)RESUME_POS = 0;
-    if (*(volatile int *)PLAYSPEED_MODE != 0) mclSetPlaySpeed(0); /* the radio is live: 1x whatever Multiple Speed says */
+    if (*(volatile int *)PLAYSPEED_MODE != 0)
+        mclSetPlaySpeed(0); /* the radio is live: 1x whatever Multiple Speed says */
     r = mcl_tidalStartPlayer(rd_url(&rd.list, rd.at));
     mclSetMute(0);
     rd.fd = *(volatile int *)HCI_SOCK_FD;
@@ -807,7 +830,10 @@ void rd_save_stop(void) {
 
 void rd_save_start(int paused) {
     if (rd_running())
-        rd_apply(rd_bt() ? RD_EV_BT : get_wifisignal() <= 0 ? RD_EV_NOWIFI : paused ? RD_EV_REROUTE_PAUSED : RD_EV_REROUTE);
+        rd_apply(rd_bt()                 ? RD_EV_BT
+                 : get_wifisignal() <= 0 ? RD_EV_NOWIFI
+                 : paused                ? RD_EV_REROUTE_PAUSED
+                                         : RD_EV_REROUTE);
     else
         stock_save_start_trampoline(paused);
 }
@@ -843,7 +869,8 @@ void rd_poll(void) {
     else if (hs) {
         rd.last_hear = now;
         if (rd.state == RD_CONNECTING) ev = RD_EV_HEAR;
-        if (rd.state == RD_PLAYING && now - rd.playing_since >= RD_STEADY_MS) rd.tries = 0; /* a stream that held for a minute earns a new restart */
+        if (rd.state == RD_PLAYING && now - rd.playing_since >= RD_STEADY_MS)
+            rd.tries = 0; /* a stream that held for a minute earns a new restart */
     } else if (rd.state == RD_PLAYING && now - rd.last_hear >= RD_STALL_MS)
         ev = RD_EV_STALL;
     else if (rd.state == RD_CONNECTING && now - rd.t_start >= RD_SILENT_MS)
@@ -882,9 +909,11 @@ int rd_play(const rd_list_t *l, int i) {
     else if (rd_bt())
         rd_apply(RD_EV_BT);
     else if (get_wifisignal() <= 0)
-        rd_apply(RD_EV_NOWIFI); /* no connection: no attempt, no 20 s wait; local music keeps playing, the next tap after Wi-Fi is back starts */
+        rd_apply(
+            RD_EV_NOWIFI); /* no connection: no attempt, no 20 s wait; local music keeps playing, the next tap after Wi-Fi is back starts */
     else {
-        if (!rd_running()) stop_player(); /* stock's own stop (a no-op when nothing plays): local music holds the PCM even paused */
+        if (!rd_running())
+            stop_player(); /* stock's own stop (a no-op when nothing plays): local music holds the PCM even paused */
         rd_apply(RD_EV_PLAY);
     }
     if (rd.state != RD_CONNECTING) return 0;
@@ -906,8 +935,9 @@ static struct {
     unsigned long thread;
     int state, kind, joined;
     volatile int cancel, done;
-    long code, http; /* code: the answer's HTTP status (0 when the transfer failed); http: the raw status of the last attempt, for the log */
-    int rc, tries;   /* the last attempt's libcurl code and the attempts made */
+    long code,
+        http; /* code: the answer's HTTP status (0 when the transfer failed); http: the raw status of the last attempt, for the log */
+    int rc, tries; /* the last attempt's libcurl code and the attempts made */
     char *body;
     unsigned n;
     char url[400];
@@ -953,7 +983,8 @@ static void rd_log(const char *path) {
     if (access(LOG_ENABLE, F_OK)) return;
     fd = open(LOG_FILE, O_WRONLY | O_APPEND | O_CREAT, 0644);
     if (fd < 0) return;
-    snprintf(line, sizeof line, "radio: directory %s failed: curl %d, http %d, attempts %d\n", path, fx.rc, (int)fx.http, fx.tries);
+    snprintf(line, sizeof line, "radio: directory %s failed: curl %d, http %d, attempts %d\n", path, fx.rc,
+             (int)fx.http, fx.tries);
     write(fd, line, strlen(line));
     close(fd);
 }
@@ -1208,8 +1239,7 @@ static void *rd_logo_worker(void *unused) {
         else
             lg.refused = 1; /* a full or locked card: the cached logos still show, no new download this session */
     }
-    if (lg.result == 0 && !lg.cancel && lg.nfailed < 16)
-        lg.failed[lg.nfailed++] = lg.hash;
+    if (lg.result == 0 && !lg.cancel && lg.nfailed < 16) lg.failed[lg.nfailed++] = lg.hash;
     lg.done = 1;
     return (void *)0;
 }

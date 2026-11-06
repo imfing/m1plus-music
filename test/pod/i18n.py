@@ -267,6 +267,8 @@ def run(ctx):
         if width(tr_text(loc, 'Preparing covers...') + ' 4000/4000', 20) > cover.find('label_status').w: over.append((loc, 'progress'))
         for key in ('Preparing covers', 'Rebuilding covers', 'Measuring tracks'):
             if width(tr_text(loc, key) + ' 4000/4000', pod_ui.HC_PX) > A['HC_W'] - 2: over.append((loc, key, 'Home progress line'))   # the Home line (patch/homecover.c): one 15 px line in a 300 px label with its 2 px margin
+        for key in ('Checking library…', 'Rebuilding covers…'):
+            if width(tr_text(loc, key).replace('…', '...'), pod_ui.HC_PX) > A['HC_W'] - 2: over.append((loc, key, 'Home waiting line'))   # (the dots are three ASCII ones at most)   # the waiting pill (patch/homecover.c hc_wait_text): the text alone, no count
         if width(tr_text(loc, 'Cancel'), 20) > cover.find('btn_cancel').w - 10: over.append((loc, 'Cancel'))
         if width(tr_text(loc, 'All albums'), 22) > 288: over.append((loc, 'All albums'))
         # the pill: the text is centred in a 104 px rect (194 - margins 32 + 29 - the 44 px icon square - the spacer -15)

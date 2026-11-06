@@ -75,7 +75,8 @@ static struct {
     unsigned ck_t, dtimer;
     unsigned char ht[LY_MAX]; /* rows of each line, 0 not measured yet */
     unsigned char fc[LY_MAX]; /* face of each measured line */
-    unsigned char miss, redo, skip; /* page ticks whose layout could not measure a line (since the lyrics loaded); whether the layout must run again for that; a measure failed in this layout */
+    unsigned char miss, redo,
+        skip; /* page ticks whose layout could not measure a line (since the lyrics loaded); whether the layout must run again for that; a measure failed in this layout */
 } ly __attribute__((section(".scratch")));
 
 /* The damped spring, 1024 x g(t) every 10 ms, g = e^(-zeta wn t) (cos wd t + zeta / sqrt(1 - zeta^2) sin wd t), zeta 0.72, wn 12 /s, wd = wn sqrt(1 - zeta^2):
@@ -415,7 +416,8 @@ static void ly_layout(void) {
     for (slot = 0; slot < LY_POOL; ++slot)
         if (!used[slot]) ly_hide(slot);
     ly_dots(have0, d0);
-    ly.dirty = ly.redo, ly.redo = 0; /* a line that was not measured is tried again by the next layout (the page tick) */
+    ly.dirty = ly.redo,
+    ly.redo = 0; /* a line that was not measured is tried again by the next layout (the page tick) */
 }
 
 static int ly_frame(const void *timer) {

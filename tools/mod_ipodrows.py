@@ -157,7 +157,18 @@ def edit_usbmode(root):
     dset.set('style:pressed:icon', USB_SET_ICON + '_down')
 
 
+def edit_volume(root):
+    """The stock full-page volume screen: the root dialog is a 42 px strip (0, 0, 320, 42) that stock code never resizes, and AWTK does not
+    clip children, so its all-sides 1 px black border (painted after the children) lands at y 41 across the page, through the glass Back
+    disc (y 34 .. 76). The border becomes transparent; the bg colour and every rectangle are untouched."""
+    assert (root.x, root.y, root.w, root.h) == (0, 0, 320, 42), 'unexpected volume_dialog root'
+    for st in ('normal', 'disable', 'focused'):
+        assert root.get(f'style:{st}:border_color') == '#000000', f'volume_dialog: unexpected {st} border_color'
+        root.set(f'style:{st}:border_color', '#00000000')
+
+
 NAVBAR_UI_EDITS = {
+    'dialog/volume_dialog.bin': edit_volume,
     'playset/equalizer_page.bin': edit_equalizer,
     'systemset/specfolder_page.bin': edit_specfolder,
 }

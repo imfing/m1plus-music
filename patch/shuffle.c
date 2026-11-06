@@ -85,7 +85,8 @@ static struct {
     unsigned char loaded; /* the flag file has been read */
     unsigned char on; /* the flag */
     unsigned char keep; /* pod_set_repeat is changing the stock mode: the flag stays */
-    unsigned char fresh; /* set_mode / set_in_order for a queue about to load: the flag changes without reordering the current queue */
+    unsigned char
+        fresh; /* set_mode / set_in_order for a queue about to load: the flag changes without reordering the current queue */
     unsigned char booted; /* mclSetPlayMode has run once this session (stock's own boot restore is the first call) */
     unsigned
         *orig; /* orig[slot] = the position the song at that slot had before the shuffle; NULL when there is none */
@@ -191,7 +192,9 @@ static int shuffle_tail(void *q, unsigned n, int pos) {
     unsigned lo = pos >= 0 && (unsigned)pos < n ? (unsigned)pos + 1 : 0, m = n - lo, i;
     unsigned *orig;
     if (m < 2) return 1;
-    orig = calloc(n, sizeof *orig); /* the one allocation (and apply_perm's bitmap): orig is the identity, its tail the permutation */
+    orig = calloc(
+        n,
+        sizeof *orig); /* the one allocation (and apply_perm's bitmap): orig is the identity, its tail the permutation */
     if (!orig) return 0;
     for (i = 0; i < n; ++i) orig[i] = i;
     permute(orig + lo, m);
@@ -327,7 +330,8 @@ int pod_queue_insert(void *rows, int after) {
     pos = mclGetPlayPos();
     if (!n || !size || pos < 0 || (unsigned)pos >= size) {
         r = POD_INSERT_IDLE;
-    } else if (dlna_running()) { /* the service starts on the UI thread (this one), so it cannot start before the insert ends */
+    } else if (
+        dlna_running()) { /* the service starts on the UI thread (this one), so it cannot start before the insert ends */
         r = POD_INSERT_DLNA;
     } else if (size + n > SHUFFLE_MAX) {
         r = POD_INSERT_FULL;
@@ -381,7 +385,8 @@ int sh_set_mode(int mode) {
     r = stock_setmode_trampoline(mode == MODE_SHUFFLE ? MODE_ORDER : mode);
     if (want != was) { /* a failed shuffle leaves the flag off: the request becomes List play */
         if (sh.fresh)
-            flag_only(want); /* a queue load follows (set_mode): the replacement is shuffled by sh_load_playlist, the old one is not touched */
+            flag_only(
+                want); /* a queue load follows (set_mode): the replacement is shuffled by sh_load_playlist, the old one is not touched */
         else
             flag_set(want);
     }

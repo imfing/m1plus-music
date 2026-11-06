@@ -73,6 +73,10 @@
 #define REBUILD_FILE \
     "/mnt/data/m1plus/covers-rebuild" /* exists while a Settings > Library > Rebuild Covers is requested; Home's cover build (patch/homecover.c) does it and removes it when done */
 #define REBUILD_TMP "/mnt/data/m1plus/covers-rebuild.tmp"
+#define STAMP_FILE \
+    CARD_DIR \
+    "/cache-stamp" /* what the library was when Home's last pass finished: "covers <albums> <hash>" and "tracks <albums> <hash>" lines (patch/homecover.c); on the card, like the cache it describes */
+#define STAMP_TMP CARD_DIR "/cache-stamp.tmp"
 #define KBZH_FILE \
     "/mnt/data/m1plus/keyboard-pinyin" /* the on-screen keyboard's Chinese (Pinyin) layer: "1" = on, anything else or missing = off (Settings > Keyboards; patch/keyboard.c) */
 #define KBZH_TMP "/mnt/data/m1plus/keyboard-pinyin.tmp"
@@ -144,6 +148,10 @@ extern void dailymix_start(void *win);
 
 /* patch/homecover.c: the background cover build and its progress line on the Home instance of the menu (called by home_menu_opened) */
 extern void homecover_start(void *win);
+extern void homecover_stamp_drop(
+    int mask); /* the cache stamp forgets the covers (1) and / or the track lengths (2): Home's next open shows the waiting pill */
+extern void
+homecover_rebuild_asked(void); /* Rebuild Covers was confirmed: the pill's stop no longer holds Home's build back */
 extern void
 homecover_cache_open(void *win,
                      int page); /* the Cover Cache page is up: count the cache folder in steps (patch/homecover.c) */
@@ -168,7 +176,8 @@ extern int
 pod_set_shuffle(int on); /* Shuffle on / off, the repeat mode kept; 0 refused (the stock message box was shown) */
 extern void pod_set_mode_for_queue(
     int mode); /* patch/shuffle.c: pod_set_mode right before a queue load: the flag only, the queue being replaced is not reordered */
-extern void pod_set_in_order_for_queue(void); /* patch/shuffle.c: pod_set_in_order right before a queue load: the flag only */
+extern void
+pod_set_in_order_for_queue(void); /* patch/shuffle.c: pod_set_in_order right before a queue load: the flag only */
 extern int pod_clear_upnext(void); /* patch/shuffle.c: Clear: 1 done, 0 nothing after the position, -1 refused */
 extern int pod_clear_ready(void); /* patch/shuffle.c: Clear can run (kill switch off, libcstl as pinned) */
 extern void pod_set_repeat(int mode); /* the stock repeat mode (0 off, 3 all, 1 one), the Shuffle flag kept */

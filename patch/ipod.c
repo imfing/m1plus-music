@@ -840,7 +840,7 @@ static int ip_pane_sharp_ready(void) {
     return ip.pane.busy_seen || time_now_ms() - ip.pane.trk_ms >= IP_PANE_SHARP_MS;
 }
 
-/* Stop the transient extraction (join: bounded by one album's art) and drop its file. Safe at any time. */
+/* Stop the transient extraction (cc_build_stop: never waits) and drop its file. Safe at any time. */
 static void ip_pane_xfer_stop(void) {
     if (ip.pane.worker) cc_build_stop();
     if (ip.pane.worker || ip.pane.xfer) unlink(IP_PANE_TMP), unlink(IP_PANE_TMP ".tmp");
@@ -1869,8 +1869,7 @@ static void ip_select(void) {
             ip_shuffle_all();
         else if (row == ROOT_NOW) {
             if (!rn_open_if_active()) ip_push(K_NOW); /* Radio's page while a station plays (patch/radionp.c) */
-        }
-        else if (row == ROOT_SETTINGS)
+        } else if (row == ROOT_SETTINGS)
             ip_push(K_SETTINGS);
         return;
     }
@@ -2117,7 +2116,7 @@ static int ip_tick(const void *timer) {
     if (ip_top()->kind == K_CF && ip_valid() && ipcf_tick(ip.list, ip.count))
         ip_redraw(); /* Cover Flow slides and decodes on this timer (ipod_cf.c) */
     if ((ip.pane.worker || ip.pane.xfer) && !(ip_split(ip_top()->kind) && pod_is_top(ip.win)))
-        ip_pane_xfer_stop(); /* the pane is not in front: its extraction goes (joined, bounded by one album) */
+        ip_pane_xfer_stop(); /* the pane is not in front: its extraction goes (cc_build_stop) */
     if (ip_pane_step()) ip_redraw_pane(); /* the cover pane of a split page: only its rectangle is invalidated */
     if (finished || ip.ival == IP_TICK_MS ||
         ++ip.lookn >= IP_DRIFT_LOOK) { /* refresh playback as soon as a transition finishes */

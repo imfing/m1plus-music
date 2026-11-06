@@ -138,7 +138,7 @@ def edit(root, ttf, texts, report):
             report.append(f'tile captions over 40 px: {len(over(spx, 57))} at {spx} px x 57 (stock), {len(over(tpx, w.w))} at {tpx} px x {w.w} '
                           f'(none in {"/".join(MUST_FIT)}); still over: {", ".join(over(tpx, w.w))}')
     report.append(f'tiles {changed}')
-    after = [(w.type, w.name, w.x, w.y, w.w, w.h) for w in root.walk() if w.name != statusbar.LO_WIDGET]   # (the Line Out pill statusbar.apply adds is the one new widget)
+    after = [(w.type, w.name, w.x, w.y, w.w, w.h) for w in root.walk() if w.name not in (statusbar.LO_WIDGET, statusbar.SYNC_WIDGET)]   # (the Line Out pill and the sync icon statusbar.apply adds are the new widgets)
     bar_names = {w.name for w in sysbar.walk()}
     moved = [a for a, b in zip(shape, after) if a != b and a[1] not in bar_names and a[1] not in TILES]   # the bar's own widgets and the caption boxes
     check(len(shape) == len(after) and not moved, f'widgets moved: {moved}')

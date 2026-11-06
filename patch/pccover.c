@@ -127,10 +127,13 @@ static int pv_jpeg(const char *src, const char *dst, unsigned cover) {
     volatile int dec_up = 0, ok = 0, keep = 0;
     unsigned w, h, sof, side, d, ow, oh, n, y, tw = 0, th = 0;
     unsigned char *line[1];
-    if (pc_pic_info(src, &w, &h, &sof) != 1 || (sof != 0xc0 && sof != 0xc1 && sof != 0xc2) || !w || !h || w > 8192 ||
-        h > 8192)
+    if (pc_pic_info(src, &w, &h, &sof) != 1 || (sof != 0xc0 && sof != 0xc1 && sof != 0xc2) || !w || !h) return 0;
+    if (cover && sof == 0xc2 && (w > 8192 || h > 8192 || w * h > PV_COVER_PROGRESSIVE_PX)) return PV_REFUSED;
+    if (w > 8192 || h > 8192 ||
+        w * h > (sof != 0xc2 ? PV_BASELINE_MAX_PX
+                 : cover     ? PV_COVER_PROGRESSIVE_PX
+                             : PC_COVER_MAX_PX))
         return 0;
-    if (w * h > (sof != 0xc2 ? PV_BASELINE_MAX_PX : cover ? PV_COVER_PROGRESSIVE_PX : PC_COVER_MAX_PX)) return 0;
     side = w > h ? w : h;
     fin = fopen(src, "rb");
     if (!fin) return 0;

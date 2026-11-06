@@ -146,7 +146,7 @@ def run(ctx):
     started(m)
     m.calls = []
     PCP.click(m, 'pod_pd_cancel')
-    expect(m.word(CANCEL) == 1 and flags(m, 'pod_pd_cancel') == (1, 0) and text_of(m, 'pod_pd_count') == m.tr('Cancelling…').encode('utf-8').decode('latin-1') and flags(m, 'pod_pd_card') == (1, 1),
+    expect(m.word(CANCEL) == 1 and flags(m, 'pod_pd_cancel') == (1, 0) and text_of(m, 'pod_pd_count') == m.tr('Cancelling…') and flags(m, 'pod_pd_card') == (1, 1),
            'Cancel sets the flag, the row goes dead, the line says "Cancelling…"; the dialog stays while the worker is alive')
     seen = []
     m.curl_site = lambda url, o: (seen.append(url), {'body': WSJ})[1]
