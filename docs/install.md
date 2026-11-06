@@ -1,11 +1,14 @@
 # Install and update
 
 You need a Shanling M1 Plus, a working TF/microSD card and the `update.bin` from the latest
-[M1+ Music release](https://github.com/imfing/m1plus-music/releases/latest).
+[M1+ Music Navidrome release](https://github.com/iamgauravmishra/m1plus-music-navidrome/releases/latest).
 
 Only kernel and rootfs are updated. The bootloader and recovery kernel stay unchanged, but the
 M1 Plus recovery button combination remains unverified. Keep the battery charged and leave
 the card inserted until the update finishes.
+
+This is unofficial third-party firmware. Install it at your own risk. Back up your card before
+updating. I am not responsible for damage caused by installing or using this firmware.
 
 ## Install
 

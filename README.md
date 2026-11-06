@@ -4,16 +4,18 @@
 
 <p align="center">
   A modern music-player interface for the <b>Shanling M1 Plus</b>.<br>
-  Built on official V2.1 firmware.
+  Built on official V2.1 firmware, with Navidrome/Subsonic support.
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/imfing/m1plus-music/releases/latest">Download</a></b> ·
+  <b><a href="https://github.com/iamgauravmishra/m1plus-music-navidrome/releases/latest">Download</a></b> ·
   <b><a href="#install-and-update">Install</a></b> ·
   <b><a href="docs/guide.md">User guide</a></b> ·
   <b><a href="#screenshots">Screenshots</a></b> ·
   <b><a href="#documentation">Development</a></b>
 </p>
+
+This project builds on [imfing/m1plus-music](https://github.com/imfing/m1plus-music), retaining its player features and adding Navidrome/Subsonic support. See [Acknowledgements](#acknowledgements) for credit.
 
 ## Features
 
@@ -50,12 +52,14 @@ Stock settings and Tidal remain accessible. See the [user guide](docs/guide.md) 
 
 ## Install and update
 
-Still early in development and tested only on my own M1 Plus.
+This release candidate is awaiting device testing.
 
-Download `update.bin` and `SHA256SUMS` from the [latest release](https://github.com/imfing/m1plus-music/releases/latest).
+Download `update.bin` and `SHA256SUMS` from the [latest release](https://github.com/iamgauravmishra/m1plus-music-navidrome/releases/latest).
 Verify the checksum, then install `update.bin` from the TF card using the player's System Update menu.
 Once installed, later releases can be installed over Wi-Fi from **Settings → System → About → Software Update**.
 Follow the [installation guide](docs/install.md) for preparation, updates and restoring stock.
+
+This is unofficial third-party firmware. Install it at your own risk. Back up your card and keep the player charged during updates. I am not responsible for damage caused by installing or using this firmware.
 
 ## Documentation
 
@@ -68,6 +72,8 @@ The [documentation index](docs/README.md) lists technical references.
 [MIT](LICENSE). Shanling firmware is not included. Font and icon licenses accompany their assets.
 
 ## Acknowledgements
+
+This repository is based on [imfing/m1plus-music](https://github.com/imfing/m1plus-music) by imfing and its contributors. It retains the upstream project and adds Navidrome/Subsonic integration; upstream features such as Tidal remain included. See the upstream repository for its original project history and credits.
 
 Inspired by Diamond Bond's [q2-pod](https://github.com/DiamondBond/q2-pod) for the Shanling Q2.
 The radio placeholder glyph derives from [IconPark](https://github.com/bytedance/IconPark) `radio` (Apache-2.0).
