@@ -23,9 +23,9 @@ Music stays on the card. Overwrite the retained `update.bin` for the next update
 
 ## Update
 
-From 1.1.0, open **Settings → System → About → Software Update** with Wi-Fi on: it downloads the
-newest release to the card and starts the TF card update (see the [user guide](guide.md#settings)).
-Without Wi-Fi, or from 1.0.0, repeat the installation steps with the newer release's `update.bin`.
+The built-in Software Update reads releases from this project's GitHub repository and requires
+public releases. While the repository is private, update manually by repeating the installation
+steps with the newer release's `update.bin`.
 
 ## Disable M1+ Music
 

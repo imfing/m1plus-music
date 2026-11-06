@@ -56,7 +56,7 @@ This release candidate is awaiting device testing.
 
 Download `update.bin` and `SHA256SUMS` from the [latest release](https://github.com/iamgauravmishra/m1plus-music-navidrome/releases/latest).
 Verify the checksum, then install `update.bin` from the TF card using the player's System Update menu.
-Once installed, later releases can be installed over Wi-Fi from **Settings → System → About → Software Update**.
+The built-in Software Update can fetch releases only when this repository's releases are public; while the repository is private, use the TF card for updates.
 Follow the [installation guide](docs/install.md) for preparation, updates and restoring stock.
 
 This is unofficial third-party firmware. Install it at your own risk. Back up your card and keep the player charged during updates. I am not responsible for damage caused by installing or using this firmware.
