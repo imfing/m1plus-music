@@ -860,7 +860,7 @@ def accent_picker_tests(ctx):
     expect(V.rows[row_i].arg == P.APPEARANCE_PAGE_INDEX and V.rows[row_i].action == P.ACT_PAGE and P.row_kind(V.rows[row_i]) == 'link' and [r.label for r in V.rows[row_i - 1:row_i + 2]] == ['Display', 'Appearance', 'Keyboards']
            and 'Light Mode' not in [r.label for r in V.rows] and 'Accent' not in [r.label for r in V.rows], 'Settings > System: an Appearance link (a chevron, no value) between Display and Keyboards; the Light row still hidden')
     expect([(r.label, r.action, r.arg) for r in W.rows][1:2] == [('Accent', P.ACT_ACCENT, P.ACCENT_PAGE_INDEX)] and P.row_kind(W.rows[1]) == 'value' and W.title == 'Appearance' and W.key == 'm1plus_appearance'
-           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is W and P.APPEARANCE_PAGE_INDEX == 40 and P.PAGES[42:] == [P.RADIO, P.RADIONP, P.RADIOINFO], 'the Appearance page (PAGES[40]): an Accent value row opening the picker, the Radio pages after the Pull-down page')
+           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is W and P.APPEARANCE_PAGE_INDEX == 40 and P.PAGES[42:] == [P.RADIO, P.RADIONP, P.RADIOINFO, P.SUBSONIC_PAGE], 'the Appearance page (PAGES[40]): an Accent value row opening the picker, the Radio and Navidrome pages after the Pull-down page')
 
     def open_pick(data=None):
         m = LM(acc=data)

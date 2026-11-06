@@ -64,7 +64,8 @@ enum {
     ACT_BGSET = 47,
     ACT_ACCENT = 48,
     ACT_ACCENTSET = 49,
-    ACT_RADIO = 50
+    ACT_RADIO = 50,
+    ACT_SUBSONIC = 51
 };
 
 extern void shot_start(void); /* patch/shot.c: the Screenshot row: confirm, 5 s countdown, capture; or cancel */
@@ -76,6 +77,7 @@ extern int ipod_open(void); /* patch/ipod.c: the virtual iPod Classic, a fullscr
 extern int podcasts_open(void); /* patch/podcasts.c: the shows on the card and their episodes */
 extern int update_open(void); /* patch/update.c: Software Update, our page; -1 when it did not open */
 extern int radio_open(void); /* patch/radiopage.c: Radio's stations page */
+extern void sb_page_open(void *win); /* patch/subsonic.c: Navidrome browser controls and stock queue playback */
 extern int search_open(void); /* patch/search.c: our keyboard, then the results page; -1 when it did not open */
 extern int songs_open(void); /* patch/songs.c: Songs, the library as one list with sections and a jump rail */
 extern int folders_open(
@@ -268,6 +270,8 @@ static int on_row(void *ctx, void *e) {
         podcasts_open();
     else if (row->action == ACT_RADIO)
         radio_open();
+    else if (row->action == ACT_SUBSONIC)
+        open_page(POD_SUBSONIC_PAGE, 0);
     else if (row->action == ACT_SEARCH) {
         if (search_open() < 0)
             navigator_to_with_context(
@@ -638,6 +642,8 @@ static int open_page(int index, int as_home) {
         pulldown_page_opened(win);
     else if (index == POD_EXTRASCFG_PAGE)
         menu_extras_opened(win);
+    else if (index == POD_SUBSONIC_PAGE)
+        sb_page_open(win);
     { /* the Settings page is the way out to the grid; the menu may be the Home instance (no navbar) */
         int entry = as_home && index == POD_ENTRY_PAGE;
         if (index == POD_SETTINGS_PAGE || entry) home_menu_opened(win, index == POD_SETTINGS_PAGE, entry);

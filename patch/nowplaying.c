@@ -34,6 +34,7 @@
 #include "i18n.h"
 #include "common.h"
 #include "lyrics.h"
+extern const char *sb_cover_file(void *track);
 
 extern int
 queue_open(void); /* patch/queuepage.c: our Queue page; 0 once it is open, else the stock drawer should open */
@@ -183,7 +184,9 @@ void np_relight(void) {
 /* The cover file of the source type, or NULL for a source with no JPEG file; busy is set while demo is still making it. */
 const char *np_cover_file(int *busy) { /* also the mini player bar's (patch/minibar.c) */
     int src = *(volatile int *)COVER_SRC;
+    const char *server_cover = sb_cover_file(cc_playing());
     *busy = src == COVER_SRC_BUSY;
+    if (server_cover) return server_cover;
     if (src == COVER_SRC_EMBEDDED) return "/tmp/coverpic.jpg";
     if (src == COVER_SRC_FOLDER || src == COVER_SRC_CACHE) return "/tmp/externpic.jpg";
     return (const char *)0;
