@@ -72,6 +72,9 @@
 #define REC_TITLE 0x10     /* tag title (album rows carry the album name here too) */
 #define REC_ALBUM 0x14
 #define REC_ARTIST 0x18
+#define REC_GENRE 0x1c
+#define REC_COMPOSER 0x20
+#define REC_ALBUM_ARTIST 0x24
 #define REC_TYPE 0x34      /* 8 song, 4 directory/class row */
 #define REC_CUE_START 0x48 /* loadSongList's third argument */
 
@@ -812,6 +815,9 @@
 #define SG_RAIL_DISC 16
 #define SG_ACCENT 0xffeceeeeu
 #define SG_BUBBLE 110
+#define SB_LIST_ACTION_X 238    /* Navidrome list action: right aligned before the shared A-Z rail */
+#define SB_LIST_ACTION_W 42
+#define SB_LIST_TEXT_W 172      /* 58 px text inset, 8 px gap before the action */
 #define SG_BAR_H 64
 #define SG_MAX_SEC 28
 #define SG_COLLAPSE 46

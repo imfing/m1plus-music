@@ -22,6 +22,7 @@
 #include "offsets.inc"
 #include "stock.h"
 #include "home.h"
+#include "subsonic.h"
 #include "covercache.h"
 #include "ipod_theme.h"
 #include "ipod_render.h"
@@ -50,6 +51,10 @@ extern void pod_set_in_order(void); /* patch/shuffle.c: Shuffle and Repeat one b
 /* patch/ipod_cf.c: the Cover Flow screen (level K_CF: the albums list drawn as covers; docs/modules/ipod-coverflow.md) */
 extern int ipcf_open(void *win), ipcf_up(void), ipcf_busy(void), ipcf_tick(void *list, unsigned count);
 extern void ipcf_close(void), ipcf_goto(int sel), ipcf_paint(void *canvas, void *list, unsigned count, void *style);
+extern void *ipcf_list(void);
+extern unsigned ipcf_count(void);
+extern int songs_open_nav_filter(int filter, const char *name, const char *artist);
+extern int songs_open(void); /* patch/songs.c: the merged local + Navidrome Songs library */
 
 #define I(w, off) (*(int *)((char *)(w) + (off)))
 #define ART_GREY 0xff2b2b2bu
@@ -71,14 +76,14 @@ enum {
     K_PC_EPS
 };
 enum { S_SHUFFLE, S_REPEAT, S_APPEARANCE, S_COUNT };
-enum { M_COVER, M_ALBUMS, M_ARTISTS, M_SONGS, M_PLAYLISTS, M_SHUFFLE, M_COUNT };
+enum { M_COVER, M_ALBUMS, M_ARTISTS, M_SONGS, M_NAVIDROME, M_PLAYLISTS, M_SHUFFLE, M_COUNT };
 enum { ROOT_MUSIC, ROOT_COVER, ROOT_PODCASTS, ROOT_RADIO, ROOT_SHUFFLE, ROOT_NOW, ROOT_SETTINGS, ROOT_COUNT };
 enum { R_NONE, R_CENTRE, R_RING };
 
 static const char *const MAIN_KEYS[ROOT_COUNT] = {"Music",         "Cover Flow",  "Podcasts",        "Radio",
                                                   "Shuffle Songs", "Now Playing", "cdrippersettings"};
-static const char *const MUSIC_KEYS[M_COUNT] = {"Cover Flow", "Albums",    "Artists",
-                                                "Songs",      "Playlists", "Shuffle Songs"};
+static const char *const MUSIC_KEYS[M_COUNT] = {"Cover Flow", "Albums",    "Artists", "Songs",
+                                                "Navidrome",  "Playlists", "Shuffle Songs"};
 static const char *const SET_KEYS[S_COUNT] = {"Shuffle", "Repeat", "Appearance"};
 static const char *const MODE_ICONS[4] = {"ipod_mode_shuffle", "ipod_mode_repeat", "ipod_mode_repeat1",
                                           "ipod_playing"}; /* the play mode marks, then the playing track's speaker */
@@ -426,6 +431,9 @@ static void *ip_rec(int kind, void *list, int i) { return deque_at(list, (unsign
 static int ip_valid(void) {
     void *cur;
     if (!ip_is_list(ip_top()->kind)) return 1;
+    if (ip_top()->kind == K_CF)
+        return ipcf_up() && ip.list == ipcf_list() && ip.count == ipcf_count() &&
+               (!ip.count || (ip.list && deque_size(ip.list) == ip.count && deque_at(ip.list, 0) == ip.first));
     cur = ip_stock_list(ip_top()->kind);
     if (ip_is_pc(ip_top()->kind)) return cur && ip.list == cur && ip.count == (unsigned)ip_pc_count(ip_top()->kind);
     return ip.list && cur == ip.list && deque_size(cur) == ip.count && (!ip.count || deque_at(cur, 0) == ip.first);
@@ -506,6 +514,10 @@ static void ip_load(void) {
                                           : l->kind == K_PL_TRACKS ? CLASS_PLAYLIST_SONGS
                                                                    : *(int *)CLASSINFO)
                                        : 0;
+    }
+    if (l->kind == K_CF && ipcf_up()) {
+        ip.list = ipcf_list(), ip.count = ipcf_count();
+        ip.first = ip.count ? deque_at(ip.list, 0) : (void *)0;
     }
     if (l->sel >= (int)ip.count) l->sel = ip.count ? (int)ip.count - 1 : 0;
     if (l->top > l->sel) l->top = l->sel;
@@ -1890,6 +1902,9 @@ static void ip_select(void) {
         case M_SONGS:
             ip_push(K_SONGS);
             break;
+        case M_NAVIDROME:
+            (void)songs_open(); /* use the merged library's proven raw-stream/offline queue path; Back returns to Pod */
+            break;
         case M_PLAYLISTS:
             ip_push(K_PLAYLISTS);
             break;
@@ -1909,6 +1924,10 @@ static void ip_select(void) {
     else if (kind == K_ALBUMS || kind == K_CF ||
              kind == K_ARTIST_ALBUMS) { /* Cover Flow's centre button: the album's tracks */
         void *rec = ip_rec(kind, ip.list, l->sel);
+        if (kind == K_CF && I(rec, REC_ID) == -3) {
+            (void)songs_open_nav_filter(SB_LIBRARY_FILTER_ALBUM, cc_str(rec, REC_ALBUM), cc_str(rec, REC_ALBUM_ARTIST));
+            return;
+        }
         ip_push_titled(K_TRACKS, I(rec, REC_ID) == ID_ALL_SONGS
                                      ? TR(kind == K_ARTIST_ALBUMS ? "local_allsong" : "All albums")
                                      : cc_str(rec, REC_ALBUM));
@@ -2113,8 +2132,17 @@ static int ip_tick(const void *timer) {
         ip_redraw();
     }
     if (ip_rows_tick()) ip_redraw();
-    if (ip_top()->kind == K_CF && ip_valid() && ipcf_tick(ip.list, ip.count))
-        ip_redraw(); /* Cover Flow slides and decodes on this timer (ipod_cf.c) */
+    if (ip_top()->kind == K_CF && ip_valid()) {
+        int changed = ipcf_tick(ip.list, ip.count);
+        unsigned count = ipcf_count();
+        if (count != ip.count) {
+            ip.count = count;
+            if (ip.st[ip.depth].sel >= (int)count) ip.st[ip.depth].sel = count ? (int)count - 1 : 0;
+            if (ip.st[ip.depth].top > ip.st[ip.depth].sel) ip.st[ip.depth].top = ip.st[ip.depth].sel;
+            changed = 1;
+        }
+        if (changed) ip_redraw(); /* Cover Flow slides, sync and artwork decode on this timer (ipod_cf.c) */
+    }
     if ((ip.pane.worker || ip.pane.xfer) && !(ip_split(ip_top()->kind) && pod_is_top(ip.win)))
         ip_pane_xfer_stop(); /* the pane is not in front: its extraction goes (cc_build_stop) */
     if (ip_pane_step()) ip_redraw_pane(); /* the cover pane of a split page: only its rectangle is invalidated */

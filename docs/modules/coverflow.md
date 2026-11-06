@@ -108,7 +108,7 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
 - **Start index.** The stock `slide_menu` starts on item 1, not 0; the page always sets the start
   album (`cfpos.value`, or `slide_menu_set_value` in the flat fallback), so an artist's page opens on its first album, a
   one-album shelf has its captions on open, and the main page keeps its last-album memory
-  (`/mnt/mmc/.m1plus/coverflow-position`, including album 0): the centre album key as 8 lowercase hex digits and a newline, written on close by `pod_card_write` (patch/common.c: temp file, fsync, rename, directory fsync; `position_save`, card mounted only; it belongs to the card's library and survives a cover cache wipe). `position_load` takes exactly 8 hex digits and an optional newline; a missing, short, junk or all-zero file is no saved album. The old `covers/album` file is not read.
+  (`/mnt/mmc/.m1plus/coverflow-position`, including album 0): the centre album key as 8 lowercase hex digits and a newline, queued to a detached worker on close (`position_save`; `pod_card_write`, patch/common.c, checks the card mount and atomically writes with file and directory fsync). The UI never waits for card I/O; the file belongs to the card's library and survives a cover-cache wipe. `position_load` takes exactly 8 hex digits and an optional newline; a missing, short, junk or all-zero file is no saved album. The old `covers/album` file is not read.
 - **The album.** Tapping the centre cover opens our album page (`docs/modules/album-page.md`), else the plain stock `albuminfo_page`, as a stock
   Albums row does (`cc_open_album`, `patch/covercache.c`, the same call the Albums grid makes): `loadAlbumList(0xf003, 0)` puts the stock album list back into `*pdeq_showlist` (the
   page's own copy was made from the same query, so the row is the same), `albumcoverinfo_init` rebuilds
@@ -157,7 +157,7 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   when re-armed) the worker is stopped and the cached covers show. No build below 16 MB free, without a
   card or if `pthread_create` fails. When the open is refused only because a stopped worker is still inside its last album
   (`cc_build_orphan`), the Preparing screen is shown and `on_retry` (one `POLL_MS` timer) asks again until the set is free or 10 s have passed since the worker was orphaned (`cc_build_orphan` turns false: the cached covers are shown). A 250 ms timer polls the counters; Cancel, Back and closing stop it (`cc_build_stop`);
-  `EVT_DESTROY` removes the timer and stops the worker. Nothing is written outside the card.
+  `EVT_WINDOW_TO_BG` removes the progress, Navidrome scan, snap and texture timers and stops this page's worker before it is covered or closed; `EVT_WINDOW_TO_FG` resumes the unfinished scan/build or nearby texture loads. `EVT_DESTROY` repeats the idempotent stop before releasing the mmap and page data. Nothing is written outside the card.
 - **Rebuild Covers is not Cover Flow's** (it used to open this page): Settings > Library > Rebuild Covers writes a request file and
   Home's cover build does it (`docs/modules/homecover.md`, `docs/modules/settings.md`) with `CC_REBUILD`. The worker's `CC_REBUILD` mode
   is unchanged: it extracts each album again to `.tmp` and `rename`s it over the cache file, so an old picture is replaced atomically and

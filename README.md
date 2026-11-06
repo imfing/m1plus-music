@@ -25,7 +25,8 @@ This project builds on [imfing/m1plus-music](https://github.com/imfing/m1plus-mu
 - **Now Playing:** cover-colour backgrounds, rounded artwork and remaining time.
 - **Podcasts:** local episodes, Apple Podcasts directory search, feed subscriptions and episode downloads.
 - **Extras:** album/folder shuffle, internet radio, a virtual iPod, Cassette Mode, Vinyl Mode and an online cover and lyrics lookup.
-- **Navidrome:** sync and browse a Subsonic library, search tracks, view cached artwork, stream supported songs over Wi-Fi, or download them to SD with progress.
+- **Navidrome:** keep server credentials on the SD card, sync a paged library index, browse and search tracks, and stream supported audio over Wi-Fi without requesting transcoding. Download songs to SD with progress and resume support. Shared album artwork, server status, and a Songs/DSD Downloads grid or list are included.
+- **Navidrome in Libraries:** merge server tracks into Songs, Albums, Artists, Album Artists, Genres and Composers; include them in global search and the virtual iPod/Cover Flow. Stream-only tracks carry a small green source dot. Local matches and downloaded files remain local entries. Mixed queues follow the current view's order.
 - **Appearance:** an accent colour, a translucent lock screen, minimal theme, Lucide icons and Inter + Source Han Sans fonts.
 - **Settings:** choose menu items, pull-down tiles, startup behaviour, Cover Flow orientation and album order.
 - **Languages:** the added UI follows the player's language setting, with 13 translations.
@@ -52,12 +53,10 @@ Stock settings and Tidal remain accessible. See the [user guide](docs/guide.md) 
 
 ## Install and update
 
-This release candidate is awaiting device testing.
-
 Download `update.bin` and `SHA256SUMS` from the [latest release](https://github.com/iamgauravmishra/m1plus-music-navidrome/releases/latest).
-Verify the checksum, then install `update.bin` from the TF card using the player's System Update menu.
+Verify the checksum, then install `update.bin` from the TF card using the player's System Update menu. Read the [release notes](docs/releases/1.2.1.md) and [installation guide](docs/install.md) first.
 The built-in Software Update can fetch releases only when this repository's releases are public; while the repository is private, use the TF card for updates.
-Follow the [installation guide](docs/install.md) for preparation, updates and restoring stock.
+The update changes the app payload and UI assets through the existing kernel/rootfs update path; it does not patch the bootloader or recovery. Keep a stock restore package available and do not interrupt an update.
 
 This is unofficial third-party firmware. Install it at your own risk. Back up your card and keep the player charged during updates. I am not responsible for damage caused by installing or using this firmware.
 

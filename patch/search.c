@@ -31,6 +31,8 @@
 #include "search.h"
 #include "home.h"
 #include "i18n.h"
+#include "subsonic.h"
+#include "songops.h"
 
 extern int coverflow_artist(void *artists, unsigned index, unsigned scope); /* patch/coverflow.c */
 extern int albums_open_artist(void *artists, unsigned index,
@@ -79,6 +81,10 @@ static struct {
     unsigned *cand[SE_KINDS]; /* the records that match, in library order */
     unsigned char *sc[SE_KINDS]; /* ... and how well */
     unsigned nc[SE_KINDS];
+    unsigned local_song_count, local_song_matches, nav_count, nav_cursor, nav_match_count;
+    int nav_searching;
+    sb_library_index_t nav_index;
+    sb_library_downloads_t nav_downloads;
     se_row_t *rows;
     int nrows, chip, content;
     int lo, hi; /* the chips of the page: all of them, or only the scope's (lo = scope, hi = lo + 1) */
@@ -100,6 +106,8 @@ static struct {
     void *cross;
     grid_tile_t rt[SE_REC_MAX + 1]; /* the texts of the rows, then the header */
 } se __attribute__((section(".scratch")));
+
+static void se_kick(void);
 
 static void se_show(void *w, int on) {
     if (!w) return;
@@ -470,13 +478,34 @@ static void se_free_data(void) {
         se.lists[k] = (void *)0, se.cand[k] = (unsigned *)0, se.sc[k] = (unsigned char *)0;
         se.n[k] = se.nc[k] = 0;
     }
+    sb_library_index_close(&se.nav_index);
+    sb_library_downloads_close(&se.nav_downloads);
+    se.local_song_count = se.local_song_matches = se.nav_count = se.nav_cursor = se.nav_match_count = 0;
+    se.nav_searching = 0;
     se.have_prev = se.loaded = 0;
 }
 
 /* The stock song list the rows index is still the one in *pdeq_showlist (another page's query replaces it). */
 static int se_valid(void) {
     void *l = se.lists[SE_SONG];
-    return !l || (*(void **)PDEQ_SHOWLIST == l && deque_size(l) == se.n[SE_SONG]);
+    return !l || (*(void **)PDEQ_SHOWLIST == l && deque_size(l) == se.local_song_count);
+}
+
+/* A search key needs the stock record layout; this temporary view points into
+ * the read-only, SD-backed Navidrome index and is never retained. */
+static void *se_nav_record(const sb_song_t *song, void *record) {
+    memset(record, 0, REC_SIZE);
+    *(char **)(record + REC_NAME) = (char *)(song->title[0] ? song->title : "Untitled");
+    *(char **)(record + REC_TITLE) = (char *)song->title;
+    *(char **)(record + REC_ARTIST) = (char *)song->artist;
+    *(char **)(record + REC_ALBUM) = (char *)song->album;
+    return record;
+}
+
+static void *se_result_record(int kind, unsigned index, void *scratch) {
+    if (kind == SE_SONG && index >= se.local_song_count && index - se.local_song_count < se.nav_count)
+        return se_nav_record(&se.nav_index.songs[index - se.local_song_count], scratch);
+    return deque_at(se.lists[kind], index);
 }
 
 /* The four stock queries, the songs last so that *pdeq_showlist is the library when it is done, and g_class_type is 0xf001 (as allmusic_page_init leaves it): a stock page under this one
@@ -501,9 +530,21 @@ static void se_load(void) {
     if (loadLocalClassList(CLASS_ALL_SONGS) > 0 && (list = *(void **)PDEQ_SHOWLIST) != (void *)0 && deque_size(list))
         se.lists[SE_SONG] = list;
     *(int *)G_CLASS_TYPE = CLASS_ALL_SONGS;
+    se.local_song_count = se.lists[SE_SONG] ? deque_size(se.lists[SE_SONG]) : 0;
+    if (!sb_library_index_open(&se.nav_index)) {
+        se.nav_count = se.nav_index.count;
+        (void)sb_library_downloads_open(&se.nav_downloads);
+    }
+    if (se.local_song_count <= (unsigned)-1 - se.nav_count)
+        se.n[SE_SONG] = se.local_song_count + se.nav_count;
+    else
+        se.n[SE_SONG] = se.local_song_count;
     for (k = 0; k < SE_KINDS; ++k) {
-        if (!se.lists[k]) continue;
-        se.n[k] = deque_size(se.lists[k]);
+        if (k != SE_SONG) {
+            if (!se.lists[k]) continue;
+            se.n[k] = deque_size(se.lists[k]);
+        } else if (!se.n[k])
+            continue; /* Navidrome-only libraries still need space for async song results */
         se.cand[k] = calloc(se.n[k], sizeof *se.cand[k]);
         se.sc[k] = calloc(se.n[k], 1);
         if (!se.cand[k] || !se.sc[k]) { /* no memory for this type: it has no results */
@@ -525,14 +566,17 @@ static void se_search(void) {
     for (k = 0; k < SE_KINDS; ++k) {
         unsigned m, w = 0;
         void *list = se.lists[k];
-        if (!list || !se.cand[k] || !se.nterms ||
+        if ((!list && k != SE_SONG) || !se.cand[k] || !se.nterms ||
             (se.hi - se.lo == 1 && k != se_chip_kind[se.lo])) { /* a scoped page matches its own type only */
             se.nc[k] = 0;
             continue;
         }
         m = ext ? se.nc[k] : se.n[k];
+        if (k == SE_SONG) m = ext ? se.nc[k] : se.local_song_count;
         for (i = 0; i < m; ++i) {
             unsigned idx = ext ? se.cand[k][i] : i;
+            if (k == SE_SONG && idx >= se.local_song_count)
+                continue; /* server matches are scanned in timer-sized batches below */
             void *rec = deque_at(list, idx);
             int tier;
             if ((k == SE_ARTIST || k == SE_ALBUM) && *(int *)((char *)rec + REC_ID) == -1)
@@ -552,6 +596,7 @@ static void se_search(void) {
             if (tier >= 0) se.cand[k][w] = idx, se.sc[k][w++] = (unsigned char)tier;
         }
         se.nc[k] = w;
+        if (k == SE_SONG) se.local_song_matches = w;
     }
     memcpy(se.pq, se.q, sizeof se.q);
     se.pn = se.nq;
@@ -710,10 +755,56 @@ static void se_apply(void) {
     if (!se.loaded || !se_valid()) se_load();
     se_set_query(se.typed);
     se_search();
+    se.nav_cursor = se.nav_match_count = 0;
+    se.nav_searching =
+        se.nav_index.songs != (const sb_song_t *)0 && se.nterms != 0 && se.cand[SE_SONG] && se.sc[SE_SONG];
     widget_set_prop_int(se.sv, "yoffset", 0);
     se_build();
     se_layout();
+    if (se.nav_searching && !se.nrows) widget_set_text_utf8(se.status, "Searching Navidrome...");
     se_redraw();
+    se_kick();
+}
+
+#define SE_NAV_BATCH 256
+static int se_nav_search_step(void) {
+    unsigned end;
+    if (!se.nav_searching || !se.nav_index.songs || !se.cand[SE_SONG] || !se.sc[SE_SONG]) return 0;
+    end = se.nav_cursor + SE_NAV_BATCH;
+    if (end < se.nav_cursor || end > se.nav_index.count) end = se.nav_index.count;
+    while (se.nav_cursor < end) {
+        unsigned index = se.nav_cursor++;
+        const sb_song_t *song = &se.nav_index.songs[index];
+        unsigned record[REC_SIZE / 4];
+        unsigned key[SE_KEY + 2];
+        unsigned pn, kn;
+        int tier;
+        if (sb_library_is_dsd(song) || sb_library_downloads_contains(&se.nav_downloads, song)) continue;
+        se.seen = 0;
+        kn = se_key(se_nav_record(song, record), SE_SONG, key, &pn, 0);
+        tier = se_test(key, kn, pn);
+        if (se.py && se.seen && (tier < 0 || tier == 2)) {
+            unsigned alt[SE_KEY + 2];
+            int t2;
+            kn = se_key(se_nav_record(song, record), SE_SONG, alt, &pn, 1);
+            t2 = se_test(alt, kn, pn);
+            if (t2 >= 0 && (tier < 0 || t2 < tier)) tier = t2;
+        }
+        if (tier >= 0 && se.nc[SE_SONG] < se.n[SE_SONG]) {
+            se.cand[SE_SONG][se.nc[SE_SONG]] = se.local_song_count + index;
+            se.sc[SE_SONG][se.nc[SE_SONG]++] = (unsigned char)tier;
+            ++se.nav_match_count;
+        }
+    }
+    if (se.nav_cursor < se.nav_index.count) return 1;
+    se.nav_searching = 0;
+    memcpy(se.pq, se.q, sizeof se.q);
+    se.pn = se.nq;
+    se.have_prev = se.nterms != 0;
+    se_build();
+    se_layout();
+    se_redraw();
+    return 0;
 }
 
 static unsigned
@@ -731,7 +822,8 @@ se_artist_cover(const char *name) { /* an artist's picture: the cover of the fir
  * tile, so it only formats: the cover key (cache file lookups on the SD card) is resolved by the loader (se_art). */
 static void se_prep(grid_tile_t *t, int r) {
     const se_row_t *w = &se.rows[r];
-    void *rec = deque_at(se.lists[w->kind], w->idx);
+    unsigned scratch[REC_SIZE / 4];
+    void *rec = se_result_record(w->kind, w->idx, scratch);
     char sub[160];
     const char *a = cc_str(rec, REC_ARTIST), *title = cc_str(rec, REC_TITLE);
     switch (w->kind) {
@@ -773,7 +865,6 @@ static grid_tile_t *se_tile(int r) {
     return t;
 }
 
-static void se_kick(void);
 static grid_tile_t *se_cover_next(grid_t **gp);
 
 static void se_paint_rows(void *canvas) {
@@ -990,6 +1081,15 @@ static void se_play(int at) {
         void *dq;
         int idx, cls, mode;
     } context;
+    if (se.rows[at].idx >= se.local_song_count) {
+        sb_library_queue_entry_t entry;
+        memset(&entry, 0, sizeof entry);
+        entry.server_song = &se.nav_index.songs[se.rows[at].idx - se.local_song_count];
+        entry.server_index = se.rows[at].idx - se.local_song_count;
+        entry.source = SB_LIBRARY_STREAM;
+        (void)sb_library_play_queue(&entry, 1, 0, SO_KEEP);
+        return;
+    }
     pick = deque_at(se.lists[SE_SONG], se.rows[at].idx);
     queue = _create_deque("stSongInfo");
     if (!queue) return;
@@ -1165,8 +1265,9 @@ static grid_tile_t *se_cover_next(grid_t **gp) {
 /* The cover of a tile: the key of its row (a song's or album's own cover, an artist's first album with one) and its decode; no file ends as the placeholder (art 2). */
 static void se_art(grid_t *g, grid_tile_t *t, int r) {
     const se_row_t *w = &se.rows[r];
-    void *rec = deque_at(se.lists[w->kind], w->idx);
-    char url[80];
+    unsigned scratch[REC_SIZE / 4];
+    void *rec = se_result_record(w->kind, w->idx, scratch);
+    char url[512];
     switch (w->kind) {
     case SE_ARTIST:
         t->ckey = se_artist_cover(cc_str(rec, REC_TITLE));
@@ -1179,6 +1280,11 @@ static void se_art(grid_t *g, grid_tile_t *t, int r) {
     case SE_PLAYLIST:
         break;
     default:
+        if (w->idx >= se.local_song_count) {
+            const sb_song_t *song = &se.nav_index.songs[w->idx - se.local_song_count];
+            grid_art_url(g, t, sb_library_cover_url(song, url, sizeof url) > 0 ? url : (const char *)0);
+            return;
+        }
         t->ckey = cc_cover_key(se.lists[SE_ALBUM], cc_album_key(rec), cc_str(rec, REC_ALBUM), url);
         grid_art_url(g, t, *url ? url : (const char *)0);
         return;
@@ -1204,7 +1310,7 @@ static int se_tick(const void *timer) {
         se_apply();
         return RET_REPEAT;
     }
-    if (se.wait > 0 || se_cover_step()) return RET_REPEAT;
+    if (se.wait > 0 || se_nav_search_step() || se_cover_step()) return RET_REPEAT;
     se.timer = 0;
     return RET_OK;
 }

@@ -18,6 +18,10 @@ and [UI reference](ui.md). Hardware observations below do not validate later bui
   Play Next / Play After and Queue Clear, Control Center tiles and 43 time zones.
 - **1.2.1, 2026-11-05:** a sturdier, visible Home cover build (progress pill, stop, skip of hung
   albums, unchanged-library stamp) and list, title and Radio fixes.
+- **1.2.1 Navidrome release, 2026-11-07:** retains upstream 1.2.1 and adds the server-backed
+  virtual library, shared artwork, raw streaming, resumable SD downloads, mixed playback queues,
+  Pod/Cover Flow integration, crash-path fixes and Navidrome list/rail layout improvements. See
+  the [release notes](releases/1.2.1.md) for features, limits and artifact details.
 
 ## Device findings
 

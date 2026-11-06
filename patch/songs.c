@@ -59,12 +59,16 @@
 #include "i18n.h"
 #include "songops.h"
 #include "rowmenu.h"
+#include "subsonic.h"
+#include "durations.h"
 
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
 extern int search_open(void); /* patch/search.c: our keyboard, then the results page; -1 when it did not open */
+extern void pod_toast(const char *text);
+extern unsigned pod_rand(unsigned n);
 
 #define ROW LIST_ROW_H
-#define SG_W 320 /* the content's width: the list_view's (the scroll_view clips at 310) */
+#define SG_W 320 /* the content and scroll_view width; the mobile scrollbar sits off the screen edge */
 #define SG_TAP_PX SC_DRAG_PX
 #define SG_AHEAD 2 /* rows loaded beyond the view in the scroll direction */
 #if GRID_TILES < (GRID_VIEW_H / LIST_ROW_H) + 2 + 2 + 2
@@ -87,6 +91,22 @@ typedef struct {
         [3]; /* 24 bits of a hash of what the row shows (both lines, the cover key, the section): a list read again with every sig the same keeps its tiles */
 } song_t;
 
+typedef struct {
+    void *local;
+    const sb_song_t *server;
+    unsigned order;
+    unsigned local_index;
+    unsigned char source;
+    unsigned short duration;
+} sg_entry_t;
+
+typedef struct {
+    unsigned hash;
+    unsigned local_index;
+    unsigned short duration;
+    unsigned char visible;
+} sg_match_slot_t;
+
 static void sg_set_sig(song_t *s, unsigned h) {
     s->sig[0] = (unsigned char)h, s->sig[1] = (unsigned char)(h >> 8), s->sig[2] = (unsigned char)(h >> 16);
 }
@@ -102,7 +122,7 @@ static struct {
     void *btn_search, *btn_sort, *btn_select, *btn_selall, *btn_play, *btn_shuffle, *btn_add, *btn_del;
     void *st_title, *st_sub; /* hidden labels whose styles are the text styles (the rail's and the header's are az's) */
     void *bar, *scrim, *card, *tick[SG_SORT_ROWS];
-    void *list; /* the stock list the index is of (*pdeq_showlist when valid) */
+    void *list; /* the stock local list the index is of (*pdeq_showlist when valid) */
     void *first; /* its first record: with the size, tells a list another query replaced */
     unsigned count;
     song_t *idx; /* count entries */
@@ -147,11 +167,27 @@ static struct {
     int tend; /* the text end the tiles were last fitted for (without select mode): a list read again with another one drops them */
     int down_more; /* the press began in a row's "..." zone */
     grid_t g; /* the tile ring (LAST: test/pod/songs.py reads the fields above by index) */
+    unsigned local_count;
+    sg_entry_t *entry; /* the merged virtual library when Navidrome is indexed */
+    unsigned entry_count, entry_cap, nav_cursor, nav_total, nav_local_visible, nav_timer;
+    unsigned nav_match_cap;
+    sg_match_slot_t *nav_match;
+    sb_library_index_t nav_index;
+    sb_library_downloads_t nav_downloads;
+    int nav_overlay, nav_scanning, nav_filter, nav_dur_held;
+    char nav_name[SB_TEXT], nav_artist[SB_META];
 } sg __attribute__((section(".scratch")));
 
 static int sg_on_stale(const void *unused);
+static int sg_nav_scan_step(void);
+static void sg_nav_schedule(void);
+static void sg_select(int on);
 static void *sg_under __attribute__((section(
     ".scratch"))); /* a Songs page below the one open (Search was opened from it and a playlist result opened ours): its state, put back when this page is destroyed */
+static struct {
+    int active, filter;
+    char name[SB_TEXT], artist[SB_META];
+} sg_nav_request __attribute__((section(".scratch")));
 
 static void sg_show(void *w, int on) {
     if (!w) return;
@@ -169,6 +205,185 @@ static const char *sg_name(void *rec) {
     return *t ? t : cc_str(rec, REC_NAME);
 }
 
+static void sg_get_entry(unsigned i, sg_entry_t *entry) {
+    if (!entry) return;
+    entry->local = (void *)0, entry->server = (const sb_song_t *)0;
+    entry->order = 0, entry->local_index = i, entry->source = SB_LIBRARY_LOCAL, entry->duration = 0;
+    if (sg.nav_overlay && sg.entry && i < sg.entry_count) {
+        entry->local = sg.entry[i].local;
+        entry->server = sg.entry[i].server;
+        entry->order = sg.entry[i].order;
+        entry->local_index = sg.entry[i].local_index;
+        entry->source = sg.entry[i].source;
+        entry->duration = sg.entry[i].duration;
+    } else
+        entry->local = sg.list && i < deque_size(sg.list) ? deque_at(sg.list, i) : (void *)0;
+}
+
+static const char *sg_entry_title(const sg_entry_t *entry) {
+    if (entry && entry->server) return entry->server->title[0] ? entry->server->title : "Untitled";
+    return entry && entry->local ? sg_name(entry->local) : "";
+}
+
+static const char *sg_entry_artist(const sg_entry_t *entry) {
+    if (entry && entry->server) return entry->server->artist;
+    return entry && entry->local ? cc_str(entry->local, REC_ARTIST) : "";
+}
+
+static const char *sg_entry_album(const sg_entry_t *entry) {
+    if (entry && entry->server) return entry->server->album;
+    return entry && entry->local ? cc_str(entry->local, REC_ALBUM) : "";
+}
+
+static const char *sg_entry_subtitle(const sg_entry_t *entry) {
+    if (sg.nav_filter == SB_LIBRARY_FILTER_ARTIST || sg.nav_filter == SB_LIBRARY_FILTER_ALBUM_ARTIST)
+        return sg_entry_album(entry);
+    return sg_entry_artist(entry);
+}
+
+static int sg_entry_stream(const sg_entry_t *entry) {
+    return entry && entry->source == SB_LIBRARY_STREAM && entry->server;
+}
+
+static int sg_text_equal(const char *a, const char *b) {
+    unsigned i = 0, j = 0;
+    if (!a) a = "";
+    if (!b) b = "";
+    while (a[i] == ' ' || a[i] == '\t' || a[i] == '\r' || a[i] == '\n') ++i;
+    while (b[j] == ' ' || b[j] == '\t' || b[j] == '\r' || b[j] == '\n') ++j;
+    for (;;) {
+        unsigned ca = (unsigned char)a[i], cb = (unsigned char)b[j];
+        while (ca && (a[i] == ' ' || a[i] == '\t' || a[i] == '\r' || a[i] == '\n') &&
+               (a[i + 1] == ' ' || a[i + 1] == '\t' || a[i + 1] == '\r' || a[i + 1] == '\n'))
+            ++i, ca = (unsigned char)a[i];
+        while (cb && (b[j] == ' ' || b[j] == '\t' || b[j] == '\r' || b[j] == '\n') &&
+               (b[j + 1] == ' ' || b[j + 1] == '\t' || b[j + 1] == '\r' || b[j + 1] == '\n'))
+            ++j, cb = (unsigned char)b[j];
+        if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+        if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+        if (ca != cb) return 0;
+        if (!ca) return 1;
+        ++i, ++j;
+    }
+}
+
+static unsigned sg_hash_text(unsigned h, const char *s) {
+    unsigned n = 0;
+    if (!s) s = "";
+    while (s[n] == ' ' || s[n] == '\t' || s[n] == '\r' || s[n] == '\n') ++n;
+    while (s[n]) {
+        unsigned c = (unsigned char)s[n++];
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            while (s[n] == ' ' || s[n] == '\t' || s[n] == '\r' || s[n] == '\n') ++n;
+            if (!s[n]) break;
+            c = ' ';
+        }
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        h = (h ^ c) * 16777619u;
+    }
+    return (h ^ 0xffu) * 16777619u;
+}
+
+static unsigned sg_duplicate_hash(const char *title, const char *artist, const char *album) {
+    unsigned h = sg_hash_text(2166136261u, title);
+    h = sg_hash_text(h, artist);
+    h = sg_hash_text(h, album);
+    return h ? h : 1u;
+}
+
+static unsigned sg_local_duplicate_hash(void *rec) {
+    const char *title = sg_name(rec);
+    return sg_duplicate_hash(title, cc_str(rec, REC_ARTIST), cc_str(rec, REC_ALBUM));
+}
+
+static int sg_strong_local_match(const sb_song_t *song, void *rec) {
+    unsigned size = 0;
+    int seconds, local_track, local_disc;
+    if (!song || !rec || !sg_text_equal(song->title, sg_name(rec)) ||
+        !sg_text_equal(song->artist, cc_str(rec, REC_ARTIST)) || !sg_text_equal(song->album, cc_str(rec, REC_ALBUM)))
+        return 0;
+    local_track = *(int *)((char *)rec + REC_TRACK);
+    local_disc = *(int *)((char *)rec + REC_DISC);
+    if (song->track && local_track && song->track != (unsigned)local_track) return 0;
+    if (song->disc && local_disc && song->disc != (unsigned)local_disc) return 0;
+    if (song->track && local_track && song->track == (unsigned)local_track &&
+        (!song->disc || !local_disc || song->disc == (unsigned)local_disc))
+        return 1;
+    seconds = dur_song(rec, &size);
+    return song->duration && seconds > 0 &&
+           (unsigned)(seconds > (int)song->duration ? seconds - (int)song->duration : (int)song->duration - seconds) <=
+               1u;
+}
+
+static void sg_match_add(void *rec, unsigned local_index, int visible) {
+    unsigned hash = sg_local_duplicate_hash(rec), at = hash & (sg.nav_match_cap - 1);
+    while (sg.nav_match[at].hash) at = (at + 1) & (sg.nav_match_cap - 1);
+    sg.nav_match[at].hash = hash, sg.nav_match[at].visible = visible != 0;
+    sg.nav_match[at].local_index = local_index;
+}
+
+static sg_match_slot_t *sg_remote_local_copy(const sb_song_t *song) {
+    unsigned hash, at;
+    if (!song || !sg.nav_match || !sg.nav_match_cap) return (sg_match_slot_t *)0;
+    hash = sg_duplicate_hash(song->title, song->artist, song->album);
+    at = hash & (sg.nav_match_cap - 1);
+    while (sg.nav_match[at].hash) {
+        sg_match_slot_t *slot = &sg.nav_match[at];
+        unsigned local_index = slot->local_index;
+        if (slot->hash == hash && sg.list && local_index < sg.local_count &&
+            sg_strong_local_match(song, deque_at(sg.list, local_index)))
+            return slot;
+        at = (at + 1) & (sg.nav_match_cap - 1);
+    }
+    return (sg_match_slot_t *)0;
+}
+
+static unsigned short sg_local_server_duration(void *rec, unsigned local_index) {
+    unsigned hash, at;
+    if (!rec || !sg.nav_match || !sg.nav_match_cap) return 0;
+    hash = sg_local_duplicate_hash(rec), at = hash & (sg.nav_match_cap - 1);
+    while (sg.nav_match[at].hash) {
+        if (sg.nav_match[at].hash == hash && sg.nav_match[at].local_index == local_index)
+            return sg.nav_match[at].duration;
+        at = (at + 1) & (sg.nav_match_cap - 1);
+    }
+    return 0;
+}
+
+static const char *sg_local_filter_field(void *rec, int filter) {
+    switch (filter) {
+    case SB_LIBRARY_FILTER_ARTIST:
+        return cc_str(rec, REC_ARTIST);
+    case SB_LIBRARY_FILTER_ALBUM_ARTIST: {
+        const char *album_artist = cc_str(rec, REC_ALBUM_ARTIST);
+        return *album_artist ? album_artist : cc_str(rec, REC_ARTIST);
+    }
+    case SB_LIBRARY_FILTER_COMPOSER:
+        return cc_str(rec, REC_COMPOSER);
+    case SB_LIBRARY_FILTER_GENRE:
+        return cc_str(rec, REC_GENRE);
+    default:
+        return "";
+    }
+}
+
+static int sg_local_matches(void *rec) {
+    const char *album_artist;
+    if (!rec) return 0;
+    if (sg.nav_filter == SB_LIBRARY_FILTER_NONE) return 1;
+    if (sg.nav_filter == SB_LIBRARY_FILTER_ALBUM) {
+        const char *album_artist = cc_str(rec, REC_ALBUM_ARTIST);
+        return sg_text_equal(cc_str(rec, REC_ALBUM), sg.nav_name) &&
+               (!sg.nav_artist[0] ||
+                sg_text_equal(*album_artist ? album_artist : cc_str(rec, REC_ARTIST), sg.nav_artist));
+    }
+    if (sg.nav_filter == SB_LIBRARY_FILTER_ALBUM_ARTIST) {
+        album_artist = sg_local_filter_field(rec, sg.nav_filter);
+        return sg_text_equal(album_artist, sg.nav_name);
+    }
+    return sg_text_equal(sg_local_filter_field(rec, sg.nav_filter), sg.nav_name);
+}
+
 /* ---------------------------------------------------------------------------
  * The stock list and its index
  */
@@ -182,10 +397,27 @@ static unsigned char sg_rank(void *rec) {
     return (unsigned char)az_rank_of(c);
 }
 
+static unsigned char sg_entry_rank(const sg_entry_t *entry) {
+    if (entry && entry->local) return sg_rank(entry->local);
+    return (unsigned char)az_rank_of(cc_name_initial(sg_entry_title(entry)));
+}
+
 /* The index is of the stock list `list` as long as that list is still in *pdeq_showlist, as big, and starts with the same record. */
 static int sg_valid(void) {
     void *cur = *(void **)PDEQ_SHOWLIST;
-    return sg.list && cur == sg.list && deque_size(cur) == sg.count && (!sg.count || deque_at(cur, 0) == sg.first);
+    unsigned expect = sg.nav_overlay ? sg.local_count : sg.count;
+    if (sg.nav_overlay && !sg.nav_local_visible)
+        return 1; /* server-only rows do not depend on the stock global song list */
+    if (sg.nav_overlay)
+        return cur == sg.list && (!expect || (cur && deque_size(cur) == expect && deque_at(cur, 0) == sg.first));
+    return sg.list && cur == sg.list && deque_size(cur) == expect && (!expect || deque_at(cur, 0) == sg.first);
+}
+
+static int sg_stock_valid(void) {
+    void *cur = *(void **)PDEQ_SHOWLIST;
+    if (!sg.nav_overlay) return sg_valid();
+    return cur == sg.list &&
+           (!sg.local_count || (cur && deque_size(cur) == sg.local_count && deque_at(cur, 0) == sg.first));
 }
 
 static int sg_lib(void) {
@@ -273,21 +505,23 @@ static int sg_is_sel(int i) { return sg.sel && (sg.sel[i >> 3] >> (i & 7) & 1); 
 
 /* The tile of song a, made from the stock record (the caller has checked sg_valid). */
 static void sg_prep(tile_t *t, int a) {
-    void *rec = deque_at(sg.list, (unsigned)a);
-    const char *sub =
-        cc_str(rec, sg.cls == CLASS_ARTIST_SONGS
-                        ? REC_ALBUM
-                        : REC_ARTIST); /* an artist's list: the artist is the title, the album the grey line */
+    sg_entry_t entry;
+    sg_get_entry((unsigned)a, &entry);
+    const char *sub = sg.cls == CLASS_ARTIST_SONGS || sg.nav_filter == SB_LIBRARY_FILTER_ARTIST ||
+                              sg.nav_filter == SB_LIBRARY_FILTER_ALBUM_ARTIST
+                          ? sg_entry_album(&entry)
+                          : sg_entry_subtitle(&entry);
     char buf[300];
-    if (sg.cls ==
-        CLASS_OFTEN) { /* Most Played: "12 plays · Artist" (the count first, a long artist is the part that is cut); REC_TRACK = plays - 1 */
-        int plays = I(rec, REC_TRACK) + 1;
+    if (!sg.nav_overlay &&
+        sg.cls ==
+            CLASS_OFTEN) { /* Most Played: "12 plays · Artist" (the count first, a long artist is the part that is cut); REC_TRACK = plays - 1 */
+        int plays = I(entry.local, REC_TRACK) + 1;
         char count[48];
         pod_fmt(count, sizeof count, TR(plays == 1 ? "%d play" : "%d plays"), plays);
         snprintf(buf, sizeof buf, "%s%s%s", count, sub[0] ? " \xc2\xb7 " : "", sub);
         sub = buf;
     }
-    grid_set(t, sg_name(rec), sub, sg.idx[a].key);
+    grid_set(t, sg_entry_title(&entry), sub, sg.idx[a].key);
 }
 
 static tile_t *sg_tile(int a) {
@@ -365,6 +599,17 @@ static tile_t *rv_tile_of(void *ctx, int a) {
     return rv_tile(a);
 }
 
+#define SG_NAV_DOT 10
+static void sg_nav_dot_paint(void *canvas, int x, int y) {
+    if (y < 0 || y + SG_NAV_DOT > GRID_VIEW_H) return;
+    canvas_set_fill_color(canvas, 0xff34c759u);
+    canvas_fill_rect(canvas, x + 4, y, 2, 1);
+    canvas_fill_rect(canvas, x + 2, y + 1, 6, 1);
+    canvas_fill_rect(canvas, x + 1, y + 2, 8, 6);
+    canvas_fill_rect(canvas, x + 2, y + 8, 6, 1);
+    canvas_fill_rect(canvas, x + 4, y + 9, 2, 1);
+}
+
 static void rv_paint(void *canvas) {
     int r0, r1, last;
     rv_span(&r0, &r1);
@@ -401,7 +646,7 @@ static int rv_cell_at(int x, int y) {
  * moved the canvas up by yoffset, which the paint adds back (CANVAS_OY) for its duration, as the Albums page does.
  */
 static void sg_paint_rows(void *canvas) {
-    int r0, r1, r, off = sg_off(), tx = sg_tx(), hair = SG_TEXT_END - tx, room = sg_text_end() - tx, pass;
+    int r0, r1, r, off = sg_off(), tx = sg_tx(), hair = SG_TEXT_END - tx, pass;
     if (sg.head) { /* a playlist's mosaic (the cover, or the placeholder disc until it is made) */
         grid_tile_t *h = grid_find(&sg.hg, 0);
         if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
@@ -422,13 +667,26 @@ static void sg_paint_rows(void *canvas) {
         }
         grid_blit(canvas, &sg.g, t, sg_art_x(), y + LIST_ART_Y, GRID_VIEW_H);
         az_fill(canvas, tx, y + ROW - 1, y + ROW, hair, LIST_HAIR);
-        if (sg_more()) rowmenu_paint(canvas, &sg.rm, sg_more_right(), sg.al.nsec > 0, y, ROW, GRID_VIEW_H);
+        if (sg_more() && (!sg.nav_overlay || sg.entry[r].source == SB_LIBRARY_LOCAL))
+            rowmenu_paint(canvas, &sg.rm, sg_more_right(), sg.al.nsec > 0, y, ROW, GRID_VIEW_H);
     }
     for (pass = 0; pass < 2; ++pass) { /* titles, then artists: one text style at a time */
         widget_prepare_text_style(pass ? sg.st_sub : sg.st_title, canvas);
-        for (r = r0; r <= r1; ++r)
-            grid_text(canvas, sg_tile(r), pass, tx, sg_row_y(r) - off + (pass ? LIST_SUB_Y : LIST_TITLE_Y), room,
+        for (r = r0; r <= r1; ++r) {
+            sg_entry_t entry;
+            int row_end, row_room, w;
+            sg_get_entry((unsigned)r, &entry);
+            row_end = sg_entry_stream(&entry) ? (sg.al.nsec > 0 ? SG_RAIL_X : SG_W) : sg_text_end();
+            row_room = row_end - tx;
+            w = row_room - (sg_entry_stream(&entry) ? SG_NAV_DOT + 12 : 0);
+            if (w < 1) w = 1;
+            grid_text(canvas, sg_tile(r), pass, tx, sg_row_y(r) - off + (pass ? LIST_SUB_Y : LIST_TITLE_Y), w,
                       pass ? LIST_SUB_H : LIST_TITLE_H, 0);
+            if (!pass && sg_entry_stream(&entry)) {
+                int x = row_end - SG_NAV_DOT - 5;
+                sg_nav_dot_paint(canvas, x, sg_row_y(r) - off + (ROW - SG_NAV_DOT) / 2);
+            }
+        }
     }
     az_paint_heads(&sg.al, canvas); /* the section letters, then over everything the pinned band and its letter */
 }
@@ -503,7 +761,19 @@ static void sg_art(tile_t *t) {
         grid_art(&sg.g, t);
         return;
     }
-    t->ckey = cc_cover_key(sg.albums, t->ckey, cc_str(deque_at(sg.list, (unsigned)(t->album - 1)), REC_ALBUM), url);
+    {
+        sg_entry_t entry;
+        sg_get_entry((unsigned)(t->album - 1), &entry);
+        if (entry.server && sb_library_cover_url(entry.server, url, sizeof url) > 0) {
+            grid_art_url(&sg.g, t, url);
+            return;
+        }
+        if (entry.server)
+            t->ckey = cc_cover_key(sg.albums, cc_key_of(sg_entry_artist(&entry), sg_entry_album(&entry)),
+                                   sg_entry_album(&entry), url);
+        else
+            t->ckey = cc_cover_key(sg.albums, t->ckey, cc_str(entry.local, REC_ALBUM), url);
+    }
     grid_art_url(&sg.g, t, *url ? url : (const char *)0);
 }
 
@@ -628,7 +898,11 @@ static int sg_on_build_start(const void *unused) {
             }
             if (j < seen_n) continue;
             seen[seen_n++] = key;
-            if (cc_build_add(cc_str(deque_at(sg.list, (unsigned)a), REC_PATH), key) < 0) goto go;
+            {
+                sg_entry_t entry;
+                sg_get_entry((unsigned)a, &entry);
+                if (entry.local && cc_build_add(cc_str(entry.local, REC_PATH), key) < 0) goto go;
+            }
         }
     }
 go:
@@ -694,12 +968,46 @@ static void sg_size(void) {
 /* "%d Selected" in the player's language, the number where the translation has its %d. */
 static void sg_fmt(char *out, unsigned size, const char *f, int n) { pod_fmt(out, size, f, n); }
 
-static const char *sg_name_text(void) { return sg.key ? TR(sg.key) : sg.name; } /* a list's title */
+static const char *sg_name_text(void) {
+    if (sg.nav_overlay && sg.nav_filter != SB_LIBRARY_FILTER_NONE) return sg.nav_name;
+    return sg.key ? TR(sg.key) : sg.name;
+} /* a list's title */
 
 /* The song count under the last row: "25 songs" (the key by n == 1, the number where the translation has its %d). */
 static void sg_foot_text(void) {
-    char buf[64];
-    sg_fmt(buf, sizeof buf, TR(sg.count == 1 ? "%d song" : "%d songs"), (int)sg.count);
+    char buf[96], count[48], duration[40];
+    unsigned i, total = 0;
+    int known = 1;
+    sg_fmt(count, sizeof count, TR(sg.count == 1 ? "%d song" : "%d songs"), (int)sg.count);
+    if (sg.nav_overlay && sg.nav_filter == SB_LIBRARY_FILTER_ALBUM && sg.count) {
+        dur_acquire();
+        for (i = 0; i < sg.count; ++i) {
+            sg_entry_t entry;
+            int seconds;
+            unsigned size;
+            sg_get_entry(i, &entry);
+            if (entry.server && entry.server->duration) {
+                seconds = (int)entry.server->duration;
+            } else if (entry.local) {
+                seconds = dur_song(entry.local, &size);
+                if (seconds <= 0 && entry.duration) seconds = (int)entry.duration;
+            } else {
+                seconds = entry.duration ? (int)entry.duration : 0;
+            }
+            if (seconds <= 0) {
+                known = 0;
+                break;
+            }
+            total += (unsigned)seconds;
+        }
+        dur_release();
+        if (known) {
+            dur_text(duration, sizeof duration, total);
+            snprintf(buf, sizeof buf, "%s \xc2\xb7 %s", count, duration);
+        } else
+            snprintf(buf, sizeof buf, "%s", count);
+    } else
+        snprintf(buf, sizeof buf, "%s", count);
     widget_set_text_utf8(sg.foot, buf);
     widget_move(sg.foot, SG_HDR_X, sg_rows_end() + SG_FOOT_GAP);
 }
@@ -729,7 +1037,9 @@ static void sg_head(
     void) { /* the navbar's title: "N Selected" in select mode, else "Songs" or the list's name, cut to its room with an ellipsis */
     char buf[64];
     if (!sg.select) {
-        az_fit(sg.title, sg_lib() ? TR("Songs") : sg_name_text());
+        az_fit(sg.title, sg.nav_overlay && sg.nav_filter != SB_LIBRARY_FILTER_NONE ? sg.nav_name
+                         : sg_lib()                                                ? TR("Songs")
+                                                                                   : sg_name_text());
         return;
     }
     sg_fmt(buf, sizeof buf, TR("%d Selected"), (int)sg.nsel);
@@ -759,12 +1069,431 @@ static unsigned sg_sig(void *rec, unsigned key, unsigned rank) {
     return h;
 }
 
+static const char *sg_entry_filename(const sg_entry_t *entry, char *out, unsigned cap) {
+    if (entry->server) {
+        if (sb_track_filename(out, cap, entry->server) >= 0) return out;
+        return sg_entry_title(entry);
+    }
+    return cc_str(entry->local, REC_NAME);
+}
+
+static const char *sg_entry_suffix(const sg_entry_t *entry) {
+    const char *path, *dot;
+    if (entry->server) return entry->server->suffix;
+    path = cc_str(entry->local, REC_PATH);
+    dot = strrchr(path, '.');
+    return dot ? dot + 1 : "";
+}
+
+static unsigned sg_entry_created(const sg_entry_t *entry) {
+    return entry->server ? entry->server->created : (unsigned)I(entry->local, REC_TIME_CREATE);
+}
+
+static int sg_entry_cmp(const sg_entry_t *a, const sg_entry_t *b) {
+    int d = 0;
+    if (sg.nav_filter == SB_LIBRARY_FILTER_ALBUM || sg.nav_filter == SB_LIBRARY_FILTER_ARTIST ||
+        sg.nav_filter == SB_LIBRARY_FILTER_ALBUM_ARTIST) {
+        if (sg.nav_filter != SB_LIBRARY_FILTER_ALBUM) d = cc_key_cmp(sg_entry_album(a), sg_entry_album(b));
+        if (!d) {
+            unsigned ad = a->server ? a->server->disc : (unsigned)I(a->local, REC_DISC);
+            unsigned bd = b->server ? b->server->disc : (unsigned)I(b->local, REC_DISC);
+            unsigned at = a->server ? a->server->track : (unsigned)I(a->local, REC_TRACK);
+            unsigned bt = b->server ? b->server->track : (unsigned)I(b->local, REC_TRACK);
+            d = ad < bd ? -1 : ad > bd ? 1 : at < bt ? -1 : at > bt ? 1 : 0;
+        }
+        if (!d) d = cc_key_cmp(sg_entry_title(a), sg_entry_title(b));
+    } else if (sg.sort == 1) {
+        char an[SB_TEXT + 16], bn[SB_TEXT + 16];
+        d = cc_key_cmp(sg_entry_filename(a, an, sizeof an), sg_entry_filename(b, bn, sizeof bn));
+    } else if (sg.sort == 2) {
+        d = cc_key_cmp(sg_entry_suffix(a), sg_entry_suffix(b));
+    } else if (sg.sort == 3 || sg.sort == 4) {
+        unsigned ac = sg_entry_created(a), bc = sg_entry_created(b);
+        d = ac < bc ? -1 : ac > bc ? 1 : 0;
+        if (sg.sort == 3) d = -d;
+    } else {
+        d = cc_key_cmp(sg_entry_title(a), sg_entry_title(b));
+        if (!d) d = cc_key_cmp(sg_entry_artist(a), sg_entry_artist(b));
+        if (!d) d = cc_key_cmp(sg_entry_album(a), sg_entry_album(b));
+    }
+    if (d) return d;
+    if (!!a->local != !!b->local) return a->local ? -1 : 1;
+    return a->order < b->order ? -1 : a->order > b->order;
+}
+
+static void sg_entry_swap(unsigned a, unsigned b) {
+    sg_entry_t *x = &sg.entry[a], *y = &sg.entry[b];
+    void *local = x->local;
+    const sb_song_t *server = x->server;
+    unsigned order = x->order, local_index = x->local_index;
+    unsigned char source = x->source;
+    unsigned short duration = x->duration;
+    x->local = y->local, x->server = y->server, x->order = y->order, x->local_index = y->local_index,
+    x->source = y->source, x->duration = y->duration;
+    y->local = local, y->server = server, y->order = order, y->local_index = local_index, y->source = source,
+    y->duration = duration;
+}
+
+static void sg_entry_sift(unsigned root, unsigned end) {
+    unsigned child;
+    while ((child = root * 2u + 1u) < end) {
+        if (child + 1u < end && sg_entry_cmp(&sg.entry[child], &sg.entry[child + 1u]) < 0) ++child;
+        if (sg_entry_cmp(&sg.entry[root], &sg.entry[child]) >= 0) return;
+        sg_entry_swap(root, child);
+        root = child;
+    }
+}
+
+static void sg_entry_sort(unsigned count) {
+    unsigned i;
+    for (i = count / 2u; i > 0; --i) sg_entry_sift(i - 1u, count);
+    for (i = count; i > 1u; --i) {
+        sg_entry_swap(0, i - 1u);
+        sg_entry_sift(0, i - 1u);
+    }
+}
+
+static unsigned sg_entry_signature(const sg_entry_t *entry, unsigned key, unsigned rank) {
+    unsigned h = 2166136261u ^ key;
+    const char *s[3] = {sg_entry_title(entry), sg_entry_subtitle(entry), entry->server ? entry->server->cover : ""};
+    unsigned k;
+    h = (h ^ rank ^ entry->source) * 16777619u;
+    for (k = 0; k < 3; ++k) {
+        const unsigned char *p = (const unsigned char *)s[k];
+        for (; *p; ++p) h = (h ^ *p) * 16777619u;
+        h = (h ^ 0x100u) * 16777619u;
+    }
+    return h;
+}
+
+static void sg_overlay_finish(void) {
+    song_t *index;
+    unsigned char *selection;
+    unsigned i;
+    int at = sg_off();
+    if (sg.nav_timer) timer_remove(sg.nav_timer);
+    sg.nav_timer = 0;
+    index = sg.entry_count ? (song_t *)calloc(sg.entry_count, sizeof *index) : (song_t *)0;
+    selection = sg.entry_count ? (unsigned char *)calloc((sg.entry_count + 7) / 8, 1) : (unsigned char *)0;
+    if (sg.entry_count && (!index || !selection)) {
+        free(index);
+        free(selection);
+        sg.entry_count = sg.nav_local_visible;
+        sg.nav_scanning = 0;
+        sb_library_index_close(&sg.nav_index);
+        sb_library_downloads_close(&sg.nav_downloads);
+        free(sg.nav_match);
+        sg.nav_match = (sg_match_slot_t *)0, sg.nav_match_cap = 0;
+        widget_set_tr_text(sg.foot, "Navidrome library could not be loaded");
+        return;
+    }
+    if (sg.entry_count > 1) sg_entry_sort(sg.entry_count);
+    for (i = 0; i < sg.entry_count; ++i) {
+        sg_entry_t *entry = &sg.entry[i];
+        unsigned key =
+            entry->local ? cc_album_key(entry->local) : cc_key_of(sg_entry_artist(entry), sg_entry_album(entry));
+        if (entry->local && !entry->duration)
+            entry->duration = sg_local_server_duration(entry->local, entry->local_index);
+        index[i].key = key;
+        index[i].letter = sg_entry_rank(entry);
+        sg_set_sig(&index[i], sg_entry_signature(entry, key, index[i].letter));
+    }
+    free(sg.idx);
+    free(sg.sel);
+    sg.idx = index, sg.sel = selection;
+    sg.count = sg.entry_count;
+    sg.al.count = (int)sg.count;
+    sg.al.nsec = 0;
+    if (sg.count && sg.nav_filter == SB_LIBRARY_FILTER_NONE && sg.sort == 0)
+        az_sections(&sg.al, &sg.idx[0].letter, sizeof(song_t));
+    sg.nav_scanning = 0;
+    sb_library_downloads_close(&sg.nav_downloads);
+    free(sg.nav_match);
+    sg.nav_match = (sg_match_slot_t *)0, sg.nav_match_cap = 0;
+    grid_drop(&sg.g);
+    grid_placeholder(&sg.g);
+    sg_show(sg.view, sg.count != 0);
+    sg_show(sg.status, sg.count == 0);
+    if (!sg.count)
+        widget_set_tr_text(sg.status,
+                           sg.nav_filter == SB_LIBRARY_FILTER_NONE ? SB_LIBRARY_EMPTY_HINT : SB_LIBRARY_NO_MATCH_HINT);
+    sg_size();
+    sg_foot_text();
+    widget_set_prop_int(sg.sv, "yoffset", at < 0 ? 0 : at > sg_max_scroll() ? sg_max_scroll() : at);
+    sg_rail_fit();
+    sg_head();
+    sg_title_update();
+    sg_redraw();
+    sg_kick();
+    sg_build_later();
+}
+
+#define SG_NAV_BATCH 512
+static void sg_nav_progress(void) {
+    char text[80];
+    if (sg.count) {
+        snprintf(text, sizeof text, "Loading %u/%u", sg.nav_cursor, sg.nav_total);
+        widget_set_text_utf8(sg.foot, text);
+    } else {
+        snprintf(text, sizeof text, "Loading Navidrome\n%u/%u", sg.nav_cursor, sg.nav_total);
+        widget_set_text_utf8(sg.status, text);
+    }
+}
+
+static int sg_nav_scan_step(void) {
+    unsigned end;
+    if (!sg.nav_scanning || !sg.nav_index.songs) return 0;
+    end = sg.nav_cursor + SG_NAV_BATCH;
+    if (end < sg.nav_cursor || end > sg.nav_total) end = sg.nav_total;
+    while (sg.nav_cursor < end) {
+        unsigned offset = sg.nav_cursor++;
+        const sb_song_t *song = offset < sg.nav_index.count
+                                    ? &sg.nav_index.songs[offset]
+                                    : &sg.nav_index.songs[sg.nav_index.count + offset - sg.nav_index.count];
+        char path[320];
+        int offline = 0, dsd = sb_library_is_dsd(song);
+        sg_match_slot_t *local_copy;
+        sg_entry_t *entry;
+        if (!song->id[0] || !sb_library_matches(song, sg.nav_filter, sg.nav_name, sg.nav_artist)) continue;
+        local_copy = sg_remote_local_copy(song);
+        if (local_copy) {
+            if (song->duration && !local_copy->duration)
+                local_copy->duration = (unsigned short)(song->duration > 65535u ? 65535u : song->duration);
+            /* A local duplicate belongs in this server category even when its
+             * SD metadata omits or disagrees on genre/composer/album artist. */
+            if (!local_copy->visible && sg.entry_count < sg.entry_cap) {
+                unsigned local_index = local_copy->local_index;
+                entry = &sg.entry[sg.entry_count++];
+                memset(entry, 0, sizeof *entry);
+                entry->local = deque_at(sg.list, local_index);
+                entry->local_index = local_index;
+                entry->source = SB_LIBRARY_LOCAL;
+                entry->order = local_index;
+                entry->duration = local_copy->duration;
+                local_copy->visible = 1;
+                ++sg.nav_local_visible;
+            }
+            continue;
+        }
+        if (sb_library_downloads_contains(&sg.nav_downloads, song) &&
+            sb_library_offline_path(song, path, sizeof path) == 1)
+            offline = 1;
+        if (dsd && !offline) continue;
+        if (sg.entry_count >= sg.entry_cap) continue;
+        entry = &sg.entry[sg.entry_count++];
+        memset(entry, 0, sizeof *entry);
+        entry->server = song;
+        entry->source = offline ? SB_LIBRARY_OFFLINE : SB_LIBRARY_STREAM;
+        entry->order = offset;
+        entry->duration = (unsigned short)(song->duration > 65535u ? 65535u : song->duration);
+    }
+    if (sg.nav_cursor >= sg.nav_total) {
+        if (sg.nav_dur_held) dur_release(), sg.nav_dur_held = 0;
+        sg_overlay_finish();
+        return 0;
+    }
+    sg_nav_progress();
+    return 1;
+}
+
+static int sg_on_nav_scan(const void *unused) {
+    (void)unused;
+    sg.nav_timer = 0;
+    if (!sg.nav_scanning) return RET_OK;
+    if (!sg.nav_index.songs) {
+        sg.entry_count = sg.nav_local_visible;
+        if (sg.nav_dur_held) dur_release(), sg.nav_dur_held = 0;
+        sg.nav_scanning = 0;
+        sg_overlay_finish();
+        if (!sg.count) widget_set_tr_text(sg.status, "Navidrome index could not be read");
+        return RET_OK;
+    }
+    if (sg_nav_scan_step()) sg_nav_schedule();
+    return RET_OK;
+}
+
+static void sg_nav_schedule(void) {
+    if (!sg.nav_scanning || sg.nav_timer || !sg.view) return;
+    sg.nav_timer = timer_add(sg_on_nav_scan, (void *)0, SG_MORE_MS);
+    if (!sg.nav_timer) {
+        /* Keep local entries usable and avoid leaving a permanent loading page
+         * if the UI has no timer slot available. */
+        sg.entry_count = sg.nav_local_visible;
+        if (sg.nav_dur_held) dur_release(), sg.nav_dur_held = 0;
+        sg.nav_scanning = 0;
+        sg_overlay_finish();
+        if (!sg.count) widget_set_tr_text(sg.status, "Navidrome library scan could not start");
+    }
+}
+
+/* If the stock query replaces the local deque while this virtual page is open,
+ * its local record pointers cannot be read safely. Restart this view as a
+ * server-only overlay; that keeps the page usable and lets the scanner rebuild
+ * the remote/offline rows without touching stale local records. */
+static void sg_nav_remote_fallback(void) {
+    int at = sg_off();
+    if (!sg.nav_overlay) return;
+    if (sg.nav_timer) timer_remove(sg.nav_timer);
+    sg.nav_timer = 0;
+    sg_build_end();
+    if (sg.nav_dur_held) dur_release(), sg.nav_dur_held = 0;
+    free(sg.nav_match);
+    sg.nav_match = (sg_match_slot_t *)0, sg.nav_match_cap = 0;
+    sg.count = sg.entry_count = sg.nav_local_visible = 0;
+    sg.al.count = 0, sg.al.nsec = 0;
+    if (sg.select) sg_select(0);
+    free(sg.idx), free(sg.sel);
+    sg.idx = (song_t *)0, sg.sel = (unsigned char *)0;
+    sg.nsel = 0;
+    sg.local_count = 0, sg.list = sg.first = (void *)0;
+    sg.nav_cursor = 0;
+    sg.nav_total = sg.nav_index.count + sg.nav_index.dsd_count;
+    sb_library_downloads_close(&sg.nav_downloads);
+    if (sg.nav_index.songs) (void)sb_library_downloads_open(&sg.nav_downloads);
+    grid_drop(&sg.g);
+    grid_placeholder(&sg.g);
+    sg_size();
+    sg_show(sg.view, 0);
+    sg_show(sg.status, 1);
+    if (!sg.nav_index.songs || !sg.nav_total) {
+        sg.nav_scanning = 0;
+        widget_set_tr_text(sg.status, SB_LIBRARY_EMPTY_HINT);
+        return;
+    }
+    sg.nav_scanning = 1;
+    dur_acquire(), sg.nav_dur_held = 1;
+    sg_foot_text();
+    sg_ticks();
+    sg_rail_fit();
+    sg_head();
+    sg_title_update();
+    widget_set_prop_int(sg.sv, "yoffset", at < 0 ? 0 : at > sg_max_scroll() ? sg_max_scroll() : at);
+    sg_nav_progress();
+    sg_redraw();
+    sg_nav_schedule();
+}
+
+static void sg_overlay_release(void) {
+    if (sg.nav_timer) timer_remove(sg.nav_timer);
+    sg.nav_timer = 0;
+    if (sg.nav_dur_held) dur_release(), sg.nav_dur_held = 0;
+    sb_library_index_close(&sg.nav_index);
+    sb_library_downloads_close(&sg.nav_downloads);
+    free(sg.nav_match);
+    free(sg.entry);
+    sg.nav_match = (sg_match_slot_t *)0, sg.nav_match_cap = 0;
+    sg.entry = (sg_entry_t *)0, sg.entry_count = sg.entry_cap = 0;
+    sg.nav_cursor = sg.nav_total = sg.nav_local_visible = 0;
+    sg.nav_scanning = 0;
+}
+
+static void sg_overlay_start(void *list, int at) {
+    unsigned i, local_count = list ? deque_size(list) : 0;
+    unsigned index_count = 0, cap = 1, target = 0;
+    int have_index = sb_library_index_open(&sg.nav_index) == 0;
+    if (have_index) index_count = sg.nav_index.count + sg.nav_index.dsd_count;
+    sg.local_count = local_count;
+    sg.list = list;
+    sg.first = local_count ? deque_at(list, 0) : (void *)0;
+    sg.nav_cursor = 0, sg.nav_total = index_count;
+    if (have_index) (void)sb_library_downloads_open(&sg.nav_downloads);
+    if (local_count > (unsigned)-1 - index_count || local_count + index_count > (unsigned)-1 / sizeof *sg.entry) {
+        sb_library_index_close(&sg.nav_index);
+        sb_library_downloads_close(&sg.nav_downloads);
+        have_index = 0, index_count = 0, sg.nav_total = 0;
+    }
+    sg.entry_cap = local_count + index_count;
+    if (sg.entry_cap) sg.entry = (sg_entry_t *)calloc(sg.entry_cap, sizeof *sg.entry);
+    if (sg.entry_cap && !sg.entry) {
+        sg_overlay_release();
+        sg_show(sg.view, 0);
+        sg_show(sg.status, 1);
+        widget_set_tr_text(sg.status, "Not enough memory for library");
+        sg_size();
+        return;
+    }
+    if (have_index && local_count && local_count <= 0x20000000u) {
+        target = local_count * 2u;
+        while (cap < target && cap < 0x80000000u) cap <<= 1;
+        if (cap >= target) {
+            sg.nav_match = (sg_match_slot_t *)calloc(cap, sizeof *sg.nav_match);
+            if (sg.nav_match) sg.nav_match_cap = cap;
+        }
+        if (!sg.nav_match) {
+            sb_library_index_close(&sg.nav_index);
+            sb_library_downloads_close(&sg.nav_downloads);
+            have_index = 0, index_count = 0, sg.nav_total = 0;
+        }
+    }
+    for (i = 0; i < local_count; ++i) {
+        void *record = deque_at(list, i);
+        sg_entry_t *entry;
+        int visible = sg_local_matches(record);
+        if (sg.nav_match && sg.nav_match_cap) sg_match_add(record, i, visible);
+        if (!visible || sg.entry_count >= sg.entry_cap) continue;
+        entry = &sg.entry[sg.entry_count++];
+        entry->local = record;
+        entry->local_index = i;
+        entry->source = SB_LIBRARY_LOCAL;
+        entry->order = i;
+    }
+    sg.nav_local_visible = sg.entry_count;
+    sg.count = sg.entry_count;
+    sg.al.count = (int)sg.count;
+    sg.idx = sg.count ? (song_t *)calloc(sg.count, sizeof *sg.idx) : (song_t *)0;
+    sg.sel = sg.count ? (unsigned char *)calloc((sg.count + 7) / 8, 1) : (unsigned char *)0;
+    if (sg.count && (!sg.idx || !sg.sel)) {
+        free(sg.idx), free(sg.sel);
+        sg.idx = (song_t *)0, sg.sel = (unsigned char *)0;
+        sg.count = sg.al.count = 0;
+        sg_overlay_release();
+        sg_show(sg.view, 0);
+        sg_show(sg.status, 1);
+        widget_set_tr_text(sg.status, "Not enough memory for library");
+        sg_size();
+        return;
+    }
+    for (i = 0; i < sg.count; ++i) {
+        unsigned key = cc_album_key(sg.entry[i].local);
+        sg.idx[i].key = key;
+        sg.idx[i].letter = sg_entry_rank(&sg.entry[i]);
+        sg_set_sig(&sg.idx[i], sg_entry_signature(&sg.entry[i], key, sg.idx[i].letter));
+    }
+    if (sg.count && sg.sort == 0 && sg.nav_filter == SB_LIBRARY_FILTER_NONE)
+        az_sections(&sg.al, &sg.idx[0].letter, sizeof(song_t));
+    sg_show(sg.view, sg.count != 0);
+    sg_show(sg.status, sg.count == 0);
+    if (!sg.count) widget_set_tr_text(sg.status, sg.nav_total ? SB_LIBRARY_LOADING_HINT : SB_LIBRARY_EMPTY_HINT);
+    sg_size();
+    sg_foot_text();
+    widget_set_prop_int(sg.sv, "yoffset", at < 0 ? 0 : at > sg_max_scroll() ? sg_max_scroll() : at);
+    sg.dir = 1, sg.seen = sg_off(), sg.build_at = sg_first();
+    sg_ticks();
+    sg_rail_fit();
+    sg_head();
+    sg_title_update();
+    sg_redraw();
+    if (have_index && sg.nav_total) {
+        sg.nav_scanning = 1;
+        dur_acquire(), sg.nav_dur_held = 1;
+        sg_nav_progress();
+        sg_nav_schedule();
+    } else
+        sg_overlay_finish();
+    sg_build_later();
+}
+
 static void sg_load(int keep) {
     unsigned i;
     int at = keep ? sg_off() : 0, same = 0;
     void *list = (void *)0;
     song_t *old = sg.idx;
     unsigned old_n = sg.count;
+    if (sg.nav_overlay) {
+        free(old);
+        old = (song_t *)0;
+        sg_overlay_release();
+    }
     if (sg_lib())
         free(old),
             old =
@@ -784,6 +1513,13 @@ static void sg_load(int keep) {
     sg.sort = sg_lib() ? *(int *)SORT_FLAG : 0; /* (a list has the order of its query: sort_flag is the library's) */
     if (sg.sort < 0 || sg.sort >= SG_SORT_ROWS) sg.sort = 0;
     if (sg_query() > 0) list = *(void **)PDEQ_SHOWLIST;
+    if (sg.nav_overlay) {
+        grid_drop(&sg.g);
+        grid_placeholder(&sg.g);
+        sg.tend = sg_edge();
+        sg_overlay_start(list, at);
+        return;
+    }
     if (list) sg.count = deque_size(list);
     if (sg.count) {
         sg.idx = calloc(sg.count, sizeof(song_t));
@@ -827,7 +1563,9 @@ static void sg_load(int keep) {
     sg_show(sg.view, sg.count != 0);
     sg_show(sg.status, sg.count == 0);
     if (!sg.count)
-        widget_set_tr_text(sg.status, list ? "Not enough memory" : sg_lib() ? "Update Local Music first" : "No songs");
+        widget_set_tr_text(sg.status, list && deque_size(list) ? "Not enough memory"
+                                      : sg_lib()               ? SB_LIBRARY_EMPTY_HINT
+                                                               : "No songs");
     sg_size();
     sg_foot_text();
     widget_set_prop_int(sg.sv, "yoffset",
@@ -851,7 +1589,12 @@ static void sg_load(int keep) {
 static int sg_on_stale(const void *unused) {
     (void)unused;
     sg.stale_timer = 0;
-    if (sg.view && !sg.rv && sg.g.tiles && !sg_valid() && pod_is_top(sg.win)) sg_load(1);
+    if (sg.view && !sg.rv && sg.g.tiles && !sg_valid() && pod_is_top(sg.win)) {
+        if (sg.nav_overlay)
+            sg_nav_remote_fallback();
+        else
+            sg_load(1);
+    }
     return RET_OK;
 }
 
@@ -1000,6 +1743,35 @@ static void sg_play_at(int at, int how) {
         return;
     }
     sg_classinfo(); /* loadSongList runs the class query again and keeps classinfo for the memory playback */
+    if (sg.nav_overlay) {
+        unsigned start = 0, n, i;
+        sb_library_queue_entry_t *queue;
+        if (!sg.count || !sg.entry) return;
+        if (how == SO_KEEP) {
+            if (at < 0 || (unsigned)at >= sg.count) return;
+            start = (unsigned)at;
+        } else if (how == SO_SHUFFLE && sg.count > SB_QUEUE_MAX)
+            start = pod_rand(sg.count - SB_QUEUE_MAX + 1u);
+        n = sg.count - start;
+        if (n > SB_QUEUE_MAX) n = SB_QUEUE_MAX;
+        queue = (sb_library_queue_entry_t *)calloc(n, sizeof *queue);
+        if (!queue) {
+            pod_toast("Could not prepare library queue");
+            return;
+        }
+        for (i = 0; i < n; ++i) {
+            sg_entry_t *entry = &sg.entry[start + i];
+            queue[i].local_record = entry->local;
+            queue[i].server_song = entry->server;
+            queue[i].server_index = entry->order;
+            queue[i].source = entry->source;
+        }
+        (void)sb_library_play_queue(queue, n, how == SO_KEEP ? 0 : at, how);
+        free(queue);
+        return;
+    }
+    if (at >= 0 && (unsigned)at < sg.count && sg.list && sb_library_play_recent(deque_at(sg.list, (unsigned)at)) == 0)
+        return;
     so_play(sg.cls, sg.list, at, how, sg_open_player);
 }
 
@@ -1016,7 +1788,9 @@ static int sg_on_shuffle(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (!sg.view || !sg.count) return RET_OK;
-    if (sg_lib())
+    if (sg.nav_overlay)
+        sg_play_at(-1, SO_SHUFFLE);
+    else if (sg_lib())
         shuffle_play(0);
     else
         sg_play_at(-1, SO_SHUFFLE);
@@ -1065,6 +1839,25 @@ static void sg_count_changed(void) {
     sg_redraw();
 }
 
+static unsigned char *sg_stock_selection(unsigned *selected) {
+    unsigned i, count = 0;
+    unsigned char *bits;
+    if (selected) *selected = 0;
+    if (!sg.nav_overlay) return (unsigned char *)0;
+    bits = sg.local_count ? (unsigned char *)calloc((sg.local_count + 7) / 8, 1) : (unsigned char *)0;
+    if (sg.local_count && !bits) return (unsigned char *)0;
+    for (i = 0; i < sg.count; ++i) {
+        sg_entry_t entry;
+        if (!sg_is_sel((int)i)) continue;
+        sg_get_entry(i, &entry);
+        if (entry.source != SB_LIBRARY_LOCAL || !entry.local || entry.local_index >= sg.local_count) continue;
+        bits[entry.local_index >> 3] |= (unsigned char)(1u << (entry.local_index & 7));
+        ++count;
+    }
+    if (selected) *selected = count;
+    return bits;
+}
+
 static void sg_toggle(int i) {
     if (i < 0 || i >= (int)sg.count || !sg.sel) return;
     sg.sel[i >> 3] ^= (unsigned char)(1 << (i & 7));
@@ -1091,10 +1884,28 @@ static int sg_on_selall(void *ctx, void *e) {
 
 /* Delete and Add run the stock code on the stock selection vector (patch/songops.c), filled from the page's marks at that moment. */
 static int sg_on_delete(void *ctx, void *e) {
+    unsigned char *bits;
+    unsigned selected;
+    int deleted;
     (void)ctx;
     (void)e;
     if (!sg.select) return RET_OK;
-    if (so_delete(sg.cls, sg.list, sg.count, sg.sel, sg.nsel, sg_valid())) {
+    if (sg.nav_overlay) {
+        bits = sg_stock_selection(&selected);
+        if (sg.local_count && !bits) {
+            pod_toast("Not enough memory");
+            return RET_OK;
+        }
+        if (!selected) {
+            free(bits);
+            pod_toast("Select a local song");
+            return RET_OK;
+        }
+        deleted = so_delete(CLASS_ALL_SONGS, sg.list, sg.local_count, bits, selected, sg_stock_valid());
+        free(bits);
+    } else
+        deleted = so_delete(sg.cls, sg.list, sg.count, sg.sel, sg.nsel, sg_valid());
+    if (deleted) {
         sg_select(0);
         sg_load(1);
     }
@@ -1104,10 +1915,26 @@ static int sg_on_delete(void *ctx, void *e) {
 /* Add to playlist: the stock playlist picker over this page; the title the picker may overwrite and the browsing class it sets are put back when this window comes to the front. */
 static int sg_on_add(void *ctx, void *e) {
     int r;
+    unsigned char *bits;
+    unsigned selected;
     (void)ctx;
     (void)e;
     if (!sg.select) return RET_OK;
-    r = so_add(sg.cls, sg.count, sg.sel, sg.nsel, sg_valid(), sg.title_save, &sg.picker);
+    if (sg.nav_overlay) {
+        bits = sg_stock_selection(&selected);
+        if (sg.local_count && !bits) {
+            pod_toast("Not enough memory");
+            return RET_OK;
+        }
+        if (!selected) {
+            free(bits);
+            pod_toast("Select a local song");
+            return RET_OK;
+        }
+        r = so_add(CLASS_ALL_SONGS, sg.local_count, bits, selected, sg_stock_valid(), sg.title_save, &sg.picker);
+        free(bits);
+    } else
+        r = so_add(sg.cls, sg.count, sg.sel, sg.nsel, sg_valid(), sg.title_save, &sg.picker);
     if (r < 0) {
         sg_select(0);
         sg_load(1);
@@ -1171,13 +1998,35 @@ static int sg_in_zone(void *e) {
     pt[0] = I(e, PE_X), pt[1] = I(e, PE_Y);
     widget_to_local(sg.view, pt);
     x0 = rowmenu_zone_x(sg_more_right());
-    return pt[0] >= x0 && pt[0] < x0 + RM_MORE_W;
+    if (pt[0] < x0 || pt[0] >= x0 + RM_MORE_W) return 0;
+    if (sg.nav_overlay && sg.down > 0 && sg.down - 1 < (int)sg.entry_count &&
+        sg.entry[sg.down - 1].source != SB_LIBRARY_LOCAL)
+        return 0;
+    return 1;
 }
 
 /* Add to Playlist for one row (the menu's third row): the page's picker with a selection of that row alone. */
 static void sg_add_one(int row) {
     int r;
+    unsigned char *bits;
+    unsigned selected;
     if (!sg.sel || row < 0 || row >= (int)sg.count) return;
+    if (sg.nav_overlay) {
+        sg_entry_t entry;
+        sg_get_entry((unsigned)row, &entry);
+        if (entry.source != SB_LIBRARY_LOCAL || entry.local_index >= sg.local_count) return;
+        sg.sel[row >> 3] |= (unsigned char)(1 << (row & 7));
+        bits = sg_stock_selection(&selected);
+        sg.sel[row >> 3] &= (unsigned char)~(1 << (row & 7));
+        if (sg.local_count && !bits) {
+            pod_toast("Not enough memory");
+            return;
+        }
+        r = so_add(CLASS_ALL_SONGS, sg.local_count, bits, selected, sg_stock_valid(), sg.title_save, &sg.picker);
+        free(bits);
+        if (r < 0) sg_load(1);
+        return;
+    }
     sg.sel[row >> 3] |= (unsigned char)(1 << (row & 7));
     r = so_add(sg.cls, sg.count, sg.sel, 1, sg_valid(), sg.title_save, &sg.picker);
     memset(sg.sel, 0, (sg.count + 7) / 8); /* (the picker and the stock vector have their own copies) */
@@ -1185,11 +2034,14 @@ static void sg_add_one(int row) {
 }
 
 static void sg_open_menu(int a) {
+    sg_entry_t entry;
+    sg_get_entry((unsigned)a, &entry);
     if (!sg_valid()) {
         sg_load(1);
         return;
     }
-    rowmenu_open(&sg.rm, a, deque_at(sg.list, (unsigned)a), sg_add_one);
+    if (!entry.local || entry.source != SB_LIBRARY_LOCAL) return;
+    rowmenu_open(&sg.rm, a, entry.local, sg_add_one);
 }
 
 static int sg_on_down(void *ctx, void *e) {
@@ -1325,9 +2177,14 @@ static int sg_on_fg(void *ctx, void *e) {
         memcpy((void *)NAV_TITLE, sg.title_save, sizeof sg.title_save);
         sg_select(0);
         sg_load(1);
-    } else if (!sg.rv && (!sg_valid() || sg_changes())) /* (the album view reads no stock list: nothing is stale) */
-        sg_load(1); /* (a list read again whose rows are the same keeps its tiles: sg_load) */
+    } else if (!sg.rv && (!sg_valid() || sg_changes())) { /* (the album view reads no stock list: nothing is stale) */
+        if (sg.nav_overlay && !sg_valid())
+            sg_nav_remote_fallback();
+        else
+            sg_load(1); /* (a list read again whose rows are the same keeps its tiles: sg_load) */
+    }
     sg_build_later();
+    sg_nav_schedule();
     sg_kick(); /* the loader stops on a list another page replaced (Search's queries), and the list can be valid again by now: covers still to load start it here */
     return RET_OK;
 }
@@ -1356,6 +2213,7 @@ static int sg_on_destroy(void *ctx, void *e) {
         if (sg.mark[i]) bitmap_destroy(sg.mark[i]);
     free(sg.idx);
     free(sg.sel);
+    sg_overlay_release();
     rowmenu_free(&sg.rm);
     memset(&sg, 0, sizeof sg);
     if (sg_under) memcpy(&sg, sg_under, sizeof sg), free(sg_under), sg_under = (void *)0;
@@ -1370,7 +2228,8 @@ static int sg_stack(void) {
     sg_build_end();
     if (sg.more_timer) timer_remove(sg.more_timer);
     if (sg.stale_timer) timer_remove(sg.stale_timer);
-    sg.more_timer = sg.stale_timer = 0;
+    if (sg.nav_timer) timer_remove(sg.nav_timer);
+    sg.more_timer = sg.stale_timer = sg.nav_timer = 0;
     memcpy(sg_under, &sg, sizeof sg);
     memset(&sg, 0, sizeof sg);
     return 0;
@@ -1385,6 +2244,13 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     if (sg.win && (cls != CLASS_PLAYLIST_SONGS || sg_stack() == -1)) return -1;
     memset(&sg, 0, sizeof sg);
     sg.cls = cls, sg.pl_id = pl_id, sg.key = key;
+    if (cls == CLASS_ALL_SONGS && sg_nav_request.active) {
+        sg.nav_overlay = 1;
+        sg.nav_filter = sg_nav_request.filter;
+        memcpy(sg.nav_name, sg_nav_request.name, sizeof sg.nav_name);
+        memcpy(sg.nav_artist, sg_nav_request.artist, sizeof sg.nav_artist);
+    }
+    sg_nav_request.active = 0;
     if (cls == CLASS_ARTIST_SONGS)
         memcpy(sg.ci, (void *)CLASSINFO, CLASSINFO_SIZE); /* songs_open_artist ran the two queries just before */
     for (i = 0; name[i] && i < (int)sizeof sg.name - 1; ++i) sg.name[i] = name[i];
@@ -1420,6 +2286,7 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     sg.view = widget_lookup(sg.win, "view_grid", 1);
     sg.sv = widget_lookup(sg.win, "songs_scrollview", 1);
     sg.status = widget_lookup(sg.win, "label_status", 1);
+    if (sg.status) label_set_line_wrap(sg.status, 1), widget_set_prop_bool(sg.status, "word_wrap", 1);
     sg.st_title = widget_lookup(sg.win, "label_row_title", 1);
     sg.st_sub = widget_lookup(sg.win, "label_row_sub", 1);
     sg.al.st_hdr = widget_lookup(sg.win, "label_hdr", 1);
@@ -1469,6 +2336,7 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
         widget_resize(sg.title, sg_search_x() - NAV_TITLE_X, 22);
         az_fit(sg.big, sg_name_text());
     }
+    if (sg.nav_overlay && sg.nav_filter != SB_LIBRARY_FILTER_NONE) az_fit(sg.big, sg.nav_name);
     /* A playlist's header (docs/modules/songs.md): the mosaic tile (the Playlists page's, patch/grid.c) and the name under it (the count is the footer under the last row,
      * as Apple Music's), the pills and the rows lower, the large title gone. Without the label, the tile or the quadrant buffer the page keeps its plain look (the large title). */
     if (sg.cls == CLASS_PLAYLIST_SONGS && sg.hname) {
@@ -1536,7 +2404,29 @@ static int sg_open(int cls, int pl_id, const char *key, const char *name, int ho
 }
 
 /* The M1+ Music menu's Songs row. A window that will not open leaves the stock Songs page, through the Home dispatcher. 0 once something is requested. */
-int songs_open(void) { return sg_open(CLASS_ALL_SONGS, 0, (const char *)0, "", HOME_MYMUSIC); }
+int songs_open(void) {
+    int r;
+    memset(&sg_nav_request, 0, sizeof sg_nav_request);
+    sg_nav_request.active = 1;
+    sg_nav_request.filter = SB_LIBRARY_FILTER_NONE;
+    r = sg_open(CLASS_ALL_SONGS, 0, (const char *)0, "", HOME_MYMUSIC);
+    sg_nav_request.active = 0;
+    return r;
+}
+
+int songs_open_nav_filter(int filter, const char *name, const char *artist) {
+    unsigned i;
+    int r;
+    if (filter <= SB_LIBRARY_FILTER_NONE || filter > SB_LIBRARY_FILTER_GENRE || !name || !*name) return -1;
+    memset(&sg_nav_request, 0, sizeof sg_nav_request);
+    sg_nav_request.active = 1;
+    sg_nav_request.filter = filter;
+    for (i = 0; name[i] && i + 1 < sizeof sg_nav_request.name; ++i) sg_nav_request.name[i] = name[i];
+    for (i = 0; artist && artist[i] && i + 1 < sizeof sg_nav_request.artist; ++i) sg_nav_request.artist[i] = artist[i];
+    r = sg_open(CLASS_ALL_SONGS, 0, (const char *)0, sg_nav_request.name, -1);
+    sg_nav_request.active = 0;
+    return r;
+}
 
 /* The lists the menu's rows open on this page (tools/pod_pages.py ACT_LIST, the row's argument is the stock Home tile): the tile, its class, the title's key (the row's text). */
 static const struct {

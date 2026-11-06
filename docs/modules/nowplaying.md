@@ -44,9 +44,14 @@ The stock `slider_play` retains a 30 px seek target with a 6 px track, 30% white
 
 Stock's `parseplaycover_thd` writes `/tmp/coverpic.jpg` or `/tmp/externpic.jpg`.
 `COVER_SRC` (`0x97cad8`) is 1 while busy, 2 for embedded art, 3 for folder art,
-or 5 for cached art. The payload reads files only in the ready states and never waits on
-the extraction mutex. Unreadable or empty files are retried; a rejected decode is retried
-only after the file changes.
+or 5 for cached art. Stock files are read only in the ready states; the payload never waits on
+the extraction mutex. Unreadable or empty files are retried; a rejected decode is retried only
+after the file changes. A cached Navidrome cover is a separate, stable SD-card file and remains
+usable while the stock extractor is busy.
+
+For a queued Navidrome track, `img_playcover` reads the existing cached cover file returned by
+`sb_cover_file`; the Navidrome list and Now Playing use that same file. It is not copied into a
+second cache. The stock cover loader continues to handle non-Navidrome tracks.
 
 A cheap signature of source, file length and track path avoids rereading unchanged art.
 Changed art first checks the shared album-tone cache, then decodes the 168 px cover cache,

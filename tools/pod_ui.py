@@ -216,6 +216,15 @@ def label(name, x, y, w, h, text, size, colour, align='center'):
     return lab
 
 
+def library_status():
+    """Centered, wrapped empty/loading status used by Library list pages."""
+    status = hidden(label('label_status', 20, 180, SCREEN_W - 40, 90, '', 18, '#FFFFFF'))
+    status.set('line_wrap', 'true')
+    status.set('word_wrap', 'true')
+    styled(status, ('normal',), 'text_align_v', 'middle')
+    return status
+
+
 def hidden(w):
     """Start hidden *and* insensitive. This demo's AWTK hit test (widget_find_target_default
     0x6747d4) checks only enable and sensitive, never visible, so a merely hidden widget still
@@ -345,13 +354,16 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/albums.c / playlists.c show it while yoffset > 0
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     # The two modes' text styles (patch/albums.c reads them with widget_prepare_text_style; never shown)
     for name, px, colour in (('label_row_title', LIST_TITLE_PX, '#FFFFFF'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA'),
                              ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA')):
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, 'left'))
         styled(lab, ('normal',), 'text_align_v', 'middle')
         root.children.append(lab)
+    if names[0] == 'albums_listview':
+        root.children.extend(azlist_labels())
+        root.children.extend(azlist_rail())
     return root
 
 
@@ -871,7 +883,7 @@ def build_artists_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/artists.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     lab = hidden(label('label_row_title', 0, 0, 10, 10, '', LIST_TITLE_PX, '#FFFFFF', 'left'))   # the row text style (the stock srlabel_leftwhite21_style's 21 px white)
     styled(lab, ('normal',), 'text_align_v', 'middle')
     root.children.append(lab)
@@ -1005,8 +1017,8 @@ def build_subsonic_page(page):
         styled(sub, STATES, 'text_color', '#AAAAAA')
         styled(sub, ('normal',), 'font_size', str(LIST_SUB_PX))
         actions = []
-        for action, x, icon in (('download', 272, 'pod_sb_download'),):
-            button = Widget('button', x, 4, 42, 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
+        for action, x, icon in (('download', OFFSETS['SB_LIST_ACTION_X'], 'pod_sb_download'),):
+            button = Widget('button', x, 4, OFFSETS['SB_LIST_ACTION_W'], 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
             button.children.append(Widget('image', 9, 10, 24, 24, [('name', f'sb_row_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
             actions.append(button)
         gitem = Widget('view', (i % 2) * 160, (i // 2) * 210, 160, 204, [('name', f'sb_grid_row{i}'), ('enable', 'true')])
@@ -1028,6 +1040,8 @@ def build_subsonic_page(page):
         grid.children.append(gitem)
     sv.children.append(grid)
     root.children.append(lv)
+    root.children.extend(azlist_labels())
+    root.children.extend(azlist_rail())
     root.children.append(hidden(label('label_title', 0, 0, 200, 22, '', 16, '#FFFFFF', 'left')))
     return root
 
@@ -1044,6 +1058,9 @@ def build_songs_page(page):
     lv.set('name', 'songs_listview')
     sv = lv.children[0]
     sv.set('name', 'songs_scrollview')
+    sv.set('w', str(SCREEN_W))   # let the Shuffle pill and stream-source marker use the full 320 px content width
+    if len(lv.children) > 1:
+        lv.children[1].set('x', str(SCREEN_W))   # retain list_view's scrollbar child for scrolling, outside the visible screen
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
     title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
@@ -1063,7 +1080,7 @@ def build_songs_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/songs.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     for name, px, colour, align in (('label_row_title', LIST_TITLE_PX, '#FFFFFF', 'left'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA', 'left'),
                                     ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF', 'left'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA', 'left')):   # the last two: Recently Added's album grid
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, align))   # text styles only (widget_prepare_text_style); never shown

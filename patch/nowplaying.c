@@ -8,8 +8,10 @@
  * starts a page-scoped 500 ms timer (np_tick) and registers EVT_DESTROY on the window, which removes the timer. It also binds a click handler on the queue
  * button (np_on_queue: our Queue page, patch/queuepage.c; the stock drawer opens when it answers RET_OK).
  * The timer does three things and nothing else:
- *   - the tint: demo writes the track's cover to /tmp/coverpic.jpg or /tmp/externpic.jpg (parseplaycover_thd,
- *     source type word 0x97cad8: 2 and 3/5; 1 while it works); when the file changes (a hash of its bytes) the
+ *   - the cover and tint: a Navidrome track's cached SD-card picture is assigned to the existing img_playcover
+ *     widget directly (the same file the Navidrome list reads; no second copy). For other tracks, demo writes the
+ *     cover to /tmp/coverpic.jpg or /tmp/externpic.jpg (parseplaycover_thd, source type word 0x97cad8: 2 and 3/5;
+ *     1 while it works); when the file changes (a hash of its bytes) the
  *     picture is decoded by the stock loader, box-averaged to one colour (patch/covercache.c) and np_tone turns that
  *     into a dark, a little desaturated tone that is set as the window's bg_color (widget_set_style); a static
  *     gradient image over it (ui/playing_page.bin, np_tint.png) fades it to black towards the bottom. No cover, or a
@@ -50,6 +52,7 @@ static int np_on_queue(void *ctx, void *e) {
 
 static struct {
     void *fav; /* btn_fav (stock's star button): wears the bookmark styles while an episode plays */
+    void *art; /* img_playcover: Navidrome uses its already-cached cover file directly */
     void *win, *rem, *tot; /* the window, np_remaining (ours), label_playlen (stock) */
     void *el, *pt; /* np_elapsed (ours), label_playtime (stock's elapsed time); both 0 if the page lacks either */
     unsigned timer; /* the repeating np_tick timer */
@@ -181,15 +184,30 @@ void np_relight(void) {
     if (np.win && np_tone_raw) np_set_color(np_tone_raw); /* (patch/palette.c pal_apply) */
 }
 
-/* The cover file of the source type, or NULL for a source with no JPEG file; busy is set while demo is still making it. */
+/* The playing cover file, or NULL for none. Stock files report busy while demo replaces them; a cached Navidrome
+ * file is stable and takes priority even while the stock extractor is busy. */
 const char *np_cover_file(int *busy) { /* also the mini player bar's (patch/minibar.c) */
     int src = *(volatile int *)COVER_SRC;
     const char *server_cover = sb_cover_file(cc_playing());
-    *busy = src == COVER_SRC_BUSY;
+    *busy = src == COVER_SRC_BUSY && !server_cover;
     if (server_cover) return server_cover;
     if (src == COVER_SRC_EMBEDDED) return "/tmp/coverpic.jpg";
     if (src == COVER_SRC_FOLDER || src == COVER_SRC_CACHE) return "/tmp/externpic.jpg";
     return (const char *)0;
+}
+
+/* The Navidrome list and Now Playing share this one SD-card file. Setting the stock image widget's
+ * path does not copy or decode audio; a changed property causes AWTK to load the cached picture. */
+static void np_server_art(const char *path) {
+    char uri[320];
+    const char *current;
+    int n;
+    if (!np.art || !path || !*path) return;
+    n = snprintf(uri, sizeof uri, "file://%s", path);
+    if (n <= 0 || (unsigned)n >= sizeof uri) return;
+    current = widget_get_prop_str(np.art, "image", "");
+    if (current && !strcmp(current, uri)) return;
+    if (widget_set_prop_str(np.art, "image", uri) == RET_OK) widget_invalidate_force(np.art, (void *)0);
 }
 
 /* The cheap look at the cover (no byte of it is read): a hash of the source type, the file's length (fseek/ftell) and the
@@ -219,6 +237,7 @@ static void np_cover(void) {
     unsigned key, sig, px, album, tone;
     char url[80]; /* cc_url's size */
     void *track;
+    if (path && sb_cover_file(cc_playing())) np_server_art(path);
     if (busy) return; /* the file is being replaced: keep the colour */
     if (!path) { /* no picture file: the neutral tone, once */
         if (np.key != NP_KEY_NEUTRAL) np.key = NP_KEY_NEUTRAL, np_set_color(NP_NEUTRAL);
@@ -237,7 +256,8 @@ static void np_cover(void) {
     }
     key = np_file_key(path);
     if (!key) return; /* unreadable: try again next tick */
-    if (*(volatile int *)COVER_SRC == COVER_SRC_BUSY) return; /* demo started over while we read */
+    if (*(volatile int *)COVER_SRC == COVER_SRC_BUSY && !sb_cover_file(cc_playing()))
+        return; /* demo started over while we read; a cached Navidrome cover is stable */
     np.sig = sig;
     if (key == np.key) return; /* unchanged: nothing to do */
     np.key = key;
@@ -525,7 +545,7 @@ static void np_start(void *win) {
         memset(&np, 0, sizeof np);
         return;
     }
-    art = widget_lookup(win, "img_playcover", 1);
+    art = np.art = widget_lookup(win, "img_playcover", 1);
     if (art) {
         np_corner_init();
         widget_on(art, EVT_AFTER_PAINT, np_on_art_paint, (void *)0);
