@@ -33,7 +33,7 @@
  *              The loader decodes nothing while the scroll_view is moving (a finger dragging it, or its scroll animator running): a decode
  *              is a few ms on the UI thread and the next touch would wait behind it. Meanwhile it only polls (a compare per tick), and the
  *              scroll events (EVT_SCROLL, the scroll end) re-arm it.
- *              Memory: GRID_TILES (12) bitmaps of at most GRID_COVER^2 * 4 (81 KB) plus one for the placeholder
+ *              Memory: GRID_TILES (12) cover bitmaps of at most GRID_COVER^2 * 4 (81 KB) plus one placeholder and the shared 16 px rail focus disc (1,024 B)
  *              = 1.08 MB, whatever the library; a decode also holds the 168 px source (113 KB) for its duration.
  *   art        the cover cache (patch/covercache.c); a missing or empty cache file shows the stock placeholder disc
  *              (p_default). Missing files are built in the background by the shared worker (see "The background cache
@@ -63,6 +63,7 @@
 #include "viewsort.h"
 #include "search.h"
 #include "songops.h"
+#include "subsonic.h"
 
 extern int coverflow_open(void); /* patch/coverflow.c: the menu's Cover Flow row, opened over this page */
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
@@ -76,6 +77,7 @@ extern void *songs_artist_list(
 extern int songs_play_artist(
     void *artist,
     int how); /* patch/songs.c: Play (SO_IN_ORDER) / Shuffle (SO_SHUFFLE) on the artist's songs; -1 when nothing plays */
+extern int songs_open_nav_filter(int filter, const char *name, const char *artist); /* patch/songs.c */
 extern int
 coverflow_artist_albums(void *artist_row, unsigned scope, int keep_card, void **albums,
                         unsigned **keys); /* patch/coverflow.c: one artist's album rows and their cache keys */
@@ -103,6 +105,12 @@ coverflow_artist_albums(void *artist_row, unsigned scope, int keep_card, void **
 
 typedef grid_tile_t tile_t; /* the grid's tile (patch/grid.h) */
 
+#define AL_NAV_ALBUM_ID CC_NAV_ALBUM_ID
+
+typedef struct {
+    unsigned hash, row;
+} al_name_slot_t;
+
 static struct {
     void *win, *view, *sv, *status, *btn; /* btn: the "..." button */
     void *st_title, *st_sub; /* hidden labels whose styles are the list's two text styles */
@@ -115,6 +123,15 @@ static struct {
     unsigned *
         order; /* display order as stock row numbers (cc_album_order, Settings > Library > Album Order); NULL = stock order */
     unsigned count;
+    unsigned local_count;
+    unsigned char *nav_has_remote;
+    const sb_song_t **nav_art; /* first server track for a matched local album */
+    const sb_song_t **nav_album_art; /* first server track for each virtual album, indexed from local_count */
+    sb_library_index_t nav_index;
+    az_t az;
+    al_name_slot_t *nav_slots;
+    unsigned nav_slot_cap, nav_cursor, nav_total, nav_timer;
+    int nav_scanning;
     int list; /* 1 list mode, 0 grid */
     int press; /* list: the row under the finger, + 1 */
     int seen; /* the scroll offset the loader last looked at (the direction is read from its change) */
@@ -230,6 +247,205 @@ static void al_window(int *lo, int *hi) {
 /* The scoped list's stock "All songs" row (kept as the last tile with two albums or more). */
 static int al_is_card(void *rec) { return al.artist_row && rec && I(rec, REC_ID) == ID_ALL_SONGS; }
 
+static const char *al_song_artist(const sb_song_t *song) {
+    return song->album_artist[0] ? song->album_artist : song->artist;
+}
+
+static const char *al_record_artist(void *record) {
+    const char *album_artist = cc_str(record, REC_ALBUM_ARTIST);
+    return *album_artist ? album_artist : cc_str(record, REC_ARTIST);
+}
+
+static unsigned al_text_hash(unsigned h, const char *s) {
+    unsigned i;
+    if (!s) s = "";
+    for (i = 0; s[i]; ++i) {
+        unsigned c = (unsigned char)s[i];
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        h = (h ^ c) * 16777619u;
+    }
+    return h;
+}
+
+static unsigned al_album_hash(const char *artist, const char *album) {
+    unsigned h = al_text_hash(2166136261u, artist);
+    h = (h ^ 0xffu) * 16777619u;
+    h = al_text_hash(h, album);
+    return h ? h : 1u;
+}
+
+static void al_size(void);
+static void al_az_build(void);
+static void al_kick(void);
+static void al_nav_schedule(void);
+
+static void al_nav_layout(void) {
+    al_size();
+    al_show(al.view, al.count != 0);
+    al_show(al.status, al.count == 0);
+    if (!al.count) widget_set_tr_text(al.status, al.nav_scanning ? "Loading Navidrome albums" : "No albums");
+    al_redraw();
+    al_kick();
+}
+
+static void al_nav_finish(void) {
+    if (al.nav_timer) timer_remove(al.nav_timer);
+    al.nav_timer = 0, al.nav_scanning = 0;
+    free(al.nav_slots);
+    al.nav_slots = (al_name_slot_t *)0, al.nav_slot_cap = 0;
+    al_nav_layout();
+    al_az_build();
+}
+
+static void al_art_reset(unsigned row) {
+    tile_t *tile = grid_find(&al.g, (int)row);
+    if (tile) grid_free_art(tile);
+}
+
+static int al_nav_add_album(const sb_song_t *song) {
+    unsigned hash, at, row;
+    unsigned rec[REC_SIZE / 4];
+    if (sb_library_is_dsd(song) || !song->album[0]) return 0;
+    hash = al_album_hash(al_song_artist(song), song->album);
+    at = hash & (al.nav_slot_cap - 1);
+    while (al.nav_slots[at].hash) {
+        void *record = deque_at(al.albums, al.nav_slots[at].row);
+        if (al.nav_slots[at].hash == hash && !cc_nocase(al_record_artist(record), al_song_artist(song)) &&
+            !cc_nocase(cc_str(record, REC_ALBUM), song->album)) {
+            if (al.nav_slots[at].row < al.local_count) {
+                unsigned local = al.nav_slots[at].row;
+                if (al.nav_has_remote) al.nav_has_remote[local] = 1;
+                if (al.nav_art && song->cover[0] && !al.nav_art[local]) {
+                    al.nav_art[local] = song;
+                    al_art_reset(local);
+                }
+            } else if (song->cover[0]) {
+                unsigned remote = al.nav_slots[at].row - al.local_count;
+                const sb_song_t *old =
+                    al.nav_album_art && remote < al.nav_total ? al.nav_album_art[remote] : (const sb_song_t *)0;
+                if (!old || !old->cover[0]) {
+                    if (al.nav_album_art && remote < al.nav_total) al.nav_album_art[remote] = song;
+                    al_art_reset(al.nav_slots[at].row);
+                }
+            }
+            return 0;
+        }
+        at = (at + 1) & (al.nav_slot_cap - 1);
+    }
+    if (!al.albums) {
+        al.albums = _create_deque("stSongInfo");
+        if (!al.albums) return -1;
+        deque_init(al.albums);
+    }
+    memset(rec, 0, sizeof rec);
+    *(int *)((char *)rec + REC_ID) = AL_NAV_ALBUM_ID;
+    *(char **)((char *)rec + REC_NAME) = (char *)song->album;
+    /* stSongInfo owns and frees REC_PATH as a string. The mmap-backed song pointer
+     * lives in nav_album_art instead, so deque destruction never frees mapped data. */
+    *(char **)((char *)rec + REC_PATH) = (char *)song->id;
+    *(char **)((char *)rec + REC_TITLE) = (char *)song->album;
+    *(char **)((char *)rec + REC_ALBUM) = (char *)song->album;
+    *(char **)((char *)rec + REC_ARTIST) = (char *)al_song_artist(song);
+    *(char **)((char *)rec + REC_ALBUM_ARTIST) = (char *)al_song_artist(song);
+    *(int *)((char *)rec + REC_TYPE) = 4;
+    row = al.count;
+    _deque_push_back(al.albums, rec);
+    if (deque_size(al.albums) != row + 1) return -1;
+    al.nav_slots[at].hash = hash, al.nav_slots[at].row = row;
+    if (al.order) al.order[row] = row;
+    ++al.count;
+    return 1;
+}
+
+#define AL_NAV_BATCH 256
+#define AL_NAV_MS 16
+static int al_nav_step(const void *unused) {
+    unsigned end, before;
+    (void)unused;
+    al.nav_timer = 0;
+    if (!al.nav_scanning || !al.view) return RET_OK;
+    end = al.nav_cursor + AL_NAV_BATCH;
+    if (end < al.nav_cursor || end > al.nav_total) end = al.nav_total;
+    before = al.count;
+    while (al.nav_cursor < end) {
+        const sb_song_t *song = &al.nav_index.songs[al.nav_cursor++];
+        if (al_nav_add_album(song) < 0) {
+            al_nav_finish();
+            return RET_OK;
+        }
+    }
+    if (al.count != before || al.nav_cursor >= al.nav_total) al_nav_layout();
+    if (al.nav_cursor >= al.nav_total) {
+        al_nav_finish();
+        return RET_OK;
+    }
+    al_nav_schedule();
+    return RET_OK;
+}
+
+static void al_nav_schedule(void) {
+    if (al.fg && al.nav_scanning && !al.nav_timer && al.view) {
+        al.nav_timer = timer_add(al_nav_step, (void *)0, AL_NAV_MS);
+        if (!al.nav_timer) al_nav_finish();
+    }
+}
+
+static void al_nav_start(void) {
+    unsigned total, capacity, target, cap = 1, i, local_count = al.count;
+    unsigned *order;
+    if (al.artist_row || sb_library_index_open(&al.nav_index)) return;
+    total = al.nav_index.count + al.nav_index.dsd_count;
+    al.local_count = local_count, al.nav_total = total;
+    if (total > 100000u || local_count > 100000u || local_count > (unsigned)-1 - total) {
+        sb_library_index_close(&al.nav_index);
+        al.nav_total = 0;
+        return;
+    }
+    if (local_count) {
+        al.nav_has_remote = (unsigned char *)calloc(local_count, 1);
+        al.nav_art = (const sb_song_t **)calloc(local_count, sizeof *al.nav_art);
+    }
+    if (total) al.nav_album_art = (const sb_song_t **)calloc(total, sizeof *al.nav_album_art);
+    capacity = local_count + total;
+    target = capacity * 2u;
+    while (cap < target && cap < 0x80000000u) cap <<= 1;
+    if (target && (cap < target || !(al.nav_slots = (al_name_slot_t *)calloc(cap, sizeof *al.nav_slots)))) {
+        free(al.nav_has_remote), al.nav_has_remote = (unsigned char *)0;
+        free(al.nav_art), al.nav_art = (const sb_song_t **)0;
+        free(al.nav_album_art), al.nav_album_art = (const sb_song_t **)0;
+        sb_library_index_close(&al.nav_index);
+        al.nav_total = 0;
+        return;
+    }
+    al.nav_slot_cap = target ? cap : 0;
+    if (al.order && capacity > local_count) {
+        order = (unsigned *)calloc(capacity, sizeof *order);
+        if (!order) {
+            free(al.nav_has_remote), al.nav_has_remote = (unsigned char *)0;
+            free(al.nav_art), al.nav_art = (const sb_song_t **)0;
+            free(al.nav_album_art), al.nav_album_art = (const sb_song_t **)0;
+            free(al.nav_slots), al.nav_slots = (al_name_slot_t *)0, al.nav_slot_cap = 0;
+            sb_library_index_close(&al.nav_index);
+            al.nav_total = 0;
+            return; /* leave the stock album sort intact if the expanded order will not fit */
+        }
+        for (i = 0; i < local_count; ++i) order[i] = al.order[i];
+        free(al.order), al.order = order;
+    }
+    for (i = 0; i < local_count; ++i) {
+        void *record = deque_at(al.albums, i);
+        unsigned hash, at;
+        if (I(record, REC_ID) == -1 || !*cc_str(record, REC_ALBUM)) continue;
+        hash = al_album_hash(al_record_artist(record), cc_str(record, REC_ALBUM));
+        at = hash & (al.nav_slot_cap - 1);
+        while (al.nav_slots[at].hash) at = (at + 1) & (al.nav_slot_cap - 1);
+        al.nav_slots[at].hash = hash, al.nav_slots[at].row = i;
+    }
+    if (total) al.nav_scanning = 1;
+}
+
+static int al_is_nav_album(void *record) { return record && I(record, REC_ID) == AL_NAV_ALBUM_ID; }
+
 /* The tile that holds album a, or NULL. */
 static tile_t *al_find(int a) { return grid_find(&al.g, a); }
 
@@ -247,6 +463,9 @@ static tile_t *al_tile(int a) {
                 rec)) /* All Songs over the artist: no cover file (key 0), the placeholder; an artist's page has no line under it */
             grid_set(t, TR("local_allsong"),
                      al.scope == CLASS_ARTISTS ? "" : cc_str(deque_at(al.artist_row, 0), REC_TITLE), 0);
+        else if (al_is_nav_album(rec))
+            grid_set(t, cc_str(rec, REC_ALBUM), al_record_artist(rec),
+                     cc_key_of(cc_str(rec, REC_ARTIST), cc_str(rec, REC_ALBUM)));
         else if (al.scope ==
                  CLASS_ARTISTS) { /* an artist's album: its year as the grey line, none when no song of it has one */
             char year[5];
@@ -255,13 +474,37 @@ static tile_t *al_tile(int a) {
             year[2] = (char)('0' + y / 10 % 10), year[3] = (char)('0' + y % 10), year[4] = 0;
             grid_set(t, cc_str(rec, REC_ALBUM), year, al.keys ? al.keys[row] : cc_album_key(rec));
         } else
-            grid_set(t, cc_str(rec, REC_ALBUM), cc_str(rec, REC_ARTIST), al.keys ? al.keys[row] : cc_album_key(rec));
+            grid_set(t, cc_str(rec, REC_ALBUM), al_record_artist(rec), al.keys ? al.keys[row] : cc_album_key(rec));
     }
     return t;
 }
 
 /* The cover from the cache file, reduced to the mode's size with the box filter. */
-static void al_art(tile_t *t) { grid_art(&al.g, t); }
+static void al_art(tile_t *t) {
+    void *rec = t && t->album ? cc_row(al.albums, al.order, (unsigned)(t->album - 1)) : (void *)0;
+    unsigned row = t && t->album ? (unsigned)(t->album - 1) : (unsigned)-1;
+    unsigned source_row = rec && al.order ? al.order[row] : row;
+    if (al_is_nav_album(rec)) {
+        const sb_song_t *song =
+            source_row >= al.local_count && source_row - al.local_count < al.nav_total && al.nav_album_art
+                ? al.nav_album_art[source_row - al.local_count]
+                : (const sb_song_t *)0;
+        char url[512];
+        if (song && sb_library_cover_url(song, url, sizeof url) > 0) {
+            grid_art_url(&al.g, t, url);
+            return;
+        }
+    } else if (rec && source_row < al.local_count && al.nav_art && al.nav_art[source_row]) {
+        char cache[80], url[512];
+        unsigned key = al.keys ? al.keys[source_row] : cc_album_key(rec);
+        if (al.nav_art[source_row]->cover[0] && !cc_url(cache, key) &&
+            sb_library_cover_url(al.nav_art[source_row], url, sizeof url) > 0) {
+            grid_art_url(&al.g, t, url);
+            return;
+        }
+    }
+    grid_art(&al.g, t);
+}
 
 /* ---------------------------------------------------------------------------
  * Paint (the cell paint is the grid's, patch/grid.c; the list mode's rows are this page's own)
@@ -386,6 +629,22 @@ static int al_on_scroll(void *ctx, void *e) {
     return RET_OK;
 }
 
+static int al_on_az_rail(void *ctx, void *e) {
+    (void)ctx;
+    if (al.view) {
+        az_rail_event(&al.az, e);
+        al_on_scroll((void *)0, (void *)0);
+        al_redraw();
+    }
+    return RET_OK;
+}
+
+static int al_on_az_paint(void *ctx, void *e) {
+    (void)ctx;
+    if (al.view) az_rail_paint(&al.az, e);
+    return RET_OK;
+}
+
 /* ---------------------------------------------------------------------------
  * The background cache build. Albums with no cache file (neither a picture nor the "no art" marker) are built by the
  * shared worker thread (patch/covercache.c) while the page is up: no Preparing screen, the grid shows the placeholder
@@ -442,16 +701,17 @@ static int al_on_build(const void *unused) {
 static int al_on_build_start(const void *unused) {
     (void)unused;
     al.build_timer = 0;
-    if (!al.view || !al.count) return RET_OK;
+    if (!al.view || !al.local_count) return RET_OK;
     if (!al.scanning) {
         if (al.own || al.scanned) return RET_OK;
-        if (!cc_build_open(al.count, CC_MISSING)) {
+        if (!cc_build_open(al.local_count, CC_MISSING)) {
             if (cc_build_orphan()) /* a worker stopped by the page before is still inside a job: ask again shortly */
                 al.build_timer = timer_add(al_on_build_start, (void *)0, AL_BUILD_MS);
             return RET_OK;
         }
         al.own = al.scanning = 1;
         al.scan_cur = 0, al.scan_centre = (unsigned)al_first();
+        if (al.scan_centre >= al.local_count) al.scan_centre = al.local_count - 1;
     }
     if (!cc_build_near_step(al.albums, al.order, al.keys, al.scan_centre, &al.scan_cur, AL_SCAN_BATCH)) {
         al.build_timer = timer_add(al_on_build_start, (void *)0, AL_SCAN_MS);
@@ -473,7 +733,7 @@ static int al_on_build_start(const void *unused) {
 
 /* Starts the build a moment from now unless one is going or already due. */
 static void al_build_later(void) {
-    if (al.view && al.g.tiles && !al.own && !al.scanned && !al.build_timer)
+    if (al.view && al.g.tiles && al.local_count && !al.own && !al.scanned && !al.build_timer)
         al.build_timer = timer_add(al_on_build_start, (void *)0, AL_BUILD_START_MS);
 }
 
@@ -483,6 +743,7 @@ static int al_on_fg(void *ctx, void *e) {
     al.fg = 1;
     al_kick();
     al_build_later();
+    al_nav_schedule();
     return RET_OK;
 }
 
@@ -541,10 +802,19 @@ static int al_on_up(void *ctx, void *e) {
     dy = al_abs(I(e, PE_Y) - al.down_y);
     if (dx < AL_TAP_PX && dy < AL_TAP_PX && al_item_of(e) == a) {
         int row = (int)(al.order ? al.order[a] : (unsigned)a); /* the stock row */
+        void *record = deque_at(al.albums, (unsigned)row);
+        int nav_album = !al.artist_row &&
+                        (al.nav_index.mapping || al_is_nav_album(record) ||
+                         (row >= 0 && (unsigned)row < al.local_count && al.nav_has_remote && al.nav_has_remote[row]));
+        if (nav_album) {
+            if (songs_open_nav_filter(SB_LIBRARY_FILTER_ALBUM, cc_str(record, REC_ALBUM), al_record_artist(record)) ==
+                    0 ||
+                al_is_nav_album(record))
+                return RET_OK;
+        }
         /* the All Songs tile of an artist: our Songs page on every song (Cover Flow's All albums card; a composer's has none, and a page that
          * does not open leaves the stock page on the All songs row) */
-        if (al_is_card(deque_at(al.albums, (unsigned)row)) && al.scope == CLASS_ARTISTS &&
-            songs_open_artist(deque_at(al.artist_row, 0)) != -1)
+        if (al_is_card(record) && al.scope == CLASS_ARTISTS && songs_open_artist(deque_at(al.artist_row, 0)) != -1)
             return RET_OK;
         cc_open_album(al.artist_row, al.scope, row); /* scoped: the artist's list, class 0xff01 / 0xff02 */
     }
@@ -562,9 +832,13 @@ static int al_on_abort(void *ctx, void *e) {
 
 static int al_on_bg(void *ctx, void *e) {
     al_on_abort(ctx, e);
+    az_rail_end(&al.az);
     al.fg = 0;
     if (al.more_timer) timer_remove(al.more_timer);
     al.more_timer = 0;
+    if (al.nav_timer) timer_remove(al.nav_timer);
+    al.nav_timer = 0;
+    al_build_end(); /* do not poll or extract covers while this page is hidden */
     return RET_OK;
 }
 
@@ -603,6 +877,8 @@ static int al_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (al.more_timer) timer_remove(al.more_timer);
+    if (al.nav_timer) timer_remove(al.nav_timer);
+    az_free(&al.az);
     al_build_end(); /* the timer removed, the worker cancelled (cc_build_stop) */
     grid_free(&al.g);
     if (al.albums) deque_destroy(al.albums);
@@ -610,6 +886,11 @@ static int al_on_destroy(void *ctx, void *e) {
     free(al.keys);
     free(al.years);
     free(al.order);
+    free(al.nav_has_remote);
+    free(al.nav_art);
+    free(al.nav_album_art);
+    free(al.nav_slots);
+    sb_library_index_close(&al.nav_index);
     memset(&al, 0, sizeof al);
     return RET_OK;
 }
@@ -631,6 +912,41 @@ static void al_size(void) {
     int h = al_content();
     widget_resize(al.view, AL_W, h);
     widget_set_prop_int(al.sv, "virtual_h", h);
+}
+
+/* The Albums fast rail maps to list rows or cover rows without changing the
+ * stock order. In grid mode it overlays the last column's right edge. */
+static void al_az_build(void) {
+    unsigned char *rank;
+    unsigned rows, i;
+    al.az.count = al.list ? (int)al.count : al_rows();
+    al.az.top = al.list ? 0 : GRID_ROW_GAP;
+    al.az.row = al.list ? LIST_ROW_H : PITCH;
+    al.az.content = al_content();
+    al.az.view_h = GRID_VIEW_H;
+    al.az.rail_only = 1;
+    al.az.nsec = 0;
+    rows = (unsigned)al.az.count;
+    if (!rows || rows > 100000u || !al.az.rail) {
+        al_show(al.az.rail, 0);
+        return;
+    }
+    rank = (unsigned char *)calloc(rows, 1);
+    if (!rank) {
+        al_show(al.az.rail, 0);
+        return;
+    }
+    for (i = 0; i < rows; ++i) {
+        unsigned display = al.list ? i : i * GRID_COLS;
+        void *record = cc_row(al.albums, al.order, display);
+        const char *name = record ? cc_str(record, REC_ALBUM) : "";
+        if (!*name && record) name = cc_str(record, REC_TITLE);
+        rank[i] = (unsigned char)az_rank_of(cc_name_initial(name));
+    }
+    az_sections(&al.az, rank, 1);
+    free(rank);
+    az_rail_fit(&al.az, GRID_VIEW_H);
+    al_show(al.az.rail, al.az.nsec > 0 && al.count > 0);
 }
 
 /* A coasting list stops (patch/scroll.c sc_down). */
@@ -659,6 +975,7 @@ static void al_set_mode(int list) {
                                       : first / GRID_COLS *
                                             PITCH); /* (the first album is at the top: the title block with it) */
     widget_set_prop_int(al.sv, "yoffset", first > max ? max : first);
+    al_az_build();
     al.seen = al_off();
     al_fade();
     vs_view(&al.vs, list);
@@ -743,10 +1060,18 @@ static int al_open(int list, void *artist_row, unsigned scope) {
     al.btn = widget_lookup(al.win, "btn_more", 1);
     al.view = widget_lookup(al.win, "view_grid", 1);
     al.sv = widget_lookup(al.win, "albums_scrollview", 1);
+    al.az.win = al.win, al.az.sv = al.sv;
+    al.az.st_hdr = widget_lookup(al.win, "label_hdr", 1);
+    al.az.st_rail = widget_lookup(al.win, "label_rail", 1);
+    al.az.st_rail_on = widget_lookup(al.win, "label_rail_on", 1);
+    al.az.rail = widget_lookup(al.win, "sg_rail", 1);
+    al.az.bubble = widget_lookup(al.win, "sg_bubble", 1);
+    al.az.bubble_letter = widget_lookup(al.win, "sg_bubble_letter", 1);
     al.status = widget_lookup(al.win, "label_status", 1);
     al.btn_play = widget_lookup(al.win, "btn_play", 1); /* optional: an artist's page only */
     al.btn_shuffle = widget_lookup(al.win, "btn_shuffle", 1);
     al.pills = artist_row && scope == CLASS_ARTISTS && al.btn_play && al.btn_shuffle;
+    if (al.status) label_set_line_wrap(al.status, 1), widget_set_prop_bool(al.status, "word_wrap", 1);
     al.fade = widget_lookup(al.win, "img_nb_fade", 1); /* optional */
     al.st_title = widget_lookup(al.win, "label_row_title", 1);
     al.st_sub = widget_lookup(al.win, "label_row_sub", 1);
@@ -787,14 +1112,22 @@ static int al_open(int list, void *artist_row, unsigned scope) {
         al.albums = cc_albums();
         al.count = al.albums ? deque_size(al.albums) : 0;
         al.order = cc_album_order_mode(al.albums, al.sort, al.rev);
+        al.local_count = al.count;
+        al_nav_start();
     }
-    if (!al.count || !grid_init(&al.g, al.win, GRID_TILES, GRID_COVER, 0)) {
+    if (artist_row) al.local_count = al.count;
+    if (!al.count && !al.nav_total) {
         grid_free(&al.g);
         al_show(al.view, 0);
         al_show(al.status, 1);
-        widget_set_tr_text(al.status, al.count     ? "Not enough memory"
-                                      : artist_row ? "No albums"
-                                                   : "Update Local Music first");
+        widget_set_tr_text(al.status, artist_row ? "No albums" : SB_LIBRARY_EMPTY_HINT);
+        return 0;
+    }
+    if (!grid_init(&al.g, al.win, GRID_TILES, GRID_COVER, 0)) {
+        grid_free(&al.g);
+        al_show(al.view, 0);
+        al_show(al.status, 1);
+        widget_set_tr_text(al.status, "Not enough memory");
         return 0;
     }
     if (al.pills) { /* under the large title: the pills as the Songs page's (the label and glyph centred as a pair), shown and live */
@@ -810,6 +1143,11 @@ static int al_open(int list, void *artist_row, unsigned scope) {
     al.g.st_sub = al.st_gsub; /* the grid's two text styles (the list mode's are drawn by this page) */
     grid_placeholder(&al.g);
     al_size();
+    az_make_disc(&al.az);
+    al_az_build();
+    al_show(al.view, al.count != 0);
+    al_show(al.status, al.count == 0);
+    if (!al.count) widget_set_tr_text(al.status, al.nav_scanning ? "Loading Navidrome albums" : "No albums");
     al.dir = 1;
     al.fg = 1;
     al.noscroll = !widget_on(al.sv, EVT_SCROLL, al_on_scroll, (void *)0) ||
@@ -821,6 +1159,7 @@ static int al_open(int list, void *artist_row, unsigned scope) {
     al.title_on = al.noscroll;
     al_kick();
     al_build_later();
+    al_nav_schedule();
     if (widget_on(al.win, EVT_WINDOW_TO_FG, al_on_fg, (void *)0))
         widget_on(al.win, EVT_WINDOW_TO_BG, al_on_bg, (void *)0);
     else
@@ -829,6 +1168,13 @@ static int al_open(int list, void *artist_row, unsigned scope) {
     widget_on(al.view, EVT_POINTER_UP, al_on_up, (void *)0);
     widget_on(al.view, EVT_POINTER_ABORT, al_on_abort, (void *)0);
     widget_on(al.view, EVT_AFTER_PAINT, al_on_paint, (void *)0);
+    if (al.az.rail) {
+        widget_on(al.az.rail, EVT_POINTER_DOWN, al_on_az_rail, (void *)0);
+        widget_on(al.az.rail, EVT_POINTER_MOVE, al_on_az_rail, (void *)0);
+        widget_on(al.az.rail, EVT_POINTER_UP, al_on_az_rail, (void *)0);
+        widget_on(al.az.rail, EVT_POINTER_ABORT, al_on_az_rail, (void *)0);
+        widget_on(al.az.rail, EVT_AFTER_PAINT, al_on_az_paint, (void *)0);
+    }
     return 0;
 }
 

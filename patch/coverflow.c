@@ -36,12 +36,14 @@
 #include "stock.h"
 #include "i18n.h"
 #include "home.h"
+#include "subsonic.h"
 #endif
 #include "covercache.h"
 #include "common.h"
 
 extern int
 songs_open_artist(void *artist); /* patch/songs.c: our Songs page on all the artist's songs; -1 when it did not open */
+extern int songs_open_nav_filter(int filter, const char *name, const char *artist); /* patch/songs.c */
 
 /* ===========================================================================
  * The depth renderer (q2-pod, after Rockbox PictureFlow). All integer: 16.16 turns and
@@ -277,6 +279,13 @@ void coverflow_render(const cfg_t *g, unsigned *d, int pitch, int frac, const un
 #define LOAD_MS 1 /* the texture loader: one decode per main-loop turn, input in between */
 #define MAX_ALBUMS 4000 /* the job array and the slide_menu's children are bounded */
 #define CF_SAMPLES 8 /* pointer samples kept for the fling velocity */
+#define CF_NAV_BATCH 256
+#define CF_NAV_MS 16
+#define CF_NAV_ALBUM_ID CC_NAV_ALBUM_ID
+
+typedef struct {
+    unsigned hash, row;
+} cf_album_slot_t;
 
 enum { CF_COVERS, CF_PREPARING }; /* CF_COVERS is 0: a zeroed cf is on it */
 enum { ARTIST_ALBUMS = 1 }; /* cf.scoped, as q2-pod's */
@@ -291,6 +300,13 @@ static struct {
     unsigned *
         order; /* the library shelf's display order, as the stock row numbers (cc_album_order; scoped: the same order with Artist as Title, cc_scoped_sort); NULL = stock order */
     unsigned count; /* how many of them are covers (scoped: the card only with two albums) */
+    unsigned local_count, nav_cursor, nav_total, nav_slot_cap;
+    unsigned nav_timer;
+    int nav_scanning;
+    cf_album_slot_t *nav_slots;
+    const sb_song_t **nav_art; /* first server art source for local albums missing cached art */
+    const sb_song_t **nav_album_art; /* first server art source for each virtual album */
+    sb_library_index_t nav_index; /* keeps nav_art and nav_album_art pointers valid */
     /* Scoped (ARTIST_ALBUMS, else 0): albums holds one artist's album rows as the stock artist
      * page lists them (loadAlbumList 0xf004), the last one the stock "All songs" row, shown as
      * the All albums card; artist_row is a deque holding our copy of that artist's row; keys[i]
@@ -309,6 +325,7 @@ static struct {
      * the press stopped a snap animation; the greatest excursion from the down point (either axis); the
      * offset the press found; the recent samples for the fling velocity (a ring, the newest at sample) */
     int built; /* the covers screen's widgets exist (once per page) */
+    int fg; /* page timers and worker callbacks run only while this window is foreground */
     int dragging, active, interrupted, reach, down_x, down_y, origin, base_off;
     int sample, samples, sx[CF_SAMPLES], st[CF_SAMPLES];
     /* the snap animation: from and to offsets, its start (time_now_ms) and length, and its timer */
@@ -335,6 +352,13 @@ static struct {
 static struct {
     int value, off;
 } cfpos __attribute__((section(".scratch")));
+
+/* A position save is small but fsyncs the card; never run that from page destruction on the UI thread. */
+static struct {
+    unsigned mutex[8]; /* zero-filled pthread_mutex_t, as in patch/shuffle.c */
+    int running, pending;
+    unsigned key;
+} cf_position_job __attribute__((section(".scratch"), aligned(8)));
 
 /* Visibility and hit-testing together. This AWTK build's hit test (widget_find_target_default
  * 0x6747d4, widget_on_pointer_down_children 0x6714ac) only checks flags & 9 -- enable (bit 0) and
@@ -371,11 +395,77 @@ static int has_songs(void) {
     return n && I(deque_at(cf.albums, n - 1), REC_ID) == ID_ALL_SONGS;
 }
 
+static int is_nav_album(void *r) { return r && I(r, REC_ID) == CF_NAV_ALBUM_ID; }
+
+static const char *nav_album_artist(const sb_song_t *song) {
+    return song->album_artist[0] ? song->album_artist : song->artist;
+}
+
+static const char *local_album_artist(void *record) {
+    const char *album_artist = cc_str(record, REC_ALBUM_ARTIST);
+    return *album_artist ? album_artist : cc_str(record, REC_ARTIST);
+}
+
+static unsigned cf_text_hash(unsigned h, const char *s) {
+    unsigned i;
+    if (!s) s = "";
+    for (i = 0; s[i]; ++i) {
+        unsigned c = (unsigned char)s[i];
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        h = (h ^ c) * 16777619u;
+    }
+    return h;
+}
+
+static unsigned cf_album_hash(const char *artist, const char *album) {
+    unsigned h = cf_text_hash(2166136261u, artist);
+    h = (h ^ 0xffu) * 16777619u;
+    h = cf_text_hash(h, album);
+    return h ? h : 1u;
+}
+
+static unsigned key_at(unsigned i);
+
+static const char *cf_art_url(unsigned i, char *cache, char *remote) {
+    void *r = album_at(i);
+    unsigned key;
+    const char *file;
+    if (!r || is_card(r)) return (const char *)0;
+    if (is_nav_album(r)) {
+        unsigned row = cf.order ? cf.order[i] : i;
+        const sb_song_t *song = row >= cf.local_count && row < MAX_ALBUMS && cf.nav_album_art
+                                    ? cf.nav_album_art[row - cf.local_count]
+                                    : (const sb_song_t *)0;
+        return sb_library_cover_url(song, remote, 512) > 0 ? remote : (const char *)0;
+    }
+    key = key_at(i);
+    file = cc_url(cache, key);
+    if (file) return file;
+    if (cf.nav_art && cf.order && cf.order[i] < cf.local_count && cf.nav_art[cf.order[i]])
+        return sb_library_cover_url(cf.nav_art[cf.order[i]], remote, 512) > 0 ? remote : (const char *)0;
+    if (cf.nav_art && !cf.order && i < cf.local_count && cf.nav_art[i])
+        return sb_library_cover_url(cf.nav_art[i], remote, 512) > 0 ? remote : (const char *)0;
+    return (const char *)0;
+}
+
 /* Album i's cache key; 0 (the card) has no art. */
 static unsigned key_at(unsigned i) {
     void *r = album_at(i);
     if (!r || is_card(r)) return 0;
     return cf.keys ? cf.keys[cf.order ? cf.order[i] : i] : cc_album_key(r); /* (the keys are by stock row) */
+}
+
+static void cf_nav_release(void) {
+    free(cf.nav_slots);
+    cf.nav_slots = (cf_album_slot_t *)0;
+    cf.nav_slot_cap = 0;
+    free(cf.nav_art);
+    cf.nav_art = (const sb_song_t **)0;
+    free(cf.nav_album_art);
+    cf.nav_album_art = (const sb_song_t **)0;
+    sb_library_index_close(&cf.nav_index);
+    cf.nav_cursor = cf.nav_total = 0;
+    cf.nav_scanning = 0;
 }
 
 /* The cache is built by the shared worker (patch/covercache.c, cc_build_*): its thread touches no widget, deque or
@@ -524,7 +614,7 @@ static int distance(int a, int c) { /* along the shelf */ return abs_i(a - c); }
 
 /* Album a decoded into a free slot, else into the farthest unwanted one (CF_SLOTS > CF_WANTED: there is one). */
 static void fx_load(int a, int c, int n) {
-    char url[80];
+    char url[80], remote[512];
     const char *file;
     int i, k, far = -1, slot = -1;
     for (i = 0; i < CF_SLOTS; ++i) {
@@ -539,7 +629,7 @@ static void fx_load(int a, int c, int n) {
     }
     if (slot < 0) return;
     fx.album[slot] = a + 1;
-    file = cc_url(url, key_at((unsigned)a));
+    file = cf_art_url((unsigned)a, url, remote);
     fx.art[slot] = file && cc_decode(cf.win, file, 1, ART_SIZE, 0, fx.tex + slot * CF_TEXELS)
                        ? fx.tex + slot * CF_TEXELS
                        : PLACE; /* no art, or no cache file yet */
@@ -585,7 +675,8 @@ static int fx_fill(int budget) {
 static int on_load(const void *unused) {
     (void)unused;
     fx.load_timer = 0;
-    if (cf.screen == CF_COVERS && shelf_up() && fx_fill(1)) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
+    if (cf.fg && cf.screen == CF_COVERS && shelf_up() && fx_fill(1))
+        fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
     return RET_OK;
 }
 
@@ -680,7 +771,7 @@ static int on_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     const cfg_t *g = shelf();
     (void)ctx;
-    if (!canvas || !depth() || cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
+    if (!cf.fg || !canvas || !depth() || cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
     n = count();
     if (!visual(n, &c, &frac)) return RET_OK;
     if (fx.seen && c != fx.seen - 1) fx.dir = c < fx.seen - 1 ? -1 : 1; /* the way it went, for the prefetch */
@@ -704,9 +795,9 @@ static int on_paint(void *ctx, void *e) {
  * The picture is set only when it changes, so a commit costs one property read per child and a
  * file check for the few covers in the window (q2-pod's cover()). */
 static void flat_cover(void *img, unsigned i, int near) {
-    char url[80];
+    char url[80], remote[512];
     const char *want = PLACEHOLDER;
-    const char *file = near ? cc_url(url, key_at(i)) : (const char *)0;
+    const char *file = near ? cf_art_url(i, url, remote) : (const char *)0;
     if (file) want = file;
     if (strcmp(widget_get_prop_str(img, "image", ""), want)) image_base_set_image(img, want);
 }
@@ -831,7 +922,7 @@ static int on_snap(const void *unused) {
     int off;
     (void)unused;
     cf.snap_timer = 0;
-    if (cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
+    if (!cf.fg || cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
     off = eased(time_now_ms());
     if (off == cf.snap_to) {
         snap_land();
@@ -934,7 +1025,7 @@ static int fling(int h) {
 static int on_pointer(void *ctx, void *e) {
     int type, x, y, t;
     (void)ctx;
-    if (!e || !shelf_up() || cf.screen != CF_COVERS) return RET_OK;
+    if (!cf.fg || !e || !shelf_up() || cf.screen != CF_COVERS) return RET_OK;
     type = pe(e, 0), t = pe(e, EV_TIME);
     where(e, &x, &y);
     if (type == EVT_POINTER_DOWN) {
@@ -1074,6 +1165,10 @@ static void open_album(int index) {
     snap_stop();
     cf.album = index;
     if (is_card(r) && has_songs() && songs_open_artist(deque_at(cf.artist_row, 0)) != -1) return;
+    if (is_nav_album(r)) {
+        (void)songs_open_nav_filter(SB_LIBRARY_FILTER_ALBUM, cc_str(r, REC_ALBUM), cc_str(r, REC_ALBUM_ARTIST));
+        return;
+    }
     if (!cf.scoped) cf.saved_album = cc_album_key(r);
     cc_open_album(cf.scoped ? cf.artist_row : (void *)0, cf.scope,
                   (int)(cf.order ? cf.order[index] : (unsigned)index)); /* the stock row */
@@ -1098,10 +1193,46 @@ static int on_songs(void *ctx, void *e) {
  */
 /* The centre album's key as 8 lowercase hex digits and a newline, in a file of the card's own (the keys belong to the card's
  * library, so the file stays on it), written by pod_card_write. Only with the card mounted. */
-static void position_save(unsigned key) {
+static void position_write(unsigned key) {
     char text[16];
     snprintf(text, sizeof text, "%08x\n", key);
     pod_card_write(CARD_DIR, POSITION_FILE, POSITION_FILE ".tmp", text, 9, (const void *)0, 0);
+}
+
+static void *position_worker(void *unused) {
+    (void)unused;
+    for (;;) {
+        unsigned key;
+        pthread_mutex_lock(cf_position_job.mutex);
+        if (!cf_position_job.pending) {
+            cf_position_job.running = 0;
+            pthread_mutex_unlock(cf_position_job.mutex);
+            return (void *)0;
+        }
+        key = cf_position_job.key;
+        cf_position_job.pending = 0;
+        pthread_mutex_unlock(cf_position_job.mutex);
+        position_write(key);
+    }
+}
+
+static void position_save(unsigned key) {
+    unsigned long thread; /* pthread_t is an unsigned long in the device's o32 import table */
+    int start = 0;
+    if (!key) return;
+    pthread_mutex_lock(cf_position_job.mutex);
+    cf_position_job.key = key;
+    cf_position_job.pending = 1;
+    if (!cf_position_job.running) cf_position_job.running = start = 1;
+    pthread_mutex_unlock(cf_position_job.mutex);
+    if (!start) return;
+    if (pthread_create(&thread, (void *)0, position_worker, (void *)0)) {
+        pthread_mutex_lock(cf_position_job.mutex);
+        cf_position_job.running = 0;
+        pthread_mutex_unlock(cf_position_job.mutex);
+        return; /* the next close can retry; UI navigation never waits on card I/O */
+    }
+    pthread_detach(thread);
 }
 
 /* The saved key: exactly 8 hex digits and an optional newline; anything else, a missing file or the card not mounted is 0. */
@@ -1135,6 +1266,7 @@ static int on_poll(const void *unused) {
     char progress[96];
     (void)unused;
     cf.timer = 0;
+    if (!cf.fg) return RET_OK;
     if (cc_build_done() >= cc_build_total()) {
         build_end(); /* the thread has finished: joined and freed */
         to_covers();
@@ -1166,8 +1298,158 @@ static int on_cancel(void *ctx, void *e) {
 static int load_albums(void) {
     cf.albums = cc_albums();
     cf.count = cf.albums ? deque_size(cf.albums) : 0;
+    cf.local_count = cf.count;
     if (cf.count && cf.count <= MAX_ALBUMS) cf.order = cc_album_order(cf.albums);
     return (int)cf.count;
+}
+
+static int open_covers(int n, const char *empty);
+static void show_preparing(void);
+
+/* Prepare a bounded album identity map; the actual catalog scan runs in small
+ * UI timer slices so opening Cover Flow does not stall the player. */
+static int cf_nav_prepare(void) {
+    sb_library_index_t index;
+    cf_album_slot_t *slots;
+    const sb_song_t **art;
+    const sb_song_t **album_art;
+    unsigned *order, *old_order = cf.order;
+    unsigned local = cf.count, total, cap = 1, target, i;
+    if (cf.scoped || local > MAX_ALBUMS || sb_library_index_open(&index)) return 0;
+    total = index.count + index.dsd_count;
+    if (!index.count || total > 100000u) {
+        sb_library_index_close(&index);
+        return 0;
+    }
+    target = 2u * MAX_ALBUMS;
+    while (cap < target && cap < 0x80000000u) cap <<= 1;
+    slots = (cf_album_slot_t *)calloc(cap, sizeof *slots);
+    art = local ? (const sb_song_t **)calloc(local, sizeof *art) : (const sb_song_t **)0;
+    album_art =
+        local < MAX_ALBUMS ? (const sb_song_t **)calloc(MAX_ALBUMS - local, sizeof *album_art) : (const sb_song_t **)0;
+    order = (unsigned *)calloc(MAX_ALBUMS, sizeof *order);
+    if (!slots || (local && !art) || !order) {
+        free(slots), free(art), free(album_art), free(order);
+        sb_library_index_close(&index);
+        return 0;
+    }
+    for (i = 0; i < local; ++i) {
+        void *r = deque_at(cf.albums, i);
+        const char *album = cc_str(r, REC_ALBUM);
+        unsigned hash, at;
+        order[i] = old_order ? old_order[i] : i;
+        if (!r || I(r, REC_ID) == -1 || !*album) continue;
+        hash = cf_album_hash(local_album_artist(r), album), at = hash & (cap - 1);
+        while (slots[at].hash) at = (at + 1) & (cap - 1);
+        slots[at].hash = hash, slots[at].row = i;
+    }
+    free(old_order);
+    cf.order = order;
+    cf.nav_index.songs = index.songs;
+    cf.nav_index.count = index.count;
+    cf.nav_index.dsd_count = index.dsd_count;
+    cf.nav_index.mapping_size = index.mapping_size;
+    cf.nav_index.mapping = index.mapping;
+    cf.local_count = local;
+    cf.nav_slots = slots;
+    cf.nav_art = art;
+    cf.nav_album_art = album_art;
+    cf.nav_slot_cap = cap;
+    cf.nav_total = total;
+    cf.nav_cursor = 0;
+    cf.nav_scanning = 1;
+    return 1;
+}
+
+static int cf_nav_add(const sb_song_t *song) {
+    unsigned hash, at, row;
+    unsigned rec[REC_SIZE / 4];
+    const char *artist = nav_album_artist(song);
+    if (sb_library_is_dsd(song) || !song->album[0]) return 0;
+    hash = cf_album_hash(artist, song->album), at = hash & (cf.nav_slot_cap - 1);
+    while (cf.nav_slots[at].hash) {
+        row = cf.nav_slots[at].row;
+        {
+            void *r = deque_at(cf.albums, row);
+            if (cf.nav_slots[at].hash == hash && !cc_nocase(local_album_artist(r), artist) &&
+                !cc_nocase(cc_str(r, REC_ALBUM), song->album)) {
+                if (song->cover[0]) {
+                    if (row < cf.local_count && cf.nav_art && !cf.nav_art[row])
+                        cf.nav_art[row] = song;
+                    else if (row >= cf.local_count && row < MAX_ALBUMS && cf.nav_album_art) {
+                        const sb_song_t *old = cf.nav_album_art[row - cf.local_count];
+                        if (!old || !old->cover[0]) cf.nav_album_art[row - cf.local_count] = song;
+                    }
+                }
+                return 0;
+            }
+        }
+        at = (at + 1) & (cf.nav_slot_cap - 1);
+    }
+    if (cf.count >= MAX_ALBUMS) return 0;
+    if (!cf.albums) {
+        cf.albums = _create_deque("stSongInfo");
+        if (!cf.albums) return -1;
+        deque_init(cf.albums);
+    }
+    memset(rec, 0, sizeof rec);
+    *(int *)((char *)rec + REC_ID) = CF_NAV_ALBUM_ID;
+    *(char **)((char *)rec + REC_NAME) = (char *)song->album;
+    /* stSongInfo owns and frees REC_PATH as a string. Keep mmap-backed art
+     * pointers in nav_album_art so deque destruction never frees mapped data. */
+    *(char **)((char *)rec + REC_PATH) = (char *)song->id;
+    *(char **)((char *)rec + REC_TITLE) = (char *)song->album;
+    *(char **)((char *)rec + REC_ALBUM) = (char *)song->album;
+    *(char **)((char *)rec + REC_ARTIST) = (char *)artist;
+    *(char **)((char *)rec + REC_ALBUM_ARTIST) = (char *)artist;
+    *(int *)((char *)rec + REC_TYPE) = 4;
+    row = cf.count;
+    _deque_push_back(cf.albums, rec);
+    if (deque_size(cf.albums) != row + 1) return -1;
+    cf.nav_slots[at].hash = hash, cf.nav_slots[at].row = row;
+    if (cf.nav_album_art && song->cover[0]) cf.nav_album_art[row - cf.local_count] = song;
+    cf.order[row] = row;
+    ++cf.count;
+    return 1;
+}
+
+static void cf_nav_finish(void) {
+    if (cf.nav_timer) timer_remove(cf.nav_timer);
+    cf.nav_timer = 0, cf.nav_scanning = 0;
+    free(cf.nav_slots);
+    cf.nav_slots = (cf_album_slot_t *)0, cf.nav_slot_cap = 0;
+    (void)open_covers((int)cf.count, "No albums");
+}
+
+static int cf_nav_step(const void *unused);
+
+static void cf_nav_schedule(void) {
+    if (cf.fg && cf.win && cf.nav_scanning && !cf.nav_timer) {
+        cf.nav_timer = timer_add(cf_nav_step, (void *)0, CF_NAV_MS);
+        if (!cf.nav_timer) cf_nav_finish();
+    }
+}
+
+static int cf_nav_step(const void *unused) {
+    unsigned end;
+    (void)unused;
+    cf.nav_timer = 0;
+    if (!cf.fg || !cf.nav_scanning || !cf.win) return RET_OK;
+    end = cf.nav_cursor + CF_NAV_BATCH;
+    if (end < cf.nav_cursor || end > cf.nav_total) end = cf.nav_total;
+    while (cf.nav_cursor < end) {
+        const sb_song_t *song = &cf.nav_index.songs[cf.nav_cursor++];
+        if (cf_nav_add(song) < 0) {
+            cf_nav_finish();
+            return RET_OK;
+        }
+    }
+    if (cf.nav_cursor >= cf.nav_total) {
+        cf_nav_finish();
+        return RET_OK;
+    }
+    cf_nav_schedule();
+    return RET_OK;
 }
 
 /* The album the shelf opens on: the playing track's album when something is queued, else the one last centred
@@ -1298,6 +1580,7 @@ static void show_preparing(void) {
 static int on_retry(const void *unused) {
     (void)unused;
     cf.timer = 0;
+    if (!cf.fg) return RET_OK;
     if (cf.screen == CF_PREPARING && !start_build()) to_covers();
     return RET_OK;
 }
@@ -1307,6 +1590,7 @@ static int on_retry(const void *unused) {
  * or the shared worker is busy with another page's set). */
 static int start_build(void) {
     unsigned n = album_count(), i;
+    if (!cf.fg || !cf.win) return 0;
     if (!cc_build_open(n, CC_MISSING)) {
         if (!cc_build_orphan()) return 0;
         cf.timer = timer_add(on_retry, (void *)0, POLL_MS);
@@ -1316,6 +1600,7 @@ static int start_build(void) {
     }
     cf.owns = 1;
     for (i = 0; i < n; ++i) {
+        if (is_nav_album(album_at(i))) continue; /* Nav artwork already lives in its shared cache */
         unsigned key = key_at(i);
         if (cc_build_add(cc_str(album_at(i), REC_PATH), key) < 0) break;
     }
@@ -1332,6 +1617,48 @@ static int start_build(void) {
     return 1;
 }
 
+/* A page can remain in the navigator stack after it goes behind Now Playing, an album, or another page.
+ * Stop all callbacks before the window starts leaving the foreground; resume from the foreground event. */
+static void page_pause(void) {
+    int was_dragging = cf.dragging;
+    cf.fg = 0;
+    stop_timer();
+    if (cf.nav_timer) timer_remove(cf.nav_timer);
+    cf.nav_timer = 0;
+    if (fx.load_timer) timer_remove(fx.load_timer);
+    fx.load_timer = 0;
+    snap_stop();
+    cf.dragging = cf.active = cf.interrupted = 0;
+    if (was_dragging && cf.covers && cf.input) widget_ungrab(cf.covers, cf.input);
+    if (cf.owns) build_end();
+}
+
+static int on_bg(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    page_pause();
+    return RET_OK;
+}
+
+static int on_fg(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    cf.fg = 1;
+    if (!cf.win) return RET_OK;
+    if (cf.screen == CF_COVERS && shelf_up()) {
+        set_offset(0);
+        if (depth()) cfpos.value = cf.album;
+    }
+    if (cf.nav_scanning) {
+        cf_nav_schedule();
+    } else if (cf.screen == CF_PREPARING) {
+        if (!start_build()) to_covers();
+    } else if (cf.screen == CF_COVERS && depth() && fx_fill(1) && !fx.load_timer) {
+        fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
+    }
+    return RET_OK;
+}
+
 /* Back: preparing -> cancel and covers, covers -> leave the page. */
 /* The artist's covers window (patch/songs.c: Back from the artist's songs list leaves the artist too), NULL when this is not an artist page. */
 void *coverflow_artist_page(void) { return cf.win && cf.scoped ? cf.win : (void *)0; }
@@ -1340,6 +1667,7 @@ static int on_back(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (cf.screen == CF_PREPARING) return on_cancel((void *)0, (void *)0);
+    page_pause();
     navigator_back();
     return RET_OK;
 }
@@ -1349,17 +1677,14 @@ static int on_back(void *ctx, void *e) {
 static int on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    stop_timer();
-    snap_stop();
-    if (cf.dragging) widget_ungrab(cf.covers, cf.input);
-    cf.dragging = 0;
-    build_end();
+    page_pause();
     fx_close();
     if (cf.saved_album && !cf.scoped) position_save(cf.saved_album);
     if (cf.albums) deque_destroy(cf.albums);
     if (cf.artist_row) deque_destroy(cf.artist_row);
     free(cf.keys);
     free(cf.order);
+    cf_nav_release();
     cf.albums = cf.artist_row = (void *)0;
     cf.keys = cf.order = (unsigned *)0;
     cf.win = cf.covers = cf.slide = cf.input = cf.name = cf.artist = (void *)0;
@@ -1374,7 +1699,10 @@ static int on_destroy(void *ctx, void *e) {
 static int open_page(void) {
     cf.win = window_open("m1plus_cover");
     if (!cf.win) return -1;
+    cf.fg = 1;
     widget_on(cf.win, EVT_DESTROY, on_destroy, (void *)0);
+    widget_on(cf.win, EVT_WINDOW_TO_BG, on_bg, (void *)0);
+    widget_on(cf.win, EVT_WINDOW_TO_FG, on_fg, (void *)0);
     pod_bind(cf.win, "btn_return", on_back, (void *)0);
     pod_bind(cf.win, "btn_backtoplayer", pod_on_player, (void *)0);
     cf.covers = widget_lookup(cf.win, "view_covers", 1);
@@ -1412,10 +1740,22 @@ static int open_covers(int n, const char *empty) {
 /* The M1+ Music menu's Cover Flow row. 0 once the page is up, -1 if it could not open (the caller
  * then leaves the menu as it was). */
 int coverflow_open(void) {
+    int n;
     if (cf.win) return -1;
     memset(&cf, 0, sizeof cf);
     if (open_page()) return -1;
-    return open_covers(load_albums(), "Update Local Music first");
+    n = load_albums();
+    if (cf_nav_prepare()) {
+        cf.screen = CF_PREPARING;
+        show(cf.covers, 0);
+        show(cf.status, 1);
+        show(cf.cancel, 0); /* the asynchronous index scan cannot be cancelled mid-record */
+        widget_set_tr_text(cf.status, "Loading Navidrome albums…");
+        cf.nav_timer = timer_add(cf_nav_step, (void *)0, CF_NAV_MS);
+        if (!cf.nav_timer) cf_nav_finish();
+        return 0;
+    }
+    return open_covers(n, "Update Local Music first");
 }
 
 /* The Artists list's row `index` of `artists` (patch/artists.c; the caller keeps its list): the

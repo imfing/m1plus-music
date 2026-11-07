@@ -219,6 +219,15 @@ def label(name, x, y, w, h, text, size, colour, align='center'):
     return lab
 
 
+def library_status():
+    """Centered, wrapped empty/loading status used by Library list pages."""
+    status = hidden(label('label_status', 20, 180, SCREEN_W - 40, 90, '', 18, '#FFFFFF'))
+    status.set('line_wrap', 'true')
+    status.set('word_wrap', 'true')
+    styled(status, ('normal',), 'text_align_v', 'middle')
+    return status
+
+
 def hidden(w):
     """Start hidden *and* insensitive. This demo's AWTK hit test (widget_find_target_default
     0x6747d4) checks only enable and sensitive, never visible, so a merely hidden widget still
@@ -368,7 +377,7 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/albums.c / playlists.c show it while yoffset > 0
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     # The two modes' text styles (patch/albums.c reads them with widget_prepare_text_style; never shown)
     for name, px, colour in (('label_row_title', LIST_TITLE_PX, '#FFFFFF'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA'),
                              ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA')):
@@ -377,6 +386,9 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
         root.children.append(lab)
     if albums:
         root.children.extend(view_sort_card())   # last: above everything
+    if names[0] == 'albums_listview':
+        root.children.extend(azlist_labels())
+        root.children.extend(azlist_rail())
     return root
 
 
@@ -1092,7 +1104,7 @@ def build_artists_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/artists.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     lab = hidden(label('label_row_title', 0, 0, 10, 10, '', LIST_TITLE_PX, '#FFFFFF', 'left'))   # the row text style (the stock srlabel_leftwhite21_style's 21 px white)
     styled(lab, ('normal',), 'text_align_v', 'middle')
     root.children.append(lab)
@@ -1193,6 +1205,103 @@ def build_autoeq_page(page):
     return root
 
 
+def build_subsonic_page(page):
+    """English-only Navidrome labels with stock list/grid controls."""
+    root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
+    styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
+    root.children.append(navbar('Navidrome'))
+    btn = Widget('button', 8, NAVBAR_H + 4, 112, 44, [('name', 'sb_connect'), ('enable', 'true')])
+    btn.set('style', 'btn_tablerow_style')
+    styled(btn, STATES, 'text_color', '#FFFFFF')
+    styled(btn, STATES, 'font_size', '16')
+    server_label = label('sb_connect_label', 8, 0, 82, 44, '', 14, '#FFFFFF', 'left')
+    server_label.set('text', 'Server')
+    server_label.set('sensitive', 'false')
+    dot = Widget('view', 97, 17, 10, 10, [('name', 'sb_connected_dot'), ('sensitive', 'false')])
+    styled(dot, ('normal',), 'bg_color', '#8E8E93')
+    styled(dot, ('normal',), 'round_radius', '5')
+    btn.children.extend([server_label, dot])
+    root.children.append(btn)
+    for name, x, icon in (('sb_search', 210, 'pod_ic_search'), ('sb_sync', 266, 'pod_sb_sync')):
+        btn = Widget('button', x, NAVBAR_H + 4, 44, 44, [('name', name), ('enable', 'true'), ('style', 'img_btn_style')])
+        btn.children.append(Widget('image', 6, 6, 32, 32, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+        root.children.append(btn)
+    tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_navidrome'),
+            ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_dsd'))
+    for name, x, width, text, icon in tabs:
+        btn = Widget('button', x, NAVBAR_H + 50, width, 44, [('name', name), ('enable', 'true')])
+        btn.set('style', 'btn_tablerow_style')
+        btn.children.append(Widget('image', 5, 10, 24, 24, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+        mark = Widget('view', 0, 41, width, 3, [('name', f'{name}_mark'), ('visible', 'false'), ('sensitive', 'false')])
+        styled(mark, ('normal',), 'bg_color', '#EEEEEC')
+        caption = label(f'{name}_label', 32, 0, width - 34, 44, '', 13, '#FFFFFF', 'left')
+        caption.set('text', text)
+        caption.set('style', 'btn_tablerow_style')
+        caption.set('sensitive', 'false')
+        btn.children.extend([caption, mark])
+        root.children.append(btn)
+    view_btn = Widget('button', 266, NAVBAR_H + 50, 42, 44, [('name', 'sb_view'), ('enable', 'true'), ('style', 'img_btn_style')])
+    view_btn.children.append(Widget('image', 8, 8, 26, 26, [('name', 'sb_view_icon'), ('image', 'pod_nav_grid'), ('draw_type', 'icon'), ('sensitive', 'false')]))
+    root.children.append(view_btn)
+    status = label('sb_status', 12, NAVBAR_H + 96, 296, 22, '', 14, '#AAAAAA', 'left')
+    status.set('text', 'Connect to browse your music')
+    root.children.append(status)
+    progress = Widget('view', 12, NAVBAR_H + 118, 296, 6,
+                      [('name', 'sb_download_progress'), ('visible', 'false'), ('sensitive', 'false')])
+    styled(progress, ('normal',), 'bg_color', '#333333')
+    fill = Widget('view', 0, 0, 1, 6,
+                  [('name', 'sb_download_fill'), ('visible', 'false'), ('sensitive', 'false')])
+    styled(fill, ('normal',), 'bg_color', '#EEEEEC')
+    progress.children.append(fill)
+    root.children.append(progress)
+    lv = stock_list([], True, top=NAVBAR_H + 124)
+    lv.h = 276
+    lv.set('name', 'sb_listview')
+    sv = lv.children[0]
+    sv.h = 276
+    lv.children[1].h = 276
+    sv.set('name', 'sb_scrollview')
+    grid = Widget('view', 0, 0, SCREEN_W, 6 * 210, [('name', 'sb_rows')])
+    styled(grid, ('normal',), 'bg_color', '#000000')
+    for i in range(6):
+        item = Widget('list_item', 0, i * 52, SCREEN_W, 52, [('name', f'sb_row{i}'), ('style', 'list_item_style'), ('enable', 'true')])
+        art = Widget('image', 4, 4, 44, 44, [('name', f'sb_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
+        title = Widget('hscroll_label', 58, 2, 152, 22, [('name', f'sb_title{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
+        styled(title, STATES, 'text_color', '#FFFFFF')
+        styled(title, ('normal',), 'font_size', str(LIST_TITLE_PX))
+        sub = Widget('hscroll_label', 58, 29, 152, 19, [('name', f'sb_sub{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
+        styled(sub, STATES, 'text_color', '#AAAAAA')
+        styled(sub, ('normal',), 'font_size', str(LIST_SUB_PX))
+        actions = []
+        for action, x, icon in (('download', OFFSETS['SB_LIST_ACTION_X'], 'pod_sb_download'),):
+            button = Widget('button', x, 4, OFFSETS['SB_LIST_ACTION_W'], 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
+            button.children.append(Widget('image', 9, 10, 24, 24, [('name', f'sb_row_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+            actions.append(button)
+        gitem = Widget('view', (i % 2) * 160, (i // 2) * 210, 160, 204, [('name', f'sb_grid_row{i}'), ('enable', 'true')])
+        g_art = Widget('image', 12, 4, 136, 136, [('name', f'sb_grid_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
+        g_title = Widget('hscroll_label', 6, 142, 148, 19, [('name', f'sb_grid_title{i}'), ('text', ''), ('ellipses', 'true'), ('sensitive', 'false')])
+        styled(g_title, STATES, 'text_color', '#FFFFFF')
+        styled(g_title, ('normal',), 'font_size', '14')
+        g_sub = Widget('hscroll_label', 6, 161, 148, 17, [('name', f'sb_grid_sub{i}'), ('text', ''), ('ellipses', 'true'), ('sensitive', 'false')])
+        styled(g_sub, STATES, 'text_color', '#AAAAAA')
+        styled(g_sub, ('normal',), 'font_size', '12')
+        g_actions = []
+        for action, x, icon in (('download', 59, 'pod_sb_download'),):
+            button = Widget('button', x, 177, 42, 36, [('name', f'sb_grid_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
+            button.children.append(Widget('image', 9, 6, 24, 24, [('name', f'sb_grid_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
+            g_actions.append(button)
+        gitem.children = [g_art, g_title, g_sub, *g_actions]
+        item.children = [art, title, sub, *actions]
+        grid.children.append(item)
+        grid.children.append(gitem)
+    sv.children.append(grid)
+    root.children.append(lv)
+    root.children.extend(azlist_labels())
+    root.children.extend(azlist_rail())
+    root.children.append(hidden(label('label_title', 0, 0, 200, 22, '', 16, '#FFFFFF', 'left')))
+    return root
+
+
 def build_songs_page(page):
     o = OFFSETS
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
@@ -1205,6 +1314,9 @@ def build_songs_page(page):
     lv.set('name', 'songs_listview')
     sv = lv.children[0]
     sv.set('name', 'songs_scrollview')
+    sv.set('w', str(SCREEN_W))   # let the Shuffle pill and stream-source marker use the full 320 px content width
+    if len(lv.children) > 1:
+        lv.children[1].set('x', str(SCREEN_W))   # retain list_view's scrollbar child for scrolling, outside the visible screen
     grid = Widget('view', 0, 0, SCREEN_W, GRID_VIEW_H, [('name', 'view_grid')])
     styled(grid, ('normal',), 'bg_color', '#000000')
     title = Widget('label', o['SG_TITLE_X'], 0, o['SG_TITLE_W'], o['SG_TITLE_H'], [('name', 'sg_title'), pod_i18n.text_prop(page.title), ('sensitive', 'false')])
@@ -1227,7 +1339,7 @@ def build_songs_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/songs.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(library_status())
     for name, px, colour, align in (('label_row_title', LIST_TITLE_PX, '#FFFFFF', 'left'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA', 'left'),
                                     ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF', 'left'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA', 'left')):   # the last two: Recently Added's album grid
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, align))   # text styles only (widget_prepare_text_style); never shown
@@ -2922,6 +3034,8 @@ def build_page(page):
         return build_search_page(page)
     if page.kind == 'autoeq':
         return build_autoeq_page(page)
+    if page.kind == 'subsonic':
+        return build_subsonic_page(page)
     if page.kind == 'album':
         return build_album_page(page)
     if page.kind == 'queue':

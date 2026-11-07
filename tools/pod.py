@@ -44,6 +44,8 @@ LD = os.path.join(LLD, 'ld.lld')
 SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'menu.c', 'covercache.c', 'durations.c', 'coverflow.c', 'albums.c', 'artists.c', 'shuffle.c', 'nowplaying.c', 'minibar.c', 'grid.c', 'recent.c', 'dailymix.c', 'homecover.c', 'covlist.c', 'setfiles.c', 'rows.c', 'shot.c', 'home.c', 'fontregion.c', 'textgamma.c',
            'scroll.c', 'playmore.c', 'pulldown.c', 'playlists.c', 'azlist.c', 'songops.c', 'rowmenu.c', 'songs.c', 'albumpage.c', 'queuepage.c', 'upnext.c', 'ipod.c', 'ipod_cf.c', 'ipod_theme.c', 'ipod_render.c', 'pcmodel.c', 'pcfeed.c', 'pcjson.c', 'pcopml.c', 'pcpng.c', 'pccover.c', 'pcwrap.c', 'pcnotes.c', 'pcdetail.c', 'upver.c', 'pcnet.c', 'podcasts.c', 'radio.c', 'radiopage.c', 'radionp.c', 'radioinfo.c', 'songinfo.c', 'tape.c', 'palette.c', 'vinyl.c', 'onlineart.c', 'update.c', 'relnotes.c', 'keyboard.c', 'search.c', 'battery.c', 'lineout.c', 'lyrics.c', 'picker.c', 'folders.c', 'timezones.c', 'pcregion.c', 'viewsort.c', 'wifictl.c', 'wifipage.c',
            'peq.c', 'peq_ui.c', 'peqpage.c', 'peqlib.c', 'autoeq.c', 'tenband.c', 'peqband.c', 'peqout.c']
+SOURCES.append('subsonic.c')
+SOURCES.append('tracklamp.c')
 
 FLAGS = ['--target=mipsel-linux-gnu', '-march=mips32r2', '-mabi=32', '-mfp64',
          '-mno-abicalls', '-fno-pic', '-G0', '-ffreestanding', '-fno-builtin',
@@ -278,6 +280,9 @@ FUNCTIONS.update({
     'playpause_quick_click':   ('int', 'void', 0x4cd150),
     'next_quick_click':        ('int', 'void *, int', 0x4ccf00),
     'mclGetPlayStatus':        ('int', 'void', 0x5d3640),
+    # Format lamp (patch/tracklamp.c): stock MCL metadata snapshot, read-only; used from the existing player-status callback.
+    'mclGetInfo':              ('int', 'void *', 0x5d3518),
+    'reset_atmosphereled_rgb': ('void', 'void', 0x4e6b9c),
 })
 # The Playlists page (patch/playlists.c, docs/modules/playlists.md): the stock playlist creation, and the click handlers of the stock Playlists
 # page's Import and Export rows (static, unnamed; ret_t (ctx, event), neither reads its arguments: each asks with the stock confirm dialog,
@@ -301,6 +306,9 @@ FUNCTIONS.update({
 # delete (batch_delete_file(class, list, selection, 0, delete_file): the generic loop for 0xf001, deleteMusicFromMusicDb per selected row, remove_file when
 # the flag is set, and `*0xa05a5a = 1` at the end). All of them touch no widget (docs/modules/songs.md has the evidence).
 FUNCTIONS.update({
+    # Navidrome offline DSD downloads (patch/subsonic.c): stock's folder scan worker calls this with drop=0 to add
+    # files from one folder to songtable without dropping the existing library; it touches no UI widgets.
+    'scanSpecFolder':         ('int', 'const char *, int', 0x4e9e90),
     'select_recordinit':       ('void', 'int', 0x4da3b0),
     'set_selectindex':         ('int', 'int', 0x4da434),
     'batch_delete_file':       ('int', 'int, void *, void *, int, int', 0x4e1408),
@@ -311,6 +319,8 @@ FUNCTIONS.update({
     # The Queue page (patch/queuepage.c): the queue drawer's row handler 0x479f60 plays row i with start_playqueue(i) (@0x47a0c8: airplay_stop, mclSetPlayPos, mclStartPlayer, notifyPlayStatus; it
     # is told apart from a stream by mclGetPlayType and the network state, @0x479ff4..0x47a028)
     'start_playqueue':         ('int', 'int', 0x4e47d0),
+    'mclLoadPlayList':         ('void', 'void *, int, int', 0x5d1f28),
+    'mclSetStartSeekTime':     ('void', 'int', 0x5d4480),
     'mclGetPlayType':          ('int', 'void', 0x5d3658),
     # Now Playing's mode button picture (@0x539888): widget_lookup(window, "btn_playmode"), then the style of mclGetPlayMode()'s mode (btn_imgorder / cycle1 / random / cycle). Stock runs it from the page init and
     # from the button's own click handler 0x53b5fc (mclSetPlayMode, write_int_config, this, notifyPlayMode, dmrSendPlayMode) and nowhere else, so a mode set by another page leaves the picture stale
@@ -641,6 +651,26 @@ BATTERY_PINS = (   # (address, stock word, what it proves)
     (0x66d194, 0x8e020008, 'widget_resize: lw v0, 8(s0): widget_t.w'), (0x66d1a0, 0x8e03000c, 'widget_resize: lw v1, 0xc(s0): widget_t.h'),
     (0x66c428, 0x8e040044, 'widget_set_visible: lw a0, 0x44(s0): widget_t.parent, handed to widget_set_need_relayout_children'),
 )
+
+# Sample Rate RGB (patch/tracklamp.c): replace only the stock status query in on_wm_idle_status.
+# The wrapper calls mclGetPlayStatus once, returns that exact result, and reads track metadata and volume.
+FORMAT_LAMP_SITE = 0x4ce968
+FORMAT_LAMP_PINS = (
+    (0x4ce964, 0x8f99a9b8, 'on_wm_idle_status: lw t9, mclGetPlayStatus GOT slot'),
+    (FORMAT_LAMP_SITE, 0x0320f809, 'on_wm_idle_status: jalr mclGetPlayStatus'),
+    (0x4ce96c, 0x00000000, 'on_wm_idle_status: mclGetPlayStatus delay slot'),
+    # mclGetInfo field offsets, independently read by stock get_hrflag.
+    (0x4dfbe4, 0x8c620030, 'get_hrflag: read bit depth at mclGetInfo +0x30'),
+    (0x4dfbf4, 0x8c640004, 'get_hrflag: read sample rate at mclGetInfo +4'),
+    (0x4dfc60, 0x26040010, 'get_hrflag: read format label at mclGetInfo +0x10'),
+    # light_state: red/blue/green bytes + pending-apply byte, reordered by on_wm_timer_rgbled_state.
+    (0x4cff84, 0x8f90b478, 'on_wm_timer_rgbled_state: load RGB state at 0xa038b8'),
+    (0x4cff88, 0x92030003, 'on_wm_timer_rgbled_state: read pending RGB flag'),
+    (0x4cff94, 0x92060001, 'on_wm_timer_rgbled_state: read green channel'),
+    (0x4cff98, 0x92050002, 'on_wm_timer_rgbled_state: read blue channel'),
+    (0x4cff9c, 0x04115c13, 'on_wm_timer_rgbled_state: apply configured RGB'),
+    (0x4cffa0, 0x92040000, 'on_wm_timer_rgbled_state: read red channel in delay slot'),
+)
 # Line Out pill (patch/lineout.c lo_set_text, docs/modules/payload.md hook 20, docs/modules/lineout.md): while Line Out is on (byte 0xa05aa7) show_sysbar_face (status bar timer) and dropdown_showface
 # (the pull-down's own bar copy and timer) strcpy "LO" instead of the volume number into a buffer (s6) and join the number path at one call, widget_set_text_utf8(label_volume = s7, buffer): `lw t9, GOT` /
 # `move a1, s6` / `jalr t9` / delay slot `move a0, s7`. Each jalr becomes `jal lo_set_text` (the delay slot stays stock's). Both functions set label_volume visible (`jalr widget_set_visible`, a1 = 1, a0 = s7)
@@ -819,6 +849,9 @@ DATA = {
     # mclGetPlayPos: get_playtimeandlength `lw s1, 0xa0394c; deque_size(*s1)` then `deque_at(*s1, pos)` (@0x4e01cc..0x4e0268),
     # the lock screen refresh (@0x53f73c, "queued" = 0 <= pos < size), the queue drawer (@0x47a8f0)
     'PLAY_QUEUE':         (0xa0394c, None),
+    # The stock Atmosphere Lamp's transient RGB + pending-apply bytes, consumed by its existing timer;
+    # format status never writes the persistent LEDRED/GREEN/BLUE settings.
+    'ATMOSPHERE_RGB_STATE': (0xa038b8, None),
     # the player's gapless state word (1 = a preload is open; mclSetGaplessMode(0) @0x5d28ac closes it with "{mcl-closegapless}" and stores -1): patch/shuffle.c cancel_preload closes it after a reorder, an insert or Clear
     'MCL_PRELOAD':        (0xa0abd0, None),
     'DMR_SERVERFLAG':     (0xa06020, 'dmr_serverflag'),   # int: 1 while stock's DLNA renderer (UPnP) service runs (dlna_service_running 0x507bec reads it; Clear and the queue insert stay off then, docs/modules/queue.md)
@@ -1360,6 +1393,7 @@ def gen_stock_h(out, demo_path):
     h.append(f'#define POD_DEVELOPER_PAGE {pod_pages.DEVELOPER_PAGE_INDEX}')
     h.append(f'#define POD_CACHE_PAGE {pod_pages.CACHE_PAGE_INDEX}')
     h.append(f'#define POD_FILES_PAGE {pod_pages.FILES_PAGE_INDEX}')
+    h.append(f'#define POD_SUBSONIC_PAGE {pod_pages.SUBSONIC_PAGE_INDEX}')
     h.append(f'#define POD_PULLDOWN_PAGE {pod_pages.PULLDOWN_PAGE_INDEX}')
     h.append(f'#define POD_PEQ_PAGE {pod_pages.PEQ_PAGE_INDEX}')
     h.append(f'#define POD_PEQP_PAGE {pod_pages.PEQP_PAGE_INDEX}')
@@ -1458,7 +1492,7 @@ def compile_payload(out, demo_path, tag=TAG):
             '--undefined=stock_playing_init_trampoline', '--undefined=m1plus_scroll_event',
             '--undefined=m1plus_playmore_init', '--undefined=stock_playmore_init_trampoline', '--undefined=m1plus_pulldown_init', '--undefined=stock_pulldown_init_trampoline', '--undefined=rd_start_player', '--undefined=rd_step', '--undefined=stock_start_player_trampoline', '--undefined=rd_save_stop', '--undefined=rd_save_start', '--undefined=stock_save_stop_trampoline', '--undefined=stock_save_start_trampoline', '--undefined=rn_backtoplayer', '--undefined=stock_backtoplayer_trampoline', '--undefined=pc_id3_path', '--undefined=pc_library_query', '--undefined=pc_sorted_query', '--undefined=stock_dbquery_trampoline', '--undefined=stock_sorted_query_trampoline',
             '--undefined=m1plus_style_color', '--undefined=m1plus_style_gradient', '--undefined=m1plus_image_add', '--undefined=stock_style_color_trampoline', '--undefined=stock_image_add_trampoline', '--undefined=pal_map', '--undefined=pal_active', '--undefined=pal_background', '--undefined=pal_accent', '--undefined=pal_accent_saved', '--undefined=pal_accent_set', '--undefined=pal_accent_color', '--undefined=pal_fill',
-            '--undefined=pod_scan_dir', '--undefined=sh_set_mode', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=pod_eq_site', '--undefined=pf_items', '--undefined=pf_seen']   # (the last two: accessors of the parser the tests read; nothing in the payload calls them)
+            '--undefined=pod_scan_dir', '--undefined=sh_set_mode', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=pod_eq_site', '--undefined=tl_play_status', '--undefined=pf_items', '--undefined=pf_seen']   # (the last two: accessors of the parser the tests read; nothing in the payload calls them)
     run(LD, '-m', 'elf32ltsmip', '--gc-sections', '-T', os.path.join(PATCH, 'link.ld'),
         '-e', 'm1plus_home_click', '--undefined=m1plus_home_click', '--undefined=stock_home_click_trampoline',
         *keep, *objs, out / 'pod_asm.o', '-o', out / 'patch.elf')
@@ -1635,6 +1669,11 @@ def patch_demo(raw, payload, ps, demo_path):
     for a, _ in LINEOUT_SITES: struct.pack_into('<I', patched, fileoff(patched, a), jal(ps['lo_set_text'], a))   # (the pins checked each site's lw t9 GOT widget_set_text_utf8, a1, the jalr and the delay slot)
     check(BASE <= target8 < BASE + len(payload), 'battery hook symbol outside payload')
     struct.pack_into('<I', patched, fileoff(patched, BATTERY_SITE), jal(target8, BATTERY_SITE))   # (the pins above checked the site's word, its delay slot and its neighbours)
+    for a, old, what in FORMAT_LAMP_PINS:
+        got = struct.unpack_from('<I', patched, fileoff(patched, a))[0]
+        check(got == old, f'{a:#x} ({what}): {got:#010x} != pinned {old:#010x}')
+    check(BASE <= ps['tl_play_status'] < BASE + len(payload), 'format lamp hook symbol outside payload')
+    struct.pack_into('<I', patched, fileoff(patched, FORMAT_LAMP_SITE), jal(ps['tl_play_status'], FORMAT_LAMP_SITE))
     for nm, at, pro in (('sh_set_mode', SETMODE, SETMODE_PROLOGUE), ('sh_load_playlist', LOADPL, LOADPL_PROLOGUE), ('ft_created', FILETIME, FILETIME_PROLOGUE)):   # Apple-style Shuffle (patch/shuffle.c)
         check(BASE <= ps[nm] < BASE + len(payload), f'{nm} outside payload')
         hook(patched, at, pro, ps[nm], nm)
@@ -1662,7 +1701,7 @@ def patch_demo(raw, payload, ps, demo_path):
     check(dynsym(demo_path).get('playsong_id3info') == 0xa0d88c, 'playsong_id3info moved')
     edits = patch_rows(patched, ps)
     # no row edit may touch a PIC prologue (the hooks are the only ones) or a hook site
-    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, PLAYMORE_INIT, PULLDOWN_INIT, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, timezones.SELECT)) and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and not EQ_ROW <= int(a, 16) < EQ_ROW + 8
+    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, PLAYMORE_INIT, PULLDOWN_INIT, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, timezones.SELECT)) and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and int(a, 16) != FORMAT_LAMP_SITE
               for a, *_ in edits), 'row edit on a hook')
     check(all(not (SCROLL_SLOT <= int(a, 16) < SCROLL_SLOT + 4 or a in {hex(p[0]) for p in SCROLL_PINS}) for a, *_ in edits),
           'row edit on a list gesture word')
@@ -1706,6 +1745,7 @@ def main():
         'hook_scan': {'addr': SCAN_SITE, 'target': ps['pod_scan_dir']},
         'hook_battery': {'addr': BATTERY_SITE, 'target': ps['bp_capacity']},
         'hook_wifihub': {'addr': WIFIHUB_SITE, 'target': ps['wifi_hub_open']},
+        'hook_format_lamp': {'addr': FORMAT_LAMP_SITE, 'target': ps['tl_play_status']},
         'hook_lineout': {'sites': [hex(a) for a, _ in LINEOUT_SITES], 'target': ps['lo_set_text']},
         'hook_timezone': {'addr': timezones.SELECT, 'target': ps['tz_select']}, 'timezone_row': {'addr': timezones.ROW_CALL, 'target': ps['tz_row']}, 'timezone_label': {'addr': timezones.LABEL_CALL, 'target': ps['tz_label']},
         'hook_style_color': {'addr': STYLE_COLOR, 'target': ps['m1plus_style_color']}, 'hook_style_gradient': {'addr': STYLE_GRADIENT, 'target': ps['m1plus_style_gradient']},

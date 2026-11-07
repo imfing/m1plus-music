@@ -17,14 +17,14 @@ import argparse, hashlib, importlib, os, re, subprocess, sys, time, zipfile, shu
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, 'tools')
 sys.path.insert(0, TOOLS)
-import mod_space, mod_webapp, paths, workflow
+import mod_space, mod_webapp, mod_wpa, paths, workflow
 from pathlib import Path
 
 ZIP = paths.ZIP     # this checkout's firmware/, else the main checkout's (tools/paths.py)
 ZIP_SHA = 'db7bdbc42ffe6d5c1e3fdca9363edb78a01898b9a725c34793394cf6abfa33c0'
 VERSION = '1.3.0'  # major.minor.patch: the release, its git tag and GitHub release, About
 TAG = 'V2.1-' + VERSION  # what the updater compares (firmware_v20.info line 2: must contain V and differ from V2.1)
-REPO = 'imfing/m1plus-music'  # the GitHub repository whose releases Software Update fetches (patch/pcnet.c; docs/modules/update.md); the payload gets it as M1PLUS_REPO (tools/pod.py)
+REPO = 'iamgauravmishra/m1plus-music-navidrome'  # this project's releases; the payload gets it as M1PLUS_REPO (tools/pod.py)
 RESTORE_TAG = 'V2.1R'
 
 
@@ -80,9 +80,14 @@ def make_tree(stock, mod, cache, tag=TAG):
         if bc.ENABLED:
             changed, removed, _ = bc.delta_since(before, mod); bc.store_delta(prev, mod, changed, removed)
     t = time.time(); prev = bc.step_key(prev, 'mod_theme', ['--scan'])     # contrast scan of the finished tree: a pass is kept as an empty step
-    if bc.have_step(prev): stage_report('mod_theme --scan', t, True); return
-    run(os.path.join(TOOLS, 'mod_theme.py'), '--scan', mod, stock)
-    if bc.ENABLED: bc.store_delta(prev, mod, [], [])
+    if bc.have_step(prev): stage_report('mod_theme --scan', t, True)
+    else:
+        run(os.path.join(TOOLS, 'mod_theme.py'), '--scan', mod, stock)
+        if bc.ENABLED: bc.store_delta(prev, mod, [], [])
+    # Cached deltas recreate files but do not preserve parent-directory mtimes. Normalize the
+    # added Wi-Fi helper directory after every stage so cache hits and clean builds match.
+    wpa_dir = os.path.join(mod, 'rootfs', mod_wpa.REL_DIR)
+    if os.path.isdir(wpa_dir): os.utime(wpa_dir, (mod_wpa.MTIME, mod_wpa.MTIME))
 
 def pack_args(stock):
     """The --allow-added / --allow-removed flags of the release repack."""

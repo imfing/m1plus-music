@@ -359,12 +359,15 @@ def life_tests(ctx):
     expect(texts == ['Album 0', 'Artist 0'], 'and the screen paints again')
     m.calls = []; m.fire(O['EVT_DESTROY'], ip.WIN)
     expect(any(c[0] == 'bitmap_destroy' for c in m.calls) and any(c[0] == 'free' for c in m.calls) and ('timer_remove', 0x777) in m.calls, 'destroy: the timer, the frame and the textures go')
-    # a stale list (another page queried): the screen is black, not a wrong list; the tick reads it again
+    # another page can replace the stock query result. This page owns its album snapshot, so its
+    # current captions and frame stay stable instead of reading the unrelated list.
     m = machine(); enter(m)
     for _ in range(14): tick(m)
     m.setword(ip.SHOWLIST, m.new_deque([m.record(album='Other', artist='X', path='/x.flac', rid=900)]))
     texts, fills, blits, names = paint(m)
-    expect(not [t for t, r in texts if r[1] >= BARH] and fills and fills[0][1:] == (0, 0, 320, 240) and not blits and 'Cover Flow' in [t for t, _ in texts], 'a stale stock list: white with the title bar, no rows, no cover (paint never reads it)')
+    body = [t for t, r in texts if r[1] >= BARH]
+    expect(body == ['Album 0', 'Artist 0'] and len(blits) == 1 and 'Other' not in body,
+           f'a different page queried the stock list: Cover Flow keeps its owned album snapshot ({body}, {len(blits)} frame blits)')
 
 
 def i18n_tests(ctx):

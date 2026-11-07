@@ -23,6 +23,9 @@ typedef struct {
     void *disc; /* the touched letter's disc (SG_RAIL_DISC px, alpha) */
     int top; /* (page) content y of the first header */
     int row; /* (page) the rows' height */
+    int rail_origin; /* optional screen y of the list viewport; 0 keeps the standard navbar origin */
+    int view_h; /* optional scroll viewport height; 0 keeps GRID_VIEW_H */
+    int rail_only; /* rail sections jump to rows without adding header bands */
     int count; /* (page) rows */
     int content; /* (page) the content's height: the scroll offset is clamped to content - GRID_VIEW_H */
     int nsec; /* 0: a plain list; else the sections */
