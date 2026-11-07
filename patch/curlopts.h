@@ -1,15 +1,17 @@
 /* libcurl 7.73 option and info numbers (curl/curl.h), the ones the payload uses: demo imports the easy interface, there is no header on the build host's side of the cross compile.
- * Used by patch/pcnet.c; test/pod/pcnet.py mocks curl_easy_setopt / getinfo with the same numbers.
+ * Used by patch/pcnet.c and patch/subsonic.c; test/pod/pcnet.py mocks these option and info numbers.
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  */
 #pragma once
 
 #define CURLOPT_WRITEDATA 10001
+#define CURLOPT_HEADERDATA 10029
 #define CURLOPT_URL 10002
 #define CURLOPT_RANGE 10007
 #define CURLOPT_ERRORBUFFER 10010
 #define CURLOPT_WRITEFUNCTION 20011
+#define CURLOPT_HEADERFUNCTION 20079
 #define CURLOPT_TIMEOUT 13
 #define CURLOPT_USERAGENT 10018
 #define CURLOPT_LOW_SPEED_LIMIT 19
@@ -34,7 +36,10 @@
 #define CURLOPT_ACCEPT_ENCODING 10102
 #define CURLOPT_FAILONERROR \
     45 /* an HTTP code of 400 or more fails the request (CURLE_HTTP_RETURNED_ERROR, 22) instead of handing over the error page */
+#define CURLOPT_SSL_VERIFYPEER 64
+#define CURLOPT_SSL_VERIFYHOST 81
 #define CURLOPT_NOBODY 44 /* long 1: a header-only request (HEAD) */
+#define CURLPROTO_HTTP 1
 #define CURLPROTO_HTTPS 2
 #define CURLOPT_PROTOCOLS 181
 #define CURLOPT_REDIR_PROTOCOLS 182
@@ -59,6 +64,8 @@
 #define CURLINFO_STARTTRANSFER_TIME_T 0x600036
 #define CURLINFO_APPCONNECT_TIME_T 0x600038
 #define CURL_GLOBAL_ALL 3
+#define CURLE_OK 0
+#define CURLE_FAILED_INIT 2
 #define CURLINFO_TEXT 0
 #define CURLINFO_HEADER_IN 1
 /* curl_easy_perform results the refresh tells apart */

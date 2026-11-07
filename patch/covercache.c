@@ -1733,8 +1733,8 @@ int cc_build_near_step(void *albums, const unsigned *order, const unsigned *keys
         i = k ? centre - d : centre + d;
         r = cc_row(albums, order, i);
         --left;
-        if (I(r, REC_ID) == ID_ALL_SONGS || (keys && !keys[order ? order[i] : i]))
-            continue; /* a scoped list's All songs row has no cover */
+        if (I(r, REC_ID) == ID_ALL_SONGS || I(r, REC_ID) == CC_NAV_ALBUM_ID || (keys && !keys[order ? order[i] : i]))
+            continue; /* scoped cards and virtual Navidrome albums have no local cover job */
         if (cc_build_add(cc_str(r, REC_PATH), keys ? keys[order ? order[i] : i] : cc_album_key(r)) < 0) {
             cb.truncated = 1;
             --c; /* full (or out of memory): done, the caller told, and the cursor left on the album that did not fit (a later walk can resume there) */

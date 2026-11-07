@@ -175,7 +175,8 @@ def page_tests(ctx):
     s_i = next(i for i, r in enumerate(P.APPEARANCE_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.PULLDOWN_PAGE_INDEX)
     sysrows = [r.label for r in P.SETTINGS_PAGE.rows]
     a_i = next(i for i, r in enumerate(P.SETTINGS_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.APPEARANCE_PAGE_INDEX)
-    expect(P.SETTINGS_PAGE.rows[a_i].label == 'Appearance' and sysrows[sysrows.index('Display') + 1] == 'Appearance' and sysrows[sysrows.index('Display') + 2] == 'Keyboards'
+    expect(P.SETTINGS_PAGE.rows[a_i].label == 'Appearance' and sysrows[sysrows.index('Display') + 1:sysrows.index('Display') + 4] == ['Sample Rate RGB', 'Appearance', 'Keyboards']
+           and P.SETTINGS_PAGE.rows[sysrows.index('Sample Rate RGB')].action == P.ACT_SAMPLERGB
            and P.PAGES[P.APPEARANCE_PAGE_INDEX] is P.APPEARANCE_PAGE and P.APPEARANCE_PAGE.title == 'Appearance' and [r.label for r in P.APPEARANCE_PAGE.rows] == ['Background', 'Accent', 'Control Center']
            and P.PAGES[P.PULLDOWN_PAGE_INDEX] is P.PULLDOWN_PAGE and P.PULLDOWN_PAGE.title == 'Control Center' and P.PULLDOWN_PAGE.rows == [] and P.PULLDOWN_PAGE.kind == 'pdcfg',
            'Settings > System has an Appearance link row right after Display; its page has Background and Accent, then the Control Center row in a card of its own, which opens the page of that title')

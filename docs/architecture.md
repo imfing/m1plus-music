@@ -53,6 +53,8 @@ for commands, [UI](ui.md) for layout/assets, and [history](history.md) for recor
 | [Home cover build](modules/homecover.md) | Background cover cache build and its progress line |
 | [Podcasts](modules/podcasts.md) | Local episodes, feeds, covers, resume and speed |
 | [Radio](modules/radio.md) | Internet radio: stations page, directory worker, playback through stock's hciplayer, Now Playing |
+| [Navidrome / Subsonic](modules/subsonic.md) | Synced server library, raw streaming, SD downloads, artwork and library integration |
+| [Sample Rate RGB](modules/format-lamp.md) | Playback-format lamp colours with brightness scaled to volume |
 | [Virtual iPod](modules/ipod.md) | Touch wheel, navigation and playback |
 | [iPod Cover Flow](modules/ipod-coverflow.md) | Embedded carousel and album navigation |
 | [Cassette Mode](modules/tape.md) | Landscape rendering, themes and timer |

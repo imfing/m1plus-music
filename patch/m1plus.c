@@ -69,7 +69,9 @@ enum {
     ACT_RESETALL = 54, /* Developer > Tools: Reset All Settings, an action row (a confirm, then setfiles_reset_all) */
     ACT_REGION = 55,
     ACT_REGIONSET = 56,
-    ACT_PEQ = 57
+    ACT_PEQ = 57,
+    ACT_SUBSONIC = 77,
+    ACT_SAMPLERGB = 78
 };
 
 extern void shot_start(void); /* patch/shot.c: the Screenshot row: confirm, 5 s countdown, capture; or cancel */
@@ -83,6 +85,7 @@ extern int update_open(void); /* patch/update.c: Software Update, our page; -1 w
 extern int wifipage_open(
     void); /* patch/wifipage.c: Settings > Wi-Fi, our page; -1 when it did not open (the stock page then opens) */
 extern int radio_open(void); /* patch/radiopage.c: Radio's stations page */
+extern void sb_page_open(void *win); /* patch/subsonic.c: Navidrome browser controls and stock queue playback */
 extern int search_open(void); /* patch/search.c: our keyboard, then the results page; -1 when it did not open */
 extern int songs_open(void); /* patch/songs.c: Songs, the library as one list with sections and a jump rail */
 extern int folders_open(
@@ -134,9 +137,9 @@ enum {
     INFO_CAP,
     INFO_FREE,
     INFO_CC, /* the Cache page's seven Covers values start here: homecover_stat(kind - INFO_CC) */
-    INFO_SF = INFO_CC + 7, /* the Settings Files page's 37 values: setfiles_stat(kind - INFO_SF) */
-    INFO_SFOLD = INFO_SF + 37, /* the Unsupported Files count (setfiles_old_count), above those rows */
-    INFO_DUR = INFO_SFOLD + 1 /* the Cache page's Measured Tracks: dur_stat (patch/durations.c) */
+    INFO_SF = INFO_CC + 7, /* The Settings Files page's 38 values: setfiles_stat(kind - INFO_SF) */
+    INFO_SFOLD = INFO_SF + 38, /* Unsupported Files count (setfiles_old_count), above those rows */
+    INFO_DUR = INFO_SFOLD + 1 /* Cache page's Measured Tracks: dur_stat (patch/durations.c) */
 };
 
 enum {
@@ -176,6 +179,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "common.h"
 #include "i18n.h"
 #include "pcregion.h"
+#include "tracklamp.h"
 static int pod_off(void) { return home_off(); } /* the SD file and the flash one */
 
 static int home_open(int id) {
@@ -369,6 +373,8 @@ static int on_row(void *ctx, void *e) {
         podcasts_open();
     else if (row->action == ACT_RADIO)
         radio_open();
+    else if (row->action == ACT_SUBSONIC)
+        open_page(POD_SUBSONIC_PAGE, 0);
     else if (row->action == ACT_SEARCH) {
         if (search_open() < 0)
             navigator_to_with_context(
@@ -424,7 +430,7 @@ struct swctx {
     int action;
     void *img;
 };
-static struct swctx sw_slot[8] __attribute__((section(".scratch")));
+static struct swctx sw_slot[9] __attribute__((section(".scratch")));
 
 static void switch_show(void *img, int on) {
     if (img) image_base_set_image(img, on ? "sset_on" : "sset_off");
@@ -445,14 +451,15 @@ static void regen_show(void) {
 }
 
 static int switch_state(int action) {
-    return action == ACT_STARTUP    ? home_start()
-           : action == ACT_SHELF    ? recent_setting()
-           : action == ACT_DAILY    ? dailymix_setting()
-           : action == ACT_KB_EN    ? 1 /* English: always on */
-           : action == ACT_KB_ZH    ? kb_zh_setting()
-           : action == ACT_PCSEARCH ? pcsearch_setting()
-           : action == ACT_BATTPCT  ? battpct_setting()
-                                    : coverflow_landscape();
+    return action == ACT_STARTUP     ? home_start()
+           : action == ACT_SHELF     ? recent_setting()
+           : action == ACT_DAILY     ? dailymix_setting()
+           : action == ACT_KB_EN     ? 1 /* English: always on */
+           : action == ACT_KB_ZH     ? kb_zh_setting()
+           : action == ACT_PCSEARCH  ? pcsearch_setting()
+           : action == ACT_BATTPCT   ? battpct_setting()
+           : action == ACT_SAMPLERGB ? formatlamp_enabled()
+                                     : coverflow_landscape();
 }
 
 static int on_switch(void *ctx, void *e) {
@@ -460,13 +467,14 @@ static int on_switch(void *ctx, void *e) {
     int on;
     (void)e;
     if (!s) return RET_OK;
-    on = s->action == ACT_STARTUP    ? home_toggle()
-         : s->action == ACT_SHELF    ? recent_toggle()
-         : s->action == ACT_DAILY    ? dailymix_toggle()
-         : s->action == ACT_KB_ZH    ? kb_zh_toggle()
-         : s->action == ACT_PCSEARCH ? pcsearch_toggle()
-         : s->action == ACT_BATTPCT  ? battpct_toggle()
-                                     : coverflow_landscape_toggle(); /* -1: not saved, unchanged */
+    on = s->action == ACT_STARTUP     ? home_toggle()
+         : s->action == ACT_SHELF     ? recent_toggle()
+         : s->action == ACT_DAILY     ? dailymix_toggle()
+         : s->action == ACT_KB_ZH     ? kb_zh_toggle()
+         : s->action == ACT_PCSEARCH  ? pcsearch_toggle()
+         : s->action == ACT_BATTPCT   ? battpct_toggle()
+         : s->action == ACT_SAMPLERGB ? formatlamp_set_enabled(!formatlamp_enabled())
+                                      : coverflow_landscape_toggle(); /* -1: not saved, unchanged */
     if (on >= 0) switch_show(s->img, on);
     if (s->action == ACT_DAILY) regen_show();
     return RET_OK;
@@ -475,14 +483,15 @@ static int on_switch(void *ctx, void *e) {
 static void bind_switch(void *win, unsigned i, const struct pod_row *row) {
     char name[24];
     void *r = widget_lookup(win, row->name, 1);
-    int k = row->action == ACT_LANDSCAPE  ? 1
-            : row->action == ACT_SHELF    ? 2
-            : row->action == ACT_DAILY    ? 3
-            : row->action == ACT_KB_EN    ? 4
-            : row->action == ACT_KB_ZH    ? 5
-            : row->action == ACT_PCSEARCH ? 6
-            : row->action == ACT_BATTPCT  ? 7
-                                          : 0;
+    int k = row->action == ACT_LANDSCAPE   ? 1
+            : row->action == ACT_SHELF     ? 2
+            : row->action == ACT_DAILY     ? 3
+            : row->action == ACT_KB_EN     ? 4
+            : row->action == ACT_KB_ZH     ? 5
+            : row->action == ACT_PCSEARCH  ? 6
+            : row->action == ACT_BATTPCT   ? 7
+            : row->action == ACT_SAMPLERGB ? 8
+                                           : 0;
     snprintf(name, sizeof name, "pod_switch%u", i);
     sw_slot[k].action = row->action;
     sw_slot[k].img = widget_lookup(win, name, 1);
@@ -508,7 +517,6 @@ extern int vinyl_theme_set(int theme); /* choose it, saved atomically; the theme
 static const char *const vtheme_key[VN_THEMES] = {"Graphite", "Snow"};
 static const char *const accent_key[PAL_ACCENTS] = {
     "Neutral", "Red", "Orange", "Green", "Teal", "Purple", "Champagne"}; /* tools/pod_pages.py ACCENT_VALUES */
-
 static void value_text(void *label, int kind) {
     char buf[64]; /* a preset name: PEQ_NAME */
     const char *key = "";
@@ -630,7 +638,7 @@ static void page_refresh(void *win, const struct pod_page *page) {
         int kind = row_value(row);
         if (row->action == ACT_STARTUP || row->action == ACT_LANDSCAPE || row->action == ACT_SHELF ||
             row->action == ACT_DAILY || row->action == ACT_KB_EN || row->action == ACT_KB_ZH ||
-            row->action == ACT_PCSEARCH || row->action == ACT_BATTPCT) {
+            row->action == ACT_PCSEARCH || row->action == ACT_BATTPCT || row->action == ACT_SAMPLERGB) {
             snprintf(name, sizeof name, "pod_switch%d", i);
             switch_show(widget_lookup(win, name, 1), switch_state(row->action));
         } else if (row->action == ACT_CCLIST || row->action == ACT_SFOLD) {
@@ -742,7 +750,7 @@ static int open_page(int index, int as_home) {
         const struct pod_row *row = &page->rows[i];
         if (row->action == ACT_STARTUP || row->action == ACT_LANDSCAPE || row->action == ACT_SHELF ||
             row->action == ACT_DAILY || row->action == ACT_KB_EN || row->action == ACT_KB_ZH ||
-            row->action == ACT_PCSEARCH || row->action == ACT_BATTPCT)
+            row->action == ACT_PCSEARCH || row->action == ACT_BATTPCT || row->action == ACT_SAMPLERGB)
             bind_switch(win, i, row), refresh = 1;
         else {
             if (row->action != ACT_INFO) pod_bind(win, row->name, on_row, row); /* an information row takes no tap */
@@ -792,6 +800,8 @@ static int open_page(int index, int as_home) {
         tenpreamp_opened(win);
     else if (index == POD_PEQBAND_PAGE)
         peqband_opened(win);
+    else if (index == POD_SUBSONIC_PAGE)
+        sb_page_open(win);
     { /* the Settings page is the way out to the grid; the menu may be the Home instance (no navbar) */
         int entry = as_home && index == POD_ENTRY_PAGE;
         if (index == POD_SETTINGS_PAGE || entry) home_menu_opened(win, index == POD_SETTINGS_PAGE, entry);

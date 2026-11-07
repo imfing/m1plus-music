@@ -124,8 +124,8 @@ def paint(m):
 
 
 def nbmp(m):
-    """The live bitmaps but the chevron the list's rows share."""
-    return sum(1 for v in m.bitmaps.values() if v[1:] != CHEV_PX)
+    """Cover bitmaps only; the chevron and the tiny focus disc belong to shared controls."""
+    return sum(1 for v in m.bitmaps.values() if v[1:] not in (CHEV_PX, (O['SG_RAIL_DISC'], O['SG_RAIL_DISC'])))
 
 
 def content_h(m):
@@ -794,7 +794,8 @@ def taps_list_tests(ctx):
     open_grid(m)
     opened_cost = m.icount
     expect(sum(1 for c in m.calls if c[0] == 'calloc') <= 3, 'opening a library of 4000 allocates its list copy and one tile ring')
-    expect(len([c for c in m.calls if c[0] == 'bitmap_create_ex']) == 1, 'the open itself makes one bitmap (the placeholder)')
+    covers = [v for v in m.bitmaps.values() if v[1:] not in (CHEV_PX, (O['SG_RAIL_DISC'], O['SG_RAIL_DISC']))]
+    expect(len(covers) == 1 and covers[0][1:] == (COVER, COVER), 'the open makes one cover placeholder; shared rail and row-control bitmaps are separate')
     settle(m)
     rows = (n + COLS - 1) // COLS
     mx = RGAP + rows * PITCH - VIEW_H
@@ -806,8 +807,9 @@ def taps_list_tests(ctx):
         expect(nbmp(m) <= TILES + 1, f'live bitmaps stay within {TILES} tiles + the placeholder ({nbmp(m)})')
         peak = max(peak, sum(w * h * 4 for _, w, h in m.bitmaps.values()))
         loaded.append(nbmp(m))
-    expect(peak <= (TILES + 1) * COVER * COVER * 4 <= 1100000,
-           f'bitmap memory peaks at {peak} B (<= {(TILES + 1) * COVER * COVER * 4} B = {TILES} tiles + the placeholder)')
+    budget = (TILES + 1) * COVER * COVER * 4 + O['SG_RAIL_DISC'] ** 2 * 4
+    expect(peak <= budget <= 1100000,
+           f'bitmap memory peaks at {peak} B (<= {budget} B = {TILES} cover tiles + placeholder + shared rail disc)')
     top_urls = [u for u in m.loads if u.startswith('file://')]
     expect(m.destroyed > 0 and len(top_urls) > len(set(top_urls)), f'old tiles are recycled as the view moves, and the albums back at the top are decoded again ({m.destroyed} destroyed, {len(top_urls)} loads of {len(set(top_urls))} covers)')
     m.call(PSYMS['al_on_destroy'], count=2000000)
@@ -832,7 +834,7 @@ def taps_list_tests(ctx):
     # 12. Empty library: the status line, no view.
     m = albums_machine(0)
     open_grid(m)
-    expect(('widget_set_text_utf8', m.widgets['label_status'], 'Update Local Music first') in m.calls, 'an empty library says so')
+    expect(('widget_set_tr_text', m.widgets['label_status'], 'Update Local Music or sync Navidrome first') in m.calls, 'an empty library points to either local update or Navidrome sync')
     expect(('widget_set_visible', m.widgets['view_grid'], 0) in m.calls and ('widget_set_sensitive', m.widgets['view_grid'], 0) in m.calls,
            'and hides the (insensitive) view')
     m = albums_machine(3); del m.widgets['view_grid']
@@ -1050,7 +1052,8 @@ def toggle_tests(ctx):
     sv_ = m.widgets['albums_scrollview']
     expect(content_h(m) == TOP + 60 * ROW and m.s32(sv_ + SC_VH) == TOP + 60 * ROW, f'the content is now the title block and 60 rows of {ROW} px, in the view and the scroll_view ({content_h(m)})')
     expect(scroll_of(m) == TOP + first_row * ROW * COLS, f'the scroll_view is at the first album\'s row ({scroll_of(m)} = album {first_row * COLS} x {ROW})')
-    expect(nbmp(m) == 1 and m.bitmaps[next(iter(m.bitmaps))][1:] == (LART, LART), 'the grid\'s covers are dropped; the placeholder is the list\'s size')
+    covers = [v for v in m.bitmaps.values() if v[1:] not in (CHEV_PX, (O['SG_RAIL_DISC'], O['SG_RAIL_DISC']))]
+    expect(nbmp(m) == 1 and len(covers) == 1 and covers[0][1:] == (LART, LART), 'the grid\'s covers are dropped; the placeholder is the list\'s size')
     blits, texts = paint(m)
     top = [t for t, sty in zip(texts, m.text_styles) if sty == 'label_row_title' and t[1][1] < 40]
     expect(top and top[0][0] == f'Album {first_row * COLS}', f'the first album in view stays first: Album {first_row * COLS} ({top[0][0] if top else None})')

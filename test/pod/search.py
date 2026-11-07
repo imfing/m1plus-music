@@ -28,7 +28,11 @@ RET_REPEAT = 8
 # struct se (patch/search.c), field by field: the offsets are worked out from the declaration, and checked against the payload's own state in `state()`
 _FIELDS = [('win', 4), ('view', 4), ('sv', 4), ('list', 4), ('status', 4), ('chips', 4), ('chl', 4), ('field', 4), ('st_title', 4), ('st_sub', 4), ('st_chip', 4), ('st_chip_on', 4),
            ('query', 64), ('typed', 64), ('q', 264), ('pq', 264), ('toff', 32), ('tlen', 32), ('nterms', 4), ('nq', 4), ('pn', 4), ('have_prev', 4), ('loaded', 4),
-           ('lists', 16), ('n', 16), ('cand', 16), ('sc', 16), ('nc', 16), ('rows', 4), ('nrows', 4), ('chip', 4), ('content', 4), ('lo', 4), ('hi', 4), ('chip_x', 24), ('chip_sx', 4), ('chip_down', 4),
+           ('lists', 16), ('n', 16), ('cand', 16), ('sc', 16), ('nc', 16),
+           # Navidrome's indexed search snapshot, mmap views and saved-download lookup, added before rows in patch/search.c.
+           ('local_song_count', 4), ('local_song_matches', 4), ('nav_count', 4), ('nav_cursor', 4), ('nav_match_count', 4), ('nav_searching', 4),
+           ('nav_index', 20), ('nav_downloads', 8),
+           ('rows', 4), ('nrows', 4), ('chip', 4), ('content', 4), ('lo', 4), ('hi', 4), ('chip_x', 24), ('chip_sx', 4), ('chip_down', 4),
            ('chip_dx', 4), ('chip_sx0', 4), ('chip_drag', 4), ('chip_text', 480), ('chip_len', 20), ('press', 4), ('down', 4), ('down_x', 4), ('down_y', 4), ('pressing', 4),
            ('wait', 4), ('timer', 4), ('chev', 4)]
 OFF, _o = {}, 0
@@ -799,8 +803,8 @@ def entry_tests(ctx):
     # the menu's Search item (pod_pages.ACT_SEARCH): the same entry from the M1+ Music menu and the Extras page
     P = pod_pages
     item = next(i for i, r in enumerate(P.ITEMS) if r.label == 'Search')
-    expect(item == 21 == len(P.ITEMS) - 2 and P.ITEMS[item].action == P.ACT_SEARCH == 35 and P.ID_CHARS[item] == 'm' and item not in P.DEFAULT_MENU
-           and P.EXTRAS_GROUPS[1][1][-1] == 'Search' and P.EXTRAS_GROUPS[1][1][-2] == 'Radio' and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
+    expect(item == 21 == len(P.ITEMS) - 3 and P.ITEMS[item].action == P.ACT_SEARCH == 35 and P.ID_CHARS[item] == 'm' and item not in P.DEFAULT_MENU
+           and P.EXTRAS_GROUPS[1][1][-2:] == ('Search', 'Navidrome') and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
            and pod_i18n.key_for('Search') == 'Search' and all(pod_i18n.TEXT['Search'][pod_i18n.table_for(loc)] for loc in pod_i18n.LOCALES)
            and os.path.isfile(os.path.join(mod_icons.PNG, 'pod_ic_search.png')) and mod_icons.POD_ROWS['Search'][0] == 'pod_ic_search',
            'Search is item 21 (saved as "m"), hidden from the menu by default, in the Library group of Extras, with a translated label and its glyph')

@@ -38,10 +38,12 @@
 #include "i18n.h"
 #include "viewsort.h"
 #include "search.h"
+#include "subsonic.h"
 
 extern int coverflow_artist(void *artists, unsigned index, unsigned scope); /* patch/coverflow.c */
 extern int albums_open_artist(void *artists, unsigned index, unsigned scope); /* patch/albums.c */
 extern int songs_open_genre(const char *name, int unknown); /* patch/songs.c */
+extern int songs_open_nav_filter(int filter, const char *name, const char *artist); /* patch/songs.c */
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
 
 #define I(w, off) (*(int *)((char *)(w) + (off)))
@@ -65,6 +67,16 @@ extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination th
 #define MAX_ARTISTS 20000 /* one byte of rank and four of order each, no widget: bounded by the stock list's own size */
 #define AR_TILES (GRID_VIEW_H / AR_ROW + 6) /* the text ring: the rows in view, two beyond and the history */
 
+typedef struct {
+    const char *name;
+    unsigned local_index;
+    unsigned char local, fixed, has_remote;
+} ar_item_t;
+
+typedef struct {
+    unsigned hash, local_index;
+} ar_name_slot_t;
+
 static struct {
     void *win, *view, *sv, *list, *status;
     void *title, *big, *fade,
@@ -75,7 +87,13 @@ static struct {
     unsigned *order; /* stock row at each display position; NULL = stock order */
     unsigned char *rank; /* the section rank of each display position */
     unsigned count;
+    unsigned item_count, local_count, nav_cursor, nav_total, nav_slot_cap, nav_timer;
+    int nav_scanning;
+    ar_item_t *item;
+    ar_name_slot_t *nav_slots;
+    sb_library_index_t nav_index;
     unsigned cls; /* the stock class listed: CLASS_ARTISTS, CLASS_GENRES or CLASS_COMPOSERS */
+    int album_artist; /* snapshot of ARTIST_TYPE for this list and its async server scan */
     int home; /* its Home tile (HOME_GENRE, HOME_COMPOSER; 0 for Artists): where a window that will not open falls back */
     const char *key; /* the title's key: Artists, Album Artists, Genres, Composers */
     void *chev; /* the chevron bitmap */
@@ -101,18 +119,41 @@ static const char *ar_name(void *r) {
     return s ? s : "";
 }
 
-/* The stock row shown at display position i. */
 static unsigned ar_stock(unsigned i) { return ar.order ? ar.order[i] : i; }
 
-/* A tap: an artist's or a composer's albums on our Albums page (Cover Flow if that window will not open); a genre's songs on our Songs page (the stock row tap's classinfo and class 0xff09, songs_open_genre). */
-static __attribute__((noinline)) int
-ar_open(unsigned i) { /* (a symbol of its own: the tests call it with a display position) */
-    if (!ar.artists || i >= ar.count) return RET_OK;
-    if (ar.cls == CLASS_GENRES) {
-        void *r = deque_at(ar.artists, ar_stock(i));
+static ar_item_t *ar_item_at(unsigned display) {
+    unsigned index = ar_stock(display);
+    return ar.item && index < ar.count ? &ar.item[index] : (ar_item_t *)0;
+}
+
+static int ar_filter(void) {
+    if (ar.cls == CLASS_GENRES) return SB_LIBRARY_FILTER_GENRE;
+    if (ar.cls == CLASS_COMPOSERS) return SB_LIBRARY_FILTER_COMPOSER;
+    return ar.album_artist ? SB_LIBRARY_FILTER_ALBUM_ARTIST : SB_LIBRARY_FILTER_ARTIST;
+}
+
+static void ar_local_items(unsigned local_count);
+static void ar_nav_schedule(void);
+
+static const char *ar_item_name(unsigned display) {
+    ar_item_t *item = ar_item_at(display);
+    return item && item->name ? item->name : "";
+}
+
+/* A tap uses the virtual track list when this category has server entries; local-only rows retain their stock route. */
+static __attribute__((noinline)) int ar_open(unsigned i) {
+    ar_item_t *item = ar_item_at(i);
+    void *r;
+    if (!item || !item->name) return RET_OK;
+    if (ar.cls == CLASS_ARTISTS) *(volatile int *)ARTIST_TYPE = ar.album_artist;
+    if (item->has_remote || !item->local || ar.nav_index.mapping) {
+        if (songs_open_nav_filter(ar_filter(), item->name, (const char *)0) == 0 || !item->local) return RET_OK;
+    }
+    r = deque_at(ar.artists, item->local_index);
+    if (ar.cls == CLASS_GENRES)
         songs_open_genre(ar_name(r), *(int *)((char *)r + REC_ID) == -1);
-    } else if (albums_open_artist(ar.artists, ar_stock(i), ar.cls) == -1)
-        coverflow_artist(ar.artists, ar_stock(i), ar.cls);
+    else if (albums_open_artist(ar.artists, item->local_index, ar.cls) == -1)
+        coverflow_artist(ar.artists, item->local_index, ar.cls);
     return RET_OK;
 }
 
@@ -120,50 +161,50 @@ ar_open(unsigned i) { /* (a symbol of its own: the tests call it with a display 
  * value, ASCII case aside, a leading "The " and white space dropped, a CJK name placed by its pinyin initials among the Latin ones; ties keep the stock order).
  * The Unknown rows keep their stock positions (stock puts them last) and the sorted rows fill the other positions in order, so "The Beatles" reaches B wherever
  * a fixed row sits. The stock rows are never reordered: order[] is the stock row number at each position; NULL (stock order) when there is no memory. */
-static void **ar_rec __attribute__((section(".scratch")));
+static int ar_fixed(unsigned index) { return ar.item[index].fixed != 0; }
+
 static const char **ar_key __attribute__((section(".scratch")));
 
-static int ar_fixed(void *r) { return *(int *)((char *)r + REC_ID) == -1; }
+static const char *ar_text(const void *ctx, unsigned i) {
+    const ar_item_t *items = (const ar_item_t *)ctx;
+    return items && items[i].name ? items[i].name : "";
+}
 
 static int ar_cmp(unsigned a, unsigned b) {
-    int d = cc_key_cmp(ar_key[a], ar_key[b]);
+    const char *x = ar_key ? ar_key[a] : ar.item[a].name;
+    const char *y = ar_key ? ar_key[b] : ar.item[b].name;
+    int d = cc_key_cmp(x ? x : "", y ? y : "");
     return d ? d : a < b ? -1 : a > b;
 }
 
-static const char *ar_text(const void *ctx, unsigned i) { return ar_name(((void *const *)ctx)[i]); }
-
 static void ar_sort(void) {
     unsigned i, n = 0, *v;
-    int keyed = ar.cls ==
-                CLASS_ARTISTS; /* Genres and Composers keep stock's order (the in-memory title sort) unless reversed */
     ar.order = (unsigned *)0;
     ar_key = (const char **)0;
-    if (ar.count < 2 || (!keyed && !ar.rev)) return;
-    ar.order = calloc(ar.count, sizeof *ar.order);
-    ar_rec = calloc(ar.count, sizeof *ar_rec);
-    if (ar.order && ar_rec) {
-        for (i = 0; i < ar.count; ++i) ar_rec[i] = deque_at(ar.artists, i);
-        if (keyed) ar_key = cc_name_keys(ar.count, ar_text, ar_rec);
+    if (ar.count < 2 || !ar.item) return;
+    /* Genre and Composer queries already have their own stock order. Keep that order (and the
+     * appended Navidrome-only values) unless the user explicitly selects Z-A. Artists use the
+     * existing name sort on both directions. */
+    if (ar.cls != CLASS_ARTISTS && !ar.rev) return;
+    ar.order = (unsigned *)calloc(ar.count, sizeof *ar.order);
+    if (ar.cls == CLASS_ARTISTS) ar_key = cc_name_keys(ar.count, ar_text, ar.item);
+    if (!ar.order || (ar.cls == CLASS_ARTISTS && !ar_key)) {
+        free(ar.order), free((void *)ar_key);
+        ar.order = (unsigned *)0, ar_key = (const char **)0;
+        return;
     }
-    if (!ar.order || !ar_rec || (keyed && !ar_key)) {
-        free(ar.order);
-        ar.order = (unsigned *)0;
-    } else {
-        v = ar.order; /* the sorted rows first (their stock numbers), then spread over the positions the fixed rows leave */
-        for (i = 0; i < ar.count; ++i)
-            if (!ar_fixed(ar_rec[i])) v[n++] = i;
-        if (keyed) cc_heapsort(v, n, ar_cmp);
-        if (ar.rev) /* Z-A: the sorted rows the other way round; the Unknown rows still keep their stock (last) positions */
-            for (i = 0; i < n / 2; ++i) {
-                unsigned t = v[i];
-                v[i] = v[n - 1 - i], v[n - 1 - i] = t;
-            }
-        /* from the end: the next sorted row sits at or before i, so nothing still to read is overwritten */
-        for (i = ar.count; i-- > 0;) v[i] = ar_fixed(ar_rec[i]) ? i : v[--n];
-    }
-    free(ar_rec);
+    v = ar.order;
+    for (i = 0; i < ar.count; ++i)
+        if (!ar_fixed(i)) v[n++] = i;
+    if (ar.cls == CLASS_ARTISTS) cc_heapsort(v, n, ar_cmp);
+    if (ar.rev)
+        for (i = 0; i < n / 2; ++i) {
+            unsigned t = v[i];
+            v[i] = v[n - 1 - i], v[n - 1 - i] = t;
+        }
+    for (i = ar.count; i-- > 0;) v[i] = ar_fixed(i) ? i : v[--n];
     free((void *)ar_key);
-    ar_rec = (void **)0, ar_key = (const char **)0;
+    ar_key = (const char **)0;
 }
 
 /* The section ranks of the display order: the rank of the first character of the name the order compares (a leading "The " dropped, a CJK character as its pinyin
@@ -176,12 +217,10 @@ static void ar_sections(void) {
     ar.rank = calloc(ar.count, 1);
     if (!ar.rank) return;
     for (i = 0; i < ar.count; ++i) {
-        void *r = deque_at(ar.artists, ar_stock(i));
-        int k = az_rank_of(cc_name_initial(ar_name(r)));
-        if (ar.rev)
-            k = k ? 26 - k
-                  : 26; /* Z-A: Z is rank 0 .. A rank 25 and "#" (symbols, digits) last, so the ranks still rise down the list */
-        ar.rank[i] = *(int *)((char *)r + REC_ID) == -1 && i ? (unsigned char)prev : (unsigned char)k;
+        ar_item_t *item = ar_item_at(i);
+        int k = az_rank_of(cc_name_initial(ar_item_name(i)));
+        if (ar.rev) k = k ? 26 - k : 26;
+        ar.rank[i] = item && item->fixed && i ? (unsigned char)prev : (unsigned char)k;
         prev = ar.rank[i];
     }
     az_sections(&ar.al, ar.rank, 1);
@@ -229,7 +268,7 @@ static grid_tile_t *ar_tile(int a) {
     grid_tile_t *t;
     az_span(&ar.al, &lo, &hi);
     t = grid_tile(&ar.g, a, lo, hi, &fresh);
-    if (fresh) grid_set(t, ar_name(deque_at(ar.artists, ar_stock((unsigned)a))), "", 0);
+    if (fresh) grid_set(t, ar_item_name((unsigned)a), "", 0);
     return t;
 }
 
@@ -260,7 +299,7 @@ static int ar_on_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     int off = az_off(&ar.al);
     (void)ctx;
-    if (!canvas || !ar.view || !ar.g.tiles || !ar.count || !ar.artists) return RET_OK;
+    if (!canvas || !ar.view || !ar.g.tiles || !ar.count || !ar.item) return RET_OK;
     I(canvas, CANVAS_OY) += off;
     ar_paint_rows(canvas);
     I(canvas, CANVAS_OY) -= off;
@@ -314,9 +353,17 @@ static int ar_on_abort(void *ctx, void *e) {
     return RET_OK;
 }
 
+static int ar_on_scroll(void *ctx, void *e);
+
 static int ar_on_rail(void *ctx, void *e) {
     (void)ctx;
-    if (ar.view) az_rail_event(&ar.al, e);
+    if (ar.view) {
+        az_rail_event(&ar.al, e);
+        /* AWTK builds that do not emit EVT_SCROLL for a direct yoffset set
+         * still need to update the pinned title and repaint the new rows. */
+        ar_on_scroll((void *)0, (void *)0);
+        ar_redraw();
+    }
     return RET_OK;
 }
 
@@ -335,18 +382,202 @@ static int ar_on_scroll(void *ctx, void *e) {
 
 static int ar_on_bg(void *ctx, void *e) {
     az_rail_end(&ar.al);
+    if (ar.nav_timer) timer_remove(ar.nav_timer);
+    ar.nav_timer = 0;
     return ar_on_abort(ctx, e);
+}
+
+static int ar_on_fg(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    ar_nav_schedule();
+    return RET_OK;
+}
+
+static unsigned ar_name_hash(const char *name) {
+    unsigned h = 2166136261u, i;
+    if (!name) name = "";
+    for (i = 0; name[i]; ++i) {
+        unsigned c = (unsigned char)name[i];
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        h = (h ^ c) * 16777619u;
+    }
+    return h ? h : 1u;
+}
+
+static const char *ar_server_name(const sb_song_t *song) {
+    if (ar.cls == CLASS_GENRES) return song->genre;
+    if (ar.cls == CLASS_COMPOSERS) return song->composer;
+    return ar.album_artist ? song->album_artist : song->artist;
+}
+
+static void ar_layout(void) {
+    int h;
+    ar.al.count = (int)ar.count;
+    ar.al.content =
+        ar_content(); /* section headers are added after the async server scan; keep rail clamping in sync */
+    h = ar.count ? ar.al.content : GRID_VIEW_H;
+    widget_resize(ar.view, AR_W, h);
+    widget_set_prop_int(ar.sv, "virtual_h", h);
+    ar_show(ar.list, ar.count != 0);
+    ar_show(ar.status, ar.count == 0);
+    if (!ar.count) widget_set_tr_text(ar.status, ar.nav_scanning ? SB_LIBRARY_LOADING_HINT : SB_LIBRARY_EMPTY_HINT);
+    az_rail_fit(&ar.al, GRID_VIEW_H);
+    ar_title_update();
+    ar_redraw();
+}
+
+static void ar_nav_finish(void) {
+    unsigned i;
+    if (ar.nav_timer) timer_remove(ar.nav_timer);
+    ar.nav_timer = 0;
+    ar.nav_scanning = 0;
+    for (i = 0; i < ar.local_count; ++i) {
+        void *record = deque_at(ar.artists, i);
+        ar_item_t *item;
+        if (*(int *)((char *)record + REC_ID) != -1) continue;
+        item = &ar.item[ar.count++];
+        item->name = ar_name(record), item->local_index = i, item->local = 1, item->fixed = 1;
+    }
+    ar.al.count = (int)ar.count;
+    free(ar.nav_slots);
+    ar.nav_slots = (ar_name_slot_t *)0, ar.nav_slot_cap = 0;
+    if (ar.count) ar_sort();
+    free(ar.rank);
+    ar.rank = (unsigned char *)0;
+    if (ar.count) ar_sections();
+    ar_layout();
+}
+
+#define AR_NAV_BATCH 256
+#define AR_NAV_MS 16
+
+static int ar_nav_step(const void *unused) {
+    unsigned end;
+    (void)unused;
+    ar.nav_timer = 0;
+    if (!ar.nav_scanning || !ar.view) return RET_OK;
+    end = ar.nav_cursor + AR_NAV_BATCH;
+    if (end < ar.nav_cursor || end > ar.nav_total) end = ar.nav_total;
+    while (ar.nav_cursor < end) {
+        const sb_song_t *song = &ar.nav_index.songs[ar.nav_cursor++];
+        const char *name;
+        unsigned hash, at;
+        int found_local = 0, found_remote = 0;
+        if (sb_library_is_dsd(song)) continue;
+        name = ar_server_name(song);
+        if (!name || !*name) continue;
+        hash = ar_name_hash(name), at = hash & (ar.nav_slot_cap - 1);
+        while (ar.nav_slots[at].hash) {
+            ar_item_t *item = &ar.item[ar.nav_slots[at].local_index];
+            if (ar.nav_slots[at].hash == hash && !cc_nocase(item->name, name)) {
+                if (item->local)
+                    item->has_remote = 1, found_local = 1;
+                else
+                    found_remote = 1;
+            }
+            at = (at + 1) & (ar.nav_slot_cap - 1);
+        }
+        if (!found_local && !found_remote && ar.count < ar.item_count) {
+            ar_item_t *item = &ar.item[ar.count];
+            item->name = name;
+            ar.nav_slots[at].hash = hash, ar.nav_slots[at].local_index = ar.count;
+            ++ar.count;
+        }
+    }
+    if (ar.nav_cursor >= ar.nav_total) {
+        ar_nav_finish();
+        return RET_OK;
+    }
+    ar_layout();
+    ar_nav_schedule();
+    return RET_OK;
+}
+
+static void ar_nav_schedule(void) {
+    if (ar.nav_scanning && !ar.nav_timer && ar.view) {
+        ar.nav_timer = timer_add(ar_nav_step, (void *)0, AR_NAV_MS);
+        if (!ar.nav_timer) ar_nav_finish(); /* retain local rows if the UI cannot schedule background work */
+    }
+}
+
+static int ar_nav_start(unsigned local_count) {
+    unsigned total, capacity, cap = 1, target, i;
+    if (local_count > MAX_ARTISTS) local_count = MAX_ARTISTS;
+    ar.local_count = local_count;
+    if (sb_library_index_open(&ar.nav_index)) {
+        ar_local_items(local_count);
+        return 0;
+    }
+    total = ar.nav_index.count + ar.nav_index.dsd_count;
+    if (total > 100000u || local_count > (unsigned)-1 - total) {
+        sb_library_index_close(&ar.nav_index);
+        ar_local_items(local_count);
+        return 0;
+    }
+    capacity = local_count + total;
+    ar.item = capacity ? (ar_item_t *)calloc(capacity, sizeof *ar.item) : (ar_item_t *)0;
+    target = capacity * 2u;
+    while (cap < target && cap < 0x80000000u) cap <<= 1;
+    if ((capacity && !ar.item) ||
+        (target && (cap < target || !(ar.nav_slots = (ar_name_slot_t *)calloc(cap, sizeof *ar.nav_slots))))) {
+        free(ar.item), ar.item = (ar_item_t *)0;
+        free(ar.nav_slots), ar.nav_slots = (ar_name_slot_t *)0;
+        sb_library_index_close(&ar.nav_index);
+        ar_local_items(local_count);
+        return 0;
+    }
+    ar.item_count = capacity;
+    ar.nav_slot_cap = target ? cap : 0;
+    for (i = 0; i < local_count; ++i) {
+        void *record = deque_at(ar.artists, i);
+        ar_item_t *item;
+        unsigned hash, at;
+        if (*(int *)((char *)record + REC_ID) == -1) continue;
+        item = &ar.item[ar.count];
+        item->name = ar_name(record), item->local_index = i, item->local = 1;
+        hash = ar_name_hash(item->name), at = hash & (ar.nav_slot_cap - 1);
+        while (ar.nav_slots[at].hash) at = (at + 1) & (ar.nav_slot_cap - 1);
+        ar.nav_slots[at].hash = hash, ar.nav_slots[at].local_index = ar.count;
+        ++ar.count;
+    }
+    if (!total) {
+        ar_nav_finish();
+        return 0;
+    }
+    ar.item_count = capacity;
+    ar.nav_total = total, ar.nav_cursor = 0, ar.nav_scanning = 1;
+    return 1;
+}
+
+static void ar_local_items(unsigned local_count) {
+    unsigned i;
+    if (local_count > MAX_ARTISTS) local_count = MAX_ARTISTS;
+    free(ar.item);
+    ar.item = local_count ? (ar_item_t *)calloc(local_count, sizeof *ar.item) : (ar_item_t *)0;
+    ar.count = 0, ar.item_count = local_count;
+    if (local_count && !ar.item) return;
+    for (i = 0; i < local_count; ++i) {
+        void *record = deque_at(ar.artists, i);
+        ar_item_t *item = &ar.item[ar.count++];
+        item->name = ar_name(record), item->local_index = i, item->local = 1;
+        item->fixed = *(int *)((char *)record + REC_ID) == -1;
+    }
 }
 
 static int ar_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    if (ar.nav_timer) timer_remove(ar.nav_timer);
     if (ar.artists) deque_destroy(ar.artists);
     grid_free(&ar.g);
     az_free(&ar.al);
     if (ar.chev) bitmap_destroy(ar.chev);
     free(ar.order);
     free(ar.rank);
+    free(ar.item);
+    free(ar.nav_slots);
+    sb_library_index_close(&ar.nav_index);
     memset(&ar, 0, sizeof ar);
     return RET_OK;
 }
@@ -355,13 +586,22 @@ static int ar_on_destroy(void *ctx, void *e) {
  * Flow's own queries cannot pull it away. */
 static void ar_load(void) {
     void *list;
-    int h;
+    unsigned local_count;
+    int scanning, h;
+    if (ar.nav_timer) timer_remove(ar.nav_timer);
+    ar.nav_timer = 0, ar.nav_scanning = 0;
+    ar.album_artist = ar.cls == CLASS_ARTISTS && *(volatile int *)ARTIST_TYPE == 1;
     if (ar.artists) deque_destroy(ar.artists);
     ar.artists = (void *)0;
     free(ar.order);
     free(ar.rank);
+    free(ar.item);
+    free(ar.nav_slots);
+    sb_library_index_close(&ar.nav_index);
     ar.order = (unsigned *)0, ar.rank = (unsigned char *)0;
-    ar.count = 0, ar.press = ar.down = 0;
+    ar.item = (ar_item_t *)0;
+    ar.nav_slots = (ar_name_slot_t *)0, ar.nav_slot_cap = 0;
+    ar.count = ar.item_count = ar.local_count = ar.nav_cursor = ar.nav_total = 0, ar.press = ar.down = 0;
     ar.al.count = 0, ar.al.nsec = 0;
     grid_drop(&ar.g);
     widget_set_prop_int(ar.sv, "yoffset", 0);
@@ -369,22 +609,28 @@ static void ar_load(void) {
     if (list && deque_size(list) && (ar.artists = _create_deque("stSongInfo"))) {
         deque_init(ar.artists);
         deque_assign(ar.artists, list);
-        ar.count = deque_size(ar.artists);
-        if (ar.count > MAX_ARTISTS) ar.count = MAX_ARTISTS;
-        ar_sort(); /* Genres and Composers stay in stock's order (toolsQueryDbTable's in-memory title sort) unless Z-A */
     }
+    local_count = ar.artists ? deque_size(ar.artists) : 0;
+    scanning = ar_nav_start(local_count);
     ar.al.count = (int)ar.count;
-    if (ar.count) ar_sections();
+    if (!scanning && !ar.nav_index.mapping) {
+        if (ar.count) ar_sort();
+        free(ar.rank), ar.rank = (unsigned char *)0;
+        if (ar.count) ar_sections();
+    }
+    ar.nav_scanning = scanning;
+    ar.al.count = (int)ar.count;
     ar.al.content = ar_content();
     h = ar.count ? ar.al.content : GRID_VIEW_H;
     widget_resize(ar.view, AR_W, h);
     widget_set_prop_int(ar.sv, "virtual_h", h);
     ar_show(ar.list, ar.count != 0);
     ar_show(ar.status, ar.count == 0);
-    if (!ar.count) widget_set_tr_text(ar.status, "Update Local Music first");
+    if (!ar.count) widget_set_tr_text(ar.status, scanning ? SB_LIBRARY_LOADING_HINT : SB_LIBRARY_EMPTY_HINT);
     az_rail_fit(&ar.al, GRID_VIEW_H);
     ar_title_update();
     ar_redraw();
+    ar_nav_schedule();
 }
 
 /* The page's saved order: artists-sort, genres-sort or composers-sort, one character: '0' Name A-Z (the default and any other content), 'a' Name Z-A. */
@@ -461,6 +707,7 @@ int artists_open(int home) {
     ar.sv = widget_lookup(ar.win, "artists_scrollview", 1);
     ar.view = widget_lookup(ar.win, "view_grid", 1);
     ar.status = widget_lookup(ar.win, "label_status", 1);
+    if (ar.status) label_set_line_wrap(ar.status, 1), widget_set_prop_bool(ar.status, "word_wrap", 1);
     ar.title = widget_lookup(ar.win, "label_title", 1);
     ar.big = widget_lookup(ar.win, "ar_title", 1);
     ar.fade = widget_lookup(ar.win, "img_nb_fade", 1);
@@ -505,6 +752,7 @@ int artists_open(int home) {
             0); /* the large title's collapse needs the scroll events: without them the navbar keeps its title */
     ar.title_on = ar.noscroll;
     widget_on(ar.win, EVT_WINDOW_TO_BG, ar_on_bg, (void *)0);
+    widget_on(ar.win, EVT_WINDOW_TO_FG, ar_on_fg, (void *)0);
     widget_on(ar.view, EVT_POINTER_DOWN, ar_on_down, (void *)0);
     widget_on(ar.view, EVT_POINTER_UP, ar_on_up, (void *)0);
     widget_on(ar.view, EVT_POINTER_ABORT, ar_on_abort, (void *)0);

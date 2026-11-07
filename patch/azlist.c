@@ -33,9 +33,35 @@ unsigned char az_rank_letter(int r) { return r > 0 ? (unsigned char)('A' + r - 1
  * bit per rank that says the best for r came from a lower label; one pass back reads the labels off; a section starts where the label changes. 4 bytes per
  * song, for the duration of the call; no memory = a plain list. At most SG_RANKS sections. */
 void az_sections(az_t *az, const unsigned char *rank, unsigned stride) {
-    unsigned *bits = calloc((unsigned)az->count, sizeof(unsigned)), i, b, n = (unsigned)az->count;
+    unsigned *bits, i, b, n = (unsigned)az->count;
     int m[SG_RANKS], r, d, k, lab = SG_RANKS - 1, prev = -1;
     az->nsec = 0;
+    if (!n) return;
+    /* The stock title order usually makes these labels monotone. In that common case,
+     * the section boundaries are the rank changes; avoid the O(27 * songs) DP and its
+     * per-song scratch allocation while opening a large library. */
+    {
+        unsigned char last = rank[0];
+        if (last < SG_RANKS) {
+            az->sec_start[0] = 0;
+            az->sec_letter[0] = az_rank_letter(last);
+            az->nsec = 1;
+        }
+        for (i = 1; i < n && az->nsec; ++i) {
+            unsigned char current = rank[i * stride];
+            if (current >= SG_RANKS || current < last) {
+                az->nsec = 0;
+                break;
+            }
+            if (current != last) {
+                az->sec_start[az->nsec] = i;
+                az->sec_letter[az->nsec++] = az_rank_letter(current);
+            }
+            last = current;
+        }
+        if (az->nsec) return;
+    }
+    bits = calloc(n, sizeof(unsigned));
     if (!bits) return;
     for (r = 0; r < SG_RANKS; ++r) m[r] = 0;
     for (i = 0; i < n; ++i) {
@@ -78,7 +104,7 @@ int az_row_y(const az_t *az, int i) {
 int az_rows_end(const az_t *az) { return az->top + az->nsec * SG_HDR_H + az->count * az->row; }
 
 int az_max_scroll(const az_t *az) {
-    int m = az->content - GRID_VIEW_H;
+    int m = az->content - (az->view_h > 0 ? az->view_h : GRID_VIEW_H);
     return m > 0 ? m : 0;
 }
 
@@ -205,7 +231,8 @@ void az_rail_fit(az_t *az, int rail_h) {
     int sec[SG_MAX_SEC], span;
     if (az->nsec > 0) {
         span = az_rail_span(az, az_rail_plan(az, sec));
-        widget_move(az->rail, SG_RAIL_X, SG_LIST_Y + (rail_h - span) / 2 - SG_RAIL_PAD);
+        widget_move(az->rail, SG_RAIL_X,
+                    (az->rail_origin ? az->rail_origin : SG_LIST_Y) + (rail_h - span) / 2 - SG_RAIL_PAD);
         widget_resize(az->rail, SG_RAIL_W, span + 2 * SG_RAIL_PAD);
     }
     az_show(az->rail, az->nsec > 0 && az->count);
@@ -225,7 +252,9 @@ static void az_bubble(az_t *az, int i) { /* the bubble shows section i's letter,
 
 /* Section i's header at the window's top (clamped); a coasting list stops first. */
 static void az_jump(az_t *az, int i) {
-    int v = i ? az_hdr_y(az, i) : 0,
+    int v = az->rail_only ? az->top + (int)az->sec_start[i] * az->row
+            : i           ? az_hdr_y(az, i)
+                          : 0,
         max = az_max_scroll(az); /* (the first section: the top, the large title and the pills with it) */
     void *wa = P(az->sv, SC_WA);
     if (wa && I(wa, SC_AN_STATE) == SC_AN_RUNNING && P(wa, SC_AN_WIDGET) == az->sv) { /* patch/scroll.c sc_down */

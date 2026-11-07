@@ -75,7 +75,7 @@ The 16 ms loader decodes at most one cover per tick, prioritizing visible cells 
 viewport center, then one grid row or two list rows ahead in the scroll direction.
 Visible tiles are retained; other tiles use LRU replacement. Decoding pauses during a stock
 drag or running scroll animation (`grid_moving`) and resumes when it ends.
-Backgrounding stops the loader; foregrounding restarts missing work.
+Backgrounding stops the loader and cancels this page's cache build; foregrounding restarts missing work.
 If scroll events cannot be registered, the loader polls while the page is open.
 
 ## Cache building

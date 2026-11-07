@@ -137,7 +137,7 @@ DAILY = DAILY + VINYL
 # chevron (Lucide chevron-right fitted to 9 x 15, #777777, stroke 2) and the picker's check (20 px, white).
 CARD_GLYPH_PX, CARD_CHEVRON, CARD_CHECK = 20, ('pod_chev', 10, 16, (0x8A,) * 3), ('pod_check', 20)
 CARD_GLYPHS = {'Wi-Fi': 'wifi', 'Bluetooth': 'bluetooth', 'Home Screen': 'house', 'Library': 'disc-3', 'Now Playing': 'audio-lines',
-               'Play Mode': 'repeat', 'EQ': 'sliders-vertical', 'All Playback Settings': 'headphones', 'Display': 'sun', 'Appearance': 'palette', 'Accent': 'palette', 'Background': '+contrast',
+               'Play Mode': 'repeat', 'EQ': 'sliders-vertical', 'All Playback Settings': 'headphones', 'Display': 'sun', 'Sample Rate RGB': 'lightbulb', 'Appearance': 'palette', 'Accent': 'palette', 'Background': '+contrast',
                'Control Center': 'layout-grid',
                'Keyboards': '+keyboard', 'About': 'info', 'All System Settings': 'settings', 'Developer': 'code', 'Main Menu': 'list-checks', 'Extras': 'ellipsis',
                'Recent Albums': 'history', 'Daily Mix': 'shuffle', 'Regenerate Daily Mix': 'refresh-cw', 'Update Library': 'refresh-cw',
@@ -200,7 +200,7 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'Shuffle': ('pod_ic_shuffle', 'shuffle'), 'Songs': ('pod_ic_songs', 'music'),
             'Albums': ('pod_ic_albums', 'disc-3'), 'Artists': ('pod_ic_artists', 'mic-vocal'),
             'Genres': ('pod_ic_genres', 'guitar'), 'Folders': ('pod_ic_folders', 'folder'),
-            'Playlists': ('pod_ic_playlists', 'list-music'), 'Settings': ('pod_ic_prefs', 'sliders-horizontal'), 'Extras': ('pod_ic_extras', 'ellipsis'),
+            'Playlists': ('pod_ic_playlists', 'list-music'), 'Navidrome': ('pod_ic_navidrome', 'disc-3'), 'Settings': ('pod_ic_prefs', 'sliders-horizontal'), 'Extras': ('pod_ic_extras', 'ellipsis'),
             'Shuffle Songs': ('pod_ic_shufsongs', 'music'), 'Shuffle Albums': ('pod_ic_shufalbums', 'disc-3'),
             'Shuffle Folders': ('pod_ic_shuffolders', 'folder'),
             # the Extras page (the stock Home tiles the menu does not repeat; glyphs as the Home grid's)
@@ -215,6 +215,10 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_playset', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings')}
 # The Folders page's row glyphs (patch/folders.c): the menu rows' bare white 24 px glyph for what POD_ROWS has no row for: an audio file, the SD card, a USB drive (folders, playlist files, the CD Library and the wave are pod_ic_folders, pod_ic_playlists, pod_ic_cdripper, pod_ic_nowplaying)
 FOLDER_ROWS = {'fo_ic_file': 'file-music', 'fo_ic_sd': 'memory-stick', 'fo_ic_usb': 'usb'}
+SUBSONIC_ICONS = {'pod_sb_sync': 'refresh-cw', 'pod_sb_download': 'download',
+                  'pod_sb_dsd': 'badge:DSD'}
+SUBSONIC_ART = ('pod_ic_navidrome_art', 'pod_ic_dsd_art')
+SUBSONIC_ART_PX = 136
 # The Radio page's row glyphs (patch/radiopage.c): bare white 24 px glyphs for Top Stations, By Country (flag), By Genre, Stations (radio) and Radio Browser (globe; Now Playing and Recently Played are the menu rows' pod_ic_nowplaying and pod_ic_recent);
 # RADIO_ART is the radio-set glyph of the placeholders (the stations' tiles, the Now Playing page's art box, the mini bar): muted grey (ES_RGB), RADIO_ART_PX px.
 RADIO_ROWS = {'pod_ic_rd_stations': 'radio-tower', 'pod_ic_rd_top': 'trending-up', 'pod_ic_rd_country': 'earth', 'pod_ic_rd_genre': 'tag', 'pod_ic_rd_browser': 'globe'}
@@ -379,7 +383,7 @@ def is_badge(g): return g.startswith('badge:')
 def used_glyphs():
     """(Lucide names, Tabler names) of every glyph the tables use; custom ones excluded."""
     gl = [e[2] for e in HOME + SETTINGS + LISTS] + list(PULLDOWN.values()) + list(STATUS.values()) + \
-        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1], SYNC_BAR[1]] + list(NAV_VIEW.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_FAV_ON[1]] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
+        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1], SYNC_BAR[1]] + list(NAV_VIEW.values()) + list(SUBSONIC_ICONS.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_FAV_ON[1]] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
         [g for _, g, _ in GLYPHS] + [v[0] for v in SONGS_IMAGES.values()] + [v[0] for v in KEYBOARD_IMAGES.values()] + [KB_CLEAR[1], DP_ADD_GLYPH] + list(PC_GLYPHS) + [g for _, g in DISCS] + [v[0] for v in NP.values() if not v[0].startswith('pil:')] + ['lock:filled'] + R3_GLYPHS
     names = {gname(g) for g in gl if g and not is_custom(g) and not is_badge(g)}
     return sorted(n for n in names if not n.startswith('T:')), sorted(n[2:] for n in names if n.startswith('T:'))
@@ -532,15 +536,15 @@ def shanling_mark():
 # text in a thin rounded rectangle, the weight of the Lucide strokes at that size; BADGE_W x BADGE_H ink.
 BADGE_W, BADGE_H, BADGE_SW, BADGE_R, BADGE_PAD = BARE_PX, 16, 1.5, 3.5, 1.5
 
-def badge(text, ss=8, size=(BADGE_W, BADGE_H)):
+def badge(text, ss=8, size=(BADGE_W, BADGE_H), font_px=14, stroke=BADGE_SW, radius=BADGE_R, pad=BADGE_PAD):
     from PIL import Image, ImageDraw, ImageFont
     w, h = size
     big = Image.new('L', (w * ss, h * ss), 0); d = ImageDraw.Draw(big)
-    d.rounded_rectangle((0, 0, w * ss - 1, h * ss - 1), radius=BADGE_R * ss, fill=255)
-    i = BADGE_SW * ss
-    d.rounded_rectangle((i, i, w * ss - 1 - i, h * ss - 1 - i), radius=(BADGE_R - BADGE_SW) * ss, fill=0)
-    room = (w - 2 * (BADGE_SW + BADGE_PAD)) * ss
-    px = 14
+    d.rounded_rectangle((0, 0, w * ss - 1, h * ss - 1), radius=radius * ss, fill=255)
+    i = stroke * ss
+    d.rounded_rectangle((i, i, w * ss - 1 - i, h * ss - 1 - i), radius=max(0, radius - stroke) * ss, fill=0)
+    room = (w - 2 * (stroke + pad)) * ss
+    px = font_px
     while True:                                     # the largest text that clears the outline by BADGE_PAD
         f = ImageFont.truetype(TILE_FONT, px * ss); bb = f.getbbox(text, stroke_width=ss // 8)
         if bb[2] - bb[0] <= room or px <= 6: break
@@ -763,6 +767,13 @@ def generate_all(sizes):
         f[n] = t if sizes[n + ':mode'] == 'RGBA' else t.convert('RGB')
     for n, g in POD_ROWS.values(): f[n] = bare_icon(g, POD_ICON)
     for n, g in FOLDER_ROWS.items(): f[n] = bare_icon(g, POD_ICON)
+    for n, g in SUBSONIC_ICONS.items(): f[n] = bare_icon(g, POD_ICON)
+    nav_art = glyph('disc-3', 108, 'cover')
+    f[SUBSONIC_ART[0]] = Image.new('RGBA', (SUBSONIC_ART_PX, SUBSONIC_ART_PX), (0, 0, 0, 0))
+    f[SUBSONIC_ART[0]].alpha_composite(nav_art, ((SUBSONIC_ART_PX - nav_art.width) // 2, (SUBSONIC_ART_PX - nav_art.height) // 2))
+    dsd_badge = badge('DSD', ss=8, size=(112, 68), font_px=42, stroke=3.5, radius=12, pad=8)
+    f[SUBSONIC_ART[1]] = Image.new('RGBA', (SUBSONIC_ART_PX, SUBSONIC_ART_PX), (0, 0, 0, 0))
+    f[SUBSONIC_ART[1]].alpha_composite(dsd_badge, ((SUBSONIC_ART_PX - dsd_badge.width) // 2, (SUBSONIC_ART_PX - dsd_badge.height) // 2))
     for n, g in RADIO_ROWS.items(): f[n] = bare_icon(g, POD_ICON)
     f[RADIO_ART[0]] = glyph_fit(RADIO_ART[1], RADIO_ART_PX, RADIO_ART_PX, ES_RGB, 4, 4.0)
     for g in set(CARD_GLYPHS.values()): f[card_name(g)] = card_icon(g)
@@ -1663,7 +1674,7 @@ def replaced_names():
 
 def pod_row_names(): return sorted({n for n, _ in POD_ROWS.values()})
 def nav_names(): return sorted(set(NAV_VIEW) | {n + '_down' for n in NAV_VIEW})
-def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(RADIO_ROWS) | {RADIO_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_FAV_ON[0], RM_DOTS[0]})
+def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(SUBSONIC_ICONS) | set(SUBSONIC_ART) | set(RADIO_ROWS) | {RADIO_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_FAV_ON[0], RM_DOTS[0]})
 def np_names(): return sorted(set(NP) | {v[4] for v in NP.values() if v[4]})
 
 def added_rels(stock_rootfs=None, *args):
@@ -1845,7 +1856,7 @@ def add_album_icons(out):
     """The album page's images (ALBUM): the tint, Shuffle's disc and glyph, the pill and the play glyph; patch/albumpage.c
     and tools/pod_ui.py build_album_page refer to them by name."""
     d = os.path.join(out, IMG)
-    for n in ALBUM + DAILY + list(FOLDER_ROWS) + list(RADIO_ROWS) + [RADIO_ART[0]]:   # (the Folders page's three row glyphs, the Radio page's too)
+    for n in ALBUM + DAILY + list(FOLDER_ROWS) + list(RADIO_ROWS) + list(SUBSONIC_ICONS) + list(SUBSONIC_ART) + [RADIO_ART[0]]:
         q = os.path.join(d, n + '.png'); assert not os.path.exists(q), f'{n}.png already in the tree'
         shutil.copyfile(os.path.join(PNG, n + '.png'), q); os.chmod(q, IMG_MODE); os.utime(q, (IMG_MTIME, IMG_MTIME))
 

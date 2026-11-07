@@ -33,14 +33,16 @@ bitmap or the block does not come, the row opens the existing full-screen Cover 
 
 ## The albums, the wheel
 
-Entering pushes the level `K_CF` over the main menu; its list is the stock **albums list** (`loadLocalClassList(0xf003)`, as the Albums level, in the stock query's order, not
-the Albums "..." card's order), read, validated and re-read by the iPod page's machinery (`ip_valid`, `ip_ensure`, the page timer's stale check): paint never queries and shows only the bar
+Entering pushes the level `K_CF` over the main menu; its list starts with the stock **albums list** (`loadLocalClassList(0xf003)`, in the stock query's order, not
+Settings > Library > Album Order). When a synced Navidrome index is available, the page timer merges regular server albums into it, matching local albums by album artist and album name; DSD-only server albums are skipped. The combined list is read, validated and re-read by the iPod page's machinery (`ip_valid`, `ip_ensure`, the page timer's stale check): paint never queries and shows only the bar
 while the list is stale. The level's `sel` is the album the cursor is on.
+
+Virtual album rows keep ordinary owned strings in `stSongInfo`. Their artwork sources stay in a separate array while the index mapping is open, so deque teardown never frees an mmap pointer. Cover Flow closes the row deque before releasing that mapping. The centre button on a Navidrome-only album opens its matching track list through the shared Songs library; Back returns to Pod Cover Flow.
 
 - **Wheel:** the iPod page's: a step per 15 degrees, the reversal hysteresis, the chord dead zone, the tiers **1, 2, 3, 5, 8, 13, 21, 34 albums a step on more than 16 albums**,
   fewer always one. A step calls `ipcf_goto(sel)`. **Hard stop** at the first and the last album: nothing moves, no timer is touched.
-- **Centre button:** the album's **track list** (`K_TRACKS` over `K_CF`: `loadAlbumdetailList(0xf003, the album's record)`, the same level the Albums level opens), an iPod
-  list in the iPod page's look (title bar, blue selection). **Not done: the iPod's flip of the cover to show tracks on its back** (an animation of the centre cover turning
+- **Centre button:** a local album opens its **track list** (`K_TRACKS` over `K_CF`: `loadAlbumdetailList(0xf003, the album's record)`, the same level the Albums level opens), an iPod
+  list in the iPod page's look (title bar, blue selection). A Navidrome-only album opens its filtered tracks in the shared Songs library. **Not done: the iPod's flip of the cover to show tracks on its back** (an animation of the centre cover turning
   180 degrees and a track list drawn on it; the renderer has no flip pose): the list replaces the screen. The wheel selects a track, the centre button plays it (the
   album's tracks as the queue, `start_player`, the iPod's Now Playing level: `docs/modules/ipod.md` "Play").
 - **MENU** (the top of the ring): Now Playing -> the tracks -> **Cover Flow on the same album** (the albums query runs again; the slide, the cursor and the textures were kept) ->
@@ -88,6 +90,6 @@ pace), `ip_pop` (closes Cover Flow), `ip_step` (the `K_CF` branch), `ip_select` 
   library a sustained fast turn speeds up (the tiers); at the first and last album the wheel does nothing (no bounce); reversing does not jump. The music does not stutter
   during the slide or while covers decode (the decode is one cover per 33 ms tick: if it does, make it every other tick).
 - Frame time: the slide must look smooth; if it stutters, lower `IPCF_ART` or lengthen `IPCF_FRAME_MS`.
-- Centre button: the album's tracks as an iPod list; a track plays and Now Playing shows; MENU returns through the tracks to Cover Flow on the same album with its covers, then to the
+- Centre button: local album tracks open as an iPod list; Navidrome album tracks open in the shared Songs library. Back returns to Pod Cover Flow on the same album with its covers, then to the
   main menu; MENU there closes the page and the status bar returns. `|<<` `>>|` `>||` work in Cover Flow. Memory: open and close it ten times; nothing grows.
 - If the heap is tight (`calloc` refused), the row opens the old full-screen Cover Flow page.

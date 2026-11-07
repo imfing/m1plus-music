@@ -429,6 +429,10 @@ def host_tests(td):
     expect('.m1plus download', r['status'] == 200 and r['body'] == b'secret')
     expect('.m1plus tar', b'secret' in c.call('tar', [('path', '/.m1plus'), *H])['body'])
     expect('.m1plus list', [e['name'] for e in js(c.call('list', [('path', '/.m1plus'), *H]))['entries']] == ['db'])
+    # The SD card is case-insensitive on the player. Keep a case-distinct host fixture so the
+    # reserved-path guard is exercised on this case-sensitive test filesystem too.
+    os.mkdir(R('.M1PLUS'))
+    Path(R('.M1PLUS', 'db')).write_bytes(b'case alias')
     ro = []
     for op, form in (('delete', [('path', '/.m1plus/db')]), ('delete', [('path', '/.m1plus')]), ('delete', [('path', '/.M1PLUS/db')]),
                      ('rename', [('path', '/.m1plus/db'), ('name', 'db2')]), ('rename', [('path', '/.m1plus'), ('name', 'other')]),
@@ -441,6 +445,7 @@ def host_tests(td):
     r = c.call('upload', [('path', '/.m1plus'), ('name', 'u.bin'), *H], method='POST', body=body, ctype='application/octet-stream')
     expect('.m1plus refuses upload', r['status'] == 403 and 'read-only' in js(r)['error'] and not os.path.exists(R('.m1plus', 'u.bin')), r['body'])
     expect('.m1plus untouched', os.listdir(R('.m1plus')) == ['db'] and Path(R('.m1plus', 'db')).read_bytes() == b'secret')
+    expect('.M1PLUS case alias untouched', os.listdir(R('.M1PLUS')) == ['db'] and Path(R('.M1PLUS', 'db')).read_bytes() == b'case alias')
 
     # ---- the card is never left with a stray part file after all of the above
     stray = [os.path.join(d, n) for d, _, fs in os.walk(c.root) for n in fs if n.endswith('.part')]

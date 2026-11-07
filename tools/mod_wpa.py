@@ -320,6 +320,8 @@ def apply(out):
     os.mkdir(d); os.chmod(d, 0o755); os.utime(d, (MTIME, MTIME))
     dst = os.path.join(root, REL_BIN)
     shutil.copyfile(binary, dst); os.chmod(dst, MODE); os.utime(dst, (MTIME, MTIME))
+    # Installing the binary changes the directory mtime; normalize it after the last child is written.
+    os.utime(d, (MTIME, MTIME))
     script = os.path.join(root, SCRIPT)
     old = open(script, 'rb').read()
     write_keep_mode(script, rewrite_script(old))

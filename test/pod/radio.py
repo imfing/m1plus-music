@@ -972,7 +972,7 @@ def asset_tests(ctx):
     P = pod_pages
     root = ui('m1plus_radio'); f = root.find
     expect(root.name == 'm1plus_radio_page' == P.RADIO.name and P.RADIO.kind == 'radio' and P.RADIO in P.PAGES and ui('m1plus_radionp').name == 'm1plus_radionp_page' == P.RADIONP.name and P.RADIONP in P.PAGES
-           and P.PAGES[-18:-15] == [P.RADIO, P.RADIONP, P.RADIOINFO] and P.PAGES[-13:-8] == [P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE] and P.PAGES[-8:] == [P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE], 'the pages m1plus_radio, m1plus_radionp and m1plus_radioinfo are built and follow the Pull-down page in the page table (Get Info, the Podcast Region picker and the Wi-Fi pages come after them)')
+           and P.PAGES[P.PAGES.index(P.RADIO):] == [P.RADIO, P.RADIONP, P.RADIOINFO, P.SONGINFO, P.REGION_PAGE, P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE, P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.SUBSONIC_PAGE], 'the upstream Radio, Wi-Fi and EQ pages remain in the table, with Navidrome appended')
     expect(all(f(n) is not None for n in PAGE_WIDGETS if n != 'radio_scrollview'), 'every widget the stations page looks up is in the asset')
     lv, sv, grid = f('radio_listview'), f('radio_scrollview'), f('view_grid')
     expect((lv.y, lv.h) == (50, VIEW_H) and sv.w == 310 and f('scroll_bar_m') is not None and grid.get('style:normal:bg_color') == '#000000', 'a stock list under the 50 px navbar holding the content view')
@@ -1000,8 +1000,8 @@ def asset_tests(ctx):
     expect(f('sg_rail') is not None and f('sg_rail').x == O['SG_RAIL_X'] and f('sg_bubble_letter') is not None and f('label_grid_title').get('style:normal:font_size') == '18' and f('label_grid_sub').get('style:normal:text_color') == '#AAAAAA'
            and f('label_hdr') is not None, "the countries' rail, its bubble and header style, and the Albums grid's two text styles are in the asset")
     item = next(i for i, r in enumerate(P.ITEMS) if r.label == 'Radio')
-    expect(item == 22 == len(P.ITEMS) - 1 and P.ITEMS[item].action == P.ACT_RADIO == 50 and P.ID_CHARS[item] == 'n' and item not in P.DEFAULT_MENU and P.EXTRAS_GROUPS[1][1][-2:] == ('Radio', 'Search')
-           and P.parse_menu_full(b'123456n\n') == ([1, 2, 3, 4, 5, 6, 22], []) and P.format_menu([1, 2, 22]) == '12n\n' and len(P.format_menu(list(range(10)), list(range(10, 18)) + [19, 20, 21, 22])) < P.MENU_FILE_MAX
+    expect(item == 22 == len(P.ITEMS) - 2 and P.ITEMS[item].action == P.ACT_RADIO == 50 and P.ID_CHARS[item] == 'n' and item not in P.DEFAULT_MENU and P.EXTRAS_GROUPS[1][1][-3:] == ('Radio', 'Search', 'Navidrome')
+           and P.parse_menu_full(b'123456n\n') == ([1, 2, 3, 4, 5, 6, 22], []) and P.format_menu([1, 2, 22]) == '12n\n' and len(P.format_menu(list(range(10)), list(range(10, 18)) + [19, 20, 21, 22, 23])) < P.MENU_FILE_MAX
            and 'radio-recent' in P.SETTING_FILES, 'Radio is item 22 (saved as "n"), hidden from the menu by default, in the Library group of Extras after Podcasts and before Search')
     xx = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw', 'images', 'xx')
     from PIL import Image

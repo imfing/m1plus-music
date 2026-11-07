@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#define CC_NAV_ALBUM_ID (-3) /* a virtual Navidrome album, never a local cover extraction job */
+
 #define CARD_DIR \
     "/mnt/mmc/.m1plus" /* the one hidden folder the payload keeps on the card: covers/ (the cache), daily-mix/ (the Daily Mix: tracks, art), durations (the track durations table), the Cover Flow position and recently-played (the Home shelf's albums); made by the writers, only while the card is mounted */
 #define ART_DIR CARD_DIR "/covers" /* the cache: r<key>-168.jpg per album, an empty file for "no art" */

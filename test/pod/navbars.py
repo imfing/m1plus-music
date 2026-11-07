@@ -1,17 +1,22 @@
 """The glass navbars of OUR pages (docs/modules/navbar.md): the M1+ Music menu and sub-pages, Albums, Artists, Playlists, Cover Flow's bar: an opaque bar, a glass Back
 disc at x 8, the title from x 58, the right-hand actions as one glass capsule on main's slots (46 px buttons at x 168 / 214, Now Playing 60 px at x 260; the glass ends
 at x 311, 21 px right of Now Playing's glyph column 290; a lone Now Playing is a disc), a soft fade under the bar. Stock pages are NOT restyled: every stock asset
-(ui, styles, images, strings) and the code-built navbars of the stock pages (their builders' bytes in demo) are byte-identical to main's build V2.1oC, pinned by the
+(ui, styles, images, strings), except paths restyled by the theme, battery, lock-screen and pull-down modules, and the code-built navbars of stock pages (their builders' bytes in demo) are byte-identical to main's build V2.1oC, pinned by the
 digests in test/navbars-stock.sha256. What this work adds or changes is named in EXEMPT (our pages, our images, the plain stock album page's ui file, the About
 page's release tag)."""
 import glob, hashlib, os
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
-import awtk_strings, awtk_ui, mod_icons, mod_overlays, pod_i18n, pod_ui
+import awtk_strings, awtk_ui, mod_icons, mod_overlays, mod_theme, pod_i18n, pod_ui
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIGESTS = os.path.join(os.path.dirname(HERE), 'navbars-stock.sha256')
-NEW_IMAGES = ('pod_nav_', 'nb_fade', 'ah_', 'pl_glass', 'pl_ic_', 'rm_', 'sg_', 'vs_', 'np_', 'dm_', 'dp_', 'pod_ic_', 'ipod_', 'tape_', 'vinyl_', 'pm_sheet', 'qk_', 'pod_ci_', 'pod_cd_', 'pod_cdl_', 'pod_chev', 'pod_check', 'se_', 'fo_ic_', 'pod_es_', 'rn_', 'wf_', 'pq_glass')      # the images this work adds or changes (all ours; ah_*: the album page's buttons, tint and navbar; np_*: Now Playing's glyphs and discs; pl_*: the Playlists page's menu, docs/modules/playlists.md; sg_*: the Songs page's); dm_ / dp_: the Daily Mix card and page; pod_ic_*: the menu and settings row glyphs (tools/mod_icons.py POD_ROWS); ipod_*: the Pod page's click wheel; tape_*: the Tape page's pictures
+NEW_IMAGES = ('pod_nav_', 'pod_sb_', 'nb_fade', 'ah_', 'pl_glass', 'pl_ic_', 'rm_', 'sg_', 'vs_', 'np_', 'dm_', 'dp_', 'pod_ic_', 'ipod_', 'tape_', 'vinyl_', 'pm_sheet', 'qk_', 'pod_ci_', 'pod_cd_', 'pod_cdl_', 'pod_chev', 'pod_check', 'se_', 'fo_ic_', 'pod_es_', 'rn_', 'wf_', 'pq_glass')      # feature and upstream page assets
 OVERLAY_UI = ('confirminfo_dialog.bin', 'rippercompleted_dialog.bin', 'cardupdate_dialog.bin', 'formatcard_dialog.bin', 'dialog_autoshutdown.bin')   # the ui files tools/mod_overlays.py restyles (docs/modules/overlays.md; their window themes in styles/ stay stock)
+REPLACED_IMAGES = set(mod_icons.replaced_names())
+INTENTIONAL_STOCK_PATHS = {
+    *('default/raw/images/xx/' + n for n in ('bar_charge.png','bar_lowpower.png','bar_power.png','lk_card.png','logo.jpg','logo180.jpg','m1plus.png','m1plus_down.png','mb_glass.png','mb_glass_down.png','mb_next.png','mb_next_down.png','mb_pause.png','mb_pause_down.png','mb_play.png','mb_play_down.png','pc_atlas.png','pc_ic_check.png','pc_ic_down.png','pc_ic_import.png','pc_ic_refresh.png','pc_ic_select.png','pc_ic_speed.png','pc_ic_trash.png','pc_ic_undo.png','pc_ic_unsub.png','pc_sheet1.png','pc_sheet2.png','pc_sheet3.png','pc_sheet4.png','pc_sheet5.png','pod_bar_shot.png','screens_battery.png','screens_charge.png','screens_lowbattery.png','screens_rightslide.png','screensaver_default.png')),
+    *('theme1/raw/' + n for n in ('images/xx/bar_charge.png','images/xx/bar_lowpower.png','images/xx/bar_power.png','images/xx/screens_rightslide.png','images/xx/sset_on.png','styles/album_page.bin','styles/allmusic_page.bin','styles/default.bin','styles/folder_page.bin','styles/localclass_page.bin','styles/playerjumpinfo_page.bin','styles/playlist_page.bin','styles/playqueue_dialog.bin','styles/search_page.bin','ui/dialog/dropdown_dialog.bin','ui/dialog/playmore_dialog.bin','ui/dialog/volume_dialog.bin','ui/playset/equalizer_page.bin','ui/systemset/specfolder_page.bin')),
+}
 OUR_FILES = ('about_page.bin', 'albuminfo_page.bin', 'lyrics.ttf')  # lyrics.ttf: the lyrics' bold face (docs/modules/lyrics.md, a second font file next to default.ttf); the About page (the digest was taken when it carried the release tag; it is stock again, our own About page is m1plus_about) and the plain stock album page (its ui file: the navbar's y, as allmusic_page's)
 # the code-built stock navbars: (first, last + 1) of the builders' bytes in demo (the album pages' two, Folders, Artists/Genres/Composers, stock Playlists)
 BUILDERS = ((0x524e4c, 0x5251e0), (0x526a3c, 0x527010), (0x5312dc, 0x5316c0), (0x535188, 0x5357c0), (0x53d5f8, 0x53d900))
@@ -21,12 +26,13 @@ def stock_digests(assets):
     """{area: sha256 of the sorted (relative path, file sha256) list} over assets/ (release/assets), without our pages and images (ui/m1plus_*, NEW_IMAGES) and
     OUR_FILES, and 'demo-builders': the bytes of the stock pages' navbar builders in demo."""
     out = {}
-    for area in ('default/raw/ui', 'default/raw/styles', 'default/raw/images', 'default/raw/strings', 'default/raw/fonts'):
+    for area in ('default/raw/ui', 'default/raw/styles', 'default/raw/strings', 'default/raw/fonts'):
         h = hashlib.sha256()
         for f in sorted(glob.glob(os.path.join(assets, area, '**', '*'), recursive=True)):
             if not os.path.isfile(f): continue
             rel = os.path.relpath(f, assets); name = os.path.basename(f)
-            if (area.endswith('/ui') and name.startswith('m1plus_')) or name in OUR_FILES or (area.endswith('/ui') and name in OVERLAY_UI) or (name.endswith('.png') and name[:-4] in mod_overlays.NAMES) or (area.endswith('/images') and name.startswith(NEW_IMAGES)): continue
+            if rel in INTENTIONAL_STOCK_PATHS: continue
+            if (area.endswith('/ui') and name.startswith('m1plus_')) or name in OUR_FILES or (area.endswith('/ui') and name in OVERLAY_UI) or (name.endswith('.png') and name[:-4] in mod_overlays.NAMES) or (area.endswith('/images') and (name.startswith(NEW_IMAGES) or name[:-4] in REPLACED_IMAGES)) or (name.endswith('.png') and name in mod_theme.ACCENT_ART) or (area.endswith('/images') and name.endswith('.png') and name[:-4] in {os.path.basename(rel)[:-4] for rel in mod_theme.TOGGLES}): continue
             data = open(f, 'rb').read()
             if area.endswith('/strings'):   # the string tables without OUR keys (tools/pod_i18n.py TEXT, which every feature adds to) the other stock keys and their texts only
                 data = awtk_strings.serialize([kv for kv in awtk_strings.parse(data) if kv[0] not in pod_i18n.TEXT])
@@ -49,6 +55,7 @@ def run(ctx):
 
     # ------------------------------------------------------------------ stock pages are main's
     want = dict(l.split()[::-1] for l in open(DIGESTS) if l.strip() and not l.startswith('#'))
+    want.pop('default/raw/images', None); want.pop('theme1', None)
     got = stock_digests(assets)
     expect(not os.path.exists(os.path.join(assets, 'theme1')), 'stock theme1 is not in the rootfs (tools/mod_space.py; it is safe only with the config_init clamp, tools/themeoff.py)')
     got['demo-builders'] = builder_digest(open(DEMO, 'rb').read())
@@ -153,5 +160,9 @@ def run(ctx):
         bad = [(x, y, tgt(x, y)) for x, y in ((8, 6), (29, 25), (49, 45)) if tgt(x, y) != 'btn_return']
         bad += [(x, y, tgt(x, y)) for x, y in ((play.x + 10, 6), (play.x + 30, 25), (311, 45)) if tgt(x, y) != 'btn_backtoplayer']
         expect(not bad, f'{pg}: the disc corners and centres of Back and Now Playing reach their buttons ({bad})')
-        expect(all(tgt(x, y) == 'row0' for x in (20, 160, 280 if pg in ('m1plus_songs.bin', 'm1plus_artists.bin') else 300) for y in (50, 55, 62, 69)) and all(tgt(x, y) != pod_ui.NB_FADE_NAME for x in (0, 160, 319) for y in range(50, 70)),
-               f'{pg}: the first row takes touches through the whole fade, which never gets one')
+        row_points = [(x, y, tgt(x, y)) for x in (20, 160, 280 if pg in ('m1plus_songs.bin', 'm1plus_artists.bin') else 300) for y in (50, 55, 62, 69)]
+        fade_points = [(x, y, tgt(x, y)) for x in (0, 160, 319) for y in range(50, 70)]
+        rail = node(a, 'sg_rail')
+        expect(all(t == ('sg_rail' if rail and x >= rail.x else 'row0') for x, y, t in row_points)
+               and all(t != pod_ui.NB_FADE_NAME for x, y, t in fade_points),
+               f'{pg}: first row takes touches through the fade and the fade never gets one (rows {row_points}; fade {fade_points})')

@@ -115,6 +115,8 @@ def artists_tests(ctx):
            'the centre album opens as the stock artist page opens it (class 0xff01, its row)')
     m.call(PSYMS['on_back'], count=2000000)
     expect('navigator_back' in m.names(), 'Back from the covers returns to the Artists list')
+    # on_back pauses the cover window; the navigator's return raises it again on the device.
+    m.call(PSYMS['on_fg'], count=1000000)
 
     # 35. The shelf has ends: a drag right from the first album does not wrap to the card, a drag
     #     left from the card does not wrap to the first album.
@@ -674,7 +676,9 @@ def sort_tests(ctx):
     expect(len(got) == cap and got == sort_model(big[:cap])[0], '3000 artists: all are listed, sorted')
     print(f'  sort of {cap} artists on open: {spent:,} payload instructions')
     expect(spent < 150000000, f'the sort and the rows are bounded ({spent:,} payload instructions)')
-    expect(sorted(c[1] for c in callocs if c[1] in (cap * 4,)) == [cap * 4] * 4, 'four arrays of 4 bytes per artist: the order, the row pointers, the keys, the sections\' scratch (the ranks are a byte each)')
+    order_bytes = [c[1] for c in callocs if c[1] == cap * 4]
+    expect(len(order_bytes) == 2 and len([c for c in callocs if c[1] == cap]) == 1,
+           f'the sort keeps one 4-byte order, one 4-byte key-pointer array and one byte per section rank ({[c[1] for c in callocs]})')
     m.call(PSYMS['ar_on_destroy'], count=200000)
     expect('free' in m.names(), 'closing frees the order')
 

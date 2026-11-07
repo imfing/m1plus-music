@@ -240,19 +240,25 @@ def run(ctx):
     m.call(cover_open, count=30000000); m.call(PSYMS['on_destroy'], count=2000000)
     mkey = fnv(fnv(SEED, 'Miles Davis'), 'Kind of Blue') or 1
     tmp = LAST + '.tmp'
-    seq = [c[:2] for c in m.calls if len(c) > 1 and c[1] in (tmp, LAST) and c[0] in ('open', 'write', 'fsync', 'close', 'rename')]
-    expect(seq == [('open', tmp), ('write', tmp), ('fsync', tmp), ('close', tmp), ('rename', tmp)], f'the last album is written atomically: temp, write, fsync, close, rename ({seq})')
+    expect(('pthread_create',) in m.calls and any(c[0] == 'pthread_detach' for c in m.calls), 'closing queues the position write on a detached worker')
+    def finish_position_worker(machine):
+        thread = getattr(machine, 'thread', None)
+        if thread: machine.call(thread[0], a0=thread[1], count=3000000)
+    finish_position_worker(m)
+    seq = [c[:2] for c in m.calls if len(c) > 1 and c[1] == tmp and c[0] in ('open', 'write', 'fsync', 'close')]
+    seq += [c for c in m.calls if c[0] == 'rename' and c[1] == tmp]
+    expect(seq == [('open', tmp), ('write', tmp), ('fsync', tmp), ('close', tmp), ('rename', tmp, LAST)], f'the last album is written atomically: temp, write, fsync, close, rename ({seq})')
     expect(('rename', tmp, LAST) in m.calls and tmp not in m.fs and m.fs.get(LAST) == b'%08x\n' % mkey,
            'the file holds the key as 8 lowercase hex digits and a newline, and no temp file is left')
     expect(not any(c[0] in ('fopen', 'fwrite') and 'covers/album' in str(c) for c in m.calls), 'the old file in the cover cache folder is not used')
     # a failed write leaves no temp file and no position
     for fail in (('write', tmp), ('fsync', tmp), ('rename', LAST)):
         m = lib_machine(); m.play([rec(m, 'Kind of Blue', 'Miles Davis')], 0)
-        m.call(cover_open, count=30000000); m.fail.add(fail); m.call(PSYMS['on_destroy'], count=2000000)
+        m.call(cover_open, count=30000000); m.fail.add(fail); m.call(PSYMS['on_destroy'], count=2000000); finish_position_worker(m)
         expect(tmp not in m.fs and LAST not in m.fs, f'a failed {fail[0]} leaves no temp file and no position file')
     # no card: nothing is written under the mount point, nothing is read
     m = lib_machine(); m.play([rec(m, 'Kind of Blue', 'Miles Davis')], 0); m.card_mounted = False
-    m.call(cover_open, count=30000000); m.call(PSYMS['on_destroy'], count=2000000)
+    m.call(cover_open, count=30000000); m.call(PSYMS['on_destroy'], count=2000000); finish_position_worker(m)
     expect(not any(c[0] in ('open', 'write', 'rename') and str(c[1]).startswith('/mnt/mmc/.m1plus/coverflow-position') for c in m.calls),
            'with no card the position is neither read nor written')
     # a malformed file is no saved album; an upper-case or newline-less key is still 8 hex digits
@@ -351,7 +357,7 @@ def run(ctx):
            f'Albums (grid): the same order, two to a row ({[c[2] for c in cells][:4]})')
     # an empty library, and the page's memory
     m = albums.albums_machine(0, sort='artist'); albums.open_grid(m)
-    expect(('window_open', 'm1plus_albums') in m.calls and ('widget_set_tr_text', m.widgets['label_status'], 'Update Local Music first') in m.calls,
+    expect(('window_open', 'm1plus_albums') in m.calls and ('widget_set_tr_text', m.widgets['label_status'], 'Update Local Music or sync Navidrome first') in m.calls,
            'no albums: no order, the message')
     m = albums_page(LIB); m.call(PSYMS['al_on_destroy'], count=2000000)
     expect(any(c[0] == 'free' for c in m.calls), 'closing the Albums page frees the order')

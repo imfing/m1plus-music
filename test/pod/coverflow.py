@@ -68,6 +68,9 @@ def run(ctx):
     m.call(on_back, count=200000)
     expect('navigator_back' in m.names(), 'Back on the covers screen leaves the page')
     expect('navigator_back' in m.names(), 'Back on the covers screen leaves the page')
+    # The back callback pauses this page immediately. Model the navigator returning to it before
+    # exercising the remaining gestures, as AWTK's window-to-foreground event does on device.
+    m.call(PSYMS['on_fg'], count=1000000)
 
     # 12. Tapping a cover that is not the centre scrolls to it instead of opening it.
     put_value(m, 0)
@@ -118,9 +121,11 @@ def run(ctx):
     gesture_tests(ctx)
     shelf_tests(ctx)
 
-    # 13. Close: the timer is dropped, the worker joined, the frame and list freed.
+    # 13. Close: the timer is dropped, the position writer is detached, the frame and list freed.
     m.call(PSYMS['on_destroy'], count=2000000)
-    expect('deque_destroy' in m.names(), 'the album copy is freed')
+    destroy_calls = list(m.calls)
+    if getattr(m, 'thread', None): m.call(m.thread[0], a0=m.thread[1], count=3000000)
+    expect(any(c[0] == 'deque_destroy' for c in destroy_calls), 'the album copy is freed')
     expect(('rename', '/mnt/mmc/.m1plus/coverflow-position.tmp', '/mnt/mmc/.m1plus/coverflow-position') in m.calls, 'the last album is saved on close')
 
     # 14. First run: no cache files -> jobs, a thread, the progress label and Cancel.
