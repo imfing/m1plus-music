@@ -1123,7 +1123,7 @@ def layout_peqlib_tests(ctx):
             and bool(hair) == (want != 'bot') and all((h_.x, h_.y, h_.w, h_.h) == (lx, ST.LIB_ROW_H - 1, ST.CM + ST.CARD_W - lx, 1) for h_ in hair) \
             and not [c for c in r.children if c.name in ('pod_icon', 'pod_check%d' % i)] and sub.get('sensitive') == 'false'
     expect(ok, 'every slot: the tall piece of a full section card (top, middles, bottom), the name (20 px) at y 8, the grey 16 px line at y 32, the chevron centred in 60 px, a hairline but on the last')
-    expect(P.PAGES[P.PEQLIB_PAGE_INDEX] is P.PEQLIB_PAGE and P.PEQLIB_PAGE_INDEX == 53 == len(P.PAGES) - 6 and P.PEQLIB_PAGE.rows == [] and t.find('label_title') is not None
+    expect(P.PAGES[P.PEQLIB_PAGE_INDEX] is P.PEQLIB_PAGE and P.PEQLIB_PAGE_INDEX == 53 == len(P.PAGES) - 7 and P.PEQLIB_PAGE.rows == [] and t.find('label_title') is not None
            and P.row_kind(P.PEQLIB_ROW) == 'lib' and P.row_kind(P.PEQP_DELETE) == 'delete', 'the Presets page is PAGES[53] (the editor and its two pages follow), exports no rows; its navbar title is the payload\'s')
 
 
@@ -2768,7 +2768,7 @@ def layout_tenband_tests(ctx):
     note = t.find('pod_note0')   # the grey note under Auto's card: what Auto is for, shown, between Auto and the first fixed value (its label wraps to two lines)
     expect(note is not None and note.get('visible') != 'false' and pod_i18n.shown_english(t.find('pod_note0_t')) == "Auto reduces the level to help prevent distortion from EQ boosts." and note.y >= rows[0].y + rows[0].h
            and note.y + note.h <= rows[1].y and isinstance(page.layout[1], P.Note) and page.layout[1].lines == 2 and not isinstance(page.layout[-1], P.Note), 'the Preamp page has its two-line note directly under Auto\'s card, before the second card')
-    expect(P.PAGES[P.TENPREAMP_PAGE_INDEX] is page and P.TENPREAMP_PAGE_INDEX == len(P.PAGES) - 3 == 56 and page.rows == [] and page.title == 'Preamp' and P.TENPREAMP_STEPS == 13, 'page 56, the editor\'s last (AutoEq, 53, and the band page, 54, follow), no exported rows, titled Preamp')
+    expect(P.PAGES[P.TENPREAMP_PAGE_INDEX] is page and P.TENPREAMP_PAGE_INDEX == len(P.PAGES) - 4 == 56 and page.rows == [] and page.title == 'Preamp' and P.TENPREAMP_STEPS == 13, 'page 56, the editor\'s last (AutoEq, 53, and the band page, 54, follow), no exported rows, titled Preamp')
 
 
 def retire_tests(ctx):

@@ -799,8 +799,8 @@ def entry_tests(ctx):
     # the menu's Search item (pod_pages.ACT_SEARCH): the same entry from the M1+ Music menu and the Extras page
     P = pod_pages
     item = next(i for i, r in enumerate(P.ITEMS) if r.label == 'Search')
-    expect(item == 21 == len(P.ITEMS) - 2 and P.ITEMS[item].action == P.ACT_SEARCH == 35 and P.ID_CHARS[item] == 'm' and item not in P.DEFAULT_MENU
-           and P.EXTRAS_GROUPS[1][1][-1] == 'Search' and P.EXTRAS_GROUPS[1][1][-2] == 'Radio' and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
+    expect(item == 21 == len(P.ITEMS) - 3 and P.ITEMS[item].action == P.ACT_SEARCH == 35 and P.ID_CHARS[item] == 'm' and item not in P.DEFAULT_MENU
+           and P.EXTRAS_GROUPS[1][1][-2] == 'Search' and P.EXTRAS_GROUPS[1][1][-3] == 'Radio' and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
            and pod_i18n.key_for('Search') == 'Search' and all(pod_i18n.TEXT['Search'][pod_i18n.table_for(loc)] for loc in pod_i18n.LOCALES)
            and os.path.isfile(os.path.join(mod_icons.PNG, 'pod_ic_search.png')) and mod_icons.POD_ROWS['Search'][0] == 'pod_ic_search',
            'Search is item 21 (saved as "m"), hidden from the menu by default, in the Library group of Extras, with a translated label and its glyph')

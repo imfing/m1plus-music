@@ -679,6 +679,7 @@
 #define F_OK 0
 #define O_RDONLY 0
 #define O_WRONLY 1
+#define O_RDWR 2
 #define O_APPEND 0x8
 #define O_CREAT 0x100
 #define O_TRUNC 0x200
@@ -816,6 +817,9 @@
 #define SG_RAIL_DOT 4
 #define SG_RAIL_DOT_RGB 0xff8a8a8au
 #define SG_RAIL_DISC 16
+#define SB_LIST_ACTION_X 238
+#define SB_LIST_ACTION_W 42
+#define SB_LIST_TEXT_W 172
 #define SG_ACCENT 0xffeceeeeu
 #define SG_BUBBLE 110
 #define SG_BAR_H 64

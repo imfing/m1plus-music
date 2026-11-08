@@ -69,7 +69,8 @@ enum {
     ACT_RESETALL = 54, /* Developer > Tools: Reset All Settings, an action row (a confirm, then setfiles_reset_all) */
     ACT_REGION = 55,
     ACT_REGIONSET = 56,
-    ACT_PEQ = 57
+    ACT_PEQ = 57,
+    ACT_SUBSONIC = 77
 };
 
 extern void shot_start(void); /* patch/shot.c: the Screenshot row: confirm, 5 s countdown, capture; or cancel */
@@ -176,6 +177,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "common.h"
 #include "i18n.h"
 #include "pcregion.h"
+#include "subsonic.h"
 static int pod_off(void) { return home_off(); } /* the SD file and the flash one */
 
 static int home_open(int id) {
@@ -369,6 +371,8 @@ static int on_row(void *ctx, void *e) {
         podcasts_open();
     else if (row->action == ACT_RADIO)
         radio_open();
+    else if (row->action == ACT_SUBSONIC)
+        open_page(POD_SUBSONIC_PAGE, 0);
     else if (row->action == ACT_SEARCH) {
         if (search_open() < 0)
             navigator_to_with_context(
@@ -792,6 +796,8 @@ static int open_page(int index, int as_home) {
         tenpreamp_opened(win);
     else if (index == POD_PEQBAND_PAGE)
         peqband_opened(win);
+    else if (index == POD_SUBSONIC_PAGE)
+        sb_page_open(win);
     { /* the Settings page is the way out to the grid; the menu may be the Home instance (no navbar) */
         int entry = as_home && index == POD_ENTRY_PAGE;
         if (index == POD_SETTINGS_PAGE || entry) home_menu_opened(win, index == POD_SETTINGS_PAGE, entry);

@@ -88,7 +88,7 @@ ACCENT_DISC = ('drop_wifiopen', 'drop_btopen', 'drop_keylockopen', 'drop_eqopen'
 # the Podcasts sheets' (pc_ic_*: all but pc_ic_unsub, already red; pc_ic_trash is Radio's Clear row's too), the Playlists "..." menu's (pl_ic_new, pl_ic_import, pl_ic_export, pl_ic_delete),
 # the multi-select Add dialog's (batchadd_fav, batchadd_playlist) and the selection checks: the Songs sort card's tick (sg_tick) and the stock Select All navbar button's checked state (mulselected). So every
 # row of those sheets is the accent, the destructive rows' glyphs too (their labels do not change: Delete Song's stays red). Not p_onlinesearch (never shown) and not selected (also the Delete dialog's "also delete the file" checkbox).
-ACCENT_GLYPH = ('pod_ic_', 'fo_ic_', 'pod_ci_', 'rm_ic_')
+ACCENT_GLYPH = ('pod_ic_', 'fo_ic_', 'pod_ci_', 'rm_ic_', 'pod_sb_download', 'pod_sb_dsd')
 ACCENT_GLYPH_STOCK = ('player_albuminfo', 'player_songerinfo', 'p_add', 'p_multiple', 'p_abrepeat', 'p_delete',
                       'pc_ic_import', 'pc_ic_speed', 'pc_ic_refresh', 'pc_ic_select', 'pc_ic_check', 'pc_ic_down', 'pc_ic_undo', 'pc_ic_trash',
                       'pl_ic_new', 'pl_ic_import', 'pl_ic_export', 'pl_ic_delete', 'batchadd_fav', 'batchadd_playlist', 'sg_tick', 'mulselected',

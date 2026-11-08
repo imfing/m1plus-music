@@ -78,7 +78,7 @@ int az_row_y(const az_t *az, int i) {
 int az_rows_end(const az_t *az) { return az->top + az->nsec * SG_HDR_H + az->count * az->row; }
 
 int az_max_scroll(const az_t *az) {
-    int m = az->content - GRID_VIEW_H;
+    int m = az->content - (az->view_h > 0 ? az->view_h : GRID_VIEW_H);
     return m > 0 ? m : 0;
 }
 
@@ -205,7 +205,8 @@ void az_rail_fit(az_t *az, int rail_h) {
     int sec[SG_MAX_SEC], span;
     if (az->nsec > 0) {
         span = az_rail_span(az, az_rail_plan(az, sec));
-        widget_move(az->rail, SG_RAIL_X, SG_LIST_Y + (rail_h - span) / 2 - SG_RAIL_PAD);
+        widget_move(az->rail, SG_RAIL_X,
+                    (az->rail_origin ? az->rail_origin : SG_LIST_Y) + (rail_h - span) / 2 - SG_RAIL_PAD);
         widget_resize(az->rail, SG_RAIL_W, span + 2 * SG_RAIL_PAD);
     }
     az_show(az->rail, az->nsec > 0 && az->count);
@@ -225,7 +226,9 @@ static void az_bubble(az_t *az, int i) { /* the bubble shows section i's letter,
 
 /* Section i's header at the window's top (clamped); a coasting list stops first. */
 static void az_jump(az_t *az, int i) {
-    int v = i ? az_hdr_y(az, i) : 0,
+    int v = az->rail_only ? az->top + (int)az->sec_start[i] * az->row
+            : i           ? az_hdr_y(az, i)
+                          : 0,
         max = az_max_scroll(az); /* (the first section: the top, the large title and the pills with it) */
     void *wa = P(az->sv, SC_WA);
     if (wa && I(wa, SC_AN_STATE) == SC_AN_RUNNING && P(wa, SC_AN_WIDGET) == az->sv) { /* patch/scroll.c sc_down */

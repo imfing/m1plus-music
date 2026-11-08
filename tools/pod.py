@@ -45,6 +45,8 @@ SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'menu.c', 'covercache.c', 'dura
            'scroll.c', 'playmore.c', 'pulldown.c', 'playlists.c', 'azlist.c', 'songops.c', 'rowmenu.c', 'songs.c', 'albumpage.c', 'queuepage.c', 'upnext.c', 'ipod.c', 'ipod_cf.c', 'ipod_theme.c', 'ipod_render.c', 'pcmodel.c', 'pcfeed.c', 'pcjson.c', 'pcopml.c', 'pcpng.c', 'pccover.c', 'pcwrap.c', 'pcnotes.c', 'pcdetail.c', 'upver.c', 'pcnet.c', 'podcasts.c', 'radio.c', 'radiopage.c', 'radionp.c', 'radioinfo.c', 'songinfo.c', 'tape.c', 'palette.c', 'vinyl.c', 'onlineart.c', 'update.c', 'relnotes.c', 'keyboard.c', 'search.c', 'battery.c', 'lineout.c', 'lyrics.c', 'picker.c', 'folders.c', 'timezones.c', 'pcregion.c', 'viewsort.c', 'wifictl.c', 'wifipage.c',
            'peq.c', 'peq_ui.c', 'peqpage.c', 'peqlib.c', 'autoeq.c', 'tenband.c', 'peqband.c', 'peqout.c']
 
+SOURCES.append('subsonic.c')
+
 FLAGS = ['--target=mipsel-linux-gnu', '-march=mips32r2', '-mabi=32', '-mfp64',
          '-mno-abicalls', '-fno-pic', '-G0', '-ffreestanding', '-fno-builtin',
          '-fno-stack-protector', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables',
@@ -301,6 +303,9 @@ FUNCTIONS.update({
 # delete (batch_delete_file(class, list, selection, 0, delete_file): the generic loop for 0xf001, deleteMusicFromMusicDb per selected row, remove_file when
 # the flag is set, and `*0xa05a5a = 1` at the end). All of them touch no widget (docs/modules/songs.md has the evidence).
 FUNCTIONS.update({
+    'scanSpecFolder':          ('int', 'const char *, int', 0x4e9e90),
+    'mclLoadPlayList':         ('void', 'void *, int, int', 0x5d1f28),
+    'mclSetStartSeekTime':     ('void', 'int', 0x5d4480),
     'select_recordinit':       ('void', 'int', 0x4da3b0),
     'set_selectindex':         ('int', 'int', 0x4da434),
     'batch_delete_file':       ('int', 'int, void *, void *, int, int', 0x4e1408),
@@ -1393,6 +1398,7 @@ def gen_stock_h(out, demo_path):
     h.append(f'#define POD_DEVELOPER_PAGE {pod_pages.DEVELOPER_PAGE_INDEX}')
     h.append(f'#define POD_CACHE_PAGE {pod_pages.CACHE_PAGE_INDEX}')
     h.append(f'#define POD_FILES_PAGE {pod_pages.FILES_PAGE_INDEX}')
+    h.append(f'#define POD_SUBSONIC_PAGE {pod_pages.SUBSONIC_PAGE_INDEX}')
     h.append(f'#define POD_PULLDOWN_PAGE {pod_pages.PULLDOWN_PAGE_INDEX}')
     h.append(f'#define POD_PEQ_PAGE {pod_pages.PEQ_PAGE_INDEX}')
     h.append(f'#define POD_PEQP_PAGE {pod_pages.PEQP_PAGE_INDEX}')

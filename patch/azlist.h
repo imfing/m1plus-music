@@ -30,6 +30,9 @@ typedef struct {
     unsigned char sec_letter[SG_MAX_SEC];
     int grab, rail_on,
         rail_i; /* a finger holds the rail; it has set a letter (the disc and the bubble show); the letter's section */
+    int rail_origin; /* optional viewport origin; zero preserves the standard list layout */
+    int view_h; /* optional viewport height; zero uses GRID_VIEW_H */
+    int rail_only; /* jump to row boundaries without section headers */
 } az_t;
 
 /* The rank of a character in the sections: 0 "#" (a digit, '*', anything else), 1..26 'A'..'Z' (either case). */
