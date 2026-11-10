@@ -49,6 +49,7 @@ pause, skip, lock); `ellipsis` is always filled.
 | navbar and dialogs | 110 | add, cancel, delete, multi-select, sort, search, back, chevron, more, settings, `back_to_player` (`audio-lines`, 23x24); selection circles and squares, expanders, queue-dialog modes, dialog actions, Now Playing more-dialog and batch-add icons, Bluetooth/USB page transport |
 | Folders, Playlists, CD | 24 bare glyphs (40x40) | 16 audio formats share `file-music`; SD, USB; New / Import / Export; CD track dialog (`guitar`, microphone, calendar) |
 | list placeholders | 6 glyphs (40x40), 3 "no cover" tiles (60/90/100) | the tile colour with a muted glyph at 0.52 of the tile |
+| artist photo placeholder | `pod_ic_ar_art` (96 px, Lucide `mic-vocal` #8C8C8C, stroke 2, transparent; `ARTIST_ART`) | not a tile: `patch/artistphoto.c` `ap_placeholder` draws the #333333 circle (40 px on the Artists rows, 160 px on the artist page) and this glyph on it at 0.52 of the diameter; accent-neutral (`ACCENT_GLYPH_NOT`) |
 | pull-down | 17 (50x50, 20x20 suns) | one ring style (`pulldown.md`); "PO" / "LO" 17 px Inter |
 | status bar | 15 | white, unlit Wi-Fi arcs `#666666`; 1.5 px at 14-16 px, 2 px at 20 |
 | Now Playing | `np_*` (21) | solid PIL transport shapes (`transport_mask`); star and More on a translucent disc (`nowplaying.md`) |
@@ -70,7 +71,7 @@ pause, skip, lock); `ellipsis` is always filled.
 | page | rows |
 |---|---|
 | M1+ Music menu | Now Playing `audio-lines`, Cover Flow custom `coverflow`, Shuffle `shuffle`, Songs `music`, Albums `disc-3`, Artists `mic-vocal`, Genres `guitar`, Folders `folder`, Playlists `list-music`, Settings `sliders-horizontal`, Extras `ellipsis` |
-| Settings (cards, 20 px) | `CARD_GLYPHS` in `tools/mod_icons.py`: Wi-Fi `wifi`, Bluetooth `bluetooth`, Home Screen `house`, Library `disc-3`, Now Playing `audio-lines`, Play Mode `repeat`, EQ `sliders-vertical`, Display `sun`, Language `languages`, Developer `code`; sub-pages: Landscape `rotate-cw-square`, Rebuild Covers `image-up`, Boot to M1+ Music `power`, Open Shanling Home the mark |
+| Settings (cards, 20 px) | `CARD_GLYPHS` in `tools/mod_icons.py`: Wi-Fi `wifi`, Bluetooth `bluetooth`, Home Screen `house`, Library `disc-3`, Now Playing `audio-lines`, EQ `sliders-vertical`, Display `sun`, Language `languages`, Developer `code`; sub-pages: Landscape `rotate-cw-square`, Rebuild Covers `image-up`, Boot to M1+ Music `power`, Open Shanling Home the mark |
 | Extras | the Home grid's glyphs: `star`, `clock-plus`, `history`, `flame`, `feather`, `badge-hr`, `refresh-cw`, `globe`, `disc` |
 | Shuffle | the song, album and folder glyphs |
 

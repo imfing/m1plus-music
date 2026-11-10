@@ -1157,6 +1157,8 @@ static int kb_init(const char *placeholder, const char *initial, int embedded) {
     return 0;
 }
 
+int keyboard_busy(void) { return kb.win != 0; }
+
 int keyboard_open(const char *title, const char *placeholder, const char *initial, kb_done_fn on_done,
                   kb_cancel_fn on_cancel, unsigned flags) {
     if (kb.win) return -1;
@@ -1233,6 +1235,16 @@ void keyboard_set_go(const char *key, int enabled) {
     kb.go_off = !enabled;
     widget_set_sensitive(kb.go, enabled);
     widget_set_state(kb.go, enabled ? "normal" : "disable");
+}
+
+/* An embedded field that takes more than KB_MAX bytes (the stock Tidal edit takes 127, patch/tidalkb.c): right after keyboard_attach, at most KB_MAX_LONG (the buffer); keyboard_refocus sets the default again. */
+void keyboard_set_max(unsigned bytes) {
+    if (kb.win && kb.embedded && bytes && bytes <= KB_MAX_LONG) kb.max = bytes;
+}
+
+/* The action key as if pressed (a page's own Search button, patch/tidalkb.c): what is pending (a pinyin composition) is committed, then on_go; nothing while the key is dimmed. */
+void keyboard_go(void) {
+    if (kb.win && kb.embedded) kb_finish(1);
 }
 
 /* The page's window is going: the timer, the engine's megabyte and the state go with it. */

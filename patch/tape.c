@@ -92,6 +92,7 @@ static struct {
     int dx0, dy0, dx1, dy1; /* the landscape rectangle changed since the last invalidate (empty: dx1 <= dx0) */
     /* the touch */
     int touch, pressed, sx, sy; /* a touch is down; the close screw is held; where it began (landscape) */
+    int idle; /* opened by Now Playing's timer (tape_open_idle): a tap anywhere closes the page; cleared with the rest at destroy */
 } tp __attribute__((section(".scratch")));
 
 /* ---------------------------------------------------------------------------
@@ -707,6 +708,10 @@ static int tp_on_touch(void *ctx, void *e) {
         if (close) { /* began on the screw: ends on it, it closes; the finger left it, nothing */
             if (tp_in_close(x, y)) navigator_back();
         } else if ((dx < 0 ? -dx : dx) < TP_TAP_PX && (dy < 0 ? -dy : dy) < TP_TAP_PX) {
+            if (tp.idle) {
+                navigator_back();
+                return RET_OK;
+            }
             playpause_quick_click();
             tp_update(0);
             tp_retime();
@@ -792,4 +797,12 @@ int tape_open(void) {
     navigator_back();
     memset(&tp, 0, sizeof tp);
     return -1;
+}
+
+/* Open for Now Playing's idle timer (patch/bigcover.c bc_timed_open): as tape_open, and a tap anywhere (the screw included) then closes the page, as stock's Album Cover page does, instead of
+ * pausing. A page that is already open is left as it is, flag included. The flag lives in the page's state, which destroy clears. */
+int tape_open_idle(void) {
+    int was = tp.win != (void *)0, r = tape_open();
+    if (!was && r == 0) tp.idle = 1;
+    return r;
 }

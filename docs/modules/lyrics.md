@@ -9,7 +9,8 @@ other scripts use the default font. Stock still loads and parses local and onlin
 **Validation:** `test/pod/lyrics.py`, `LYRICS_PINS` in `tools/pod.py`,
 `tools/preview_lyrics.py` (pass `--shot PATH` for the background screenshot;
 `--mode scrim` and `--mode intro` select those previews).
-Previews use the shared layout model and real fonts; AWTK wrapping is approximated.
+Previews use the shared layout model and real fonts; the tests draw the label text the way
+stock's wrap does (`stock_rows`, a model of the inspected path).
 
 ## Stock integration
 
@@ -36,13 +37,29 @@ Stock `widget_get_text_utf8` ignores its size for a wide text and wrote a ~350 b
 
 - The current line's top is anchored at 85 px (0.35 of the 244 px view).
   Labels have up to three wrapped rows, 34 px per row and a 12 px gap.
-- Row height follows AWTK's font size plus `spacer`: 30 + 4 px. Width is measured
-  in the line's own face; wrap estimates allow 56 px slack for Latin and 8 px for CJK.
-  Actual wrapping remains AWTK's; an underestimated row count can clip text.
-  Each line is measured once and kept, except a measure of 0 for non-empty text: that line
-  stays one row, is not cached, and later page ticks measure it again and redo the layout
-  (after the first failed measure a layout measures nothing more; at most 20 ticks' layouts,
-  10 s, per lyrics load can fail, then one row is kept).
+- Row height follows AWTK's font size plus `spacer`: 30 + 4 px. The page breaks lines itself
+  (`ly_break`) and sets the label's text with explicit `\n`s, and the rows, the label height and the
+  breaks come from that one result (cached per line, `ly.brk`). Why: the style sets no margin, so
+  stock `widget_get_content_area` (`0x672978`) gives the 264 px label a 260 px content width, and
+  stock's wrap helper (`0x62dbb0`, called from label paint `0x62e8a0`) wraps at the first character
+  whose row so far, itself and 1 px (`0x62ddf0`) pass that width, except when it is the text's last
+  character (`0x62de10`): that stays on the row and the label clips it ("Time is a valuable
+  thing", 268 px, lost the end of its `g`). It treats `\n` as a forced break (`0x62dd7c`). Rows
+  that fit never reach the overflow check, so the exception never fires and stock's row count
+  matches ours. This was chosen over a trailing space (it can hide a word, so stock draws more rows
+  than allocated) and over margins or a wider view (the last-character case remains).
+- `ly_break`: a line measuring at most `LY_FIT_W` (260, the content width) is one row and left to
+  stock (its last character may reach 260, its ink ends before the label's edge). Otherwise greedy
+  at spaces with rows at most `LY_ROW_W` (259: stock's check adds 1 px), a word wider than a row
+  (or a text without spaces, CJK) by code point, at most three rows; the text beyond them is cut.
+  A space at a break becomes the `\n`, else the `\n` is inserted (`ly_wrapped`; the label text
+  is at most `LY_BUF` + 1 bytes). Widths add up (no kerning): one measure of the line, one of a
+  space, and for a wrapped line one per word (per code point of a long word), at most the three
+  rows' worth, once per line. Each line is measured once and kept, except a measure of 0 for
+  non-empty text (any piece): that line stays one row, is not cached, and later page ticks measure
+  it again and redo the layout (after the first failed measure a layout measures nothing more; at
+  most 20 ticks' layouts, 10 s, per lyrics load can fail, then one row is kept). A label's text is
+  set again when its row count changes (a line placed before it was measured had no breaks).
 - The measuring label measures only in its resolved style. `widget_use_style` resolves a style
   only in an opened window (stage 3/5). Otherwise it just marks the widget, and
   `widget_measure_text` measures in the old style. The window resolves every widget's style at

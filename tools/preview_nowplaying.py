@@ -26,7 +26,7 @@ SAMPLE = {'scrlabel_title': 'Money', 'scrlabel_artist': 'Pink Floyd', 'label_alb
           'label_index': '5/10', 'np_elapsed': '1:23', 'np_remaining': '-4:59',
           # the info page's lines as patch/nowplaying.c np_info leaves them (stock writes "Album:...", "Genres:...", "Era:...",
           # "File Size:48.92MB", "FLAC|44.1kHz|16bit|1021kbps")
-          'label_info': 'FLAC | 44.1 kHz | 16-bit | 1021 kbps', 'label_genre': 'Genre: Progressive Rock', 'label_year': 'Year: 1973',
+          'np_quality': 'FLAC | 44.1 kHz | 16-bit | 1021 kbps', 'label_genre': 'Genre: Progressive Rock', 'label_year': 'Year: 1973',
           'label_size': 'File Size: 48.92 MB', 'label_location': 'Location: SD:/Music/Pink Floyd/The Dark Side of the Moon',
           'label_lyricmsg': 'No lyrics'}
 PROGRESS = 22    # % played in the mock-up
@@ -147,8 +147,8 @@ class Painter:
         im.alpha_composite(win, (0, BAR))
         return im
     def walk(self, im, wd, ox, oy, clip, page, root):
-        if wd.name in ('np_remaining', 'np_elapsed'): pass       # the hook shows them and hides the stock times
-        elif wd.name in ('label_playlen', 'label_playtime') or wd.get('visible') == 'false' or wd.get('disg:hide') == 'true': return
+        if wd.name in ('np_remaining', 'np_elapsed', 'np_quality'): pass       # the hook shows them and hides the stock times / quality line
+        elif wd.name in ('label_info',) or wd.name in ('label_playlen', 'label_playtime') or wd.get('visible') == 'false' or wd.get('disg:hide') == 'true': return
         if wd.name in ('image_wait', 'img_repeata', 'img_repeatb'): return       # app-driven, normally hidden
         w, h = wd.w, wd.h
         x, y = wd.x, wd.y

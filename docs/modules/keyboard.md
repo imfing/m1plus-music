@@ -97,11 +97,13 @@ int keyboard_open(const char *title, const char *placeholder, const char *initia
 
 `title` / `placeholder` are UTF-8 and already translated (`TR()`), NULL keeps the page's title / no hint. Search with a non-empty text (spaces at both ends trimmed; an empty text does nothing)
 calls `navigator_back()` and then `on_done(text)`; Back (navbar or hardware key) calls `on_cancel()` (hardware Back: from the destroy event). Callbacks run on the UI thread with the page closing:
-use only what they are given. One keyboard at a time: `keyboard_open` returns -1 while the previous page is not destroyed yet (also from inside a callback), or when the asset is not ours.
+use only what they are given. `int keyboard_busy(void)` tells whether a keyboard page (or the embedded pad) is up or not destroyed yet, i.e. whether `keyboard_open` would refuse for that reason; a -1 with `keyboard_busy()` false is a genuine failure (asset not ours, page would not open). One keyboard at a time: `keyboard_open` returns -1 while the previous page is not destroyed yet (also from inside a callback), or when the asset is not ours.
 Flags of `keyboard_open`: `KB_LONG` (4) lifts the text limit from `KB_MAX` 63 to `KB_MAX_LONG` 255 bytes (the podcast search field takes a feed address; `kb.max` is set at open, the buffer and the field's shown text are sized for 255, a longer initial text is cut at 255 on a character boundary; tested in `test/pod/keyboard.py` `base_tests`); `KB_DONE` (2) makes the action key read **Done** (`widget_set_tr_text(kb.go, "Done")` at open; the asset's label stays Search for everyone else, same width, same colours); there is no touch log any more (the old `KB_LOG` flag and its text file are gone). An empty or all-space field on the action key does nothing and the page stays (nothing is closed or called), so a naming caller never gets an empty name. Strings are keys of `tools/pod_i18n.py` (`Keyboard`, `Keyboards`, `English`, `Chinese (Pinyin)`, `space`, `Search`, `Done`, `Type here`, 13 languages; key labels are characters
 and `123 / ABC / #+=`, not translated). Callers need nothing for Chinese: the setting and the language key are the keyboard's.
 
 **Consumers.** Library Search embeds the pad in its own page (`keyboard_attach`, below; `docs/modules/search.md`) and Playlists > ... > **New playlist** (`patch/playlists.c` `pl_create`: title the stock `playlist_create`, hint the stock `msg_newplaylists`, `KB_DONE`, no cancel callback; `pl_named` is the done callback and makes the playlist, shows the stock "full" / "exists" boxes from inside the callback and reads the page again: docs/modules/playlists.md "Create"). The text limit there is the keyboard's 63 bytes (stock's edit allowed 127). Test: `name_tests`.
+
+**Tidal > Search** (the stock page's `search_edit`, `patch/tidalkb.c`, payload hook 27; [tidalkb](tidalkb.md)): the pad is embedded in the stock page with `keyboard_attach` (the call that focused the edit and popped stock's T9 attaches it instead; the asset gains our field in the search bar and the pad at the bottom of the window). The text goes into the stock edit on every change (`on_change`), the action key runs stock's search routine `0x4c4740` and hides the pad (`keyboard_show(0)`), a tap on the bar shows it again. Test: `test/pod/tidalkb.py`.
 
 ## Embedded in another page (`keyboard_attach`)
 
@@ -117,6 +119,7 @@ void keyboard_show(int on);      /* the pad and the strip shown / hidden (hidden
 int  keyboard_shown(void);
 void keyboard_set_mask(int on);  /* password field: one dot a character (on) or the text; the caret follows what is shown */
 void keyboard_set_go(const char *key, int enabled);   /* the action key's label (a string key; NULL keeps it) and whether it works */
+void keyboard_go(void);                               /* the action key as if pressed (a page's own Search button): pending pinyin committed, then on_go */
 const char *keyboard_text(void); /* the committed text */
 ```
 

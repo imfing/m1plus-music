@@ -77,6 +77,8 @@ static struct {
     unsigned ck_t, dtimer;
     unsigned char ht[LY_MAX]; /* rows of each line, 0 not measured yet */
     unsigned char fc[LY_MAX]; /* face of each measured line */
+    unsigned char brk[LY_MAX]
+                     [3]; /* a wrapped line's break offsets in its text and the offset it is cut at (ly_break) */
     unsigned char miss, redo,
         skip; /* page ticks whose layout could not measure a line (since the lyrics loaded); whether the layout must run again for that; a measure failed in this layout */
 } ly __attribute__((section(".scratch")));
@@ -192,38 +194,102 @@ static int ly_probe_face(int face) {
     return 1;
 }
 
-/* The rows line i takes: 1 + the width it measures at in the label's font over the width of a row (a word wrap wastes a little, so a line
- * over one row gets LY_WRAP_SLACK px more, LY_WRAP_SLACK_CJK in the default font), at most LY_LINES_MAX. Its face is chosen here (ly_latin). Cached, except a
+/* The width of the n bytes at s (at most LY_BUF - 1) in the probe's face; 0: it could not be measured. */
+static int ly_span(const char *s, int n) {
+    char t[LY_BUF];
+    const unsigned *u;
+    int k;
+    for (k = 0; k < n; ++k) t[k] = s[k];
+    t[n] = 0;
+    if (widget_set_text_utf8(ly.probe, t) != RET_OK) return 0;
+    u = widget_get_text(ly.probe);
+    return u && *u ? (int)(widget_measure_text(ly.probe, u) + 0.999f) : 0;
+}
+
+/* Breaks line i (text s, probe ready in its face) into rows ourselves: greedy at the spaces, a word wider than a row (or a text with no spaces: CJK) at any code point.
+ * Stock's label wrap would break a row at its first character past the content width (LY_W less the style's 2 px margins), but leaves an overflowing LAST character on
+ * its row, clipped at the label's edge, and its row count would then differ from ours. Every row here is at most LY_ROW_W wide: stock's check (0x62ddf0: the row so far +
+ * the character + 1 px over the content width) never fires and our '\n's are its only breaks. A line that fits in LY_FIT_W is left to stock (a last character may then
+ * reach LY_FIT_W, its ink ends before the label's edge). ly.brk[i] gets the break offsets (a space there becomes the '\n', else the '\n' is put before the byte) and
+ * after LY_LINES_MAX rows the offset the text is cut at. Returns the rows, 0 when something could not be measured. Widths add up (no kerning): one measure of the
+ * line, then one per word (and per code point of a long word), at most the LY_LINES_MAX rows' worth, and one of a space; the result is cached with the rows. */
+static int ly_break(int i, const char *s) {
+    unsigned char *bk = ly.brk[i];
+    int len = 0, w, sp, rows = 1, rs = 0, x = 0, p = 0;
+    while (s[len]) ++len;
+    bk[0] = bk[1] = bk[2] = 0;
+    w = ly_span(s, len);
+    if (!w) return 0;
+    if (w <= LY_FIT_W) return 1;
+    sp = ly_span(" ", 1);
+    if (!sp) return 0;
+    for (;;) {
+        int e = p, tw = 0;
+        while (s[e] && s[e] != ' ') ++e;
+        if (e > p && !(tw = ly_span(s + p, e - p))) return 0;
+        if (p > rs && x + sp + tw > LY_ROW_W) { /* the word starts the next row (the space before it is the break) */
+            if (rows == LY_LINES_MAX) return bk[2] = (unsigned char)(p - 1), rows;
+            bk[rows++ - 1] = (unsigned char)(p - 1), rs = p, x = 0;
+        }
+        if (p > rs) x += sp;
+        if (x + tw <= LY_ROW_W) {
+            x += tw;
+        } else { /* wider than a row: by code point */
+            int q = p;
+            while (q < e) {
+                int n = 1, cw;
+                while (q + n < e && (s[q + n] & 0xc0) == 0x80) ++n;
+                if (!(cw = ly_span(s + q, n))) return 0;
+                if (x && x + cw > LY_ROW_W) {
+                    if (rows == LY_LINES_MAX) return bk[2] = (unsigned char)q, rows;
+                    bk[rows++ - 1] = (unsigned char)q, rs = q, x = 0;
+                }
+                x += cw, q += n;
+            }
+        }
+        if (!s[e]) return rows;
+        p = e + 1;
+    }
+}
+
+/* The rows line i takes (ly_break), 1 when it fits one row, at most LY_LINES_MAX. Its face is chosen here (ly_latin). Cached, except a
  * measure of non-empty text that came back 0 or was not made (the probe not ready, ly_probe_face): that line is 1 row for now and measured again by the layout ly.redo asks for. Once a measure
  * failed, the rest of that layout (ly.skip, cleared as a layout starts) measures nothing; the page tick counts a layout that saw a failure in ly.miss, and after
  * LY_MISS_MAX of them (10 s at the 500 ms tick) a line is kept at 1 row, so a probe that never measures costs a bounded number of calls. */
 __attribute__((noinline)) int ly_rows(int i) {
     char buf[LY_BUF];
-    int rows = 1, w = 0, face = 0, text = 0;
+    int rows = 0, face = 0, text = 0;
     if (i < 0 || i >= ly.n) return 1;
     if (ly.ht[i]) return ly.ht[i];
     if (ly.probe && ly_text(i, buf) && buf[0]) {
         text = 1;
         face = !ly_latin(buf);
-        if (!(ly.skip && ly.miss < LY_MISS_MAX) && ly_probe_face(face) &&
-            widget_set_text_utf8(ly.probe, buf) == RET_OK) {
-            const unsigned *t = widget_get_text(ly.probe);
-            if (t && *t) w = (int)(widget_measure_text(ly.probe, t) + 0.999f);
-        }
+        if (!(ly.skip && ly.miss < LY_MISS_MAX) && ly_probe_face(face)) rows = ly_break(i, buf);
     }
     ly.fc[i] = (unsigned char)face;
-    if (w > LY_W) w += face ? LY_WRAP_SLACK_CJK : LY_WRAP_SLACK;
-    rows = 1 + w / LY_W;
-    if (w > 0 && w % LY_W == 0) rows -= 1;
-    if (rows < 1) rows = 1;
-    if (rows > LY_LINES_MAX) rows = LY_LINES_MAX;
-    if (text && w <= 0 && ly.miss < LY_MISS_MAX) { /* not measured: not kept */
+    if (text && !rows && ly.miss < LY_MISS_MAX) { /* not measured: not kept */
         ly.skip = ly.redo = 1;
-        return rows;
+        return 1;
     }
     if (ly.miss) ly.redo = 1; /* a line measured after a miss: the layout above may have used its 1 row */
+    if (rows < 1) rows = 1;
     ly.ht[i] = (unsigned char)rows;
     return rows;
+}
+
+/* The text of line i for its label: ly_text with the breaks of ly_break (rows is ly_rows(i)). out holds LY_BUF + 2 bytes and the NUL. */
+static void ly_wrapped(int i, int rows, char *out) {
+    char buf[LY_BUF];
+    int p, o = 0, k = 0, cut = rows > 1 ? ly.brk[i][2] : 0;
+    ly_text(i, buf);
+    for (p = 0; buf[p] && !(cut && p == cut); ++p) {
+        if (k < rows - 1 && p == ly.brk[i][k]) {
+            out[o++] = '\n', ++k;
+            if (buf[p] == ' ') continue;
+        }
+        out[o++] = buf[p];
+    }
+    out[o] = 0;
 }
 
 /* The pixels line i occupies, its gap included. */
@@ -347,12 +413,11 @@ static void ly_place(int i, int y) {
         ly_hide(slot);
         return;
     }
-    if (ly.line[slot] != i) {
-        char buf[LY_BUF];
-        ly_text(i, buf);
+    if (ly.line[slot] != i || ly.rows[slot] != rows) { /* (a line placed before it was measured has no breaks yet) */
+        char buf[LY_BUF + 3];
+        ly_wrapped(i, rows, buf);
         widget_set_text_utf8(w, buf);
         ly.line[slot] = i;
-        ly.rows[slot] = 0;
     }
     if (ly.rows[slot] != rows) {
         widget_resize(w, LY_W, rows * LY_LINE_H);

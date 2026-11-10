@@ -16,18 +16,18 @@ from awtk_text import Ttf, StbText
 RAW = os.path.join('rootfs', 'release', 'assets', 'default', 'raw')
 DIALOG_Y, ROW_H, SCREEN_H, SHEET_H = 130, O['PM_ROW_H'], O['PM_SCREEN_H'], O['PM_PAGE_N'] * O['PM_ROW_H']
 SHEET_Y = SCREEN_H - SHEET_H                     # 180: page 1's sheet sits on the bottom of the screen
-SHEET2_H = O['PM_PAGE2_N'] * ROW_H               # page 2 has five rows (the back header, Speed, A-B repeat, Find Cover & Lyrics, Delete): its sheet is 250 px; page 1 has six (the Cassette Mode and Vinyl Mode rows): 300 px
-SHEET2_Y = SCREEN_H - SHEET2_H                   # 280 (page 1's SHEET_Y is 180)
+SHEET2_H = O['PM_PAGE2_N'] * ROW_H               # page 2 has six rows (the back header, Speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete) like page 1 (Cassette Mode and Vinyl Mode rows): both sheets are 300 px
+SHEET2_Y = SCREEN_H - SHEET2_H                   # 180, as page 1's SHEET_Y
 BINDER, SPEED_INIT = 0x478b44, 0x478fd0          # the stock widget_foreach visitor (binds a row or badge by name) and the speed badge images
 STOCK_BG, STOCK_UP = 0x4789f0, 0x478abc          # the stock to-background handler (moves the dialog to y 130) and tap-above-closes handler
 STOCK_CLICK = {'listitem0': 0x478f58, 'listitem2': 0x4798f0, 'listitem3': 0x4796cc, 'listitem4': 0x4795cc, 'listitem5': 0x4793ac,
                'listitem6': 0x4791f4, 'img_1x': 0x479bf4, 'img_1_25x': 0x479b20, 'img_1_5x': 0x479a4c, 'img_2x': 0x479978}
 STOCK_NAMES = ['listitem0', 'listitem1', 'listitem2', 'listitem3', 'listitem4', 'listitem5', 'listitem6']
-GO_ALBUM, GO_ARTIST, ADD, MORE, BACK, SPEED, AB, DELETE, SEARCH, TAPE, VINYL, GOEP, ART = 4, 5, 2, 7, 8, 1, 0, 6, 3, 9, 10, 11, 12   # row indices (listitemN, 7 = pod_more, 8 = pod_back, 9 = pod_tape, 10 = pod_vinyl, 11 = pod_goep, 12 = pod_art)
-ROWS = STOCK_NAMES + ['pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art']
-PAGE1, PAGE2 = [GO_ALBUM, GO_ARTIST, ADD, TAPE, VINYL, MORE], [BACK, SPEED, AB, ART, DELETE]
+GO_ALBUM, GO_ARTIST, ADD, MORE, BACK, SPEED, AB, DELETE, SEARCH, TAPE, VINYL, GOEP, ART, SLEEP = 4, 5, 2, 7, 8, 1, 0, 6, 3, 9, 10, 11, 12, 13   # row indices (listitemN, 7 = pod_more, 8 = pod_back, 9 = pod_tape, 10 = pod_vinyl, 11 = pod_goep, 12 = pod_art, 13 = pod_sleep)
+ROWS = STOCK_NAMES + ['pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep']
+PAGE1, PAGE2 = [GO_ALBUM, GO_ARTIST, ADD, TAPE, VINYL, MORE], [BACK, SPEED, SLEEP, AB, ART, DELETE]
 PAGE_EP = [GOEP, MORE]   # page 1 of a podcast episode
-HIDDEN1, HIDDEN2, HIDDEN_EP = sorted(set(range(13)) - set(PAGE1)), sorted(set(range(13)) - set(PAGE2)), sorted(set(range(13)) - set(PAGE_EP))
+HIDDEN1, HIDDEN2, HIDDEN_EP = sorted(set(range(14)) - set(PAGE1)), sorted(set(range(14)) - set(PAGE2)), sorted(set(range(14)) - set(PAGE_EP))
 VT = {'dialog': LI_VT, 'list_view': LV_VT, 'scroll_view': SV_VT, 'list_item': LI_VT, 'image': IMG_VT}
 PM_TEXTS = {'More': None, 'Speed': None, 'Files below 48 kHz only': None, 'Cassette Mode': None, 'Vinyl Mode': None, 'Go to Podcasts': None, 'Cover & Lyrics': None}   # the keys the payload sets (the label each is for is in the checks)
 
@@ -44,6 +44,8 @@ class PM(pulldown.SM):
     def __init__(self, ui=None):
         super().__init__(True)
         self.handlers[pod.PLAYMORE_INIT + 12] = 'stock_playmore_resume'
+        self.handlers[0x4a9924] = 'stock_power_refresh'   # powermanager_page's static refresh: any call from OUR code is a failure (stock's own handler is modelled in switch_to)
+        self.fg_bound = set()           # Power windows whose init bound EVT_WINDOW_TO_FG (0x12d) to 0x4a9b2c, which calls 0x4a9924 (pinned in pod.PLAYMORE_PINS)
         self.tr_fail, self.bind_fail = set(), None
         self.tape_ret = 0               # what tape_open returns (patch/tape.c, trapped here: test/pod/tape.py runs it)
         self.handlers[PSYMS['tape_open']] = 'tape_open'
@@ -58,7 +60,10 @@ class PM(pulldown.SM):
         self.am_ret = 0                 # what albums_open_artist returns (patch/albums.c, trapped here: test/pod/artists.py runs it); -1 = the window will not open
         self.handlers[PSYMS['albums_open_artist']] = 'albums_open_artist'
         self.init_ret = 0
+        self.nav_ret = 0                # what navigator_to returns (the stock Power page, trapped; 0 = RET_OK)
         self.navs = []                 # the navigator's stack: (name, window)
+        self.no_wm = False
+        self.switch_fail, self.closing = False, set()   # the restack fails / windows that are closing (not opened)
         self.no_window = False         # the navigator opens no window (the top window is not the album page)
         self.reg = []                # every widget_on, in order: (widget, event, handler, ctx)
         self.nodes = {}
@@ -92,7 +97,21 @@ class PM(pulldown.SM):
         """A window of the navigator's stack (a name at +0x10), pushed on top."""
         w = self.alloc(0x80); self.u.mem_write(w, bytes(0x80)); self.setword(w + 0x10, self.cstr(name))
         self.navs = getattr(self, 'navs', []) + [(name, w)]
+        if name == 'powermanager_page': self.fg_bound.add(w)   # its init: widget_on(win, 0x12d, 0x4a9b2c)
+        self.sync_stack()
         return w
+
+    def sync_stack(self):
+        """The window manager's children, bottom to top: the navigator's windows, then the sheet (a dialog, always above them)."""
+        self.kids(self.wm, [w for _, w in self.navs] + [self.dialog])
+
+    def to_player(self):
+        """The Power page's top-right Now Playing button (on_powermanagertoplayer_onclick: navigator_switch_to_with_context("playing_page")): the player is restacked, or opened, on top and nothing is closed, the page stays under it."""
+        ent = next((e for e in self.navs if e[0] == 'playing_page'), None)
+        if ent: self.navs = [e for e in self.navs if e is not ent] + [ent]; self.sync_stack()
+        else: self.page('playing_page')
+
+    def stack_names(self): return [n for n, _ in self.navs]
 
     def _stack_hook(self, u, name, a0):
         """The navigator model: names in self.navs (the closes are at once; the window's destroy event is the test's to deliver)."""
@@ -122,6 +141,27 @@ class PM(pulldown.SM):
             self.calls.append(('albums_open_artist', tuple(rows), a1, a2))
             if self.am_ret == 0 and not self.no_window: self.page('m1plus_albums')
             u.reg_write(UC_MIPS_REG_V0, self.am_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'navigator_to' and not self.nav_ret:   # the stock navigator opens a NEW window every time (the Power page has no single_instance property)
+            self.calls.append(('navigator_to', self.read_cstr(a0))); self.page(self.read_cstr(a0).split('/')[-1])
+            u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'window_manager_switch_to':        # stock's restack: the target to the top, nothing closed
+            ent = next((e for e in self.navs if e[1] == a2), None)
+            self.calls.append(('switch_to', ent[0] if ent else None, a3))
+            ret = 1
+            if ent and not self.switch_fail and a0 == self.wm: self.navs = [e for e in self.navs if e is not ent] + [ent]; self.sync_stack(); ret = 0
+            if ret == 0:                              # stock then delivers EVT_WINDOW_TO_FG (0x12d) to the restacked window; the handler its init bound (0x4a9b2c) runs the refresh
+                self.calls.append(('to_fg', ent[0]))
+                if a2 in self.fg_bound: self.calls.append(('fg_refresh', ent[0]))
+            u.reg_write(UC_MIPS_REG_V0, ret); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'window_manager' and self.no_wm:
+            u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'widget_is_window_opened':
+            u.reg_write(UC_MIPS_REG_V0, int(a0 not in self.closing)); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'stock_power_refresh':             # powermanager_page's refresh from the timer words
+            self.calls.append(('stock_power_refresh', next((n for n, w in self.navs if w == a0), None)))   # only ever a direct call from the payload
+            u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'navigator_to' and self.nav_ret:   # the stock page will not open
+            self.calls.append(('navigator_to', self.read_cstr(a0))); u.reg_write(UC_MIPS_REG_V0, self.nav_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'tape_open':
             self.calls.append(('tape_open',)); u.reg_write(UC_MIPS_REG_V0, self.tape_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'podcasts_go':
@@ -134,7 +174,7 @@ class PM(pulldown.SM):
             self.calls.append(('widget_set_tr_text', a0, self.read_cstr(a1))); u.reg_write(UC_MIPS_REG_V0, 1); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'widget_on':
             self.reg.append((a0, a1, a2, a3))
-            fails = {'pod_more': (self.nodes['pod_more'], O['EVT_CLICK']), 'pod_back': (self.nodes['pod_back'], O['EVT_CLICK']), 'pod_tape': (self.nodes['pod_tape'], O['EVT_CLICK']), 'pod_vinyl': (self.nodes['pod_vinyl'], O['EVT_CLICK']), 'pod_goep': (self.nodes['pod_goep'], O['EVT_CLICK']),  'pod_art': (self.nodes['pod_art'], O['EVT_CLICK']),
+            fails = {'pod_more': (self.nodes['pod_more'], O['EVT_CLICK']), 'pod_back': (self.nodes['pod_back'], O['EVT_CLICK']), 'pod_tape': (self.nodes['pod_tape'], O['EVT_CLICK']), 'pod_vinyl': (self.nodes['pod_vinyl'], O['EVT_CLICK']), 'pod_goep': (self.nodes['pod_goep'], O['EVT_CLICK']),  'pod_art': (self.nodes['pod_art'], O['EVT_CLICK']), 'pod_sleep': (self.nodes['pod_sleep'], O['EVT_CLICK']),
                      'bg': (self.lv, O['EVT_WINDOW_TO_BG']), 'destroy': (self.dialog, O['EVT_DESTROY'])}
             if self.bind_fail and (a0, a1) == fails[self.bind_fail] and a2 != STOCK_BG:
                 self.reg.pop(); self.calls.append(('widget_on', a0, a1, a2, 0)); u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
@@ -260,12 +300,12 @@ def glass_checks(expect, built_ui, stock_ui, lum):
     from PIL import Image
     xx = os.path.join(WORK, RAW, 'images', 'xx')
     sheets = {}
-    for name, spec in (('pm_sheet', mod_icons.GLASS_SHEET), ('pm_sheet6', mod_icons.GLASS_SHEET6)):   # page 2's glass (4 rows, 200 px) and page 1's (6 rows, 300 px): each its own picture, none a crop of the other
+    for name, spec in (('pm_sheet', mod_icons.GLASS_SHEET), ('pm_sheet6', mod_icons.GLASS_SHEET6)):   # pm_sheet (5 rows, 250 px: only pod_glass's first picture, a failed start's look) and pm_sheet6 (6 rows, 300 px, both pages): none a crop of the other
         gen = mod_icons.glass_image(*spec, fill=mod_icons.GLASS_SHEET_FILL, top_only=True)
         raw = open(os.path.join(xx, name + '.png'), 'rb').read()
         sheets[name] = im = Image.open(os.path.join(xx, name + '.png')).convert('RGBA')
         w, h, r = spec
-        expect(raw == open(os.path.join(mod_icons.PNG, name + '.png'), 'rb').read() and same_pixels(raw, gen) and im.size == (w, h) == (built_ui.w, ROW_H * (O['PM_PAGE2_N'] if name == 'pm_sheet' else O['PM_PAGE_N'])),
+        expect(raw == open(os.path.join(mod_icons.PNG, name + '.png'), 'rb').read() and same_pixels(raw, gen) and im.size == (w, h) == (built_ui.w, ROW_H * (5 if name == 'pm_sheet' else O['PM_PAGE_N'] == O['PM_PAGE2_N'] and O['PM_PAGE_N'])),
                f'{name}.png is the generator output pixel for pixel, {w}x{h} = the page\'s own sheet height, r {r}, top corners only')
         a = lambda x, y, im=im: im.getpixel((x, y))[3]
         expect(a(0, 0) == 0 and a(w - 1, 0) == 0 and a(0, h - 1) >= 0.7 * 255 and a(w - 1, h - 1) >= 0.7 * 255 and all(a(x, h - 1) >= 0.7 * 255 for x in range(w))
@@ -275,7 +315,7 @@ def glass_checks(expect, built_ui, stock_ui, lum):
     expect(same_pixels(open(os.path.join(xx, 'pc_sheet2.png'), 'rb').read(), gen) and Image.open(os.path.join(xx, 'pc_sheet2.png')).size == (320, 2 * ROW_H),
            'pc_sheet2.png is the generator output at the two-row sheet height (the episode page 1\'s glass)')
     sheet, sheet6 = sheets['pm_sheet'], sheets['pm_sheet6']
-    # the same top edge: the first 18 rows of both are the rim and the rounded corners (a 300 px sheet is the 200 px one with 100 more rows of body)
+    # the same top edge: the first 18 rows of both are the rim and the rounded corners (a 300 px sheet is the 250 px one with 50 more rows of body)
     ea, eb = sheet.getchannel('A').crop((0, 0, 320, 24)).tobytes(), sheet6.getchannel('A').crop((0, 0, 320, 24)).tobytes()
     expect(max(abs(p - q) for p, q in zip(ea, eb)) <= 2, 'both sheets have the same top edge: the rim and the rounded corners (the alpha of their first 24 rows within 2 levels: the rim fades over the sheet\'s height)')
     expect(all(built_ui.get(f'style:{s}:bg_color') == '#00000000' and built_ui.get(f'style:{s}:border') == 'none' and built_ui.get(f'style:{s}:bg_image') is None
@@ -284,14 +324,14 @@ def glass_checks(expect, built_ui, stock_ui, lum):
     glass = built_ui.find('pod_glass')
     expect(glass is not None and glass.type == 'image' and built_ui.children[0] is glass and glass.get('sensitive') == 'false' and glass.get('image') == 'pm_sheet'
            and (glass.x, glass.y, glass.w, glass.h) == (0, 0, 320, 250) and glass.get('draw_type') == 'default',
-           'pod_glass is the dialog\'s first child (under the list), an insensitive image of pm_sheet 320 x 250 (page 2\'s glass; a failed start\'s look)')
+           'pod_glass is the dialog\'s first child (under the list), an insensitive image of pm_sheet 320 x 250 (a failed start\'s look; the pages set pm_sheet6)')
     lv, sv = built_ui.find('playmore_listview'), built_ui.find('playmore_scrollview')
     expect(all(x.get(f'style:{s}:bg_color') == '#00000000' for x in (lv, sv) for s in ('normal', 'disable', 'focused')), 'the list_view and its scroll_view are transparent')
     states = ('normal', 'pressed', 'over', 'disable', 'focused')
     rows = [c for c in sv.children]
     expect(all(c.type == 'list_item' and all(c.get(f'style:{s}:bg_color') == ('#FFFFFF10' if s == 'pressed' else '#00000000') and c.get(f'style:{s}:border_color') == '#FFFFFF22' for s in states)
-               for c in rows) and len(rows) == 13,
-           'all thirteen rows: transparent in every state but pressed (#FFFFFF10, 6 % white), the hairline #FFFFFF22 (13 % white)')
+               for c in rows) and len(rows) == 14,
+           'all fourteen rows: transparent in every state but pressed (#FFFFFF10, 6 % white), the hairline #FFFFFF22 (13 % white)')
     expect(not any('pm_sheet' in str(c.props) for c in stock_ui.walk()) and 'pm_sheet' not in str([p for w_ in built_ui.walk() if w_.name not in ('pod_glass',) for p in w_.props]),
            'only pod_glass refers to pm_sheet; the rows and every other widget carry inline styles of this dialog, no shared style name')
     # the other pages' row styles are untouched: no ui asset but this one, and no style file, mentions the image or a transparent list_item_style
@@ -410,7 +450,7 @@ def run(ctx):
     expect(keys.get('scrlabel4') == 'player_albuminfo' and keys.get('scrlabel5') == 'player_songerinfo' and keys.get('scrlabel6') == 'player_delete'
            and keys.get('scrlabel1') == 'player_multiple' and keys.get('scrlabel0') == 'player_abrepeat' and keys.get('label1_msg') == 'player_msgmul',
            'the stock binder gives the rows their stock texts')
-    expect(m.shown() == [0, 1, 2, 3, 4, 5, 6] and m.stacked()[:7] == list(range(7)) and all(m.dead(i) for i in (MORE, BACK, TAPE, VINYL, GOEP, ART)) and not m.shown_row(MORE) and not m.shown_row(BACK) and not m.shown_row(TAPE) and not m.shown_row(VINYL),
+    expect(m.shown() == [0, 1, 2, 3, 4, 5, 6] and m.stacked()[:7] == list(range(7)) and all(m.dead(i) for i in (MORE, BACK, TAPE, VINYL, GOEP, ART, SLEEP)) and not m.shown_row(MORE) and not m.shown_row(BACK) and not m.shown_row(TAPE) and not m.shown_row(VINYL),
            'before the hook: the stock seven rows in asset order, pod_more, pod_back, pod_tape and pod_vinyl hidden and insensitive')
     m.relayout_all()
     expect(m.shown() == list(range(7)) and m.hs() == [50, 50, 50, 50, 50, 60, 60] and m.ys() == [0, 50, 100, 150, 200, 250, 310] and m.vh() == 370,
@@ -436,9 +476,9 @@ def run(ctx):
     expect(all(n in names for n in ('listitem0', 'listitem6', 'pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_more_label', 'pod_back_label', 'pod_tape_label', 'pod_vinyl_label', 'scrlabel1', 'label1_msg')), 'the rows and labels are found by their names')
     expect(m.stock_kept(),
            'every stock handler is still bound to the same function and context after the hook, and still first in the order')
-    expect(sorted(m.added()) == sorted([('pod_more', O['EVT_CLICK']), ('pod_back', O['EVT_CLICK']), ('pod_tape', O['EVT_CLICK']), ('pod_vinyl', O['EVT_CLICK']), ('pod_goep', O['EVT_CLICK']),  ('pod_art', O['EVT_CLICK']), ('playmore_dialog', O['EVT_DESTROY']), ('playmore_listview', O['EVT_WINDOW_TO_BG']),
+    expect(sorted(m.added()) == sorted([('pod_more', O['EVT_CLICK']), ('pod_back', O['EVT_CLICK']), ('pod_tape', O['EVT_CLICK']), ('pod_vinyl', O['EVT_CLICK']), ('pod_goep', O['EVT_CLICK']),  ('pod_art', O['EVT_CLICK']), ('pod_sleep', O['EVT_CLICK']), ('playmore_dialog', O['EVT_DESTROY']), ('playmore_listview', O['EVT_WINDOW_TO_BG']),
                                         ('listitem4', O['EVT_CLICK']), ('listitem5', O['EVT_CLICK']), ('listitem6', O['EVT_CLICK'])]),
-           f'the hook adds the More, back, Tape, Vinyl and Find Cover & Lyrics clicks, the Look up album, artist and Delete clicks, the destroy and the to-background handlers and nothing else ({m.added()})')
+           f'the hook adds the More, back, Tape, Vinyl, Find Cover & Lyrics and Sleep Timer clicks, the Look up album, artist and Delete clicks, the destroy and the to-background handlers and nothing else ({m.added()})')
     expect(not any(c[0] in ('widget_off_by_func',) for c in m.calls), 'no stock handler is taken off')
 
     # -- 2. hit tests on page 1: a touch reaches the row that is drawn there, a hidden row never takes it -----------------------
@@ -463,28 +503,28 @@ def run(ctx):
     # -- 3. page 2 and back ---------------------------------------------------------------------------------------------------------
     m = PM(); m.open(); m.relayout_all()
     m.click_more()
-    expect(m.shown() == PAGE2, f'page 2: the back header, Playback speed, A-B repeat, Find Cover & Lyrics, Delete ({m.shown()})')
-    expect(m.ys() == [0, 50, 100, 150, 200] and set(m.hs()) == {ROW_H}, f'page 2: the rows at 0, 50, 100, 150, 200, {ROW_H} high ({m.ys()} {m.hs()})')
-    expect(all(m.live(i) for i in PAGE2) and all(m.dead(i) for i in HIDDEN2), 'page 2: five rows live, the other seven (Online search, Cassette and Vinyl Mode included) neither visible nor sensitive')
-    expect(m.stacked()[:5] == PAGE2 and sorted(m.stacked()[5:]) == HIDDEN2, f'page 2: stacked in that order, the hidden rows last ({m.stacked()})')
-    expect(m.size(m.dialog) == (320, 250) and m.size(m.lv) == (320, 250) and m.size(m.sv) == (310, 250) and m.size(m.bar) == (10, 250) and m.vh() == 250 and m.size(m.glass) == (320, 250),
-           f'page 2: the sheet is 5 rows tall, 250 px ({m.size(m.dialog)})')
-    expect(('image_base_set_image', m.nodes['pod_glass'], 'pm_sheet') == [c for c in m.calls if c[0] == 'image_base_set_image'][-1], 'page 2: the glass is its own picture, pm_sheet (250 px)')
-    expect(m.top() == SHEET2_Y == 230 and m.top() + m.size(m.dialog)[1] == SCREEN_H, 'page 2: the sheet is on the bottom of the screen (its top edge is 50 px lower than page 1\'s)')
-    expect(all(m.s32(m.rows[i] + 4) >= 250 for i in HIDDEN2), 'page 2: the hidden rows are parked below the sheet')
+    expect(m.shown() == PAGE2, f'page 2: the back header, Playback speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete ({m.shown()})')
+    expect(m.ys() == [0, 50, 100, 150, 200, 250] and set(m.hs()) == {ROW_H}, f'page 2: the rows at 0, 50, 100, 150, 200, 250, {ROW_H} high ({m.ys()} {m.hs()})')
+    expect(all(m.live(i) for i in PAGE2) and all(m.dead(i) for i in HIDDEN2), 'page 2: six rows live, the other eight (Online search, Cassette and Vinyl Mode included) neither visible nor sensitive')
+    expect(m.stacked()[:6] == PAGE2 and sorted(m.stacked()[6:]) == HIDDEN2, f'page 2: stacked in that order, the hidden rows last ({m.stacked()})')
+    expect(m.size(m.dialog) == (320, 300) and m.size(m.lv) == (320, 300) and m.size(m.sv) == (310, 300) and m.size(m.bar) == (10, 300) and m.vh() == 300 and m.size(m.glass) == (320, 300),
+           f'page 2: the sheet is 6 rows tall, 300 px ({m.size(m.dialog)})')
+    expect(('image_base_set_image', m.nodes['pod_glass'], 'pm_sheet6') == [c for c in m.calls if c[0] == 'image_base_set_image'][-1], 'page 2: the glass is pm_sheet6 (300 px, as page 1\'s)')
+    expect(m.top() == SHEET2_Y == SHEET_Y == 180 and m.top() + m.size(m.dialog)[1] == SCREEN_H, 'page 2: the sheet is on the bottom of the screen (its top edge is page 1\'s)')
+    expect(all(m.s32(m.rows[i] + 4) >= 300 for i in HIDDEN2), 'page 2: the hidden rows are parked below the sheet')
     m.relayout_all()
-    expect(m.shown() == PAGE2 and m.ys() == [0, 50, 100, 150, 200] and set(m.hs()) == {ROW_H} and m.vh() == 250 and m.yoff() == 0 and m.stacked()[:5] == PAGE2,
+    expect(m.shown() == PAGE2 and m.ys() == [0, 50, 100, 150, 200, 250] and set(m.hs()) == {ROW_H} and m.vh() == 300 and m.yoff() == 0 and m.stacked()[:6] == PAGE2,
            f'page 2: a relayout keeps the order, the rows {ROW_H} high and the height ({m.shown()}, {m.hs()})')
     m.relayout_all(); m.mark(); m.relayout_all()
-    expect(m.shown() == PAGE2 and m.stacked()[:5] == PAGE2, 'page 2: further relayouts change nothing')
+    expect(m.shown() == PAGE2 and m.stacked()[:6] == PAGE2, 'page 2: further relayouts change nothing')
     for pos, i in enumerate(PAGE2):
         path = m.tap_row(i)
         expect(path[3] == ROWS[i], f'page 2: a tap on row {pos} lands on {ROWS[i]} ({path})')
     badges = [m.hit(x, SHEET2_Y + 50 + 25)[-1] for x in (166, 206, 246, 286)]
     expect(badges == ['img_1x', 'img_1_25x', 'img_1_5x', 'img_2x'], f'page 2: the four speed badges are the touch targets in the Playback speed row ({badges})')
-    ab_path = m.hit(270, SHEET2_Y + 100 + 25)
+    ab_path = m.hit(270, SHEET2_Y + 150 + 25)
     expect(ab_path[-1] == 'img_switch' or ab_path[-1] == 'listitem0', f'page 2: the A-B repeat row takes the touch ({ab_path})')
-    for pos in range(4):   # the page 1 rows are not reachable on page 2
+    for pos in range(6):   # the page 1 rows are not reachable on page 2
         expect(not any(n in ('listitem2', 'listitem4', 'listitem5', 'pod_more', 'pod_tape', 'pod_vinyl') for n in m.hit(160, SHEET2_Y + 25 + 50 * pos)), f'page 2: row {pos} does not reach a page 1 row')
     expect(all(not m.hit(160, y)[-1].endswith('!') for y in range(SHEET2_Y + 2, SCREEN_H, 7)), 'page 2: no touch lands on a hidden widget')
     expect(not any(n in ROWS for n in m.hit(160, SHEET2_Y - 1)), f'page 2: one pixel above the sheet there is no row ({m.hit(160, SHEET2_Y - 1)})')
@@ -499,7 +539,7 @@ def run(ctx):
     for _ in range(3): m.click_more(); m.click_back()
     expect(m.shown() == PAGE1 and m.vh() == 300 and m.top() == SHEET_Y, 'switching pages repeatedly ends where it began')
     m.click_more(); m.mark(); m.relayout(); m.sync()
-    expect(m.shown() == PAGE2 and m.stacked()[:5] == PAGE2, 'a relayout while on page 2 (the Delete confirm opening over the dialog) keeps the rows, stacked in y order for the list_view paint hook')
+    expect(m.shown() == PAGE2 and m.stacked()[:6] == PAGE2, 'a relayout while on page 2 (the Delete confirm opening over the dialog) keeps the rows, stacked in y order for the list_view paint hook')
 
     # -- 4. tap above the sheet closes it (the stock handler, on the new y); a tap on the sheet does not -----------------------------
     def up(m, y):
@@ -565,7 +605,7 @@ def run(ctx):
     untouched(m, 'stock init failed'); expect(ret == 0x10 and m.names() == ['stock_playmore_resume'], 'a failed stock init: its result, nothing else')
     m = PM(); m.call(PSYMS['m1plus_playmore_init'], a0=0, a1=0, count=200000)
     expect(m.names() == ['stock_playmore_resume'], 'no dialog: nothing but the stock init')
-    for missing in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_more_label', 'pod_back_label', 'pod_tape_label', 'pod_vinyl_label', 'pod_goep_label', 'pod_art_label', 'scrlabel1', 'label1_msg', 'playmore_listview', 'playmore_scrollview', 'scroll_bar_m', 'listitem3'):
+    for missing in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', 'pod_more_label', 'pod_back_label', 'pod_tape_label', 'pod_vinyl_label', 'pod_goep_label', 'pod_art_label', 'pod_sleep_label', 'scrlabel1', 'label1_msg', 'playmore_listview', 'playmore_scrollview', 'scroll_bar_m', 'listitem3'):
         m = PM(); del m.widgets[missing]; m.open(); untouched(m, f'no {missing}')
     m = PM(); m.setword(m.rows[SEARCH] + 0x44, m.lv); m.open(); untouched(m, 'a row outside the scroll_view')
     m = PM(); m.kids(m.sv, m.rows[:7]); m.open(); untouched(m, 'seven rows in the scroll_view (an asset without pod_more)')
@@ -573,10 +613,11 @@ def run(ctx):
     m = PM(); m.kids(m.sv, m.rows[:9]); m.open(); untouched(m, 'nine rows in the scroll_view (an asset without pod_tape)')
     m = PM(); m.kids(m.sv, m.rows[:10]); m.open(); untouched(m, 'ten rows in the scroll_view (an asset without pod_vinyl)')
     m = PM(); m.kids(m.sv, m.rows[:12]); m.open(); untouched(m, 'twelve rows in the scroll_view (an asset without pod_art)')
-    m = PM(); m.kids(m.sv, m.rows + [m.alloc(0x80)]); m.open(); untouched(m, 'thirteen children in the scroll_view')
-    for key in PM_TEXTS:
+    m = PM(); m.kids(m.sv, m.rows[:13]); m.open(); untouched(m, 'thirteen rows in the scroll_view (an asset without pod_sleep)')
+    m = PM(); m.kids(m.sv, m.rows + [m.alloc(0x80)]); m.open(); untouched(m, 'fifteen children in the scroll_view')
+    for key in list(PM_TEXTS) + ['powerm_sleep']:
         m = PM(); m.tr_fail = {key}; m.open(); untouched(m, f'the text {key!r} cannot be set')
-    for which in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'bg', 'destroy'):
+    for which in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', 'bg', 'destroy'):
         m = PM(); m.bind_fail = which; m.open(); untouched(m, f'the {which} handler cannot be bound')
     m = PM(); m.bind_fail = 'pod_back'; m.open()
     fn, c = m.bound[(m.dialog, O['EVT_DESTROY'])]      # the destroy handler a failed start left behind does nothing
@@ -617,7 +658,7 @@ def run(ctx):
     names = [c[0] for c in m.calls]
     expect(names == ['get_wifisignal', 'onlineart_open', 'window_close'] and ('window_close', m.dialog) in m.calls, f'a tap opens the page, then closes the sheet ({names})')
     m = PM(); m.open(); m.click_more(); m.art_ret = -1; m.calls = []; m.click_row(ART)
-    expect([c[0] for c in m.calls] == ['get_wifisignal', 'onlineart_open'] and m.shown() == PAGE2 and m.top() == SHEET2_Y and m.size(m.dialog) == (320, 250),
+    expect([c[0] for c in m.calls] == ['get_wifisignal', 'onlineart_open'] and m.shown() == PAGE2 and m.top() == SHEET2_Y and m.size(m.dialog) == (320, 300),
            'a page that will not open leaves the sheet as it was, on page 2, nothing closed')
     m = PM(); m.wifi = -1; m.open(); m.calls = []; m.click_more()
     dim = [c for c in m.calls if c[0] == 'widget_set_opacity' and c[1] == m.rows[ART]]
@@ -633,6 +674,56 @@ def run(ctx):
     m = PM(); m.open(); m.calls = []
     stale = m.alloc(0x80); m.call(PSYMS['pm_on_art'], a0=stale, a1=0, count=100000)
     expect('onlineart_open' not in [c[0] for c in m.calls], 'a Find Cover & Lyrics click handler left behind for another dialog does nothing')
+
+    # Sleep Timer (pm_on_sleep, page 2, under Playback speed): the stock Power page by a plain navigator_to, the page first, the sheet closed once it is up
+    m = PM(); m.open()
+    expect(m.handlers_of(m.rows[SLEEP], O['EVT_CLICK']) == [(PSYMS['pm_on_sleep'], m.dialog)] and m.dead(SLEEP) and ('widget_set_tr_text', m.nodes['pod_sleep_label'], 'powerm_sleep') in m.calls,
+           'the Sleep Timer row has our click handler alone, the stock key powerm_sleep as its label; on page 1 it is hidden and insensitive')
+    m.click_more()
+    expect(m.live(SLEEP) and 'pod_sleep' in m.tap_row(SLEEP) and m.shown()[2] == SLEEP, f'page 2: Sleep Timer is the third row, live, and a touch on it reaches it ({m.tap_row(SLEEP)})')
+    m.calls = []; m.click_row(SLEEP)
+    expect([c[0] for c in m.calls] == ['navigator_to', 'window_close'] and m.calls[0] == ('navigator_to', 'systemset/powermanager_page') and ('window_close', m.dialog) in m.calls,
+           f'a tap opens the stock Power page, then closes the sheet ({m.calls})')
+    m = PM(); m.open(); m.click_more(); m.nav_ret = 1; m.calls = []; m.click_row(SLEEP)
+    expect([c[0] for c in m.calls] == ['navigator_to'] and m.shown() == PAGE2 and m.top() == SHEET2_Y and m.size(m.dialog) == (320, 300),
+           'a page that will not open leaves the sheet as it was, on page 2, nothing closed')
+    # the window stack the way the device keeps it: navigator_to always adds a window, the to-player button restacks the player and leaves the Power page under it
+    def sleep_from_player(m):
+        """Now Playing on top, the More sheet open on page 2, a tap on Sleep Timer."""
+        m.calls = []; m.click_more(); m.click_row(SLEEP); return [c for c in m.calls if c[0] in ('navigator_to', 'switch_to', 'to_fg', 'fg_refresh', 'stock_power_refresh', 'window_close')]
+    m = PM(); m.page('home_page'); m.page('playing_page'); m.open()
+    for cycle in range(5):
+        calls = sleep_from_player(m)
+        want = [('navigator_to', 'systemset/powermanager_page'), ('window_close', m.dialog)] if cycle == 0 else [('switch_to', 'powermanager_page', 0), ('to_fg', 'powermanager_page'), ('fg_refresh', 'powermanager_page'), ('window_close', m.dialog)]
+        expect(calls == want and m.stack_names().count('powermanager_page') == 1 and m.stack_names()[-1] == 'powermanager_page',
+               f'Sleep Timer cycle {cycle + 1}: {"a new Power window" if cycle == 0 else "the Power window in the stack restacked, refreshed by its own stock foreground handler"}, then the sheet closed, no direct refresh call from us; one Power window, on top ({calls}, {m.stack_names()})')
+        m.to_player()
+        expect(m.stack_names() == ['home_page', 'powermanager_page', 'playing_page'], f'the to-player button leaves the Power page under the player ({m.stack_names()})')
+        m.open()    # the next More sheet over Now Playing
+    expect(m.stack_names().count('powermanager_page') == 1 and len(m.navs) == 3, f'five cycles: still exactly one Power window ({m.stack_names()})')
+    # Back from the restacked page: stock's btn_return0 stores the time and calls navigator_back (pops the top window): the player is below the Power page again
+    m = PM(); m.page('home_page'); m.page('playing_page'); m.open(); sleep_from_player(m); m.to_player(); m.open(); sleep_from_player(m)
+    expect(m.stack_names() == ['home_page', 'playing_page', 'powermanager_page'], f'a restacked Power page sits directly over the player, so Back (stock pops the top window) lands on Now Playing ({m.stack_names()})')
+    # Power already in the stack under other windows, and not at the top: restacked from wherever it is
+    m = PM(); m.page('home_page'); m.page('powermanager_page'); m.page('playing_page'); m.page('m1plus_lyrics'); m.open(); calls = sleep_from_player(m)
+    expect(calls == [('switch_to', 'powermanager_page', 0), ('to_fg', 'powermanager_page'), ('fg_refresh', 'powermanager_page'), ('window_close', m.dialog)] and m.stack_names() == ['home_page', 'playing_page', 'm1plus_lyrics', 'powermanager_page'],
+           f'a Power window already in the stack is reused, whatever lies above it ({calls}, {m.stack_names()})')
+    # the restack fails: stock's open instead, still a closed sheet; the lookup finds a closing window: the same; the lookup finds nothing: stock's open
+    m = PM(); m.page('playing_page'); m.page('powermanager_page'); m.page('playing_page'); m.open(); m.switch_fail = True; calls = sleep_from_player(m)
+    expect([c[0] for c in calls] == ['switch_to', 'navigator_to', 'window_close'],
+           f'a failed restack falls back to stock navigator_to and closes the sheet once it is up, no foreground event, no refresh ({calls})')
+    m = PM(); m.page('powermanager_page'); m.page('playing_page'); m.open(); m.closing.add(m.navs[0][1]); calls = sleep_from_player(m)
+    expect([c[0] for c in calls] == ['navigator_to', 'window_close'], f'a Power window that is closing is not restacked ({calls})')
+    m = PM(); m.page('playing_page'); m.open(); m.no_wm = True; calls = sleep_from_player(m)
+    expect([c[0] for c in calls] == ['navigator_to', 'window_close'], f'no window manager: stock navigator_to ({calls})')
+    m = PM(); m.page('playing_page'); m.page('powermanager_page'); m.page('playing_page'); m.open(); m.switch_fail = True; m.nav_ret = 1; calls = sleep_from_player(m)
+    expect([c[0] for c in calls] == ['switch_to', 'navigator_to'] and m.shown() == PAGE2 and m.size(m.dialog) == (320, 300),
+           f'a failed restack and a refused page leave the sheet as it was ({calls})')
+    m = PM(); m.open(); m.click_more(); m.wifi = -1; m.click_back(); m.click_more()
+    expect(m.live(SLEEP), 'Sleep Timer needs no Wi-Fi: live with the Wi-Fi off')
+    m = PM(); m.open(); m.calls = []
+    stale = m.alloc(0x80); m.call(PSYMS['pm_on_sleep'], a0=stale, a1=0, count=100000)
+    expect('navigator_to' not in [c[0] for c in m.calls], 'a Sleep Timer click handler left behind for another dialog does nothing')
 
     # -- 7c. an episode is playing: page 1 is Go to Podcasts and More (patch/playmore.c pm_set, pm_on_goep) ------------------------------
     EP = '/mnt/mmc/Podcasts/Show One/ep1.mp3'
@@ -655,8 +746,8 @@ def run(ctx):
     m.window_event(O['EVT_WINDOW_TO_BG'])
     expect(m.top() == SCREEN_H - 100, f'episode: another dialog over the sheet leaves it on the bottom ({m.top()})')
     m.click_more()
-    expect(m.shown() == PAGE2 and m.size(m.dialog) == (320, SHEET2_H) and m.top() == SHEET2_Y and [c for c in m.calls if c[0] == 'image_base_set_image'][-1] == ('image_base_set_image', m.glass, 'pm_sheet'),
-           'episode: More opens the same second page as for a song (250 px, its own glass)')
+    expect(m.shown() == PAGE2 and m.size(m.dialog) == (320, SHEET2_H) and m.top() == SHEET2_Y and [c for c in m.calls if c[0] == 'image_base_set_image'][-1] == ('image_base_set_image', m.glass, 'pm_sheet6'),
+           'episode: More opens the same second page as for a song (300 px, the same glass)')
     m.click_back()
     expect(m.shown() == PAGE_EP and m.size(m.dialog) == (320, 100) and m.size(m.glass) == (320, 100) and all(m.dead(i) for i in HIDDEN_EP), 'episode: the back header returns to the episode\'s page 1')
     m = ep_sheet()
@@ -831,10 +922,10 @@ def run(ctx):
     row_px = th.find('hscroll_label', 'srlabel_item_white_style', 'normal')[0].get('font_size')
     tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui/dialog/playmore_dialog.bin'), 'rb').read())
     more_l, back_l, more_c, back_c = (tree.find(n) for n in ('pod_more_label', 'pod_back_label', 'pod_more_chev', 'pod_back_chev'))
-    tape_l, vinyl_l, goep_l, art_l = tree.find('pod_tape_label'), tree.find('pod_vinyl_label'), tree.find('pod_goep_label'), tree.find('pod_art_label')
+    tape_l, vinyl_l, goep_l, art_l, sleep_l, sleep_c = tree.find('pod_tape_label'), tree.find('pod_vinyl_label'), tree.find('pod_goep_label'), tree.find('pod_art_label'), tree.find('pod_sleep_label'), tree.find('pod_sleep_chev')
     speed_l, note_l, badges = tree.find('scrlabel1'), tree.find('label1_msg'), [tree.find(n) for n in ('img_1x', 'img_1_25x', 'img_1_5x', 'img_2x')]
     note_px = int(note_l.get('style:normal:font_size'))
-    over = {'more': [], 'speed': [], 'note': [], 'tape': [], 'vinyl': [], 'goep': [], 'art': []}
+    over = {'more': [], 'speed': [], 'note': [], 'tape': [], 'vinyl': [], 'goep': [], 'art': [], 'sleep': []}
     for loc in pod_i18n.ALL_TABLES:
         for key in PM_TEXTS:
             expect(built[loc][key] == pod_i18n.TEXT[key][pod_i18n.table_for(loc)], f'{loc}: {key!r} is in the table as {pod_i18n.TEXT[key][pod_i18n.table_for(loc)]!r}')
@@ -853,14 +944,20 @@ def run(ctx):
             if w > goep_l.w: over['goep'].append((loc, w))
             w = StbText(font, row_px).layout(built[loc]['Cover & Lyrics'])[1]
             if w > art_l.w: over['art'].append((loc, w))
-        m = PM(); m.set_language(loc); m.open()
-        for key, label in (('More', 'pod_more_label'), ('More', 'pod_back_label'), ('Speed', 'scrlabel1'), ('Files below 48 kHz only', 'label1_msg'), ('Cassette Mode', 'pod_tape_label'), ('Vinyl Mode', 'pod_vinyl_label'), ('Go to Podcasts', 'pod_goep_label'), ('Cover & Lyrics', 'pod_art_label')):
-            want = pod_i18n.TEXT[key][pod_i18n.table_for(loc)].encode('utf-8').decode('latin-1')
+            w = StbText(font, row_px).layout(built[loc]['powerm_sleep'])[1]   # the stock key, the Power page's own row text
+            if sleep_l.x + w > sleep_c.x - 8: over['sleep'].append((loc, w))
+        m = PM(); m.set_language(loc)
+        if loc in pod_i18n.LOCALES: m.strings['powerm_sleep'] = built[loc]['powerm_sleep']   # the stock key is in the stock table, not in pod_i18n.TEXT
+        m.open()
+        for key, label in (('powerm_sleep', 'pod_sleep_label'), ('More', 'pod_more_label'), ('More', 'pod_back_label'), ('Speed', 'scrlabel1'), ('Files below 48 kHz only', 'label1_msg'), ('Cassette Mode', 'pod_tape_label'), ('Vinyl Mode', 'pod_vinyl_label'), ('Go to Podcasts', 'pod_goep_label'), ('Cover & Lyrics', 'pod_art_label')):
+            if key == 'powerm_sleep' and loc not in pod_i18n.LOCALES: continue   # the three CD ripper stubs carry no stock Sleep Timer
+            want = (built[loc][key] if key == 'powerm_sleep' else pod_i18n.TEXT[key][pod_i18n.table_for(loc)]).encode('utf-8').decode('latin-1')
             expect(('widget_set_tr_text', m.nodes[label], key) in m.calls and ('widget_set_text_utf8', m.nodes[label], want) in m.calls, f'{loc}: {label} reads {want!r}')
     expect(not over['tape'] and tape_l.w == 200 and tape_l.x == more_l.x, f'"Cassette Mode" fits its {tape_l.w} px label (no chevron) in all 13 languages at {row_px} px ({over["tape"]})')
     expect(not over['vinyl'] and vinyl_l.w == 200 and vinyl_l.x == more_l.x, f'"Vinyl Mode" fits its {vinyl_l.w} px label (no chevron) in all 13 languages at {row_px} px ({over["vinyl"]})')
     expect(not over['goep'] and goep_l.w == 200 and goep_l.x == more_l.x, f'"Go to Podcasts" fits its {goep_l.w} px label in all 13 languages at {row_px} px ({over["goep"]})')
     expect(not over['art'] and art_l.w == 200 and art_l.x == more_l.x, f'"Cover & Lyrics" fits its {art_l.w} px label (no chevron) in all 13 languages at {row_px} px ({over["art"]})')
+    expect(not over['sleep'] and sleep_l.w == 200 and sleep_l.x == more_l.x and sleep_c.x == more_c.x, f'"Sleep Timer" (the stock key powerm_sleep, the Power page\'s own text) fits between the label x {sleep_l.x} and the chevron at x {sleep_c.x} in all 13 languages at {row_px} px ({over["sleep"]})')
     expect(not over['more'] and row_px == 20, f'"More" fits between the label x {more_l.x} and the chevron at x {more_c.x} in all 13 languages at {row_px} px ({over["more"]})')
     wide = lambda key, px: max((StbText(font, px).layout(built[l][key])[1], l) for l in pod_i18n.LOCALES)
     expect(not over['speed'] and wide('Speed', row_px)[0] > 40, f'"Speed" fits the {speed_l.w} px label in all 13 languages at {row_px} px (widest {wide("Speed", row_px)}; over: {over["speed"]})')
@@ -874,18 +971,18 @@ def run(ctx):
     stock_ui = awtk_ui.parse(open(os.path.join(stock_raw, 'ui/dialog/playmore_dialog.bin'), 'rb').read())
     speed_names = ('scrlabel1', 'label1_msg', 'img_1x', 'img_1_25x', 'img_1_5x', 'img_2x')
     built_ui = awtk_ui.parse(open(os.path.join(WORK, 'rootfs/release/assets/default/raw/ui/dialog/playmore_dialog.bin'), 'rb').read())
-    geo = lambda t: [(w.type, w.name, w.x, w.y, w.w, w.h) for w in t.walk() if not w.name.startswith(('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_glass')) and w.name not in speed_names]
+    geo = lambda t: [(w.type, w.name, w.x, w.y, w.w, w.h) for w in t.walk() if not w.name.startswith(('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', 'pod_glass')) and w.name not in speed_names]
     expect(geo(built_ui) == geo(stock_ui), 'every stock widget but the speed row\'s keeps its type, name and rectangle (the M1+ Music ones are added)')
     expect([(w.type, w.name) for w in built_ui.walk() if w.name in speed_names] == [(w.type, w.name) for w in stock_ui.walk() if w.name in speed_names],
            'the speed row\'s widgets keep their type and name')
     expect([(built_ui.find(n).x, built_ui.find(n).y, built_ui.find(n).w, built_ui.find(n).h) for n in speed_names] ==
            [(48, 8, 96, 20), (48, 31, 262, 14), (148, 0, 36, 50), (188, 0, 36, 50), (228, 0, 36, 50), (268, 0, 36, 50)], 'the speed row\'s rectangles')
     sv = built_ui.find('playmore_scrollview')
-    expect([c.name for c in sv.children] == STOCK_NAMES + ['pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art'], 'pod_more, pod_back, pod_tape, pod_vinyl, pod_goep and pod_art are the eighth to thirteenth children of the scroll_view, after the seven stock rows')
+    expect([c.name for c in sv.children] == STOCK_NAMES + ['pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep'], 'pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art and pod_sleep are the eighth to fourteenth children of the scroll_view, after the seven stock rows')
     hl = built_ui.get('highlight')
     expect(hl is not None and hl.startswith('default(alpha=') and hl.endswith(')') and 40 <= int(hl[len('default(alpha='):-1]) <= 200, f'the dialog dims the page under it with the "default" highlighter ({hl!r})')
     imgs = {f[:-4] for f in os.listdir(os.path.join(WORK, 'rootfs/release/assets/default/raw/images/xx'))}
-    for name, kids in (('pod_more', ['pod_more_icon', 'pod_more_label', 'pod_more_chev']), ('pod_back', ['pod_back_chev', 'pod_back_label']), ('pod_tape', ['pod_tape_icon', 'pod_tape_label']), ('pod_vinyl', ['pod_vinyl_icon', 'pod_vinyl_label']), ('pod_goep', ['pod_goep_icon', 'pod_goep_label']), ('pod_art', ['pod_art_icon', 'pod_art_label'])):
+    for name, kids in (('pod_more', ['pod_more_icon', 'pod_more_label', 'pod_more_chev']), ('pod_back', ['pod_back_chev', 'pod_back_label']), ('pod_tape', ['pod_tape_icon', 'pod_tape_label']), ('pod_vinyl', ['pod_vinyl_icon', 'pod_vinyl_label']), ('pod_goep', ['pod_goep_icon', 'pod_goep_label']), ('pod_art', ['pod_art_icon', 'pod_art_label']), ('pod_sleep', ['pod_sleep_icon', 'pod_sleep_label', 'pod_sleep_chev'])):
         row = built_ui.find(name)
         expect(row.type == 'list_item' and row.get('visible') == 'false' and row.get('sensitive') == 'false', f'{name} starts hidden and insensitive')
         expect([c.name for c in row.children] == kids and all(c.get('sensitive') == 'false' for c in row.children if c.type == 'image'), f'{name}\'s children are {kids}, the pictures insensitive')

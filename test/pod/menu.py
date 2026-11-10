@@ -609,14 +609,14 @@ def settings_tests(ctx):
         m.call(on_row, a0=rows0 + 12 * settings_i, count=3000000)
         return m
 
-    # 15. Settings (cards): the stock Wi-Fi and Bluetooth pages, our pages, Playback (Play Mode, EQ, the stock list), System (Display, Accent, Keyboards, About, the stock list), Developer
-    expect([r.label for r in S.rows] == ['Wi-Fi', 'Bluetooth', 'Home Screen', 'Library', 'Now Playing', 'Play Mode', 'EQ', 'All Playback Settings',
-                                         'Display', 'Appearance', 'Keyboards', 'About', 'All System Settings', 'Developer'],
-           'the Settings page lists Wi-Fi, Bluetooth, Home Screen, Library, Now Playing, Play Mode, EQ, All Playback Settings, Display, Accent, Keyboards, About, All System Settings, Developer')
+    # 15. Settings (cards): the stock Wi-Fi and Bluetooth pages, our pages, Playback (EQ, Continue Playing, the stock list), System (Display, Accent, Keyboards, About, the stock list), Developer
+    expect([r.label for r in S.rows] == ['Wi-Fi', 'Bluetooth', 'Home Screen', 'Library', 'Now Playing', 'EQ', 'Continue Playing', 'All Playback Settings',
+                                         'Display', 'Appearance', 'Keyboards', 'Battery', 'About', 'All System Settings', 'Developer'],
+           'the Settings page lists Wi-Fi, Bluetooth, Home Screen, Library, Now Playing, EQ, Continue Playing, All Playback Settings, Display, Appearance, Keyboards, Battery, About, All System Settings, Developer')
     pb = next(r for r in S.rows if r.label == 'All Playback Settings'); ss = next(r for r in S.rows if r.label == 'All System Settings')
     expect((pb.action, pb.arg) == (P.ACT_HOME, P.HOME_PLAYSET) and (ss.action, ss.arg) == (P.ACT_HOME, P.HOME_SYSSET),
            'All Playback Settings opens the stock Play settings list, All System Settings the stock one')
-    expect([r.label for r in P.HOMESET_PAGE.rows][-4:] == ['Main Menu', 'Extras', 'Battery Percentage', 'Regenerate Daily Mix'] and P.HOMESET_PAGE.title == 'Home Screen', 'Home Screen ends with Main Menu, Extras, Battery Percentage and Regenerate Daily Mix')
+    expect([r.label for r in P.HOMESET_PAGE.rows][-3:] == ['Main Menu', 'Extras', 'Regenerate Daily Mix'] and P.HOMESET_PAGE.title == 'Home Screen', 'Home Screen ends with Main Menu, Extras and Regenerate Daily Mix')
     ex_r, cu_r = len(P.ITEMS), P.SETTINGS_ID
     expect(P.MENU.rows[cu_r].label == 'Settings' and (P.MENU.rows[cu_r].action, P.MENU.rows[cu_r].arg) == (P.ACT_PAGE, P.SETTINGS_PAGE_INDEX)
            and P.MENU.rows[ex_r].label == 'Extras' and P.MENU.rows[-1] is P.MENU.rows[ex_r], 'the menu\'s Settings row opens the Settings page; Extras is the last row')
@@ -640,6 +640,7 @@ def settings_tests(ctx):
     keyboards_tests(ctx, on_row, rows_s)
     region_row_tests(ctx, on_row, rows_s)
     pcsearch_row_tests(ctx, on_row, rows_s)
+    azswitch_row_tests(ctx, on_row, rows_s)
 
 
 def mainmenu_section(ctx):
@@ -1001,24 +1002,67 @@ def pcsearch_row_tests(ctx, on_row, rows_s):
         expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Podcast Discover', 'Podcasts', 'Search words are sent to Apple.')), f'the row, its header and its note have a text in {loc}')
 
 
+def azswitch_row_tests(ctx, on_row, rows_s):
+    """Settings > Library > Index Rail and Section Headers (both on by default), docs/modules/settings.md: two switch rows in the List Navigation card, saved as "1" / "0" in
+    /mnt/data/m1plus/appearance-index-rail and appearance-headers, written atomically; a failed save changes neither the file nor the switch; the A-Z pages read them with azrail_setting / azhead_setting."""
+    expect, P = ctx.expect, pod_pages
+    A = P.LIBRARY_PAGE
+    sys_i = next(i for i, r in enumerate(P.SETTINGS_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.LIBRARY_PAGE_INDEX)
+    for label, act, fn, tog, name, default in (('Index Rail', P.ACT_AZRAIL, 'azrail_setting', 'azrail_toggle', 'appearance-index-rail', 1), ('Section Headers', P.ACT_AZHEAD, 'azhead_setting', 'azhead_toggle', 'appearance-headers', 1)):
+        FILE = '/mnt/data/m1plus/' + name
+        r_i = next(i for i, r in enumerate(A.rows) if r.action == act)
+        layout = [type(x).__name__ + (':' + x.label if isinstance(x, P.Row) else '') for x in A.layout]
+        expect(A.rows[r_i].label == label and act in P.SWITCH_ACTIONS and P.row_kind(A.rows[r_i]) == 'switch' and name in P.SETTING_FILES and layout[3:7] == ['Hdr', 'Row:Index Rail', 'Row:Section Headers', 'Note'],
+               f'{label}: a switch row in the List Navigation card (header and note) under the first card of the Library page, its file {name} among the Settings Files ({layout[3:7]})')
+
+        def open_page(saved=None):
+            m = Machine()
+            m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(P.SETTINGS_PAGE.rows))] + [f'pod_switch{r_i}'])}
+            if saved is not None: m.fs[FILE] = saved
+            m.call(on_row, a0=rows_s + 12 * sys_i, count=3000000)
+            return m
+
+        def images(m): return [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] == m.widgets[f'pod_switch{r_i}']]
+
+        m = open_page()
+        expect(images(m) == ['sset_on' if default else 'sset_off'] and FILE not in m.fs and m.call(PSYMS[fn], count=2000000) == default, f'{label}: opened with nothing saved, the switch is {"on" if default else "off"} (the default) and nothing is written')
+        for data, on in ((b'1\n', 1), (b'1', 1), (b'0\n', 0), (b'0', 0), (b'', default), (b'x', default), (b'11', default), (b'\n1', default)):
+            want = on if data in (b'1\n', b'1', b'0\n', b'0') else (1 if default else 0)
+            expect(images(open_page(data)) == ['sset_on' if want else 'sset_off'], f'{label}: saved {data!r}: the switch opens {"on" if want else "off"}')
+        m = open_page()
+        m.click(f'pod_row{r_i}')
+        now = 0 if default else 1
+        expect(m.fs.get(FILE) == (b'1\n' if now else b'0\n') and FILE + '.tmp' not in m.fs and ('rename', FILE + '.tmp', FILE) in m.calls and ('fsync', '/mnt/data/m1plus') in m.calls
+               and images(m)[-1] == ('sset_on' if now else 'sset_off') and m.call(PSYMS[fn], count=2000000) == now, f'{label}: a tap flips it, written atomically (a temp file, fsync, rename)')
+        m.click(f'pod_row{r_i}')
+        expect(m.fs.get(FILE) == (b'1\n' if default else b'0\n') and m.call(PSYMS[fn], count=2000000) == default, f'{label}: and back')
+        m = open_page(b'1\n'); m.fail.add(('write', FILE + '.tmp'))
+        m.click(f'pod_row{r_i}')
+        expect(m.fs.get(FILE) == b'1\n' and FILE + '.tmp' not in m.fs and images(m) == [] and m.call(PSYMS[fn], count=2000000) == 1, f'{label}: a failed save changes neither the file nor the switch')
+        expect(all(pod_i18n.TEXT[label][pod_i18n.table_for(loc)] for loc in pod_i18n.LOCALES), f'{label} has a text in every language')
+
+
 def library_tests(ctx, on_row):
-    """Settings > Library (m1plus_library): Update Library, Rebuild Covers, the Landscape switch, Podcast Discover and Podcast Region; no Album Order row or picker."""
+    """Settings > Library (m1plus_library): Update Library, Rebuild Covers, the List Navigation switches, the Landscape switch, Podcast Discover and Podcast Region; no Album Order row or picker."""
     expect, P = ctx.expect, pod_pages
     C = P.LIBRARY_PAGE
     rows_s = PSYMS[f'pod_rows_{P.SETTINGS_PAGE_INDEX}']
     cf_i = next(i for i, r in enumerate(P.SETTINGS_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.LIBRARY_PAGE_INDEX)
     LAND, SORT = '/mnt/data/m1plus/coverflow-landscape', SORT_FILE
     land_i = next(i for i, r in enumerate(C.rows) if r.action == P.ACT_LANDSCAPE)
+    vk_i = next(i for i, r in enumerate(C.rows) if r.action == P.ACT_VOLKEYS)
+    vsw, VK = f'pod_switch{vk_i}', '/mnt/data/m1plus/coverflow-volume-keys'
     sw = f'pod_switch{land_i}'
-    expect([(r.label, r.action) for r in C.rows] == [('Update Library', P.ACT_HOME), ('Rebuild Covers', P.ACT_REBUILD), ('Landscape', P.ACT_LANDSCAPE), ('Podcast Discover', P.ACT_PCSEARCH), ('Podcast Region', P.ACT_REGION)]
+    expect([(r.label, r.action) for r in C.rows] == [('Update Library', P.ACT_HOME), ('Rebuild Covers', P.ACT_REBUILD), ('Rebuild Artist Photos', P.ACT_AREBUILD), ('Index Rail', P.ACT_AZRAIL), ('Section Headers', P.ACT_AZHEAD), ('Landscape', P.ACT_LANDSCAPE), ('Volume Buttons', P.ACT_VOLKEYS), ('Podcast Discover', P.ACT_PCSEARCH), ('Podcast Region', P.ACT_REGION)]
            and C.title == 'Library' and C.rows[0].arg == P.HOME_UPDATE and P.row_kind(C.rows[0]) == 'action',
-           'the Library page: one card of Update Library (the stock page, no chevron), Rebuild Covers, then Landscape (switch) under Cover Flow, and Podcast Discover (switch) above Podcast Region (a value, its picker)')
+           'the Library page: one card of Update Library (the stock page, no chevron), Rebuild Covers, Rebuild Artist Photos, then the List Navigation switches (Index Rail, Section Headers), Landscape and Volume Buttons (switches, the second with its note) under Cover Flow, and Podcast Discover (switch) above Podcast Region (a value, its picker)')
 
-    def open_lib(land=None, language=None):
+    def open_lib(land=None, language=None, vk=None):
         m = Machine()
         m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(
-            ['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(P.SETTINGS_PAGE.rows))] + [sw])}
+            ['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(P.SETTINGS_PAGE.rows))] + [sw, vsw, 'pod_note1_t'])}
         if land is not None: m.fs[LAND] = land
+        if vk is not None: m.fs[VK] = vk
         if language: m.set_language(language)
         m.call(on_row, a0=rows_s + 12 * cf_i, count=3000000)
         return m
@@ -1044,6 +1088,35 @@ def library_tests(ctx, on_row):
     m.click(f'pod_row{land_i}')
     expect(m.fs.get(LAND) == b'1\n' and not any(c[0] == 'image_base_set_image' for c in m.calls) and LAND + '.tmp' not in m.fs,
            'a failed write changes neither the file nor the switch')
+
+    # Volume Buttons: its own setting file (the Cover Flow page reads it), a switch with a note below, off by default
+    layout = [f'{type(x).__name__}:{getattr(x, "label", getattr(x, "text", ""))}' for x in C.layout]
+    expect(layout[layout.index('Row:Landscape'):][:3] == ['Row:Landscape', 'Row:Volume Buttons', 'Note:In Cover Flow, the volume buttons move between albums.'] and P.ACT_VOLKEYS == 89
+           and P.ACT_VOLKEYS in P.SWITCH_ACTIONS and P.row_kind(C.rows[vk_i]) == 'switch', f'Volume Buttons is a switch row (89) right below Landscape, with its note ({layout})')
+    m = open_lib()
+    expect(('label_set_line_wrap', m.widgets['pod_note1_t'], 1) in m.calls, 'the note, a plain label, has its line wrap on')
+    # generic: the page table carries a bit per wrapping note (Note.lines > 1), never one for a one-line note, and open_page wraps exactly those
+    notes = [x for x in C.layout if isinstance(x, P.Note)]
+    expect(C.wrap_notes() == sum(1 << n for n, x in enumerate(notes) if x.lines > 1) and C.wrap_notes() == 0b10
+           and P.PEQ_PAGE.wrap_notes() == 0b10 and P.PEQP_PAGE.wrap_notes() == 1 and P.TENPREAMP_PAGE.wrap_notes() == 1, 'every Note with lines > 1 is a wrap bit of its page: Library note 1 (after the List Navigation note), the Equalizer hint, the skipped-lines note, the Preamp note')
+    expect([c[1] for c in m.calls if c[0] == 'label_set_line_wrap'] == [m.widgets['pod_note1_t']], 'only the wrapping note is wrapped when the Library page opens')
+    expect(('image_base_set_image', m.widgets[vsw], 'sset_off') in m.calls, 'Volume Buttons is off with nothing saved')
+    for data, img in ((b'1\n', 'sset_on'), (b'1', 'sset_on'), (b'x', 'sset_off'), (b'', 'sset_off'), (b'0\n', 'sset_off')):
+        m = open_lib(vk=data)
+        expect(('image_base_set_image', m.widgets[vsw], img) in m.calls, f'saved {data!r}: the Volume Buttons switch opens {img[5:]}')
+    m = open_lib()
+    m.click(f'pod_row{vk_i}')
+    expect(m.fs.get(VK) == b'1\n' and VK + '.tmp' not in m.fs and ('rename', VK + '.tmp', VK) in m.calls and ('fsync', '/mnt/data/m1plus') in m.calls
+           and ('image_base_set_image', m.widgets[vsw], 'sset_on') in m.calls and LAND not in m.fs, 'a tap turns it on: written atomically, the switch on, Landscape untouched')
+    m.click(f'pod_row{vk_i}')
+    expect(m.fs.get(VK) == b'0\n' and ('image_base_set_image', m.widgets[vsw], 'sset_off') in m.calls, 'and off again')
+    m = open_lib(vk=b'1\n'); m.fail.add(('write', VK + '.tmp'))
+    m.click(f'pod_row{vk_i}')
+    expect(m.fs.get(VK) == b'1\n' and not any(c[0] == 'image_base_set_image' for c in m.calls) and VK + '.tmp' not in m.fs, 'a failed write changes neither the file nor the switch')
+    m = open_lib(); m.click(f'pod_row{land_i}')
+    expect(VK not in m.fs, 'the Landscape switch does not touch the volume keys file')
+    for loc in pod_i18n.LOCALES:
+        expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Volume Buttons', 'In Cover Flow, the volume buttons move between albums.')), f'the Volume Buttons row and its note have a text in {loc}')
 
     expect('m1plus_albumorder' not in [p.key for p in P.PAGES] and 'Album Order' not in [r.label for r in C.rows], 'no Album Order row and no picker page: the order is the Albums "..." card\'s')
 

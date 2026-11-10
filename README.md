@@ -64,6 +64,10 @@ Start with [installation](docs/install.md), then the [user guide](docs/guide.md)
 For building or contributing, see the [development workflow](docs/workflow.md).
 The [documentation index](docs/README.md) lists technical references.
 
+## Support
+
+If M1+ Music is useful to you, you can support its development on [Ko-fi](https://ko-fi.com/imfing).
+
 ## License
 
 [MIT](LICENSE). Shanling firmware is not included. Font and icon licenses accompany their assets.

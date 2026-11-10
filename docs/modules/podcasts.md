@@ -8,7 +8,7 @@ The iPod interface also exposes Podcasts.
 
 | Area | Files |
 |---|---|
-| Model, resume, speed, library filter | `patch/pcmodel.c`, `patch/podcasts.h` |
+| Model, resume, speed, episode order, library filter | `patch/pcmodel.c`, `patch/podcasts.h` |
 | Page, sheets, refresh dialog | `patch/podcasts.c`, `tools/pod_ui.py` |
 | Network worker | `patch/pcnet.c`, `patch/curlopts.h` |
 | Region | `patch/pcregion.c`, `tools/pcregion.py` |
@@ -28,11 +28,11 @@ github.com/m-d-e-v/q2-podcasts, `internal/library/download.go` and
 Shows contains Continue Listening, a show grid and Discover/Downloads/Subscriptions/Saved rows, in that order (Discover, tile `pod_ic_discovertile` (Lucide `compass`) with Apple Podcasts in grey, there while Podcast Discover is on (otherwise the Library rows close up: Downloads first); it opens the Discover level; text ends at x 278, the shared list chevron `pod_make_chevron` at x 288, hairline to 310; the episode page's show row likewise).
 The Shows, Discover, Downloads, Subscriptions and Saved levels open on the large title (`pg_big`, x `SG_TITLE_X` 12, `SG_TITLE_W` wide, 32 px, cut with an ellipsis); the navbar's small title (the same words, `label_title`) shows once the offset reaches `SG_COLLAPSE` (`pod_title_gone`, `pg_collapse`), as on every large-title page ([navbar](navbar.md) "Small titles"). Its width runs from x 58 to the leftmost visible button (`pg_nav`): the globe (Shows level, while Podcast Discover is on), the Discover level's magnifier or the "...", else Now Playing. The refresh line, section headers and rows keep their own x (14-16).
 Shows sort by newest remote or local episode date. The show page has artwork, metadata,
-Latest Episode and all known episodes, newest first. A body tap opens episode details;
+Latest Episode and all known episodes in the show's Episode Order (newest first unless set to Oldest First). The Latest Episode pill is always the newest episode: the first row, the last under Oldest First. A body tap opens episode details;
 the pill plays, downloads, pauses, resumes or retries according to state.
 
 Episode details include the long description and the same playback/download actions. Their show row (cover, name, the list chevron) goes back to the show page the episode is on top of: a subscribed show's episode returns to that show's page (it is Back when the page was opened from that show; from Downloads or Subscriptions the show's page opens and Back goes on to that list), a search or Discover preview's episode returns to the preview.
-Show and episode sheets provide refresh, unsubscribe, played marks and download removal. The Shows level's "..." is there only while the card has something to import (its one row is Import from Card).
+Show and episode sheets provide refresh, unsubscribe, played marks and download removal. The show's sheet rows, in order: Playback Speed (grey value, a tap cycles), **Episode Order** (grey value Newest First / Oldest First, a tap switches to the other, saved at once, then the loaded rows are turned round in place (Oldest First is the exact reverse over the same newest 300, so nothing can fail after the save and the value, the list, the queue and Latest Episode always agree), the sheet stays; a failed save is the toast `Storage unavailable` and no change), Refresh Feed, Select Episodes, Mark All as Played, Unsubscribe (up to six rows, glass `pc_sheet6` for six; the row is `order` last in the asset's fixed rows, glyph `pod_ic_order`, Lucide arrow-down-wide-narrow). The Shows level's "..." is there only while the card has something to import (its one row is Import from Card).
 Selection supports bulk deletion; the currently playing file is retained.
 Deleting an episode clears its saved resume/played state. Unsubscribing preserves local files.
 
@@ -79,19 +79,20 @@ A show can supply `cover.jpg/png/jpeg` or `folder.*`.
 | `<filename>.part` | Incomplete download; retained for resume |
 | `.m1plus/podcasts/resume` | PCR1 ring: count plus 16-byte hash/position/length/flags slots, most recent first |
 | `.m1plus/podcasts/speed` | PCS1: count plus show-hash/mode pairs |
+| `.m1plus/podcasts/order` | PCO1: count plus show-hash/value pairs (0 newest first, 1 oldest first); a missing file, entry or bad value is newest first. The key is the show folder's hash, so renaming a folder resets its order. Same 64 slots and eviction as speed (`pm_tab_*`, shared with it) |
 
 Metadata permits LF or CRLF, ignores unknown fields and strips tabs/newlines from values.
-The model reads at most 64 KB of `.episodes`, keeping the newest 300 entries.
+The model reads at most 64 KB of `.episodes`, keeping the newest 300 entries. `pc_load_show` returns the episodes already in the show's order (`pc_order_get`; pcmodel.c `pm_ep_cmp`), so the Show page, the iPod episode level, the Downloads scan, Continue Listening and the queue (`pg_episode_queue`: from the tapped episode down the rows) agree; the cap of 300 keeps the newest 300 under either order (Oldest First lists those, oldest first), so the order never changes which episodes are listed. The sort's index lives in the same allocation as the merged entries, so a list is either in the show's order or not returned at all (no memory: no episodes, as before); there is no unsorted fallback.
 Titles fit 95 bytes; local filenames must fit 127. Show feed/image URLs use `PC_URL` 320.
 Short descriptions contain at most 200 UTF-8 bytes; episode notes at most 4096.
 
 `pm_merge` combines feed entries and files into local, partial or remote episodes.
 Without metadata, title comes from the filename and date from mtime.
-Sort is date descending, filename descending, then entry order.
+Sort (newest first) is date descending, filename descending (digit runs by value, case ignored: `cc_key_cmp`, so Ep 10 is later than Ep 2), then entry order; Oldest First is the exact reverse. A show with no metadata entry (only copied files; the dates are copy order) sorts by that natural file name alone: descending for Newest First, ascending for Oldest First. A feed show keeps its publication-date sort.
 Refresh preserves old entries whose completed or partial file remains on the card.
 
 Limits: 40 shows, 300 episodes per show, 400 examined files, 512 resume slots and
-64 speed records. State writes require `pod_card_mounted` and use temporary files,
+64 speed records and 64 order records. State writes require `pod_card_mounted` and use temporary files,
 fsync and rename. An unmounted card directory must never receive persistent writes.
 
 ## Playback, resume and speed

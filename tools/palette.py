@@ -101,7 +101,7 @@ ACCENT_TILE = ('pod_ic_dltile', 'pod_ic_subtile', 'pod_ic_savetile', 'pod_ic_dis
 # GLYPH_STOCK names below: the solid accent. Dark flat pills (Songs / Folders Play and Shuffle) and the Queue's off buttons press through the roles ROLE_PRESS_PILL / ROLE_PRESS_QPILL (colours, not images).
 ACCENT_SHUFDOWN = ('ah_shuffle_down',)
 # pod_ic_rd_art (a muted grey #8E8E93 radio set: secondary art, the logo-less station tile, Radio Now Playing's art box and the mini bar) also keeps the prefix out of the glyph rule: placeholders stay neutral.
-ACCENT_GLYPH_NOT = ACCENT_TILE + ('pod_ic_rd_art',)
+ACCENT_GLYPH_NOT = ACCENT_TILE + ('pod_ic_rd_art', 'pod_ic_ar_art')
 ACCENT_ALL = ACCENT_FILL + ACCENT_SWITCH + ACCENT_PRESS + ACCENT_DISC + ACCENT_TILE + ACCENT_SHUFDOWN
 
 

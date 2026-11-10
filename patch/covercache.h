@@ -38,6 +38,10 @@ void ar_push(ar_t *a, const unsigned char *px, unsigned step, unsigned ro, unsig
              ar_emit_t emit, void *user);
 /* The size stock's cover resize (0x5e00bc) gives a decoded w x h picture fitted inside t x t, never upscaled: 1 and the size, or 0 when stock keeps the picture as it is (it
  * is smaller than t in both ways). Stock's float arithmetic, quirks included: a picture exactly t wide (or tall) and shorter is stretched to t x t. */
+/* The whole w x h picture fitted inside size x size (never cropped, size at most AR_MAX), centred over the word bg, in out (size * size words): the longer side becomes size, the other follows, by the
+ * exact area average (a longer side of exactly size is a pixel copy). 1; 0 and out untouched when the sizes are over ar_init's limits. */
+int cc_fit(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at, unsigned size,
+           unsigned bg, unsigned *out);
 int cc_stock_fit(unsigned w, unsigned h, unsigned t, unsigned *tw, unsigned *th);
 /* The size of the picture stock hands to that resize for a JPEG of w0 x h0 with ncomp components: whole when both sides are at most 1024 and it has three components,
  * else decoded at libjpeg's 1/d with d from the longer side (1 under 1024, 2 up to 2048, 4 up to 4096, else 8), each side rounded up. */
@@ -75,6 +79,8 @@ cc_cmap_t *cc_cmap_build(cc_cmap_stat_t *st);
 unsigned cc_cmap_key(cc_cmap_t *map, const char *album);
 void cc_cmap_free(cc_cmap_t *map);
 int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsigned *out);
+/* cc_decode for a picture that must not be cropped: the whole picture fitted inside size x size over the word bg (cc_fit). 1 when out was written. */
+int cc_decode_fit(void *w, const char *url, int unload, unsigned size, unsigned bg, unsigned *out);
 void *cc_copy_list(void *list); /* a stock list copied into a deque of our own */
 void *
 cc_albums(void); /* the stock Albums list (getAllAlbum), copied; NULL if empty or the copy failed (cc_list_failed) */
@@ -97,10 +103,10 @@ int cc_key_cmp(
 int cc_name_cmp(
     const char *a,
     const char *
-        b); /* cc_key_cmp of the names without leading white space and a leading "The " (no pinyin or kana initials: see cc_name_keys) */
+        b); /* cc_key_cmp of the names without leading white space, leading punctuation (when a letter or digit follows) and a leading "The " (no pinyin or kana initials: see cc_name_keys) */
 const char *cc_name_key(
     const char *
-        s); /* s without leading white space and a leading "The " (when something follows it): the text the Artist order compares */
+        s); /* s without leading white space, leading punctuation (so_name) and a leading "The " (when something follows it): the text the Artist order compares */
 int cc_name_initial(
     const char *
         name); /* the first byte of that text, a CJK character as its pinyin initial (stock's utf8_to_pinyin), a kana as its romaji initial: the section letter of a name */
@@ -125,12 +131,12 @@ int cc_sort_mode_set(
     int rev); /* save it atomically; the mode, or -1 when it could not be saved (and the setting is unchanged) */
 unsigned *cc_album_order(
     void *
-        albums); /* heap array of the rows in display order for cc_sort_mode (Recently Added and Year read the whole song list once); NULL = stock order (Title, or no memory / no songs) */
+        albums); /* heap array of the rows in display order for cc_sort_mode (Recently Added and Year read the whole song list once); NULL = stock order (no memory / no songs) */
 int cc_scoped_sort(
-    void); /* cc_sort_mode for one artist's albums: Artist shows as Title (the stock order); its direction is cc_sort_rev */
+    void); /* cc_sort_mode for one artist's albums: Artist shows as Title; its direction is cc_sort_rev */
 unsigned *cc_album_order_mode(
     void *albums, int mode,
-    int rev); /* cc_album_order for the given CC_SORT_* and direction instead of the saved ones; NULL for Title in its default direction; "Unknown Album" and the All Songs row stay last */
+    int rev); /* cc_album_order for the given CC_SORT_* and direction instead of the saved ones; NULL: no albums or no memory (Title falls back to the stock order, backwards for Z-A); "Unknown Album" and the All Songs row stay last */
 unsigned *cc_album_years(
     void *albums,
     void *
@@ -174,10 +180,20 @@ int cc_build_dur(
 int cc_build_open(unsigned capacity, int mode); /* 1: an empty job set held; 0: another set is held, or no memory */
 int cc_build_add(const char *track,
                  unsigned key); /* 1 added; 0 skipped (CC_MISSING and the file exists); -1 full or no memory */
+/* An album's artist for the artist photos (patch/artistphoto.h): the album's track folder is kept for the purity check, and the artist gets one job (1) unless it has a result already (0), or the set
+ * is full (-1). Call it for EVERY album of the library, before cc_build_start. force: check the artist again whatever it has (an artists-rebuild request). The snapshot is bounded (AP_LIB_MAX
+ * albums; cc_build_artist_ok is 0 once it overflowed or ran out of memory, and the artist jobs then write nothing). Not in a CC_DURATIONS set. */
+int cc_build_add_artist(const char *track, const char *artist, int force);
+int cc_build_artist_ok(void);
+/* One re-check job of the artist with key (patch/artistphoto.c ap_recheck); tracks = the first track path of each of its albums, one per line (copied). 1 added, -1 full or no memory. */
+int cc_build_add_recheck(const char *tracks, unsigned key);
 int cc_build_add_file(
     const char *track, const char *dst,
     unsigned
         px); /* a transient job instead: the album's art fitted inside px x px (never upscaled; kept only when its longer side is px) into the file dst through dst.tmp, no cache file, no marker (the Pod's cover pane, docs/modules/ipod.md) */
+int cc_build_add_aspect(
+    const char *track, const char *dst, unsigned px,
+    int source); /* cc_build_add_file for a picture shown on its own (the timed cover page), from stock's cover source only (2 the embedded art, 3 the folder's; any other: 0, nothing added; the other source is never a substitute, so art that is small or unsupported makes no file): a picture whose longer side is exactly px keeps its aspect ratio (stock's resize stretches it to px x px), and stock's resize is never the fallback */
 int cc_build_start(
     void); /* 1: the worker runs. 0: nothing to build, card full (MIN_FREE_MB), or no thread: the set is freed */
 int cc_build_done(void); /* albums finished so far (advances as files appear) */

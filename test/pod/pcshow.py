@@ -116,7 +116,7 @@ def machine(card=deep_card, up=True, **kw):
     """The page open on the Shows level (up=False: not opened yet), the font model set for the style labels."""
     m = PCP.page_machine(lambda mm: card(mm, **kw) if kw else card(mm), SM)
     m.px = {m.widgets[n]: px for n, px, *_ in pod_ui.PS_STYLES}
-    m.px.update({m.widgets['pg_sh_speed_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_refresh_vl']: pod_ui.PS_SHEET_PX})
+    m.px.update({m.widgets['pg_sh_speed_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_refresh_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_order_vl']: pod_ui.PS_SHEET_PX})
     m.px.update({m.widgets[n]: px for n, px in (('label_row_title', 21), ('label_row_sub', 18))})
     for r, _, label, *_ in pod_ui.PS_SHEET_ROWS:
         m.px[m.widgets[f'pg_sh_{r}_tx']] = pod_ui.PS_SHEET_PX
@@ -191,9 +191,9 @@ def asset_tests(ctx):
     expect(scrim.type == 'button' and (scrim.x, scrim.y, scrim.w, scrim.h) == (0, 0, 320, 450) and scrim.get('visible') == 'false' and scrim.get('sensitive') == 'false' and scrim.get('style:normal:bg_color') == pod_ui.PL_DIM,
            'the scrim covers the client area, dimmed as the Playlists menu\'s, hidden and insensitive')
     rh = O['PM_ROW_H']
-    expect((card.x, card.y, card.w, card.h) == (0, 450 - 5 * rh, 320, 5 * rh) and card.get('style:normal:bg_image') == 'pc_sheet5' and card.get('visible') == 'false',
-           'the card is the five-row sheet at the bottom of the window (the payload sets its size and picture)')
-    expect([c.name for c in card.children] == [f'pg_sh_{r}' for r in PCP.SHEET_ROWS] and len(PCP.SHEET_ROWS) == 13, 'thirteen rows: the show sheet\'s five, the episode sheet\'s five (Save Episode), the Shows level\'s Import from Card and Subscriptions, the Subscriptions level\'s Export OPML (Select is the show sheet\'s, relabelled)')
+    expect((card.x, card.y, card.w, card.h) == (0, 450 - 6 * rh, 320, 6 * rh) and card.get('style:normal:bg_image') == 'pc_sheet6' and card.get('visible') == 'false',
+           'the card is the six-row sheet at the bottom of the window (the payload sets its size and picture)')
+    expect([c.name for c in card.children] == [f'pg_sh_{r}' for r in PCP.SHEET_ROWS] and len(PCP.SHEET_ROWS) == 14, 'fourteen rows (Episode Order last): the show sheet\'s five, the episode sheet\'s five (Save Episode), the Shows level\'s Import from Card and Subscriptions, the Subscriptions level\'s Export OPML (Select is the show sheet\'s, relabelled)')
     for r, icon, label, value, red in pod_ui.PS_SHEET_ROWS:
         row = tree.find(f'pg_sh_{r}')
         ic, tx, hr = tree.find(f'pg_sh_{r}_ic'), tree.find(f'pg_sh_{r}_tx'), tree.find(f'pg_sh_{r}_hr')
@@ -658,12 +658,12 @@ def show_sheet(m):
 def sheet_tests(ctx):
     """The show's sheet: each row shown only where it applies, in the More sheet's layout; and the cell's."""
     expect = ctx.expect
-    GLASS = {n: f'pc_sheet{n}' for n in range(1, 6)}
+    GLASS = {n: f'pc_sheet{n}' for n in range(1, 7)}
     m = shown()
     rows, h, glass, moves = show_sheet(m)
-    expect(rows == ['speed', 'refresh', 'select', 'markall', 'unsub'] and h == 250 and glass == GLASS[5], f'a subscribed show with files and unplayed episodes: Playback Speed, Refresh Feed, Select Episodes, Mark All as Played, Unsubscribe ({rows}, {h}, {glass})')
-    expect(all(moves[r][2] == 0 and moves[r][3] == i * 50 for i, r in enumerate(rows)) and ('widget_move', m.widgets['pg_sh_card'], 0, 200) in m.calls and ('widget_resize', m.widgets['pg_sh_card'], 320, 250) in m.calls,
-           'the rows are 50 px each from the top of the card, which is 250 px high at the bottom of the window (y 200 of 450)')
+    expect(rows == ['speed', 'order', 'refresh', 'select', 'markall', 'unsub'] and h == 300 and glass == GLASS[6], f'a subscribed show with files and unplayed episodes: Playback Speed, Episode Order, Refresh Feed, Select Episodes, Mark All as Played, Unsubscribe ({rows}, {h}, {glass})')
+    expect(all(moves[r][2] == 0 and moves[r][3] == i * 50 for i, r in enumerate(rows)) and ('widget_move', m.widgets['pg_sh_card'], 0, 150) in m.calls and ('widget_resize', m.widgets['pg_sh_card'], 320, 300) in m.calls,
+           'the rows are 50 px each from the top of the card, which is 300 px high at the bottom of the window (y 150 of 450)')
     expect(all(flags(m, f'pg_sh_{r}') == (0, 0) for r in ('dl', 'rm', 'mark', 'unmark')) and flags(m, 'pg_sh_scrim') == (1, 1) and flags(m, 'pg_sh_card') == (1, 1), 'the episode rows stay hidden and insensitive; the scrim and the card show')
     hair = [r for r in rows if m.props.get((m.widgets[f'pg_sh_{r}_hr'], 'visible')) == 1]
     expect(hair == rows[1:], 'a hairline on the top of every row but the first')
@@ -694,20 +694,20 @@ def sheet_tests(ctx):
     # a show without a feed (bravo): no Refresh Feed, no Unsubscribe
     m = machine(); open_show(m, 'bravo')
     rows, h, glass, _ = show_sheet(m)
-    expect(rows == ['speed', 'select', 'markall'] and h == 150 and glass == GLASS[3], f'a show of files (no feed): Playback Speed, Select Episodes, Mark All as Played; a 150 px sheet ({rows}, {h}, {glass})')
+    expect(rows == ['speed', 'order', 'select', 'markall'] and h == 200 and glass == GLASS[4], f'a show of files (no feed): Playback Speed, Episode Order, Select Episodes, Mark All as Played; a 200 px sheet ({rows}, {h}, {glass})')
     # all played: no Mark All as Played
     for i in (1, 2, 3): m.call(PSYMS['pc_mark'], a0=PCP.pc_hash(f'{RP}/bravo/b{i}.mp3'), a1=1, count=2000000)
     PCP.click(m, 'pg_sh_scrim')
     rows, h, glass, _ = show_sheet(m)
-    expect(rows == ['speed', 'select'] and h == 100 and glass == GLASS[2], f'every episode played: Mark All as Played is gone ({rows})')
+    expect(rows == ['speed', 'order', 'select'] and h == 150 and glass == GLASS[3], f'every episode played: Mark All as Played is gone ({rows})')
     # a subscribed show with nothing on the card: no Select Episodes
     m = machine(entries=[entry(i) for i in range(3)], files=()); open_show(m)
     rows, h, glass, _ = show_sheet(m)
-    expect(rows == ['speed', 'refresh', 'markall', 'unsub'] and h == 200 and glass == GLASS[4], f'nothing on the card: no Select Episodes ({rows}, {h}, {glass})')
+    expect(rows == ['speed', 'order', 'refresh', 'markall', 'unsub'] and h == 250 and glass == GLASS[5], f'nothing on the card: no Select Episodes ({rows}, {h}, {glass})')
     # a show with no episode and no mark: its own sheet (speed, refresh, unsubscribe)
     m = machine(entries=[]); open_show(m)
     rows, h, glass, _ = show_sheet(m)
-    expect(rows == ['speed', 'refresh', 'unsub'] and h == 150, f'a subscription with no episode yet: speed, refresh, unsubscribe ({rows})')
+    expect(rows == ['speed', 'order', 'refresh', 'unsub'] and h == 200, f'a subscription with no episode yet: speed, order, refresh, unsubscribe ({rows})')
     # never refreshed
     m = machine(checked=0, files=()); open_show(m); show_sheet(m)
     expect(text_of(m, 'pg_sh_refresh_vl') == 'Never refreshed', 'never refreshed: the value says so')
@@ -765,6 +765,72 @@ def sheet_tests(ctx):
     expect(f'{RP}/{DEEP}/e6.mp3.part' not in m.fs, 'a paused one: its .part is removed')
 
 
+def order_tests(ctx):
+    """Episode Order on the show's sheet: the grey value, a tap flips it and sorts the list again (the sheet stays), a failed save, the queue and the Latest Episode pill under both values."""
+    expect = ctx.expect
+    paths = lambda m: [m.read_cstr(m.word(r + O['REC_PATH'])).rsplit('/', 1)[1] for r in m.played[0]]
+    m = shown()
+    rows, *_ = show_sheet(m)
+    expect(rows[:2] == ['speed', 'order'] and text_of(m, 'pg_sh_order_vl') == 'Newest First' and text_of(m, 'pg_sh_order_tx') == 'Episode Order', f'the row follows Playback Speed and says Newest First by default ({rows})')
+    expect(m.props.get((m.widgets['pg_sh_order_vl'], 'visible')) in (None, 1) and ('widget_resize', m.widgets['pg_sh_order_vl'], font().width('Newest First', 18), 50) in m.calls, 'its value label is as wide as the text')
+    first = lambda mm: [c['date'] for _, c in sorted(PCP.all_cells(mm).items())]
+    before = first(m)
+    PCP.click(m, 'pg_sh_order')
+    expect(text_of(m, 'pg_sh_order_vl') == 'Oldest First' and flags(m, 'pg_sh_card') == (1, 1) and m.fs[PCP.ORDER][:4] == b'PCO1' and m.call(PSYMS['pc_order_get'], a0=PCP.pc_hash(DEEP), count=2000000) == 1,
+           'a tap says Oldest First, saves it (PCO1) and the sheet stays open')
+    after = first(m)
+    expect(after == before[::-1], f'the list is sorted again at once: the cells run the other way ({before} -> {after})')
+    PCP.click(m, 'pg_sh_order')
+    expect(text_of(m, 'pg_sh_order_vl') == 'Newest First' and first(m) == before and m.call(PSYMS['pc_order_get'], a0=PCP.pc_hash(DEEP), count=2000000) == 0, 'a second tap goes back')
+    # a failed save: the toast, nothing changes
+    m.fail.add(('write', PCP.ORDER + '.tmp')); m.calls = []
+    PCP.click(m, 'pg_sh_order')
+    toast = [c[1] for c in m.calls if c[0] == 'toast']   # (before the list is painted again: a paint clears the calls)
+    expect(text_of(m, 'pg_sh_order_vl') == 'Newest First' and first(m) == before and toast == ['Storage unavailable'], 'a failed save: "Storage unavailable", the value and the list stay')
+    m.fail.clear()
+    # no memory after the save: the rows are turned round in place, so the saved order, the list, the queue and Latest Episode still agree
+    m = shown()
+    before = first(m)
+    PCP.click(m, 'btn_more')
+    m.calloc_fail = True
+    PCP.click(m, 'pg_sh_order')
+    m.calloc_fail = False
+    expect(text_of(m, 'pg_sh_order_vl') == 'Oldest First' and m.call(PSYMS['pc_order_get'], a0=PCP.pc_hash(DEEP), count=2000000) == 1 and first(m) == before[::-1],
+           f'calloc failing during the flip: saved Oldest First and the cells run the other way all the same ({before} -> {first(m)})')
+    PCP.click(m, 'pg_sh_scrim')
+    m.calls = []; PCP.latest(m)
+    expect(paths(m) == ['e2.mp3', 'e1.mp3', 'e0.mp3'] and m.played[1] == 2, f'and the Latest Episode pill plays the newest, e0, from the oldest-first queue ({paths(m)}, {m.played[1]})')
+    # the queue: from the tapped episode down the displayed rows (local ones: e0 e1 e2 newest first)
+    m = shown()
+    m.call(PSYMS['pc_order_set'], a0=PCP.pc_hash(DEEP), a1=0, count=30000000)
+    n = len(PCP.all_cells(m))
+    m.calls = []; PCP.act(m, 1)
+    expect(paths(m) == ['e0.mp3', 'e1.mp3', 'e2.mp3'] and m.played[1] == 1, f'newest first: a tap on e1 queues e0 e1 e2 and starts at the second ({paths(m)}, {m.played[1]})')
+    PCP.click(m, 'btn_more'); PCP.click(m, 'pg_sh_order'); PCP.click(m, 'pg_sh_scrim')
+    expect(n == len(PCP.all_cells(m)) == 8, 'all eight episodes are listed either way')
+    m.calls = []; PCP.act(m, 8 - 3)   # e2, the oldest on the card: cells run e7 .. e0
+    expect(paths(m) == ['e2.mp3', 'e1.mp3', 'e0.mp3'] and m.played[1] == 0, f'oldest first: a tap on e2 plays it and goes on to the newer ones ({paths(m)}, {m.played[1]})')
+    m.calls = []; PCP.act(m, 8 - 2)
+    expect(paths(m) == ['e2.mp3', 'e1.mp3', 'e0.mp3'] and m.played[1] == 1, f'oldest first: a tap on e1 starts at the second of the queue ({paths(m)}, {m.played[1]})')
+    m.calls = []; PCP.latest(m)
+    expect(paths(m) == ['e2.mp3', 'e1.mp3', 'e0.mp3'] and m.played[1] == 2 and texts_of(m, 'label_ps_latest'), f'the Latest Episode pill still plays the newest, e0, under Oldest First ({paths(m)}, {m.played[1]})')
+    # rows above the tapped one that are not on the card do not move its place in the queue (e0, e1 remote above e2)
+    m = shown(files=(1, 2))
+    m.calls = []; PCP.act(m, 2)
+    expect(paths(m) == ['e1.mp3', 'e2.mp3'] and m.played[1] == 1, f'a tap on e2 under a remote e0: the queue is e1 e2 and e2 is the second ({paths(m)}, {m.played[1]})')
+    m = shown(files=(2,))
+    m.calls = []; PCP.act(m, 2)
+    expect(paths(m) == ['e2.mp3'] and m.played[1] == 0, f'two remote episodes above e2: it is the only one, place 0 ({paths(m)}, {m.played[1]})')
+    # the pill reads the newest episode too: e0 is not on the card
+    m = shown(files=(1, 2))
+    m.call(PSYMS['pc_order_set'], a0=PCP.pc_hash(DEEP), a1=1, count=30000000)
+    PCP.click(m, 'btn_return'); open_show(m)
+    expect([t for t, _ in texts_of(m, 'label_ps_latestw')] == ['Latest Episode · 48 MB'], 'oldest first, the newest not on the card: the pill still reads its size')
+    m.thread = None; m.calls = []
+    PCP.latest(m)
+    expect(DL.state(m, 'e0.mp3', DEEP)[0] == 1 and not [c for c in m.calls if c[0] == 'navigator_to_with_context'], 'and a tap downloads e0, the newest')
+
+
 def mark_all_tests(ctx):
     expect = ctx.expect
     m = shown()
@@ -774,7 +840,7 @@ def mark_all_tests(ctx):
     c = PCP.all_cells(m)
     expect(all(c[i]['played'] for i in range(8)), 'every title is grey')
     PCP.click(m, 'btn_more')
-    expect(sheet_state(m)[0] == ['speed', 'refresh', 'select', 'unsub'], 'and the row is gone from the sheet')
+    expect(sheet_state(m)[0] == ['speed', 'order', 'refresh', 'select', 'unsub'], 'and the row is gone from the sheet')
     expect(m.ring() is not None, 'the ring is written')
 
 
@@ -851,7 +917,7 @@ def unsub_tests(ctx):
     expect(m.word(DL.pn_at(DL.DCANCEL)) == DL.key_of(DEEP, 'e5.mp3') and DL.fn(m, 'pn_dl_count') <= 1, 'the running download is told to stop (the worker drops it) and nothing else of the show is queued')
     expect(PCP.title_text(m).startswith('All-In') and flags(m, 'btn_more') == (1, 1), 'the page is still the show (it has files)')
     PCP.click(m, 'btn_more')
-    expect(sheet_state(m)[0] == ['speed', 'select', 'markall'], 'its sheet has no Refresh Feed and no Unsubscribe now')
+    expect(sheet_state(m)[0] == ['speed', 'order', 'select', 'markall'], 'its sheet has no Refresh Feed and no Unsubscribe now')
     PCP.click(m, 'pg_sh_scrim')
     shows, _ = m.shows()
     expect([s['feed'] for s in shows if s['dir'] == DEEP] == [''], 'the show is no subscription: pc_scan_shows reads no feed address')
@@ -952,12 +1018,12 @@ def width_tests(ctx):
         latest = [tr('Latest Episode'), f'{tr("Latest Episode")} · {tr("%d MB", 999)}', f'{tr("Latest Episode")} · {tr("Download")}', f'{tr("Latest Episode")} · {tr("Waiting")}',
                   f'{tr("Latest Episode")} · {tr("Paused")}', f'{tr("Latest Episode")} · {tr("Retry")}', f'{tr("Latest Episode")} · 100%']
         w18 = lambda s: fnt.width(s, 18)
-        lab = {k: w18(tr(k)) for k in ('Playback Speed', 'Refresh Feed', 'Select Episodes', 'Mark All as Played', 'Unsubscribe', 'Remove Download', 'Mark as Played', 'Mark as Unplayed')}
+        lab = {k: w18(tr(k)) for k in ('Playback Speed', 'Refresh Feed', 'Select Episodes', 'Mark All as Played', 'Unsubscribe', 'Remove Download', 'Mark as Played', 'Mark as Unplayed', 'Episode Order')}
         ages = [tr('Just now'), tr('%dm ago', 59), tr('%dh ago', 23), tr('%dd ago', 6)] + [tr(f'{mo} %d', 30) for mo in ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')]
         age = max(w18(a) for a in ages)
         worst[loc] = dict(pill=max(pod_show.pill_width(fnt, p) for p in pills), latest=max(pod_show.latest_width(fnt, p, True) for p in latest), labels=max(lab.values()),
                           speed=lab['Playback Speed'] + 12 + max(w18(s) for s in ('1×', '1.25×', '1.5×', '2×')), refresh=lab['Refresh Feed'] + 12 + age,
-                          never=lab['Refresh Feed'] + 12 + w18(tr('Never refreshed')), dl=w18(f'{tr("Download")} · {tr("%d MB", 999)}'), head=fnt.width(tr('Episodes'), 22),
+                          order=lab['Episode Order'] + 12 + max(w18(tr(k)) for k in ('Newest First', 'Oldest First')), never=lab['Refresh Feed'] + 12 + w18(tr('Never refreshed')), dl=w18(f'{tr("Download")} · {tr("%d MB", 999)}'), head=fnt.width(tr('Episodes'), 22),
                           confirm=w18(tr('Unsubscribe from this show?')))
     print('  widest per language (px):', {k: max(v[k] for v in worst.values()) for k in worst['en_US']}, 'in', {k: max(worst, key=lambda loc: worst[loc][k]) for k in worst['en_US']})
     row = O['PS_SHEET_VALUE_R'] - O['PS_SHEET_TEXT_X']
@@ -966,6 +1032,7 @@ def width_tests(ctx):
     expect(not bad('latest', O['PS_LATEST_MAX']), f'the Latest Episode pill fits {O["PS_LATEST_MAX"]} px in every language (a long state word is cut with an ellipsis: {bad("latest", O["PS_LATEST_MAX"])})')
     expect(not bad('labels', row), f'every sheet label fits its {row} px row ({bad("labels", row)})')
     expect(not bad('speed', row), f'Playback Speed and its value share the row ({bad("speed", row)})')
+    expect(not bad('order', row), f'Episode Order and its widest value share the row ({bad("order", row)})')
     expect(not bad('refresh', row), f'Refresh Feed and its widest age ("Just now", "59m ago", "23h ago", "6d ago", a date this year; one from last year with its ", 2025" may be cut by the ellipsis in ja) share the row ({bad("refresh", row)})')
     expect(not bad('never', row), f'Refresh Feed and "Never refreshed" share the row ({bad("never", row)})')
     expect(not bad('dl', row), f'"Download · 999 MB" fits the row ({bad("dl", row)})')
@@ -1004,7 +1071,7 @@ def screen_off_tests(ctx):
     expect(m.thread and m.thread[0] == PSYMS['pn_dmain'] and m.props.get((m.widgets['pod_pd_scrim'], 'visible'), 0) == 0, 'the dark: the waiting refresh is dropped, the downloads go on, no dialog')
 
 
-SECTIONS = [asset_tests, layout_tests, cell_tests, tap_tests, latest_tests, nav_tests, tint_tests, sheet_tests, mark_all_tests, refresh_tests, unsub_tests, wrap_tests, width_tests, screen_off_tests]
+SECTIONS = [asset_tests, layout_tests, cell_tests, tap_tests, latest_tests, order_tests, nav_tests, tint_tests, sheet_tests, mark_all_tests, refresh_tests, unsub_tests, wrap_tests, width_tests, screen_off_tests]
 
 
 def run(ctx):

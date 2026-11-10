@@ -119,8 +119,11 @@ pull-down from the top edge works as on any page (see `tape.md` "Touch"). What a
 | the chevron, (0, 0) .. (52, 44) | `navigator_back()`: Now Playing is under the page |
 | the play key's column (x 223 .. 269, y 420 .. 480) | `playpause_quick_click()` |
 | the previous / next key's column (170 .. 223 / 269 .. 318) | `prev_quick_click(e, 0)` / `next_quick_click(e, 0)` with the UP event (stock reads its time and ignores a click within 1 s of the last) |
-| the record (inside radius 162, above the band), moving under 14 px | `playpause_quick_click()` |
+| the record (inside radius 162, above the band), moving under 14 px, page opened from the More sheet | `playpause_quick_click()` |
+| the same tap, page **opened by Now Playing's timer** (Idle Display, `vinyl_open_idle`) | `navigator_back()`, like the chevron (as stock's Album Cover page closes on a tap) |
 | anything else, a drag, an abort | nothing |
+
+**Auto-opened flag.** `vinyl_open_idle` (called only by `bc_timed_open`, [bigcover](bigcover.md) "Idle view") is `vinyl_open` plus `vn.idle = 1` once the page is up; `vinyl_open` (the More sheet) never sets it. The flag is part of the page's state, so destroy clears it; a timed open on a page that already exists leaves its flag as it was. The chevron, the three keys (and their pressed looks), drags and aborts behave the same either way. Tests: `test/pod/vinyl.py` `idle_touch_tests`.
 
 A key is drawn pressed (darker, smaller shadow, its glyph a pixel lower) from DOWN until the touch ends; only its cell is invalidated. After an action the
 page looks again at once (the play glyph, the arm, the record follow without waiting a tick). Previous / next are the stock functions the Now Playing buttons
@@ -169,7 +172,7 @@ clean rounded top. Tap Vinyl Mode: the sheet closes and the turntable appears, t
 - Does the arm sit on the record while playing and creep inward over the track, swing out to its park on pause and back in on play, jump back to the outer
   groove on a track change? Is its shadow right?
 - Title (with weight), artist, times, status line readable; long titles cut with an ellipsis; the status line updates with the volume keys.
-- Keys: pressed look while held; play / pause, previous, next work (a second press within 1 s is ignored by stock). A tap on the record pauses / resumes; a
+- Keys: pressed look while held; play / pause, previous, next work (a second press within 1 s is ignored by stock). A tap on the record pauses / resumes (closes the page when it was opened by the Now Playing timer); a
   drag does nothing; the chevron closes; a pull-down from the top edge still opens the control centre.
 - A track with no cover: the grey label; an album with a cover cached: its cover at once; a track whose cover demo extracts: the label changes within a few
   seconds.

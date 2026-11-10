@@ -299,7 +299,7 @@ def bottom_sheet(s, fr, rows):
     return fr
 
 
-SHOW_ROWS = [('pc_ic_speed', 'Playback Speed', '1.25×', WHITE), ('pc_ic_refresh', 'Refresh Feed', 'Updated 1h ago', WHITE), ('pc_ic_select', 'Select Episodes', '', WHITE),
+SHOW_ROWS = [('pc_ic_speed', 'Playback Speed', '1.25×', WHITE), ('pod_ic_order', 'Episode Order', 'Newest First', WHITE), ('pc_ic_refresh', 'Refresh Feed', 'Updated 1h ago', WHITE), ('pc_ic_select', 'Select Episodes', '', WHITE),
              ('pc_ic_check', 'Mark All as Played', '', WHITE), ('pc_ic_unsub', 'Unsubscribe', '', REDISH)]
 SHOWS_ROWS = [('pc_ic_import', 'Import from Card', '', WHITE)]      # Add Show stays out until search exists
 

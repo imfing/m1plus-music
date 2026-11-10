@@ -71,6 +71,7 @@ static struct {
     unsigned t_last;
     int dx0, dy0, dx1, dy1; /* the rectangle changed since the last invalidate (empty: dx1 <= dx0) */
     int touch, down, sx, sy; /* a touch is down; what it began on; where */
+    int idle; /* opened by Now Playing's timer (vinyl_open_idle): a tap on the record closes the page; cleared with the rest at destroy */
 } vn __attribute__((section(".scratch")));
 
 /* ---------------------------------------------------------------------------
@@ -696,7 +697,6 @@ static void vn_update(int force) {
      * label's, and comes well after stock's pause stall); nothing playing: parked. A jump of more than VN_ARM_SNAP swings there */
     to = !t ? VN_PARK : playing ? vn_groove_at(pos, len) : vn.spin && vn.armed ? vn.arm_at : VN_PARK;
     vn.arm_to = to;
-    d = to - vn.arm_at;
     if (!vn_lock()) /* the layers, locked once for this look's composes */
         ;
     else if (force) { /* the first look: everything above the band at once */
@@ -837,6 +837,10 @@ static int vn_on_touch(void *ctx, void *e) {
             return RET_OK;
         }
         if (down == K_RECORD && ((dx < 0 ? -dx : dx) >= VN_TAP_PX || (dy < 0 ? -dy : dy) >= VN_TAP_PX)) return RET_OK;
+        if (down == K_RECORD && vn.idle) {
+            navigator_back();
+            return RET_OK;
+        }
         if (down == K_PLAY || down == K_RECORD)
             playpause_quick_click();
         else if (down == K_NEXT)
@@ -1115,4 +1119,12 @@ int vinyl_open(void) {
     navigator_back();
     memset(&vn, 0, sizeof vn);
     return -1;
+}
+
+/* Open for Now Playing's idle timer (patch/bigcover.c bc_timed_open): as vinyl_open, and a tap on the record then closes the page like the chevron (as stock's Album Cover page closes on a tap)
+ * instead of pausing. A page that is already open is left as it is, flag included. The flag lives in the page's state, which destroy clears. */
+int vinyl_open_idle(void) {
+    int was = vn.win != (void *)0, r = vinyl_open();
+    if (!was && r == 0) vn.idle = 1;
+    return r;
 }

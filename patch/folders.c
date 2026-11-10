@@ -177,6 +177,9 @@ static int fo_is_sel(int rec) { return fo.sel && (fo.sel[rec >> 3] >> (rec & 7) 
  * The order (docs/modules/folders.md "Order"): the stock list is never reordered; `vis` (the records shown) is sorted. Folders come before files in every order. Name: the lists' name order
  * (cc_key_cmp: digit runs by value, case folded), Z-A reversed inside each group. Date Modified: newest first, one statx per entry. Type: the extension, then the name; Z-A reverses the extension
  * only, and folders (no type) stay by name. A level of the storages and a playlist file's tracks keep their own order.
+ * The tracks of a CUE image (stock's parser @0x5e6f00 makes one record per TRACK: the name is the TITLE, the path is the image's for all of them) are ordered as the image file would be
+ * (its file name, its type, its date) and stay together in the CUE's order (by start) in every order and direction, as stock's own comparator keeps them (@0x5dec88: two CUE records of
+ * one path are never exchanged, two of different paths go by path).
  */
 static const char *fo_name(int rec) { return cc_str(deque_at(fo.list, (unsigned)rec), REC_NAME); }
 static const char *fo_url(int rec) { return cc_str(deque_at(fo.list, (unsigned)rec), REC_PATH); }
@@ -194,9 +197,23 @@ static const char *fo_ext(const char *name) {
     return dot ? dot : "";
 }
 
+/* A CUE track (the stock rows' test @0x524c98, on an audio file's record). */
+static int fo_cue(int rec) {
+    void *r = deque_at(fo.list, (unsigned)rec);
+    return I(r, REC_TYPE) == T_FILE && (I(r, REC_CUE_START) > 0 || I(r, REC_CUE_END) > 0);
+}
+/* The name a record is ordered by: its own, or for a CUE track the image's file name (the path after its last '/'). */
+static const char *fo_key(int rec) {
+    const char *p, *base;
+    if (!fo_cue(rec)) return fo_name(rec);
+    for (p = base = fo_url(rec); *p; ++p)
+        if (*p == '/') base = p + 1;
+    return base;
+}
+
 static int fo_cmp(unsigned a, unsigned b) {
     int c, g = fo_group((int)a), rev = fo.eff_rev;
-    const char *na = fo_name((int)a), *nb = fo_name((int)b);
+    const char *na = fo_key((int)a), *nb = fo_key((int)b);
     if (g != fo_group((int)b)) return g - fo_group((int)b);
     if (fo.eff == 1 && fo.mt && fo.mt[a] != fo.mt[b]) { /* Newest First; Oldest First reverses it */
         c = fo.mt[a] > fo.mt[b] ? -1 : 1;
@@ -204,6 +221,11 @@ static int fo_cmp(unsigned a, unsigned b) {
     }
     if (fo.eff == 2 && g && (c = cc_key_cmp(fo_ext(na), fo_ext(nb))) != 0) return rev ? -c : c;
     if ((c = cc_key_cmp(na, nb)) != 0) return fo.eff == 0 && rev ? -c : c;
+    if (g && fo_cue((int)a) && fo_cue((int)b) &&
+        !strcmp(fo_url((int)a), fo_url((int)b))) { /* one image's tracks: the CUE's order */
+        void *ra = deque_at(fo.list, a), *rb = deque_at(fo.list, b);
+        if (I(ra, REC_CUE_START) != I(rb, REC_CUE_START)) return I(ra, REC_CUE_START) < I(rb, REC_CUE_START) ? -1 : 1;
+    }
     return a < b ? -1 : a > b;
 }
 
@@ -244,10 +266,12 @@ static unsigned fo_offers(void) {
     return m;
 }
 
-/* The queue loadSongList built (the folder's audio files in the stock order) put in the order shown: each record takes the place of the row with its path (a binary search over the rows by
- * path); a file the page does not show (a dot name) goes last. Returns where `pick` is now, -1 with nothing changed when memory is short. In place: the records are exchanged by cycles. */
+/* The queue loadSongList built (the folder's audio files in the stock order) put in the order shown: each record takes the place of the row with its path and CUE start (a binary search
+ * over the rows by both: the tracks of a CUE image share the path); a file the page does not show (a dot name) goes last. Returns where `pick` is now, -1 with nothing changed when memory is short. In place: the records are exchanged by cycles. */
+static int fo_start(int rec) { return I(deque_at(fo.list, (unsigned)rec), REC_CUE_START); }
 static int fo_path_cmp(unsigned a, unsigned b) {
     int c = strcmp(fo_url(fo.vis[a]), fo_url(fo.vis[b]));
+    if (!c && fo_start(fo.vis[a]) != fo_start(fo.vis[b])) c = fo_start(fo.vis[a]) < fo_start(fo.vis[b]) ? -1 : 1;
     return c ? c : a < b ? -1 : a > b;
 }
 
@@ -262,17 +286,19 @@ static int fo_reorder(void *queue, void *pick) {
     unsigned char *done = (unsigned char *)calloc(n + 1, 1);
     const char *want =
         cc_str(pick, REC_PATH); /* (the record may be one of the queue's: kept before the records move) */
-    int ret = -1;
+    int want_start = I(pick, REC_CUE_START), ret = -1;
     fo.rk = (unsigned *)calloc(n + 1, sizeof(unsigned));
     if (!byp || !ord || !done || !fo.rk) goto out;
     for (i = 0; i < fo.nvis; ++i) byp[i] = i;
     cc_heapsort(byp, fo.nvis, fo_path_cmp);
     for (i = 0; i < n; ++i) {
         const char *path = cc_str(deque_at(queue, i), REC_PATH);
+        int start = I(deque_at(queue, i), REC_CUE_START);
         lo = 0, hi = fo.nvis, fo.rk[i] = fo.nvis + i; /* (not shown: after the rows, in the stock order) */
         while (lo < hi) {
             unsigned mid = (lo + hi) / 2;
             int c = strcmp(fo_url(fo.vis[byp[mid]]), path);
+            if (!c && fo_start(fo.vis[byp[mid]]) != start) c = fo_start(fo.vis[byp[mid]]) < start ? -1 : 1;
             if (!c) {
                 fo.rk[i] = byp[mid];
                 break;
@@ -302,7 +328,7 @@ static int fo_reorder(void *queue, void *pick) {
         }
     }
     for (i = 0, ret = -1; i < n; ++i)
-        if (!strcmp(cc_str(deque_at(queue, i), REC_PATH), want)) {
+        if (!strcmp(cc_str(deque_at(queue, i), REC_PATH), want) && I(deque_at(queue, i), REC_CUE_START) == want_start) {
             ret = (int)i;
             break;
         }

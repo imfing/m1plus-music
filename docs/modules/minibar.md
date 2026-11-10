@@ -57,6 +57,8 @@ in `offsets.inc`. Tests check the shared geometry: `test/pod/minibar.py`. Previe
 
 ## Backdrop blur (experimental)
 
+Shared code: `mb_blur_t` and `mb_blur_alloc` / `mb_blur_enable` / `mb_blur_paint` / `mb_blur_free` (`patch/minibar.h`) are the one implementation; the lock screen's mini bar ([lock screen](lockscreen.md)) uses the same routine with its own plane and the same guards and `m1plus-noblur`. The cover is shared the same way (`mb_art_t`, `mb_art_*`).
+
 The glass is translucent, so the rows scrolling behind it show through sharp. The payload blurs what is under the pill in the card's own
 `EVT_BEFORE_PAINT` (`0x11f`: `widget_paint` dispatches it right after `canvas_translate` to the widget and before the background, `0x66dd98`; the glass image is painted by the
 background step, after it) by reading and writing the lcd's drawing buffer directly. `tools/pod_blur.py` is the bit-exact model; `test/pod/minibar.py`

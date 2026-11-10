@@ -33,6 +33,7 @@
 #include "i18n.h"
 #include "songops.h"
 #include "rowmenu.h"
+#include "nextalbum.h"
 
 #define ROW LIST_ROW_H
 
@@ -585,7 +586,9 @@ static void ab_play_at(int at, int how) {
         return;
     }
     ab_classinfo(); /* loadSongList runs the class query again and keeps classinfo for the memory playback */
+    na_arm(); /* the album order this page was opened from (patch/nextalbum.c) is the source of the queue the load below makes */
     so_play(ab.cls, ab.list, at, how, pod_open_player);
+    na_disarm();
 }
 
 static int ab_on_play(void *ctx, void *e) {
@@ -822,6 +825,7 @@ static int ab_on_destroy(void *ctx, void *e) {
     if (ab.stale_timer) timer_remove(ab.stale_timer);
     ab_build_end();
     if (ab.lheld) dur_release();
+    na_page_close();
     ab_bar_black();
     grid_free(&ab.g);
     grid_free(&ab.hg);
@@ -851,6 +855,7 @@ int album_open(unsigned cls, void *row) {
         memset(&ab, 0, sizeof ab);
         return -2;
     }
+    na_page_open(key); /* the order the opener noted, when this album is in it */
     widget_on(ab.win, EVT_DESTROY, ab_on_destroy, (void *)0);
     ab.back = pod_bind(ab.win, "btn_return", ab_on_back, (void *)0);
     ab.np = pod_bind(ab.win, "btn_backtoplayer", pod_on_player, (void *)0);

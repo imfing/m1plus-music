@@ -20,6 +20,7 @@
 #include "stock.h"
 #include "home.h"
 #include "covercache.h"
+#include "artistphoto.h"
 #include "durations.h"
 #include "common.h"
 #include "i18n.h"
@@ -43,10 +44,15 @@ static struct {
     const char *wkey; /* the waiting text's key (translated again at each dot tick) */
     int dph; /* the dots shown now, less one (0..2) */
     int fg, own, scanning, shown, done;
+    int aok; /* the artist photos of this scan are complete if the set finishes (every artist queued, or the library is over AP_LIB_MAX albums and has none): the artists line is stamped */
     int wait, need,
-        probe; /* wait: the pill shows its waiting text; need: parts out of date (1 covers, 2 tracks) after the library was read; probe: no pill, the library is read to compare */
+        probe; /* wait: the pill shows its waiting text; need: parts out of date (1 covers, 2 tracks, 8 artist photos) after the library was read; probe: no pill, the library is read to compare */
     int resume; /* Home left while the pill was up (a build or its wait in progress): the next foreground restarts at HC_RESUME_MS */
     int rebuild; /* the set is a CC_REBUILD one (REBUILD_FILE existed when the scan began) */
+    int arebuild; /* AREBUILD_FILE existed when the scan began: every artist photo is checked again */
+    int astage,
+        atrunc; /* the artist photos' part of the scan (after the covers): astage 0 not reached, 1 stepping through the albums, 2 done; atrunc not every artist fitted the set */
+    unsigned acur, cn; /* its cursor, and the number of cover jobs (the artist jobs follow them in the set) */
     void *albums; /* the library's albums (cc_albums), held for the scan only */
     unsigned *order;
     unsigned count, cur;
@@ -71,8 +77,9 @@ static int hc_off __attribute__((section(
 #define HC_DB "/mnt/data/database.db" /* the stock library (songtable and the rest) */
 
 static struct {
-    int c, t; /* the part's line was there */
-    unsigned cn, ch, tn, th; /* albums and key hash of the library at the end of the last complete pass of the part */
+    int c, t, a; /* the part's line was there (covers, tracks, artist photos) */
+    unsigned cn, ch, tn, th, an,
+        ah; /* albums and key hash of the library at the end of the last complete pass of the part */
 } st __attribute__((section(".scratch")));
 
 static struct {
@@ -98,7 +105,7 @@ static int hc_line(const char *p, const char *tag, unsigned *n, unsigned *h) {
     unsigned v = 0;
     int digits = 0;
     if (!hc_has(p, tag)) return 0;
-    p += 7;
+    for (; *tag; ++tag) ++p;
     for (; *p >= '0' && *p <= '9'; ++p, ++digits) v = v * 10 + (unsigned)(*p - '0');
     if (!digits || *p++ != ' ') return 0;
     *n = v, v = 0, digits = 0;
@@ -123,6 +130,7 @@ static void st_read(void) {
     for (p = buf; *p;) {
         if (!st.c && hc_line(p, "covers ", &st.cn, &st.ch)) st.c = 1;
         if (!st.t && hc_line(p, "tracks ", &st.tn, &st.th)) st.t = 1;
+        if (!st.a && hc_line(p, "artists ", &st.an, &st.ah)) st.a = 1;
         while (*p && *p != '\n') ++p;
         if (*p) ++p;
     }
@@ -134,6 +142,7 @@ static int st_write(void) {
     unsigned o = 0;
     if (st.c) o += (unsigned)snprintf(buf + o, sizeof buf - o, "covers %u %08x\n", st.cn, st.ch);
     if (st.t) o += (unsigned)snprintf(buf + o, sizeof buf - o, "tracks %u %08x\n", st.tn, st.th);
+    if (st.a) o += (unsigned)snprintf(buf + o, sizeof buf - o, "artists %u %08x\n", st.an, st.ah);
     if (!o) {
         unlink(STAMP_FILE);
         return 0;
@@ -176,17 +185,19 @@ static void hc_lib_of(void *list) {
           : 0; /* (an empty library is not trusted: stock answers empty to a failed query too, so Home asks again at each foreground) */
 }
 
-/* What is out of date by the stamp against lib: bit 1 covers, bit 2 track lengths. */
+/* What is out of date by the stamp against lib: bit 1 covers, bit 2 track lengths, bit 8 artist photos (4 is hc_expect's probe). */
 static int hc_stale(void) {
-    return (st.c && st.cn == lib.n && st.ch == lib.h ? 0 : 1) | (st.t && st.tn == lib.n && st.th == lib.h ? 0 : 2);
+    return (st.c && st.cn == lib.n && st.ch == lib.h ? 0 : 1) | (st.t && st.tn == lib.n && st.th == lib.h ? 0 : 2) |
+           (st.a && st.an == lib.n && st.ah == lib.h ? 0 : 8);
 }
 
-/* A pass ran to its end (mask 1 covers, 2 tracks): the stamp says the library is as lib. */
+/* A pass ran to its end (mask 1 covers, 2 tracks, 8 artist photos): the stamp says the library is as lib. */
 static void hc_stamp(int mask) {
     if (!lib.have) return;
     st_read();
     if (mask & 1) st.c = 1, st.cn = lib.n, st.ch = lib.h;
     if (mask & 2) st.t = 1, st.tn = lib.n, st.th = lib.h;
+    if (mask & 8) st.a = 1, st.an = lib.n, st.ah = lib.h;
     st_write();
 }
 
@@ -197,7 +208,8 @@ static int hc_expect(void) {
     int mask, i;
     if (!pod_card_mounted()) return 0; /* nothing can be made without the card */
     st_read();
-    mask = (st.c ? 0 : 1) | (st.t ? 0 : 2) | (access(REBUILD_FILE, F_OK) ? 0 : 1);
+    mask = (st.c ? 0 : 1) | (st.t ? 0 : 2) | (st.a ? 0 : 8) | (access(REBUILD_FILE, F_OK) ? 0 : 1) |
+           (access(AREBUILD_FILE, F_OK) ? 0 : 8);
     if (mask) return mask;
     if (!lib.have || !lib.sigok) return 4;
     if (!hc_dbsig(sig)) return 4;
@@ -279,7 +291,9 @@ static int hc_on_dots(const void *unused) {
 /* The waiting state: work is expected, the count is not known yet: "Checking library…" (or "Rebuilding covers…" while a Rebuild Covers request is pending), an empty bar, no count. The dots after the text cycle on their own timer. */
 static void hc_wait_text(void) {
     hc.wait = 1;
-    hc.wkey = access(REBUILD_FILE, F_OK) == 0 ? "Rebuilding covers…" : "Checking library…";
+    hc.wkey = access(REBUILD_FILE, F_OK) == 0    ? "Rebuilding covers…"
+              : access(AREBUILD_FILE, F_OK) == 0 ? "Rebuilding artist photos…"
+                                                 : "Checking library…";
     hc.dph = 0;
     if (hc_wait_label() && !hc.dots)
         hc.dots = timer_add(hc_on_dots, (void *)0, HC_DOTS_MS); /* (no timer: the text stays at one dot) */
@@ -291,11 +305,14 @@ static void hc_text(void) {
     char text[64];
     int total, w;
     if (hc.wait) hc.wait = 0, hc_dots_stop(), widget_set_visible(hc.fill, 1, 0);
+    int photos = !hc.len && hc.cn != (unsigned)cc_build_total() &&
+                 cc_build_done() >= (int)hc.cn; /* the artist photo jobs follow the cover jobs in the set */
     snprintf(text, sizeof text, "%s %d/%d",
              TR(hc.len       ? "Measuring tracks"
+                : photos     ? (hc.arebuild ? "Rebuilding artist photos" : "Preparing artist photos")
                 : hc.rebuild ? "Rebuilding covers"
                              : "Preparing covers"),
-             cc_build_done(), cc_build_total());
+             cc_build_done() - (photos ? (int)hc.cn : 0), cc_build_total() - (photos ? (int)hc.cn : 0));
     widget_set_text_utf8(hc.lab, text);
     widget_invalidate_force(hc.lab, (void *)0);
     total = cc_build_total();
@@ -316,6 +333,7 @@ static void hc_free_scan(void) {
     hc.albums = (void *)0;
     hc.order = (unsigned *)0;
     hc.scanning = 0;
+    hc.astage = 0;
 }
 
 /* The durations the worker finished since the last save go into the table (merged, written atomically). */
@@ -474,8 +492,14 @@ static int hc_on_poll(const void *unused) {
             if (hc.rebuild)
                 unlink(
                     REBUILD_FILE); /* the request is done only when every album was extracted again (a stalled set leaves the rest for the next foreground, minus the hung album) */
+            if (hc.arebuild)
+                unlink(
+                    AREBUILD_FILE); /* (an artist list too long for the set is done as far as it goes: the next pass makes the artists that have no result) */
             hc_stamp(
-                1); /* every album has a file or a marker now (a stalled set: the hung album has .bad but the rest may not have been looked at; the next foreground scans again and skips it) */
+                (hc.need & 1 ? 1 : 0) |
+                (hc.aok
+                     ? 8
+                     : 0)); /* every album has a file or a marker now (covers line), and every artist a result (artists line, if all fitted); a stalled set stamps neither: the hung album has .bad but the rest may not have been looked at, and the next foreground scans again and skips it */
             rs.valid = 0;
         } else if (again) {
             rs.valid = 1, rs.rebuild = hc.rebuild, rs.n = lib.n,
@@ -544,6 +568,7 @@ static int hc_on_start(const void *unused) {
             return RET_OK;
         }
         hc.trunc = 0;
+        hc.astage = hc.atrunc = hc.aok = 0;
         /* Recently Played: a stale cover key names a file the build never makes; its albums are queued first */
         hc.shelf = recent_rekey(hc.albums, hc.rows);
         hc.count = hc.albums ? deque_size(hc.albums) : 0;
@@ -551,7 +576,8 @@ static int hc_on_start(const void *unused) {
         st_read();
         hc.rebuild = !access(REBUILD_FILE,
                              F_OK); /* Settings > Library > Rebuild Covers asked: every album, existing files too */
-        hc.need = hc_stale() | hc.rebuild;
+        hc.arebuild = !access(AREBUILD_FILE, F_OK); /* the artist photos were asked to be checked again */
+        hc.need = hc_stale() | hc.rebuild | (hc.arebuild ? 8 : 0);
         hc.probe = 0;
         if (hc.need &&
             (!hc.shown ||
@@ -564,15 +590,16 @@ static int hc_on_start(const void *unused) {
             hc_show(0);
             return RET_OK;
         }
-        if (!(hc.need & 1)) { /* only the track lengths are out of date */
+        if (!(hc.need & 9)) { /* only the track lengths are out of date */
             hc_free_scan();
             hc_dur_begin();
             return RET_OK;
         }
-        cap = hc.count < CC_MAX_JOBS ? hc.count : CC_MAX_JOBS;
+        cap = hc.count * 2 < CC_MAX_JOBS ? hc.count * 2
+                                         : CC_MAX_JOBS; /* (room for an artist photo job beside each cover job) */
         if (!cap) { /* an empty library (or a query that failed: stock does not tell): nothing to make; stamped as 0 albums, which no real library matches, and asked again at the next foreground (hc_lib_of) */
             hc_free_scan();
-            hc_stamp(1);
+            hc_stamp(9);
             rs.valid = 0;
             if (hc.need & 2)
                 hc_dur_begin();
@@ -599,25 +626,58 @@ static int hc_on_start(const void *unused) {
         else
             rs.valid = 0; /* another library, mode or order (the hash of the scan order differs): from the start */
     }
-    if (!cc_build_near_step(hc.albums, hc.order, (const unsigned *)0, 0, &hc.cur, HC_BATCH)) {
+    if (!(hc.need & 1))
+        hc.cur = hc.count; /* only the artist photos are out of date: no album is looked at for its cover */
+    else if (!cc_build_near_step(hc.albums, hc.order, (const unsigned *)0, 0, &hc.cur, HC_BATCH)) {
         hc.timer = timer_add(hc_on_start, (void *)0, HC_SCAN_MS);
         if (!hc.timer) hc_end(); /* no way to continue: nothing built, the next foreground retries */
         return RET_OK;
     }
-    hc.trunc = cc_build_truncated();
+    hc.trunc = (hc.need & 1) && cc_build_truncated();
     if (hc.trunc) { /* the cursor is on the album that did not fit: the next chunk's first */
         hc.next = hc.cur;
         hc.nhash = lib.oh;
         if (st.c) homecover_stamp_drop(1); /* the chain is unfinished: no matching line may skip it */
     }
+    if (!hc.astage) { /* the covers are queued: now the artist photos (a library over AP_LIB_MAX albums, or a chunk of a longer chain, has none) */
+        hc.cn = (unsigned)cc_build_total();
+        hc.astage = !hc.trunc && hc.count <= AP_LIB_MAX ? 1 : 2;
+        hc.acur = 0;
+        if (hc.astage == 2) ap_lib_drop(); /* no snapshot this time: the saved purity map describes another library */
+    }
+    if (hc.astage == 1) {
+        unsigned stop = hc.acur + HC_BATCH;
+        for (; hc.acur < hc.count && hc.acur < stop; ++hc.acur) {
+            void *r = deque_at(hc.albums, hc.acur);
+            if (I(r, REC_ID) != ID_ALL_SONGS &&
+                cc_build_add_artist(cc_str(r, REC_PATH), cc_str(r, REC_ARTIST), hc.arebuild) < 0)
+                hc.atrunc = 1;
+        }
+        if (hc.acur < hc.count) {
+            hc.timer = timer_add(hc_on_start, (void *)0, HC_SCAN_MS);
+            if (!hc.timer) hc_end();
+            return RET_OK;
+        }
+    }
+    {
+        int artists = (unsigned)cc_build_total() != hc.cn; /* artist jobs were queued */
+        if (hc.astage == 1 && !cc_build_artist_ok())
+            hc.atrunc =
+                1; /* no memory for the purity snapshot: the artist jobs write nothing, and the pass is not stamped */
+        if (hc.astage == 1)
+            ap_lib_save(); /* the snapshot is whole (an unusable one removes the file): its purity map is kept for the re-check of one artist (UI thread, one write) */
+        if (hc.arebuild && !artists && !hc.atrunc) unlink(AREBUILD_FILE); /* no artist to check */
+        hc.aok =
+            !hc.trunc && !hc.atrunc; /* (a library over AP_LIB_MAX albums has no artist photos: nothing to wait for) */
+    }
     hc_free_scan(); /* the jobs hold their own copies of the paths */
     nothing = !cc_build_total();
-    if (hc.rebuild && nothing && !hc.trunc)
+    if (hc.rebuild && !hc.cn && !hc.trunc)
         unlink(REBUILD_FILE); /* nothing to extract (no album has a track): nothing to wait for */
     if (!cc_build_start()) { /* nothing missing, no card, no space, no thread: the set is already freed */
         hc.own = 0;
         if (nothing && !hc.trunc)
-            hc_stamp(1),
+            hc_stamp((hc.need & 1 ? 1 : 0) | (hc.aok ? 8 : 0)),
                 rs.valid =
                     0; /* nothing missing (not: nothing queued for want of memory): the cache is complete (the other refusals leave the line: Home asks again) */
         hc.need &= nothing && !hc.trunc ? 3 : 2;
@@ -801,11 +861,17 @@ int homecover_clear(void) {
 #define CP_MS 20
 #define CP_POLL_MS 500
 extern void pod_page_refresh(int index); /* patch/m1plus.c: the page's values are read again */
-enum { CP_DIR = 1, CP_ALBUMS, CP_DONE };
+enum {
+    CP_DIR = 1,
+    CP_ADIR,
+    CP_ALBUMS,
+    CP_DONE
+}; /* the covers folder, the artist photos folder, the library's albums */
 
 static struct {
-    void *win, *dir, *albums;
-    unsigned timer, poll;
+    void *win, *dir, *adir, *albums;
+    unsigned timer, poll, aphotos,
+        anone; /* the artist photos folder's counts: a<key>-44.jpg with a picture, and the empty ones (no photo) */
     int fg, phase, page; /* page: the Cache page's index (patch/m1plus.c) */
     unsigned cur, n_albums, covers, noart, missing, old, size;
     unsigned *order; /* cc_album_order of the held album list: the scan walks display positions */
@@ -830,6 +896,8 @@ static void cp_stop_timers(void) {
     cp.timer = cp.poll = 0;
     if (cp.dir) closedir(cp.dir);
     cp.dir = (void *)0;
+    if (cp.adir) closedir(cp.adir);
+    cp.adir = (void *)0;
     if (cp.albums) deque_destroy(cp.albums);
     cp.albums = (void *)0;
     free(cp.order);
@@ -841,6 +909,27 @@ static void cp_free_idx(void) {
     free(cp.in);
     cp.im = cp.in = (unsigned short *)0;
     cp.nim = cp.nin = 0;
+}
+
+/* a<8 hex>-44.jpg exactly: an artist's list file (a picture, or empty = no photo). */
+static int cp_is_artist(const char *name) {
+    int i;
+    if (name[0] != 'a') return 0;
+    for (i = 1; i <= 8; ++i)
+        if (!((name[i] >= '0' && name[i] <= '9') || (name[i] >= 'a' && name[i] <= 'f'))) return 0;
+    return !strcmp(name + 9, "-44.jpg");
+}
+
+/* The folder listing is over: the library's albums are checked next. */
+static void cp_albums_begin(void) {
+    cp.phase = CP_ALBUMS;
+    cp.albums = cc_albums();
+    cp.n_albums = cp.albums ? deque_size(cp.albums) : 0;
+    cp.order = cp.albums ? cc_album_order(cp.albums) : (unsigned *)0;
+    cp.im = calloc(CC_MAX_JOBS, sizeof *cp.im);
+    cp.in = calloc(CC_MAX_JOBS, sizeof *cp.in);
+    cp.cur = 0;
+    pod_page_refresh(cp.page);
 }
 
 static int cp_tick(const void *unused) {
@@ -867,17 +956,30 @@ static int cp_tick(const void *unused) {
             else
                 ++cp.noart;
         }
-        if (n < CP_N) { /* the listing ended (or no folder) */
+        if (n < CP_N) { /* the listing ended (or no folder): the artist photos' folder */
             if (cp.dir) closedir(cp.dir);
             cp.dir = (void *)0;
-            cp.phase = CP_ALBUMS;
-            cp.albums = cc_albums();
-            cp.n_albums = cp.albums ? deque_size(cp.albums) : 0;
-            cp.order = cp.albums ? cc_album_order(cp.albums) : (unsigned *)0;
-            cp.im = calloc(CC_MAX_JOBS, sizeof *cp.im);
-            cp.in = calloc(CC_MAX_JOBS, sizeof *cp.in);
-            cp.cur = 0;
-            pod_page_refresh(cp.page);
+            cp.phase = CP_ADIR;
+            cp.adir = opendir(AP_DIR); /* none: the next tick moves on */
+        }
+    } else if (cp.phase == CP_ADIR) {
+        char *ent;
+        while (n < CP_N && cp.adir && (ent = readdir(cp.adir)) != (char *)0) {
+            const char *name = ent + 11;
+            char path[300];
+            if (ent[10] != 8) continue;
+            ++n;
+            if (!cp_is_artist(name)) continue;
+            snprintf(path, sizeof path, AP_DIR "/%s", name);
+            if (cc_file_size(path) > 0)
+                ++cp.aphotos;
+            else
+                ++cp.anone;
+        }
+        if (n < CP_N) {
+            if (cp.adir) closedir(cp.adir);
+            cp.adir = (void *)0;
+            cp_albums_begin();
         }
     } else if (cp.phase == CP_ALBUMS) {
         for (; cp.cur < cp.n_albums && n < CP_N; ++cp.cur, ++n) {
@@ -945,7 +1047,7 @@ static void cp_restart(void) {
     cp_stop_timers();
     cp_free_idx();
     cp.phase = CP_DIR;
-    cp.cur = cp.n_albums = cp.covers = cp.noart = cp.missing = cp.old = cp.size = 0;
+    cp.cur = cp.n_albums = cp.covers = cp.noart = cp.missing = cp.old = cp.size = cp.aphotos = cp.anone = 0;
     cp.dir = opendir(ART_DIR); /* none: the first tick moves on (everything is missing) */
     cp.timer = timer_add(cp_tick, (void *)0, CP_MS);
     cp.poll = timer_add(cp_poll, (void *)0, CP_POLL_MS);
@@ -997,7 +1099,7 @@ void homecover_cache_open(void *win, int page) {
     cp_restart();
 }
 
-/* A row's value (idx 0 Albums, 1 Covers, 2 No art, 3 Missing, 4 Old files, 5 Size, 6 Status); an ellipsis until counted. */
+/* A row's value (idx 0 Albums, 1 Covers, 2 No art, 3 Missing, 4 Old files, 5 Size, 6 Status, 7 Artist Photos, 8 none); an ellipsis until counted. */
 void homecover_stat(int idx, char *buf, unsigned n) {
     unsigned v;
     if (idx == 6) {
@@ -1010,6 +1112,10 @@ void homecover_stat(int idx, char *buf, unsigned n) {
     }
     if (idx == 5) {
         cc_size_text(buf, n, cp.size);
+        return;
+    }
+    if (idx >= 7) {
+        snprintf(buf, n, "%u", idx == 7 ? cp.aphotos : cp.anone);
         return;
     }
     v = idx == 0 ? cp.n_albums : idx == 1 ? cp.covers : idx == 2 ? cp.noart : idx == 3 ? cp.missing : cp.old;

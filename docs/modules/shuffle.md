@@ -161,7 +161,7 @@ with the `lw t9` that loads it (`MODE_SITES`, test: the 19 words in the build, a
 | Play More dialog `0x47a3fc` (shown), `0x47a530` (cycle) | the same |
 | `config_mplayer` `0x4d8720` | re-applies what is shown: Shuffle on is a no-op request |
 | DLNA `dmrActionGetPlayMode` `0x4f014c`, `0x4f0164`, `0x4f017c`, `dmrActionGetRendererStatus` `0x4f09d8`, `0x4f0a30`, `0x4f0a50`, `handlePlayModeResponse` `0x50ecf8`, `notifyPlayMode` `0x50ee34` | remotes see Shuffle |
-| payload: Settings > Play Mode value (`patch/m1plus.c`), the Pod's Shuffle / Repeat rows and mode mark (`patch/ipod.c`) | `pod_play_mode()` |
+| payload: the Pod's Shuffle / Repeat rows and mode mark (`patch/ipod.c`) | `pod_play_mode()` |
 
 The lock screen reads no play mode (no `mclGetPlayMode` caller). The Queue page and the Cassette page read stock's own mode (Repeat) and the flag
 separately.

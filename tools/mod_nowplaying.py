@@ -337,6 +337,10 @@ def apply_ui(root):
     mqa = find(root, 'img_mqa'); move(mqa, mqa.x, 22, mqa.w, mqa.h)
     y = 52
     li = find(root, 'label_info'); move(li, 8, y, W - 16, 24); text_style(li, META_PX, FG, 'center'); y += 32
+    # the formatted quality line (patch/nowplaying.c np_quality): stock rewrites label_info on every tick, so the payload shows this label instead and hides label_info
+    nq = awtk_ui.Widget('label', 8, li.y, W - 16, 24, [('name', 'np_quality'), ('visible', 'false'), ('sensitive', 'false')])
+    text_style(nq, META_PX, FG, 'center'); li.set('sensitive', 'false')
+    lp = parent_of(root, li); lp.children.insert(lp.children.index(li) + 1, nq)
     for n in ('label_album', 'label_genre', 'label_year', 'label_size'):
         w = find(root, n); move(w, 24, y, W - 48, 24); text_style(w, META_PX, GREY, 'center'); y += 30
     loc = find(root, 'label_location'); move(loc, 24, y + 4, W - 48, LYR_Y + LYR_H - y - 4); text_style(loc, 16, GREY, 'center')
@@ -374,7 +378,7 @@ def apply_ui(root):
     for n in ('img_repeata', 'img_repeatb'): w = find(root, n); move(w, SLIDER[0], SLIDER[1] + SLIDER[3] // 2 + 7, w.w, w.h)
 
     after = [w.name for w in root.walk() if w.name]
-    assert sorted(set(names)) == sorted(set(after) - {'img_np_tint', 'np_remaining', 'np_elapsed', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_lyrics'}), 'a widget name was lost'
+    assert sorted(set(names)) == sorted(set(after) - {'img_np_tint', 'np_remaining', 'np_elapsed', 'np_quality', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_lyrics'}), 'a widget name was lost'
     assert album in info.children
     return root
 
@@ -442,7 +446,7 @@ def check_touch(root):
         t = hit(root, (0, 0, W, H), x, y)
         assert inside(t, sv), f'touch at ({x},{y}) on the cover page lands on {t.name or t.type}, not the slide_view'
     # the decoration never takes a touch
-    for n in ('img_np_tint', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_remaining', 'np_elapsed', 'label_playtime', 'label_playlen', 'img_repeata', 'img_repeatb', 'image_wait'):
+    for n in ('img_np_tint', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_remaining', 'np_elapsed', 'np_quality', 'label_info', 'label_playtime', 'label_playlen', 'img_repeata', 'img_repeatb', 'image_wait'):
         assert find(root, n).get('sensitive') == 'false', f'{n} must be insensitive'
     return [(n, rects[n]) for n in PROBES]
 

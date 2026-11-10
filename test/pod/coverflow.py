@@ -3,7 +3,7 @@ import os, struct
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
 
 
-def run(ctx):
+def page_tests(ctx):
     expect, page = ctx.expect, ctx.page
     cover_open = PSYMS['coverflow_open']
     cover_row = next(i for i, r in enumerate(page.rows) if r.action == pod_pages.ACT_COVER)
@@ -856,7 +856,7 @@ def landscape_tests(ctx, asset):
     print(f'  landscape frame: {land_icount:,} payload instructions ({LW}x{LH} logical, {LH}x{LW} bitmap, {LH * LW * 4 // 1024} KB)')
 
     # a long name is cut with an ellipsis inside the caption width
-    m = cover_machine(albums=2); m.load_image = 0; m.canvas_mem = m.alloc(0x80); m.fs[LFILE] = b'1\n'
+    m = cover_machine(albums=2); m.load_image = 0; m.canvas_mem = m.alloc(0x80); m.fs[LFILE] = b'1\n'; m.fs[SORT_FILE] = b'3\n'   # (Year with no song list keeps the stock rows' order: the long name stays first)
     m.showlist[0] = m.record(album='x' * 70, artist='Artist 0', path='/mnt/mmc/m/0/1.flac', rid=1)
     cached(m, 'Artist 0', 'x' * 70)
     m.call(PSYMS['coverflow_open'], count=5000000)
@@ -869,7 +869,7 @@ def landscape_tests(ctx, asset):
     lit = [x for x in range(LW) if physical(m, x, top + 3) & 0xffffff]
     expect(lit and (LW - O['CFL_CAP_W']) // 2 <= lit[0] and lit[-1] < (LW + O['CFL_CAP_W']) // 2, f'inside the {O["CFL_CAP_W"]} px width ({lit[0]}..{lit[-1]})')
     # a CJK name (wide glyphs), a missing glyph (a 4 px gap) and an empty artist draw without a fault
-    m = cover_machine(albums=2); m.load_image = 0; m.canvas_mem = m.alloc(0x80); m.fs[LFILE] = b'1\n'
+    m = cover_machine(albums=2); m.load_image = 0; m.canvas_mem = m.alloc(0x80); m.fs[LFILE] = b'1\n'; m.fs[SORT_FILE] = b'3\n'
     m.showlist[0] = m.record(album='中文标题�结尾', artist='', path='/mnt/mmc/m/0/1.flac', rid=1)
     cached(m, '', '中文标题�结尾')
     m.call(PSYMS['coverflow_open'], count=5000000)
@@ -928,3 +928,210 @@ def missing_only_tests(ctx):
     cached = cache_paths(m, 3)[1]; m.present.add(cached); m.files[cached] = 0     # a marker counts as cached
     m.call(PSYMS['coverflow_open'], count=5000000)
     expect(build_state(m)['total'] == 2 and [t for t, _ in build_jobs(m)] == ['/mnt/mmc/m/0/1.flac', '/mnt/mmc/m/2/1.flac'], 'a marker or a picture is not rebuilt by the normal open')
+
+
+# The hardware volume buttons step the shelf (patch/coverflow.c on_volkey; docs/modules/coverflow.md "Volume buttons").
+VFILE = '/mnt/data/m1plus/coverflow-volume-keys'
+UP, DOWN = O['KEY_VOL_UP'], O['KEY_VOL_DOWN']
+
+
+def key(m, kind, code):
+    """One key event (type @0, code @0x18) delivered to the page's key handler as the emitter would: its result and the calls it made."""
+    e = m.alloc(0x30); m.u.mem_write(e, bytes(0x30))
+    # Literal device events: deriving these from offsets.inc hid the wrong KEY_DOWN value.
+    m.setword(e, 0x10f if kind == 'down' else 0x113); m.setword(e + 0x18, code)
+    return m.call(PSYMS['on_volkey'], a0=0, a1=e, count=4000000)
+
+
+def press(m, code):
+    """A whole press: KEY_DOWN then KEY_UP; the two results."""
+    return key(m, 'down', code), key(m, 'up', code)
+
+
+class KeyRouteMachine(Machine):
+    """Stock widget_on_keydown/up and widget_dispatch, with synchronous emitter callbacks.
+
+    The wm's focused child is the Cover Flow window. Widget lifetime, focus properties and
+    vtable leaves are mocked; RET_STOP must propagate through the real stock routing code.
+    """
+    LEAVES = {0x66cd50: 'ref', 0x66ce2c: 'unref', 0x674620: 'default',
+              0x666c34: 'before', 0x668900: 'activate', 0x66be1c: 'focus_key',
+              0x66bdf8: 'is_wm', 0x66a8e0: 'is_window', 0x6f4458: 'emit'}
+
+    def __init__(self):
+        super().__init__()
+        self.window = self.alloc(0x80)
+        self.wm = self.alloc(0x80)
+        self.setword(self.wm + 0x54, self.window)
+        vt = self.alloc(0xa0)  # empty widget vtable: no control-specific key handling
+        for w in (self.wm, self.window):
+            self.setword(w + 0x70, vt)
+            self.setword(w + 0x5c, w)  # emitter identity
+        self.handlers.pop(pod.FUNCTIONS['widget_dispatch'][2], None)
+        for a, name in STOCK_LIBC.items(): self.handlers[a] = name
+        for a in self.LEAVES: self.handlers[a] = 'key_route'
+        self.emitted = []
+
+    def _hook(self, u, address, size, data):
+        if address not in self.LEAVES: return super()._hook(u, address, size, data)
+        a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+        name, ret = self.LEAVES[address], 0
+        if name == 'is_wm': ret = int(a0 == self.wm)
+        elif name == 'emit':
+            evt = self.word(a1)
+            self.emitted.append((a0, evt))
+            if (a0, evt) in self.bound:
+                fn, ctx = self.bound[(a0, evt)]
+                ret = self.nested(fn, ctx, a1)
+        u.reg_write(UC_MIPS_REG_V0, ret)
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+
+    def route_key(self, evt, code):
+        e = self.alloc(0x28); self.u.mem_write(e, bytes(0x28))
+        self.setword(e, evt); self.setword(e + 4, 0x28); self.setword(e + 0x18, code)
+        self.emitted = []
+        return self.call(0x670d10 if evt == 0x113 else 0x670908, a0=self.wm, a1=e)
+
+
+def keyroute_tests(ctx):
+    m = cover_machine(albums=5, cls=KeyRouteMachine)
+    m.fs[VFILE] = b'1\n'
+    m.call(PSYMS['coverflow_open'])
+    for evt in (0x10f, 0x113):
+        ret = m.route_key(evt, DOWN)
+        ctx.expect(ret == O['RET_STOP'] and (m.window, evt) in m.emitted and (m.wm, evt) not in m.emitted,
+                   f'stock dispatch {evt:#x}: the page consumes the key before the wm handler')
+    m.settle()
+    ctx.expect(shelf_value(m) == 1, 'a real short press advances one album through stock key dispatch')
+    m.route_key(0x110, DOWN)
+    ctx.expect(shelf_value(m) == 1 and 'timer_add' not in m.names(),
+               'the one-second long-press event does not add another step')
+    m.fs[VFILE] = b'0\n'
+    m.route_key(0x10f, DOWN); m.route_key(0x113, DOWN)
+    ctx.expect((m.wm, 0x113) in m.emitted and shelf_value(m) == 1,
+               f'switch off: release reaches the stock wm handler and the shelf stays put ({shelf_value(m)}, {m.emitted})')
+
+
+def volkeys_tests(ctx):
+    expect = ctx.expect
+    STOP, OK = O['RET_STOP'], O['RET_OK']
+    expect(O['EVT_KEY_DOWN'] == 0x10f and O['EVT_KEY_UP'] == 0x113 and O['EV_KEY'] == 0x18 and (UP, DOWN) == (0xdc, 0xdd)
+           and cdefs.defines(os.path.join(ROOT, 'patch', 'home.h'), strings=True)['VOLKEYS_FILE'] == VFILE and pod.DATA['ROTATEMODE'][0] == 0xa05a9c, 'the key numbers of this firmware (not q2-pod\'s), the setting file and ROTATEMODE')
+    stock = open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', pod.DEMO), 'rb').read()
+    expect(all(struct.unpack_from('<I', stock, pod.fileoff(stock, a))[0] == old for a, old, _ in pod.VOLKEYS_PINS), 'the stock words the volume keys rely on are as pinned (wm key bindings, the rotation swap, the volume dialog)')
+
+    def shelf(albums=5, on=True, **kw):
+        m = cover_machine(albums=albums, **kw)
+        if on: m.fs[VFILE] = b'1\n'
+        m.call(PSYMS['coverflow_open'], count=5000000)
+        return m
+    m = shelf()
+    expect(m.bound.get((m.window, O['EVT_KEY_DOWN'])) is not None and m.bound.get((m.window, O['EVT_KEY_UP'])) is not None, 'the page binds KEY_DOWN and KEY_UP on its window')
+    m.fs[VFILE] = b'0\n'
+    expect(press(m, DOWN) == (OK, OK) and shelf_value(m) == 0 and 'timer_add' not in m.names() and ('reset_poweroptions_timer', 1, 1, 1) not in m.calls,
+           'switch off: RET_OK for both, nothing moves, no timer reset')
+    for data in (None, b'', b'x'):
+        if data is None: m.fs.pop(VFILE, None)
+        else: m.fs[VFILE] = data
+        expect(key(m, 'down', DOWN) == OK and shelf_value(m) == 0, f'setting {data!r}: off')
+
+    m = shelf()
+    r = key(m, 'down', DOWN)
+    expect(r == STOP and ('reset_poweroptions_timer', 1, 1, 1) in m.calls and any(c[0] == 'timer_add' for c in m.calls), 'volume down: taken (RET_STOP), a snap starts, the power timers are reset')
+    expect(key(m, 'up', DOWN) == STOP, 'its KEY_UP is swallowed too')
+    m.settle()
+    expect(shelf_value(m) == 1 and shelf_off(m) == 0 and ('set_value', 1) in m.calls, 'volume down brings the next album (to the right) to the centre')
+    expect(key(m, 'up', DOWN) == OK, 'a KEY_UP whose press was not taken passes (the mark was cleared)')
+    expect(press(m, UP) == (STOP, STOP), 'volume up: taken')
+    m.settle()
+    expect(shelf_value(m) == 0, 'volume up goes back one album (to the left)')
+    # the ends: no wrap, no rubber band, and the press is still taken
+    m = shelf()
+    expect(press(m, UP) == (STOP, STOP), 'volume up on the first album is taken')
+    m.settle()
+    expect(shelf_value(m) == 0 and shelf_off(m) == 0 and not any(c[0] == 'set_value' for c in m.calls), 'and stops at the first album: no wrap')
+    put_value(m, 4)
+    expect(press(m, DOWN) == (STOP, STOP), 'volume down on the last album is taken')
+    m.settle()
+    expect(shelf_value(m) == 4 and shelf_off(m) == 0 and not any(c[0] == 'set_value' for c in m.calls), 'and stops at the last album: no wrap')
+    # quick presses add up from the running snap's destination, still stopped by the end
+    m = shelf()
+    for _ in range(2): key(m, 'down', DOWN); key(m, 'up', DOWN)
+    key(m, 'down', DOWN)
+    m.settle()
+    expect(shelf_value(m) == 3, f'three quick presses before the snap lands: three albums on ({shelf_value(m)})')
+    m = shelf()
+    for _ in range(9): key(m, 'down', DOWN)
+    m.settle()
+    expect(shelf_value(m) == 4, 'many quick presses stop at the last album')
+    key(m, 'down', UP); key(m, 'down', UP)
+    m.settle()
+    expect(shelf_value(m) == 2, 'and quick presses the other way come back')
+    # a held key that auto-repeats as KEY_DOWNs keeps stepping; only the release is the KEY_UP
+    m = shelf()
+    rs = [key(m, 'down', DOWN) for _ in range(3)]
+    m.settle()
+    expect(rs == [STOP] * 3 and shelf_value(m) == 3 and key(m, 'up', DOWN) == STOP and key(m, 'up', DOWN) == OK, 'repeated KEY_DOWNs step on, one KEY_UP ends the press')
+    # the page keeps its captions and position memory as for a tap on a side cover: the album and artist captions follow the new centre
+    m = shelf()
+    press(m, DOWN); m.settle()
+    expect(('widget_set_text_utf8', m.widgets['label_album'], 'Album 1') in m.calls and ('widget_set_text_utf8', m.widgets['label_artist'], 'Artist 1') in m.calls, 'the captions follow')
+    # ROTATEMODE 1 swaps the keys, as stock does
+    m = shelf()
+    m.setword(pod.DATA['ROTATEMODE'][0], 1)
+    press(m, UP); m.settle()
+    expect(shelf_value(m) == 1, 'ROTATEMODE 1: the key stock calls volume up (0xdc) is the next album')
+    press(m, DOWN); m.settle()
+    expect(shelf_value(m) == 0, 'and 0xdd the previous one')
+    m = shelf()
+    m.setword(pod.DATA['ROTATEMODE'][0], 0)
+    press(m, DOWN); m.settle()
+    expect(shelf_value(m) == 1, 'ROTATEMODE 0: not swapped')
+    # conditions: screen off, not the covers screen, a finger down, other keys, a missing shelf
+    m = shelf(); m.screen(False)
+    expect(press(m, DOWN) == (OK, OK) and shelf_value(m) == 0 and not any(c[0] in ('timer_add', 'reset_poweroptions_timer') for c in m.calls), 'screen off: RET_OK, stock runs')
+    m.screen(True)
+    m.touch('down', 200, t=1000)
+    expect(key(m, 'down', DOWN) == OK and key(m, 'up', DOWN) == OK, 'a finger on the shelf: RET_OK')
+    m.touch('up', 200, t=1050); m.settle()
+    expect(shelf_value(m) == 0, 'and nothing moved')
+    expect(key(m, 'down', DOWN) == STOP, 'the finger up, the keys work again')
+    m.settle(); key(m, 'up', DOWN)
+    m = cover_machine(albums=3, cached=False); m.fs[VFILE] = b'1\n'
+    m.call(PSYMS['coverflow_open'], count=5000000)
+    expect(build_state(m) and press(m, DOWN) == (OK, OK) and 'reset_poweroptions_timer' not in m.names(), 'the Preparing screen: RET_OK')
+    m = shelf()
+    for code in (0xd5, 0xd6, 0xd7, 0xd4, 0xd2, 0xdb, 0):
+        expect(press(m, code) == (OK, OK), f'key {code:#x}: untouched')
+    expect(shelf_value(m) == 0 and 'timer_add' not in m.names(), 'no other key moves the shelf')
+    expect(key(m, 'down', DOWN) == STOP and key(m, 'up', 0xd5) == OK and key(m, 'up', UP) == STOP, 'a taken press is ended by a volume KEY_UP only')
+    m.settle()
+    # the destroy clears the mark
+    m = shelf(); key(m, 'down', DOWN); m.call(PSYMS['on_destroy'], count=2000000)
+    m2 = shelf(); expect(key(m2, 'up', DOWN) == OK, 'a new page starts with no press taken')
+    # landscape: the same mapping
+    m = land_machine(saved=b'1\n'); m.fs[VFILE] = b'1\n'
+    press(m, DOWN); m.settle()
+    expect(shelf_value(m) == 1, 'landscape: volume down is the next album')
+    press(m, UP); m.settle()
+    expect(shelf_value(m) == 0, 'landscape: volume up is the previous one')
+    # the artist shelf (same page code): three albums and the All albums card
+    am = artists_machine()
+    am.fs[VFILE] = b'1\n'
+    am.call(PSYMS['artists_open'], count=5000000); am.call(PSYMS['ar_open'], a0=0, count=8000000)
+    expect(('window_open', 'm1plus_cover') in am.calls, 'an artist opens the Cover Flow page')
+    expect(press(am, DOWN) == (STOP, STOP), 'the artist shelf takes the keys')
+    am.settle()
+    expect(shelf_value(am) == 1, 'volume down: the artist\'s next album')
+    for _ in range(5): key(am, 'down', DOWN)
+    am.settle()
+    expect(shelf_value(am) == 3, 'and the shelf ends at the All albums card')
+    press(am, UP); am.settle()
+    expect(shelf_value(am) == 2, 'volume up goes back')
+
+
+SECTIONS = [page_tests, volkeys_tests, keyroute_tests]   # tools/check.py runs each as its own task
+
+
+def run(ctx):
+    for section in SECTIONS: section(ctx)

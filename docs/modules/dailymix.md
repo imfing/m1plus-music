@@ -145,12 +145,12 @@ again from the top when the menu is back). Memory: the job's tables and candidat
 
 ## Settings > Home Screen
 
-Rows: **Recent Albums**, **Daily Mix** (switch, `ACT_DAILY`) in one card, **Regenerate Daily Mix** (an action row **without a chevron**, `ACT_REGEN`) in a card of its own, **last on the page** after the Status Bar header's Battery Percentage and its note (Boot to M1+ Music and Open Shanling Home are on Settings > Developer). The switch shows or
+Rows: **Recent Albums**, **Daily Mix** (switch, `ACT_DAILY`) in one card, **Regenerate Daily Mix** (an action row **without a chevron**, `ACT_REGEN`) in a card of its own, **last on the page** after Extras and its note (Boot to M1+ Music and Open Shanling Home are on Settings > Developer). The switch shows or
 hides the section (and stops/starts the job: with it off **nothing is made**, not even for Regenerate, which waits). **Regenerate** only asks (`dailymix_regen`, a counter that outlives the Home window); the Home menu makes the
 mix the next time it is in front (allow about three seconds for the sliced job after returning to Home; no page; an accepted tap shows a toast, `New mix when Home opens`, a shorter form of the row's note that fits the message box in every language; a refused tap shows nothing). Two asks before the menu is in front are one regeneration.
 If Home is covered or destroyed before a manual job commits, `dm_job_cancel` restores its pending request before freeing the job. Returning to Home restarts it with the next seed from the committed mix, even if that mix is already today's. Completing a job clears the request; actual failures still stop retries as described above.
 **Regenerate is hidden while no mix can be made** (`dailymix_can_regen`: the switch off, or the last job found fewer than `MIX_MIN_LIB` songs, a RAM flag `dm_small`): `patch/m1plus.c regen_show`
-hides the row and its note (`pod_note4`, both at the page's end) (not visible, not sensitive; the note is never sensitive; the layouter skips them), and shows them again
+hides the row and its note (`pod_note3`, both at the page's end) (not visible, not sensitive; the note is never sensitive; the layouter skips them), and shows them again
 the row sensitive; the Daily Mix switch updates them in place. A hidden row's tap is refused in `dailymix_regen` too. Songs added to a small library are seen by the next day's job (or after a restart), which clears the flag.
 Texts (`tools/pod_i18n.py`, 13 languages and the 3 twin tables, a native-speaker pass is wanted): `Made for You`, `Daily Mix`, `Regenerate Daily Mix`, `New mix when Home opens` (the toast), `%s and more`, `%s, %s` (the join of two names: `%s、%s` in Chinese and
 Japanese; never passed to printf). Widest in the shipped font: the header 162 of 296 px (ja), a title line 175 of 260 (th, 36 px), the switch row 149 of 195 (ja, 21 px), the action row 206 of 274 (fr), the artists in 2 lines

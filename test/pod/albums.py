@@ -66,10 +66,15 @@ def albums_world(m, n=30, cached=True, missing=(), empty=(), title=lambda i: f'A
             if i not in empty: m.cache_index[p] = i
 
 
-def albums_machine(n=30, cls=Machine, **world):
-    """A machine (cls) with the page's widgets (see albums_world) and the page as widget structs, for widget_to_local."""
+AZ_WIDGETS = ('label_hdr', 'label_rail', 'label_rail_on', 'sg_rail', 'sg_bubble', 'sg_bubble_letter')   # the list mode's A-Z furniture (patch/azlist.c), in the page's asset
+
+
+def albums_machine(n=30, az=False, cls=Machine, **world):
+    """A machine (cls) with the page's widgets (see albums_world) and the page as widget structs, for widget_to_local. az: the list mode's section letters, rail and bubble exist too."""
     m = cls()
     albums_world(m, n, **world)
+    if az:
+        for w in AZ_WIDGETS: Machine.widget(m, w)
     # the page as widget structs, for widget_to_local (stock's own code, which walks the parents and adds a scroll_view's offset through its
     # vtable): window (30 px under the top: the status bar) > list_view (50: under the navbar) > scroll_view (a real one's fields: demo's vtable, the
     # offsets at 0x7c / 0x84, the pressed / dragged bytes at 0xa0 / 0xa1, the animator at 0xe8) > view_grid (the content, as high as the payload sets it)
@@ -83,6 +88,10 @@ def albums_machine(n=30, cls=Machine, **world):
     for off, v in ((4, 0), (8, CW), (0xc, VIEW_H), (0x44, sv)): m.setword(view + off, v)
     m.mem_geometry, m.live_scroll = True, frozenset({sv})   # widget_resize writes the widget_t; the prop setters store virtual_h / yoffset in the scroll_view
     m.win = win
+    if az:   # the rail, a widget struct of its own (outside the scroll_view) the payload moves and sizes
+        rail = m.widgets['sg_rail']; m.u.mem_write(rail, bytes(0x80))
+        for off, v in ((0, O['SG_RAIL_X']), (4, 50), (8, O['SG_RAIL_W']), (0xc, VIEW_H), (0x44, win)): m.setword(rail + off, v)
+        m.live_scroll, m.rail = frozenset({sv, rail}), rail
     return m
 
 
@@ -99,8 +108,8 @@ def page_mode(m):
     return 1 if glyph(m) == 'pod_nav_grid' else 0
 
 
-def open_grid(m):
-    m.call(PSYMS['albums_open'], count=20000000)
+def open_grid(m, count=20000000):
+    m.call(PSYMS['albums_open'], count=count)
     return list(m.calls)
 
 
@@ -730,7 +739,7 @@ def taps_list_tests(ctx):
         if mock_w(s) <= COVER: return s
         k = max(k for k in range(len(s)) if mock_w(s[:k] + '…') <= COVER)
         return s[:k] + '…'
-    m = albums_machine(8, cached=False, title=lambda i: longs[i])
+    m = albums_machine(8, cached=False, title=lambda i: longs[i]); m.fs[SORT_FILE] = b'3\n'; m.class_lists[O['CLASS_ALL_SONGS']] = []   # (Year with no song list keeps the stock rows' order, so tile i is row i)
     for i in range(8): m.setword(m.showlist[i] + O['REC_ARTIST'], m.cstr(longs[(i + 2) % 8]))
     open_grid(m)
     got_t, got_s, nmeasure = [None] * 8, [None] * 8, 0
@@ -791,9 +800,9 @@ def taps_list_tests(ctx):
     # 10. A large library: the work per frame and the memory do not grow with it.
     n = 4000
     m = albums_machine(n).count()
-    open_grid(m)
+    open_grid(m, 80000000)   # (the Title order sorts the 4000 titles at open)
     opened_cost = m.icount
-    expect(sum(1 for c in m.calls if c[0] == 'calloc') <= 3, 'opening a library of 4000 allocates its list copy and one tile ring')
+    expect(sum(1 for c in m.calls if c[0] == 'calloc') <= 6, 'opening a library of 4000 allocates its list copy, one tile ring and the Title sort (order, rows, keys; the last two freed)')
     expect(len([c for c in m.calls if c[0] == 'bitmap_create_ex']) == 1, 'the open itself makes one bitmap (the placeholder)')
     settle(m)
     rows = (n + COLS - 1) // COLS
@@ -974,7 +983,7 @@ def taps_list_tests(ctx):
     #      font is 8 px a character, 16 for CJK and the ellipsis: 248 px hold 31 characters, or 29 and an ellipsis).
     fits, wide = TW // 8, TW // 16
     longs = {0: 'T' * fits, 1: 'T' * (fits + 1), 2: 'あ' * wide, 3: 'あ' * (wide + 1), 4: 'Short'}
-    m = albums_machine(5, cached=False, title=lambda i: longs[i])
+    m = albums_machine(5, cached=False, title=lambda i: longs[i]); m.fs[SORT_FILE] = b'3\n'; m.class_lists[O['CLASS_ALL_SONGS']] = []   # (stock rows' order, as above)
     m.fs[ALBUMS_FILE] = b'0\n'
     for i in range(5): m.setword(m.showlist[i] + O['REC_ARTIST'], m.cstr(longs[(i + 1) % 5]))
     open_grid(m); texts = paint(m)[1]
@@ -1573,11 +1582,11 @@ def foreground_loader_tests(ctx):
 # ---------------------------------------------------------------------------
 # The navbar's "..." card (patch/viewsort.c, docs/modules/albums.md "The ... card"): sort rows, view row, the saved order.
 SORT_FILE, SORT_TMP = '/mnt/data/m1plus/albums-sort', '/mnt/data/m1plus/albums-sort.tmp'
-# (album, artist) in the stock (Title) order: by album, ASCII case aside
+# (album, artist) in the stock rows' order (the mock's own, not sorted: Title sorts them)
 SORT_LIB = [('Alpha', 'Zed'), ('beta', 'Yan'), ('Gamma', 'Zed'), ('Delta', 'The Xu'), ('Epsilon', 'Wu')]
 # the library's songs, newest first (time_create desc): (album, year): Gamma, Alpha 1999, a song with no album, Epsilon, Alpha 1971, Delta (no year), Beta 2005 (the names differ in case from the rows: NOCASE)
 SORT_SONGS = [('gamma', 1985), ('Alpha', 1999), ('', 2020), ('EPSILON', 2010), ('Alpha', 1971), ('Delta', 0), ('Beta', 2005)]
-SORT_ORDERS = {0: [0, 1, 2, 3, 4],     # Title: the stock order
+SORT_ORDERS = {0: [0, 1, 3, 4, 2],     # Title: Alpha, beta, Delta, Epsilon, Gamma (our name keys, case folded)
                1: [4, 3, 1, 0, 2],     # Artist: Wu, Xu (the "The " ignored), Yan, Zed / Alpha, Zed / Gamma
                2: [2, 0, 4, 3, 1],     # Recently Added: by each album's newest song (Gamma, Alpha, Epsilon, Delta, beta)
                3: [4, 1, 2, 0, 3]}     # Year: newest first by the earliest year tag (Epsilon 2010, beta 2005, Gamma 1985, Alpha 1971), Delta (none) last
@@ -1622,7 +1631,7 @@ def subs(m):
 
 
 # the saved file's character: the order's digit, its letter (a..d) when the direction is reversed
-REV_ORDERS = {0: [4, 3, 2, 1, 0],   # Z-A
+REV_ORDERS = {0: [2, 4, 3, 1, 0],   # Z-A
               1: [2, 0, 1, 3, 4],   # Z-A by artist
               2: [1, 3, 4, 0, 2],   # Oldest First: beta, Delta, Epsilon, Alpha, Gamma
               3: [0, 2, 1, 4, 3]}   # Oldest First: Alpha 1971, Gamma 1985, beta 2005, Epsilon 2010, Delta (no year) last
@@ -1731,7 +1740,7 @@ def sort_card_tests(ctx):
     expect(m.fs.get(SORT_FILE) == b'c\n' and [c[1] for c in m.calls if c[0] == 'loadLocalClassList'] == [O['CLASS_ALL_SONGS']], 'the row already ticked flips its direction (saved as its letter) and the order is made again')
     # no songs: no ranks, the albums keep the stock (title) order
     m = sort_machine(songs=(), **{SORT_FILE: b'3\n'}); open_grid(m)
-    expect(shown(m) == titles(SORT_ORDERS[0]), 'with no song list Year (and Recently Added) leave the stock order')
+    expect(shown(m) == titles(range(5)), 'with no song list Year (and Recently Added) leave the stock order')
     # a tap opens the stock row of the album at that position
     m = sort_machine(**{SORT_FILE: b'2\n'}); open_grid(m)
     calls = tap_at(m, 100, TOP + 10)
@@ -1837,6 +1846,38 @@ def reverse_tests(ctx):
             expect(shown(m)[-1] == 'Unknown Album' and len(shown(m)) == 6, f'albums-sort {data!r}: Unknown Album stays last')
 
 
+def nextalbum_tests(ctx):
+    """Continue with Next Album, phase 1 (patch/nextalbum.c): a tap on an album notes the albums in the order the page shows them (sort and direction, the Unknown Album row left out)
+    just before cc_open_album; the note is dropped when the opener returns, and a page with the setting off notes nothing."""
+    expect = ctx.expect
+    NA = sibling('nextalbum')
+    keyof = lambda i: album_key(SORT_LIB[i][1], SORT_LIB[i][0])
+    row_xy = lambda a: (200, TOP + a * ROW + 20)
+    stock_rows = lambda calls: [c[3] for c in calls if c[0] == 'navigator_to_with_context' and c[1] == 'albuminfo_page']
+    for k in range(4):
+        for data, orders in ((f'{k}\n'.encode(), SORT_ORDERS), (rev_file(k), REV_ORDERS)):
+            m = NA.snap(sort_machine(**{SORT_FILE: data, NA.FILE: b'1\n'})); open_grid(m); settle(m)
+            calls = tap_at(m, *row_xy(1))
+            got = m.noted and m.noted['keys']
+            expect(got == [keyof(i) for i in orders[k]] and m.noted['scope'] == 0 and m.noted['artist'] == 0,
+                   f'albums-sort {data!r}: the note holds the keys in the order shown ({orders[k]}), no scope')
+            expect(stock_rows(calls) == [orders[k][1]] and NA.state(m)['pending'] is None, f'albums-sort {data!r}: the tapped row is the stock row of the album; the note is gone once the opener returns')
+    # the Unknown Album row stays out, wherever the order puts it
+    lib = SORT_LIB + [('Unknown Album', '')]
+    for k in (0, 1):
+        m = NA.snap(sort_machine(specs=lib, **{SORT_FILE: f'{k}\n'.encode(), NA.FILE: b'1\n'})); m.setword(m.showlist[-1] + O['REC_ID'], 0xffffffff); open_grid(m); settle(m)
+        tap_at(m, *row_xy(0))
+        expect(m.noted and m.noted['keys'] == [keyof(i) for i in SORT_ORDERS[k]], f'order {k}: Unknown Album is not in the note')
+    # a grid page notes the same way
+    m = NA.snap(sort_machine(list_mode=False, **{SORT_FILE: b'0\n', NA.FILE: b'1\n'})); open_grid(m); settle(m)
+    tap_at(m, 30, TOP + RGAP + 20)
+    expect(m.noted and m.noted['keys'] == [keyof(i) for i in SORT_ORDERS[0]], 'the grid page: the same note')
+    # the setting off (the default): nothing is noted or allocated
+    m = NA.snap(sort_machine(**{SORT_FILE: b'0\n'})); open_grid(m); settle(m)
+    calls = tap_at(m, *row_xy(1))
+    expect(m.noted is None and NA.state(m)['pending'] is None and stock_rows(calls) == [1], 'setting off: the album opens as before, nothing is noted')
+
+
 def title_tests(ctx):
     """The large title (the Songs / Artists pattern, the shared collapse rule): the first thing in the content, the navbar's small title hidden until
     the offset reaches SG_COLLAPSE, the nav fade while scrolled; the content moves down by the title block; the artist-scoped page's title is the name."""
@@ -1876,12 +1917,205 @@ def title_tests(ctx):
         m.call(PSYMS['ar_open'], a0=0, count=40000000)
         expect(('widget_set_text_utf8', m.widgets['al_title'], 'Miles Davis') in m.calls and ('widget_set_text_utf8', m.widgets['label_title'], 'Miles Davis') in m.calls,
                f'{mode}: the scoped page\'s large and small titles are the artist')
-        end = O['AL_PILLS_END']   # the pills end the block; the list's first row is RGAP under it, the grid's gap is its own
+        end = O['AL_HEAD_END'] - O['PH_SHIFT']   # no photo in this card: the header without the circle and the pills end the block (PH_SHIFT higher: test/pod/artists.py scoped_plain_tests); the list's first row is RGAP under it, the grid's gap is its own
         expect(content_h(m) == end + (RGAP + 2 * PITCH if mode == 'grid' else RGAP + 4 * ROW), f'{mode}: the scoped content starts under the title and the pills ({content_h(m)})')
 
 
 
-SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests]   # tools/check.py runs each as its own task
+AZ_RAIL, AZ_HEAD = '/mnt/data/m1plus/appearance-index-rail', '/mnt/data/m1plus/appearance-headers'   # the Index Rail and Section Headers switches (both on by default)
+HDR = O['SG_HDR_H']
+AZ_TITLES = ['1999', 'Abbey Road', 'Aja', 'Bitches Brew', 'Blue', 'Cheap Trick', 'Dookie', 'Dookie Two', 'Zeta']   # the Title order: the sections # A B C D Z
+AZ_SECS = [(0, '#'), (1, 'A'), (3, 'B'), (5, 'C'), (6, 'D'), (8, 'Z')]
+
+
+def az_model(hh, secs=AZ_SECS, n=len(AZ_TITLES)):
+    """(header y, row y, content height) of the list with sections of header height hh (az_hdr_y, az_row_y, az_rows_end of patch/azlist.c, the list's top TOP: the large title's block)."""
+    sec_of = lambda i: max(k for k, (s, _) in enumerate(secs) if s <= i)
+    return (lambda s: TOP + s * hh + secs[s][0] * ROW), (lambda i: TOP + (sec_of(i) + 1) * hh + i * ROW), TOP + len(secs) * hh + n * ROW
+
+
+def az_tests(ctx):
+    """The Albums list mode's A-Z furniture (patch/azlist.c) in the Title order (A-Z and Z-A): sections of the album title's initial, the pinned header, the rail and its bubble; the grid and the other orders have none; Index Rail
+    and Section Headers (both on by default) in the four combinations; the header height 0 closes the rows up and the rail still jumps to each section's first row."""
+    expect = ctx.expect
+    n = len(AZ_TITLES)
+
+    def opened(rail=None, heads=None, mode=b'0\n', titles=AZ_TITLES, sort_file=None, **kw):
+        m = albums_machine(len(titles), az=True, title=lambda i: titles[i], **kw)
+        if sort_file is not None: m.fs[SORT_FILE] = sort_file   # (the world's default is Title, '0')
+        if rail is not None: m.fs[AZ_RAIL] = rail
+        if heads is not None: m.fs[AZ_HEAD] = heads
+        m.fs[ALBUMS_FILE] = mode
+        open_grid(m)
+        return m
+
+    def vis(m, name):
+        w = m.widgets[name]
+        return m.props.get((w, 'visible'), 1), m.props.get((w, 'sensitive'), 1)
+
+    def frame(m, off):
+        scroll_to(m, off); paint(m)
+        return [(t, r) for (t, r), s in zip(m.texts, m.text_styles) if s == 'label_hdr']
+
+    def heads_of(m):
+        """{content y: letter} of the headers painted in the flow (y > 0 of the window: the pinned copy at the top is not one) over the whole content."""
+        out = {}
+        for off in range(0, max(content_h(m) - VIEW_H, 0) + 100, 100):
+            for t, (x, y, w, h) in frame(m, off):
+                if y > 0: out[y + scroll_of(m)] = t   # (the offset the scroll_view clamped it to)
+        return out
+
+    def rail_touch(m, kind, i, k, t=3000):
+        geo = tuple(m.props.get((m.rail, c)) for c in 'xywh')
+        span = geo[3] - 2 * O['SG_RAIL_PAD']
+        m.touch(kind, 300, 30 + geo[1] + O['SG_RAIL_PAD'] + int((i + 0.5) * span / k), t, fn='al_on_rail', count=40000000)
+        return geo
+
+    # 1. Rail off, headers on: the sections and the pinned header, rows 64 px apart under 28 px headers, no rail or bubble; the rows keep their layout
+    m = opened(rail=b'0\n')
+    hdr_y, row_y, content = az_model(HDR)
+    expect(content_h(m) == content and m.props.get((m.widgets['albums_scrollview'], 'virtual_h')) == content, f'the content holds a header per section and a row per album ({content_h(m)} == {content})')
+    expect(vis(m, 'sg_rail') == (0, 0), 'Index Rail off: the rail is hidden and insensitive')
+    expect(heads_of(m) == {hdr_y(s): l for s, (_, l) in enumerate(AZ_SECS)}, f'a header at every section: the letters {heads_of(m)}')
+    expect(frame(m, 0)[0] == ('#', (O['SG_HDR_X'], TOP, 100, HDR - 1)), 'the first header is under the large title, the Songs page\'s letter box')
+    blits, texts = paint(m)
+    titles = [(t, r) for (t, r), s in zip(m.texts, m.text_styles) if s == 'label_row_title']
+    expect([(t, r[1]) for t, r in titles] == [(AZ_TITLES[i], row_y(i) + TY) for i in range(n) if row_y(i) < VIEW_H] and all(r[0] == TX and r[2] == TW for _, r in titles),
+           f'the rows lie under their headers, the texts from x {TX} to {TX + TW}: {[(t, r[1]) for t, r in titles]}')
+    hair = [f for f in m.fills if f[0] == O['LIST_HAIR']]
+    expect(hair and all(f[1] == HX and f[3] == HW for f in hair) and {f[2] for f in hair} == {row_y(i) + ROW - 1 for i in range(n) if row_y(i) + ROW <= VIEW_H}, 'the hairlines run from the text to x 310, one under each row')
+    expect(m.chevs and {b[2][:2] for b in m.chevs} >= {(O['LIST_CHEV_X'], row_y(0) + (ROW - 1 - CHEV_PX[1]) // 2)}, 'the chevrons stay at x 288')
+    # the pinned header: the section at the window's top, the next one pushing it up
+    for off, letters, fill_h in ((hdr_y(0) + 5, ['#'], HDR), (hdr_y(1) + 20, ['A'], HDR), (hdr_y(2) - 10, [], 10), (hdr_y(2) + 5, ['B'], HDR)):   # (the next header 10 px below the top pushes the pinned one up: only its last 10 px show, without its letter)
+        frame(m, off)
+        pin = [f for f in m.fills if f[0] == O['SG_HDR_BG']]
+        got = [t for (t, r), s in zip(m.texts, m.text_styles) if s == 'label_hdr' and r[1] == 0]
+        expect(pin == [(O['SG_HDR_BG'], 0, 0, 320, fill_h)] and got == letters, f'at offset {off} the pinned band is {fill_h} px high with the letters {letters}: {pin} {got}')
+    frame(m, TOP - 10)
+    expect(not [f for f in m.fills if f[0] == O['SG_HDR_BG']], 'while the large title is in view nothing is pinned')
+
+    # 2. Index Rail on: the rail is the Songs page's column, one letter per section; a touch grabs it, jumps to the section's header and shows the bubble
+    m = opened(rail=b'1\n')
+    geo = tuple(m.props.get((m.rail, c)) for c in 'xywh')
+    span = len(AZ_SECS) * O['SG_RAIL_PITCH']
+    expect(vis(m, 'sg_rail') == (1, 1) and geo[0] == O['SG_RAIL_X'] and geo[2] == O['SG_RAIL_W'] and geo[3] == span + 2 * O['SG_RAIL_PAD'] and abs(geo[1] + geo[3] / 2 - (50 + VIEW_H / 2)) <= 1,
+           f'the rail shows: x 284, 36 wide, the span {span} px and the margins, centred on the list ({geo})')
+    expect(content_h(m) == content and heads_of(m)[hdr_y(1)] == 'A', 'the rail does not change the rows or the headers (the same positions and heights)')
+    inset = O['SG_RAIL_INSET']   # the rail's footprint (patch/azlist.c az_inset): the rows leave room for it, so the hairline, the chevron and the text end move left by it
+    scroll_to(m, 0); blits, texts = paint(m)
+    titles = [(t, r) for (t, r), s in zip(m.texts, m.text_styles) if s == 'label_row_title']
+    hair = [f for f in m.fills if f[0] == O['LIST_HAIR']]
+    expect(inset == O['LIST_HAIR_END'] - O['SG_RAIL_X'] == 26 and titles and all(r[0] == TX and r[2] == TW - inset for _, r in titles) and hair and all(f[1] == HX and f[3] == HW - inset for f in hair)
+           and m.chevs and {b[2][:2] for b in m.chevs} >= {(O['LIST_CHEV_X'] - inset, row_y(0) + (ROW - 1 - CHEV_PX[1]) // 2)} and not any(b[2][0] == O['LIST_CHEV_X'] for b in m.chevs),
+           f'Index Rail on: the texts end {inset} px earlier (x {TX + TW - inset}), the hairlines end at x {O["LIST_HAIR_END"] - inset}, the chevrons stand at x {O["LIST_CHEV_X"] - inset}, clear of the rail (x {O["SG_RAIL_X"]})')
+    for i in (2, 4):
+        m.calls = []
+        rail_touch(m, 'down', i, len(AZ_SECS))
+        want = min(hdr_y(i), content - VIEW_H)
+        expect(any(c[0] == 'widget_grab' and c[2] == m.rail for c in m.calls) and ('widget_set_prop_int', m.widgets['albums_scrollview'], 'yoffset', want) in m.calls and vis(m, 'sg_bubble')[0] == 1,
+               f'a touch on the rail grabs it and jumps to section {AZ_SECS[i][1]}\'s header ({want}), the bubble shows')
+        expect(('widget_set_text_utf8', m.widgets['sg_bubble_letter'], AZ_SECS[i][1]) in m.calls, 'the bubble shows the letter')
+        rail_touch(m, 'up', i, len(AZ_SECS), 3100)
+        expect(any(c[0] == 'widget_ungrab' and c[2] == m.rail for c in m.calls) and vis(m, 'sg_bubble')[0] == 0, 'the release lets go and hides the bubble')
+    m.calls = []; rail_touch(m, 'down', 0, len(AZ_SECS))
+    expect(('widget_set_prop_int', m.widgets['albums_scrollview'], 'yoffset', 0) in m.calls, 'the first section is the top of the list')
+    rail_touch(m, 'up', 0, len(AZ_SECS), 3100)
+    m.calls = []; rail_touch(m, 'down', 3, len(AZ_SECS)); m.call(PSYMS['al_on_bg'], count=4000000)
+    expect(any(c[0] == 'widget_ungrab' and c[2] == m.rail for c in m.calls) and vis(m, 'sg_bubble')[0] == 0, 'a window put in front releases the rail')
+
+    # 3. The grid has no rail and no headers; the View row brings them to the list and takes them away again, the rail with the Index Rail switch
+    m = opened(rail=b'1\n', mode=b'1\n')
+    expect(vis(m, 'sg_rail') == (0, 0) and vis(m, 'sg_bubble')[0] == 0 and not heads_of(m), 'the grid: no rail, no bubble, no section letter')
+    view_switch(m, 40000000)
+    expect(page_mode(m) == 1 and vis(m, 'sg_rail') == (1, 1) and content_h(m) == content and heads_of(m)[hdr_y(1)] == 'A', 'the list: the rail and the headers')
+    view_switch(m, 40000000)
+    expect(page_mode(m) == 0 and vis(m, 'sg_rail') == (0, 0) and not heads_of(m) and content_h(m) == TOP + RGAP + ((n + COLS - 1) // COLS) * PITCH, 'back to the grid: the rail goes, the content is the grid\'s')
+    m = opened(rail=b'0\n', mode=b'1\n')
+    view_switch(m, 40000000)
+    expect(vis(m, 'sg_rail') == (0, 0) and heads_of(m)[hdr_y(1)] == 'A', 'rail off: the list has its headers and still no rail')
+
+    # 4. Section Headers off: no letters, no pinned header, the rows closed up; the rail (when on) still jumps to each section's first row; the four combinations
+    for rail, heads in ((b'0\n', b'0\n'), (b'1\n', b'0\n'), (b'1\n', b'1\n'), (b'0\n', b'1\n'), (b'1\n', b'x\n')):
+        m = opened(rail=rail, heads=heads)
+        hh = 0 if heads == b'0\n' else HDR
+        hdr_y, row_y, content = az_model(hh)
+        label = f'rail {rail.strip().decode()}, headers {heads.strip().decode()}'
+        expect(content_h(m) == content and vis(m, 'sg_rail') == ((1, 1) if rail == b'1\n' else (0, 0)), f'{label}: the content is {content} px, the rail {"shown" if rail == b"1\n" else "hidden"}')
+        if hh:
+            expect(heads_of(m) and any(f[0] == O['SG_HDR_BG'] for f in (frame(m, 100) and m.fills)), f'{label}: the headers and the pinned header are there')
+        else:
+            letters = [frame(m, off) for off in range(0, max(content - VIEW_H, 0) + 100, 100)]
+            fills_hdr = []
+            for off in range(0, max(content - VIEW_H, 0) + 100, 100):
+                frame(m, off); fills_hdr += [f for f in m.fills if f[0] == O['SG_HDR_BG']]
+            expect(not any(letters) and not fills_hdr, f'{label}: no section letter and no pinned band at any offset')
+            blits, texts = paint(m)
+            frame(m, 150)
+            tl = [r[1] for (t, r), s in zip(m.texts, m.text_styles) if s == 'label_row_title']
+            expect(tl == [row_y(i) - 150 + TY for i in range(n) if row_y(i) - 150 + ROW > 0 and row_y(i) - 150 < VIEW_H], f'{label}: the rows lie {ROW} px apart from the top ({tl})')
+        if rail == b'1\n':
+            for i in (1, 2, 4):
+                m.calls = []
+                rail_touch(m, 'down', i, len(AZ_SECS))
+                want = min(hdr_y(i), content - VIEW_H)
+                expect(('widget_set_prop_int', m.widgets['albums_scrollview'], 'yoffset', want) in m.calls, f'{label}: the rail jumps to section {AZ_SECS[i][1]} at {want}' + (' (its first row)' if not hh else ' (its header)'))
+                if not hh: expect(want == min(TOP + AZ_SECS[i][0] * ROW, content - VIEW_H), 'which is the section\'s first row')
+                rail_touch(m, 'up', i, len(AZ_SECS), 3100)
+    # a tap on a row is on the row where the closed-up geometry puts it
+    m = opened(heads=b'0\n')
+    tap_at(m, 100, TOP + 2 * ROW + 10)
+    expect(('navigator_to_with_context', 'albuminfo_page', O['CLASS_ALBUMS'], 2) in m.calls, 'headers off: the third row is at TOP + 128 and opens album 2')
+    m = opened()
+    calls = tap_at(m, 100, TOP + HDR + 2 * ROW + 10)
+    expect(('navigator_to_with_context', 'albuminfo_page', O['CLASS_ALBUMS'], 1) in calls, 'headers on: a header is dead and the rows start under it (the third row of the first two sections is album 1)')
+    calls = tap_at(m, 100, TOP + 10, 5000)
+    expect(not any(c[0] == 'navigator_to_with_context' for c in calls), 'a touch on a header opens nothing')
+    calls = tap_at(m, 100, 10, 6000)
+    expect(not any(c[0] == 'navigator_to_with_context' for c in calls), 'a touch on the title block opens nothing')
+
+    # 5. Only the Title order has sections: Z-A mirrors them (Z first, "#" last); the Artist, Recently Added and Year orders are plain lists, rail off or on
+    m = opened(rail=b'1\n', sort_file=b'a\n')
+    hdr_y, row_y, content = az_model(HDR, [(0, 'Z'), (1, 'D'), (3, 'C'), (4, 'B'), (6, 'A'), (8, '#')])
+    got = heads_of(m)
+    expect(content_h(m) == content and [got[y] for y in sorted(got)] == ['Z', 'D', 'C', 'B', 'A', '#'], f'Title Z-A: the sections run Z..A and "#" last ({[got[y] for y in sorted(got)]}, {content_h(m)} == {content})')
+    expect(vis(m, 'sg_rail') == (1, 1), 'Title Z-A: the rail shows')
+    for k, name in ((b'1\n', 'Artist'), (b'2\n', 'Recently Added'), (b'3\n', 'Year'), (b'b\n', 'Artist Z-A')):
+        m = opened(rail=b'1\n', sort_file=k)
+        expect(content_h(m) == TOP + n * ROW and vis(m, 'sg_rail') == (0, 0) and not heads_of(m), f'{name}: a plain list, no headers, no rail ({content_h(m)})')
+    m = opened(rail=b'1\n', sort_file=b'1\n')   # the sort card's Title row brings the sections back, and takes them away again
+    m.call(PSYMS['al_on_item'], a0=0, count=40000000)
+    expect(vis(m, 'sg_rail') == (1, 1) and heads_of(m)[az_model(HDR)[0](1)] == 'A', 'Title chosen from the card: the sections and the rail')
+    m.call(PSYMS['al_on_item'], a0=1, count=40000000)
+    expect(vis(m, 'sg_rail') == (0, 0) and not heads_of(m) and content_h(m) == TOP + n * ROW, 'Artist chosen from the card: a plain list again')
+    # 6. The Title order is our name keys (cc_name_keys / cc_key_cmp), not stock's byte classes, so the sections agree with it: stock lists symbol-led titles after Z
+    # ("÷", "=", "(What's the Story) Morning Glory?", shortened here to fit a row), kana after the Latin letters; here "#" holds digits and symbols first, すずめ is under S and Z holds only Zeta
+    stock = ['Zeta', "(What's the Story)?", 'The Dark Side of the Moon', '\u00f7', 'Blue', '\u3059\u305a\u3081', '=', '1999', 'Abbey Road', 'Wall', 'Wish You Were Here']
+    want = ['1999', '=', '\u00f7', 'Abbey Road', 'Blue', 'The Dark Side of the Moon', '\u3059\u305a\u3081', 'Wall', "(What's the Story)?", 'Wish You Were Here', 'Zeta']
+
+    def rows_and_heads(m):
+        rows, heads = {}, {}
+        for off in range(0, max(content_h(m) - VIEW_H, 0) + 100, 100):
+            scroll_to(m, off); paint(m)
+            for (t, (x, y, w, h)), sty in zip(m.texts, m.text_styles):
+                if y > 0 and sty == 'label_row_title': rows[y + scroll_of(m)] = t
+                if y > 0 and sty == 'label_hdr': heads[y + scroll_of(m)] = t
+        return [rows[y] for y in sorted(rows)], [heads[y] for y in sorted(heads)]
+    for data, order, letters in ((b'0\n', want, ['#', 'A', 'B', 'D', 'S', 'W', 'Z']), (b'a\n', want[::-1], ['Z', 'W', 'S', 'D', 'B', 'A', '#'])):
+        m = opened(rail=b'0\n', sort_file=data, titles=stock)
+        got, heads = rows_and_heads(m)
+        expect(got == order, f'Title {data!r}: our name order, symbols and digits under "#" ({got})')
+        expect(heads == letters, f'Title {data!r}: the sections {letters}: Z holds only Zeta, すずめ is under S ({heads})')
+    # no memory for the ranks: a plain list, no rail
+    m = albums_machine(n, az=True, title=lambda i: AZ_TITLES[i]); m.fs[AZ_RAIL] = b'1\n'; m.fs[ALBUMS_FILE] = b'0\n'; m.calloc_fail_size = n
+    open_grid(m)
+    expect(content_h(m) == TOP + n * ROW and vis(m, 'sg_rail') == (0, 0) and not heads_of(m), 'no memory for the ranks: a plain list, no headers, no rail')
+    # the Settings Files page's rows and the reads: a page reads its two files when it opens (a change shows on the next open)
+    m = opened(rail=b'1\n', heads=b'0\n')
+    m.fs[AZ_RAIL], m.fs[AZ_HEAD] = b'0\n', b'1\n'
+    expect(content_h(m) == az_model(0)[2] and vis(m, 'sg_rail') == (1, 1), 'the switches are read when the page opens: a change meanwhile waits for the next open')
+
+
+SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests, az_tests, nextalbum_tests]   # tools/check.py runs each as its own task
 
 def run(ctx):
     for section in SECTIONS: section(ctx)

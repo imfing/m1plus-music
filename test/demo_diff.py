@@ -6,20 +6,22 @@ usage: python3 -I test/demo_diff.py <stock demo> <built demo>
 Allowed differences: the zeroed .pdr section (space step), the program headers (the payload PT_LOAD),
 the 8-byte Home-icon hook at 0x533b80, the 8-byte boot guard hook at home_page_init 0x534cd4, the 8-byte
 Now Playing hook at playing_page_init
-0x53d1e4, the 8-byte More dialog hook at dialog_playmore_dialog_init 0x479cc4, the 8-byte pull-down hook at dialog_dropdown_dialog_init 0x475f04, the pinned literals of tools/autotime.py (hwclock -su/-wu), the one word at get_id3info 0x4dff4c (the tag reader's strcpy call, now a jal into the payload), the one data word g_scroll_view_vtable + 0x98 (0x97a330, patch/scroll.c), the words listed in patch/rows.json, the four cover-size immediates of the lock screen (each must be
+0x53d1e4, the 8-byte timed cover page hook at bigcover_page_init 0x529a24, the one word of the timed open's navigator_to call at 0x53d0ec (the idle view), the 8-byte lock screen hook at screensaver_page_init 0x53fd44, the 8-byte More dialog hook at dialog_playmore_dialog_init 0x479cc4, the 8-byte pull-down hook at dialog_dropdown_dialog_init 0x475f04, the pinned literals of tools/autotime.py (hwclock -su/-wu), the one word at get_id3info 0x4dff4c (the tag reader's strcpy call, now a jal into the payload), the one data word g_scroll_view_vtable + 0x98 (0x97a330, patch/scroll.c), the words listed in patch/rows.json, the four cover-size immediates of the lock screen (each must be
 stock | 264), the five A-B marker immediates of Now Playing (tools/mod_nowplaying.py marker_edits) and bytes
-the pinned words of tools/themeoff.py (theme1 off), appended after the stock file. Anything else is an error. Exit status 0 = clean.
+the four pinned branch words of tools/coex.py (Wi-Fi and Bluetooth together), the pinned words of tools/themeoff.py (theme1 off), appended after the stock file. Anything else is an error. Exit status 0 = clean.
 """
 import json, os, struct, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(ROOT, 'tools'))
 import mod_nowplaying as mn
-import autotime, themeoff, timezones
+import autotime, coex, themeoff, timezones
 import pod   # the Shuffle hooks and display sites (tools/pod.py SETMODE, LOADPL, MODE_SITES)
 HOOK = (0x533b80, 8)
 HOME_INIT = (0x534cd4, 8)   # home_page_init: the boot guard's hook (docs/architecture.md)
 PLAYING = (0x53d1e4, 8)     # playing_page_init: the Now Playing hook (patch/nowplaying.c)
+BIGCOVER = (0x529a24, 8)    # bigcover_page_init: the timed cover page hook (patch/bigcover.c)
+LOCKSCREEN = (0x53fd44, 8)  # screensaver_page_init: the lock screen's mini player layout hook (patch/lockscreen.c)
 PLAYMORE = (0x479cc4, 8)    # dialog_playmore_dialog_init: the More menu hook (patch/playmore.c)
 PULLDOWN = (0x475f04, 8)    # dialog_dropdown_dialog_init: the pull-down tile hook (patch/pulldown.c)
 BACKTOPLAYER = (0x4cd58c, 8)   # on_backtoplayer_onclick: Radio Now Playing from stock pages (patch/radionp.c rn_backtoplayer)
@@ -30,6 +32,8 @@ ID3_SITE = (0x4dff4c, 4)    # get_id3info: the jalr strcpy of the parsed path, n
 QUERY = (0x5ee77c, 0x5ee9ac)   # toolsQueryDbTable, toolsQueryDbTableAndSort: the PIC prologue's first two words, now `j` into the payload and a nop (patch/pcmodel.c, docs/modules/payload.md hook 6)
 SCAN_SITE = (0x5ea6a8, 4)  # the library scan's folder test: the jalr strcmp(name, "."), now jal pod_scan_dir (patch/common.c, docs/modules/payload.md hook 5)
 UPDATE_SITE = (0x4e1124, 4)  # update_firmware: the compare's operand addiu a1 (the literal "V2.1" 0x74773c -> the string "about_version" 0x74772c; docs/modules/version.md)
+IDLE_SITE = (pod.IDLE_SITE, 4)  # the timed open's jalr navigator_to, now jal bc_timed_open (patch/bigcover.c, docs/modules/payload.md hook 24)
+TIDALKB_SITE = (pod.TIDALKB_SITE, 4)  # the stock Tidal search page's edit_set_focus call, now jal tidal_kb_focus (patch/tidalkb.c, docs/modules/payload.md hook 27)
 WIFIHUB_SITE = (pod.WIFIHUB_SITE, 4)  # the Wi-Fi row of the All System Settings hub: the jalr navigator_to, now jal wifi_hub_open (patch/wifipage.c, docs/modules/payload.md hook 21)
 PULLDOWN_OPEN = tuple(pod.PULLDOWN_OPEN_SITES)  # on_wm_tsmove_fun: the two `bal navigator_to` that open the page a pull-down tile chose, now jal pd_open_settings (patch/pulldown.c, docs/modules/payload.md hook 22)
 BATTERY_SITE = (0x5450f8, 4)  # show_sysbar_face: the jalr get_battery_capacity, now jal bp_capacity (patch/battery.c, docs/modules/payload.md hook 8)
@@ -86,6 +90,8 @@ def main():
     allow(va_to_off(s, HOOK[0]), HOOK[1], 'hook')
     allow(va_to_off(s, HOME_INIT[0]), HOME_INIT[1], 'home-init hook')
     allow(va_to_off(s, PLAYING[0]), PLAYING[1], 'playing init hook')
+    allow(va_to_off(s, BIGCOVER[0]), BIGCOVER[1], 'timed cover page init hook')
+    allow(va_to_off(s, LOCKSCREEN[0]), LOCKSCREEN[1], 'lock screen init hook')
     allow(va_to_off(s, PLAYMORE[0]), PLAYMORE[1], 'more dialog init hook')
     allow(va_to_off(s, PULLDOWN[0]), PULLDOWN[1], 'pull-down init hook')
     allow(va_to_off(s, START_PLAYER[0]), START_PLAYER[1], 'start player hook')
@@ -97,16 +103,21 @@ def main():
     allow(va_to_off(s, BATTERY_SITE[0]), BATTERY_SITE[1], 'battery percentage hook')
     for q in PULLDOWN_OPEN: allow(va_to_off(s, q), 4, 'pull-down settings tile hook')
     allow(va_to_off(s, WIFIHUB_SITE[0]), WIFIHUB_SITE[1], 'Wi-Fi hub row hook')
+    allow(va_to_off(s, IDLE_SITE[0]), IDLE_SITE[1], 'idle view hook (the timed open)')
+    allow(va_to_off(s, TIDALKB_SITE[0]), TIDALKB_SITE[1], 'Tidal search keyboard hook')
     for q in LINEOUT_SITES: allow(va_to_off(s, q), 4, 'Line Out pill hook')
     allow(va_to_off(s, UPDATE_SITE[0]), UPDATE_SITE[1], 'updater version compare')
     allow(va_to_off(s, timezones.SELECT), 8, 'select_timezone hook')   # time zones (tools/timezones.py): the hook, the clamp, the row count and limit, the two call sites
     for a, *_ in timezones.edits(0, 0): allow(va_to_off(s, a), 4, 'time zone words')
     allow(va_to_off(s, pod.EQ_ROW), 8, 'Play Settings Equalizer row hook')
+    allow(va_to_off(s, pod.LOCKROW), 8, 'Display page Lock Screen row hook')
+    allow(va_to_off(s, pod.NEXTALBUM_SITE), 8, 'mclNextSong end branch hook (Continue with Next Album)')
     for q in SHUFFLE_HOOKS: allow(va_to_off(s, q), 8, 'shuffle hook')
     for q in MODE_SITES: allow(va_to_off(s, q), 4, 'play mode display site')
     allow(va_to_off(s, pod.CLEAR_SITE), 4, 'dmr_serverstart deque_clear site')
     for a, old, new, _ in autotime.EDITS: allow(va_to_off(s, a), len(old), 'auto time literals')
     for a, *_ in themeoff.EDITS: allow(va_to_off(s, a), 4, 'theme1 off')
+    for a, *_ in coex.EDITS: allow(va_to_off(s, a), 4, 'Wi-Fi + Bluetooth together')
     for q in QUERY: allow(va_to_off(s, q), 8, 'library query hook')
     for q in LIGHT: allow(va_to_off(s, q), 8, 'Light Mode hook')
     allow(va_to_off(s, SCROLL_SLOT[0]), SCROLL_SLOT[1], 'scroll vtable slot')
@@ -141,6 +152,12 @@ def main():
     ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]
     h = PLAYING[0]; o = va_to_off(s, h)
     print(f'Now Playing hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
+    ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]
+    h = BIGCOVER[0]; o = va_to_off(s, h)
+    print(f'Timed cover page hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
+    ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]
+    h = LOCKSCREEN[0]; o = va_to_off(s, h)
+    print(f'Lock screen hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
     ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]
     h = PULLDOWN[0]; o = va_to_off(s, h)
     print(f'Pull-down hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
@@ -189,15 +206,33 @@ def main():
     good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
     print(f'Wi-Fi hub row hook {WIFIHUB_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
     ok = ok and good
+    o = va_to_off(s, IDLE_SITE[0]); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
+    good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
+    print(f'idle view hook {IDLE_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
+    ok = ok and good
+    o = va_to_off(s, TIDALKB_SITE[0]); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
+    good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
+    print(f'Tidal search keyboard hook {TIDALKB_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
+    ok = ok and good
     for q in LINEOUT_SITES:
         o = va_to_off(s, q); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
         good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
         print(f'Line Out pill hook {q:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
         ok = ok and good
+    o = va_to_off(s, pod.LOCKROW); mw = struct.unpack_from('<I', m, o)[0]
+    good = (struct.unpack_from('<II', s, o) == (0x8f84a708, 0x1000fff6) and mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12]
+            and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s)))
+    print(f'Display page Lock Screen row hook {pod.LOCKROW:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'ok' if good else 'WRONG')
+    ok = ok and good
     o = va_to_off(s, pod.EQ_ROW); mw = struct.unpack_from('<I', m, o)[0]
     good = (struct.unpack_from('<II', s, o) == (0x8f84a708, 0x1000ff93) and mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12]
             and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s)))
     print(f'Play Settings Equalizer row hook {pod.EQ_ROW:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'ok' if good else 'WRONG')
+    ok = ok and good
+    o = va_to_off(s, pod.NEXTALBUM_SITE); mw = struct.unpack_from('<I', m, o)[0]
+    good = (struct.unpack_from('<II', s, o) == pod.NEXTALBUM_DISPLACED and mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12]
+            and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s)))
+    print(f'mclNextSong end branch hook {pod.NEXTALBUM_SITE:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'ok' if good else 'WRONG')
     ok = ok and good
     for q in SHUFFLE_HOOKS:
         o = va_to_off(s, q); mw = struct.unpack_from('<I', m, o)[0]
@@ -225,6 +260,11 @@ def main():
     good = (sw, mw) == (0x24a5773c, 0x24a5772c) and s[lit:lit + 5] == m[lit:lit + 5] == b'V2.1\0' and m[neu:neu + 14] == b'about_version\0'   # the literal stays, the compare reads another string
     print(f'updater compare {UPDATE_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
     ok = ok and good
+    for a, old, new, what in coex.EDITS:   # docs/modules/overlays.md "Wi-Fi and Bluetooth together": beqz v0 -> b, same target
+        o = va_to_off(s, a); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
+        good = (sw, mw) == (old, new)
+        print(f'Wi-Fi + Bluetooth {a:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
+        ok = ok and good
     for a, old, new, what in autotime.EDITS:   # docs/modules/autotime.md: each slot holds the stock text in stock and the new text in the build, NUL-padded to the same length
         o = va_to_off(s, a); good = s[o:o + len(old)] == old and m[o:o + len(new)] == new
         print(f'auto time literal {a:#x}: {old.rstrip(bytes(1))!r} -> {new.rstrip(bytes(1))!r}', 'ok' if good else 'WRONG')

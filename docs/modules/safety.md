@@ -1,13 +1,13 @@
 # Payload safety
 
 - **Keep the approved entry points.** Home icon tap, guarded Home initialization,
-  Now Playing initialization, More-dialog initialization, pull-down initialization (opened by the user's swipe only), the podcast tag-copy call site, the
+  Now Playing initialization, the timed cover page's initialization (`bigcover_page_init`, [bigcover](bigcover.md)), the timed open's `navigator_to` call site in Now Playing's timer callback (`0x53d0ec`, the idle view: Cassette / Vinyl, stock's call on the kill switch or any failure), the lock screen's initialization (`screensaver_page_init`, [lock screen](lockscreen.md); its mini bar adds a page-scoped timer and paint handlers that every failure leaves unregistered, no-ops or removed, and the destroy handler frees), More-dialog initialization, pull-down initialization (opened by the user's swipe only), the podcast tag-copy call site, the
   dot-folder scan, library query functions, status bar's battery-capacity call site
-  (Battery Percentage, off by default), `toolsGetFileCreateTime`'s prologue (song dates: one `statx`, stock's date on any failure), `mclStartPlayer`'s prologue (Radio's hand-over: it stops a running radio, one
-  comparison otherwise), `on_backtoplayer_onclick`'s prologue (every stock Now Playing button: Radio Now Playing while a station plays, else stock), the previously empty `scroll_view` event slot, the All System Settings hub's Wi-Fi row (`navigator_to` call site `0x4b1460`: our Wi-Fi page, stock's on the kill switch or a page that will not open), the two `navigator_to` call sites that open a Playback / System Settings page after a pull-down tile tap (`0x4cd894`, `0x4cd8bc`: restack the page that is still in the window stack, else stock's call), and the
+  (Battery Percentage and the Charge Limit, both off by default), `toolsGetFileCreateTime`'s prologue (song dates: one `statx`, stock's date on any failure), `mclStartPlayer`'s prologue (Radio's hand-over: it stops a running radio, one
+  comparison otherwise), `on_backtoplayer_onclick`'s prologue (every stock Now Playing button: Radio Now Playing while a station plays, else stock), the previously empty `scroll_view` event slot, the All System Settings hub's Wi-Fi row (`navigator_to` call site `0x4b1460`: our Wi-Fi page, stock's on the kill switch or a page that will not open), the two `navigator_to` call sites that open a Playback / System Settings page after a pull-down tile tap (`0x4cd894`, `0x4cd8bc`: restack the page that is still in the window stack, else stock's call), the Display page's Lock Screen row (`0x4a5ca8`: our Lock Screen page, stock's page on the kill switch or a page that will not open), the All Playback Settings Equalizer row (`0x4a0210`: our Equalizer page), and the
   palette's three paint-time hooks: `style_get_color` `0x659fcc`, `style_get_gradient` `0x659f9c` and
   `image_manager_add` `0x655638` ([accent](accent.md), payload hooks 10 - 12); in `hciplayer`, the
-  equalizer's `af_info` open slot `0x89381c` and its two 48 kHz gates ([parametric EQ](peq.md)).
+  equalizer's `af_info` open slot `0x89381c` and its two 48 kHz gates ([parametric EQ](peq.md)). `mclNextSong`'s List play end branch `0x5d5988` (payload hook 26: Continue with Next Album appends the next album's tracks to a queue that has just ended, [nextalbum](nextalbum.md); approved 2026-11-09, main-loop idle path, bounded work, stock's end on any refusal).
   Each is pinned, falls back to
   stock and is a pass-through while the palette is inactive (Black + Neutral) or `/mnt/mmc/m1plus-off` exists.
   [Payload](payload.md) defines the hook sites and fallbacks. Do not add global paint or
@@ -30,8 +30,9 @@
   Memory Playback at boot: rewrite only the documented songtable/myfav cases and pass
   other SQL untouched. Album queries use track order so the first track supplies the row/cover.
   The scan hook skips dot-folders outside the boot path. The battery hook runs stock first
-  from the first status refresh; only an enabled percentage setting changes capacity/label.
-  Disabled it adds only an access and cached flag. Now Playing's paint work stays on the
+  from the first status refresh; only an enabled percentage setting changes capacity/label,
+  and only a set Charge Limit writes the charger switch, releasing only its own hold ([charging](charging.md)).
+  Both disabled it adds only an access and two cached flags. Now Playing's paint work stays on the
   cover widget; More work stays on init, More/back taps and covering-dialog handling. The pull-down hook runs stock's init first,
   then moves and hides the eight tiles and their captions once; before the stock init it also writes the two "inside settings" flags (`syssetinto_flag`, `playsetinto_flag`) from the window stack.
 - **Pin every edit.** Check stock SHA-256, words, symbols, `$gp` and offsets before writing.

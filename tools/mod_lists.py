@@ -270,7 +270,7 @@ def edit_playmore(root, pal):
     has none, A-B repeat is no longer first, the back header has none); Playback speed's row with room for its label. Stock
     widgets keep their names, order and rectangles, but the speed row's (PM_SPEED)."""
     sv, add, first, ab = root.find('playmore_scrollview'), root.find('listitem2'), root.find('listitem4'), root.find('listitem0')
-    assert sv and add and first and ab and add in sv.children and root.find('pod_more') is None and root.find('pod_back') is None and root.find('pod_tape') is None and root.find('pod_vinyl') is None and root.find('pod_goep') is None and root.find('pod_art') is None, 'unexpected playmore_dialog'
+    assert sv and add and first and ab and add in sv.children and root.find('pod_more') is None and root.find('pod_back') is None and root.find('pod_tape') is None and root.find('pod_vinyl') is None and root.find('pod_goep') is None and root.find('pod_art') is None and root.find('pod_sleep') is None, 'unexpected playmore_dialog'
     assert root.type == 'dialog' and root.get('highlight') is None
     root.set('highlight', PM_HIGHLIGHT)
     for name, (stock, ours) in PM_SPEED.items():
@@ -304,6 +304,10 @@ def edit_playmore(root, pal):
     row('pod_art', [   # page 2, between A-B repeat and Delete: Find Cover & Lyrics (patch/onlineart.c); a top hairline like the rows around it; the payload dims it and takes its touches away while the Wi-Fi is off
         awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_art_icon'), ('draw_type', 'default'), ('image', 'pod_ic_art'), ('sensitive', 'false')]),
         awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_art_label'), ('style', 'srlabel_item_white_style')])])
+    row('pod_sleep', [   # page 2, under Playback speed: a link to the stock Settings > Power page (the Sleep Timer switch and its hour / minute selectors); a top hairline, the grey chevron-right of a row that opens a page
+        awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_sleep_icon'), ('draw_type', 'default'), ('image', 'pod_ic_sleep'), ('sensitive', 'false')]),
+        awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_sleep_label'), ('style', 'srlabel_item_white_style')]),
+        awtk_ui.Widget('image', 285, 14, 13, 22, [('name', 'pod_sleep_chev'), ('draw_type', 'default'), ('image', 'right_arrow'), ('sensitive', 'false')])])
     assert first.get('style:normal:border') == 'top' and ab.get('style:normal:border') == 'none'
     goep.set('style:normal:border', 'none')
     first.set('style:normal:border', 'none')
@@ -377,7 +381,7 @@ def build_ui(work):
         old, new, _ = edit_ui(path, lambda root, rel=rel: ui_edit(rel, root, pal))
         shape = lambda d: [(w.type, w.name, w.x, w.y, w.w, w.h) for w in awtk_ui.parse(d).walk()]
         if rel in ADD_EDITS:
-            ours = lambda s: s[1] in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', PM_GLASS) or s[1].startswith(('pod_more_', 'pod_back_', 'pod_tape_', 'pod_vinyl_', 'pod_goep_', 'pod_art_'))
+            ours = lambda s: s[1] in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', PM_GLASS) or s[1].startswith(('pod_more_', 'pod_back_', 'pod_tape_', 'pod_vinyl_', 'pod_goep_', 'pod_art_', 'pod_sleep_'))
             other = lambda s: s[:2] if s[1] in PM_SPEED else s   # the speed row's rectangles are ours (PM_SPEED)
             assert [other(s) for s in shape(new) if not ours(s)] == [other(s) for s in shape(old)], f'{rel}: a stock widget was removed, renamed or moved'
         elif rel in GEOMETRY_EDITS:

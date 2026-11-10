@@ -35,21 +35,21 @@ the Albums page, and shows a progress pill at the top of the page while it runs:
 
 Whether Home has work is decided before anything is queried or scanned (`hc_expect`, `hc_later`), from two cheap facts:
 
-- **The stamp** `/mnt/mmc/.m1plus/cache-stamp` (`STAMP_FILE`, on the card like the cache): one line per part, `covers <albums> <hash>` and `tracks <albums> <hash>` (decimal count, 8 hex digits). The signature of the library is the stock Albums
+- **The stamp** `/mnt/mmc/.m1plus/cache-stamp` (`STAMP_FILE`, on the card like the cache): one line per part, `covers <albums> <hash>`, `tracks <albums> <hash>` and `artists <albums> <hash>` (decimal count, 8 hex digits; the artists line is the artist photos' own, so a stamp from before them has none and the pass runs once by itself on the first Home open of an unchanged library: no migration code). The signature of the library is the stock Albums
   count and the order-independent sum of `cc_album_key` over its albums (`hc_lib_of`). A line is written when its part ran to the end (`hc_stamp`, atomic `pod_card_write`): covers when every album has a file or a marker
   (also an empty library; **not** a set that **stalled**: the hung album has its `.bad`, but the watchdog ended the pass with other albums unlooked at, so the next foreground scans again and skips it; a stalled Rebuild Covers keeps its request file too), tracks when the duration pass found
   the table complete or finished measuring (also no songs). A part that did not run to the end (card full, no thread, held worker, a save error) leaves its line as it was. Three more passes that look finished but are not:
   a **truncated** cover pass (more albums missing than one set holds, `CC_MAX_JOBS` 4000, or a path copy failed: `cc_build_truncated`, set by `cc_build_near_step`) writes no covers line and chains the next chunk (see "Chunks"),
   a **failed list copy** (`cc_list_failed`: rows but no memory for the copy) writes no line and hides the pill (Home asks again), and **no songs although there are albums** (stock `loadLocalClassList` returns the deque's size, so a query that failed before
   any row reads as an empty list, not as -1) is a failed song read: no tracks line, the pill hides, Home asks again.
-  An **empty album list** may equally be a failed query. It is stamped (`covers 0 00000000`, and `tracks 0 00000000` when the song list is empty too; the signature 0/0 matches no real library, so any later successful read sees work) but never trusted:
+  An **empty album list** may equally be a failed query. It is stamped (`covers 0 00000000` and `artists 0 00000000`, and `tracks 0 00000000` when the song list is empty too; the signature 0/0 matches no real library, so any later successful read sees work) but never trusted:
   `hc_lib_of` leaves `lib.sigok` 0 for it, so `hc_expect` answers 4 at every foreground and the library is asked again silently at `HC_START_MS`. A still empty library matches its 0/0 stamp there: no pill, no scan. **The x writes nothing**, so after a reboot the pill comes back.
   Developer > Clear Cover Cache drops the covers line (`homecover_stamp_drop(1)`), Clear Track Durations the tracks line (`(2)`); no line left removes the file.
 - **The database file's state** (`hc_dbsig`): `__xstat` of `/mnt/data/database.db` and its `-wal` and `-journal` (mtime, nanoseconds, size) as it was when the signature was last taken (`lib`, in memory, taken by every pass at HC_START_MS).
 
 On Home open and on every foreground (not `hc_off`), `hc_expect` answers without a query or a per-album `access`:
 
-- a missing stamp line or a pending `REBUILD_FILE`: work (covers, or tracks when only the tracks line is missing); no card: nothing;
+- a missing stamp line, a pending `REBUILD_FILE` or `AREBUILD_FILE`: work (covers, tracks, or artist photos by the missing line; `hc_stale` bits 1, 2, 8; 4 is the probe); no card: nothing;
 - the database file changed since the signature was taken (a play changes it too), or nothing taken yet since the boot, both lines present: **not certain work**. The 5 s one-shot is armed silently (`hc.probe`, no pill) and the library is asked once then; equal to the stamp: done (the state is remembered, nothing was ever shown); different: the pill appears and the scan runs;
 - otherwise (database as it was, signature equal to the stamp): nothing. No pill, no timer, no `hc_on_start`, no album query, no duration pass.
 
@@ -136,6 +136,14 @@ restart only repeats work. Files already replaced stay new. The worker is the on
 rebuild never runs beside Cover Flow's or Albums' own build.
 
 Settings > Developer > Cache shows the cache's counts and this build's status, and its Clear Cover Cache row is the opposite request: it deletes the cache (and this request file) in steps, see [settings](settings.md) "Clear Cover Cache"; the next Home open then shows the waiting pill (the covers line is dropped) and the scan queues every album as missing.
+
+## Rebuild Artist Photos
+
+Settings > Library > Rebuild Artist Photos writes `AREBUILD_FILE` (`arebuild_ask`, `docs/modules/artists.md` "Rebuild Artist Photos, re-check on open, counts"): `hc_expect` sees work (the waiting pill reads `Rebuilding artist photos…`, covers first when both requests are pending) and `hc_on_start` forces every artist; the covers' request, `.bad` files and cache are not touched. When the walk over the albums is complete `hc_on_start` saves the purity map (`ap_lib_save`) before the worker starts, and a pass without a snapshot removes it (`ap_lib_drop`).
+
+## Artist photos
+
+After the cover steps of the last chunk, `hc_on_start` walks the same album copy again (`hc.astage`, 64 albums a step) and calls `cc_build_add_artist` for every album; the artists without a result (or all of them under an `artists-rebuild` request, `AREBUILD_FILE`) become jobs after the cover jobs in the same set, so the pill counts `Preparing covers n/m`, then `Preparing artist photos n/m` (`Rebuilding artist photos` under the request; `hc.cn` is the number of cover jobs). **The artists line is separate from the covers line** (`hc_stale` bit 8; the covers line means covers only): written when the set finished unstalled, the cover pass was not truncated and every artist fitted (`hc.aok`: no `hc.atrunc`, snapshot usable; a library over `AP_LIB_MAX` albums has no artist photos and is stamped at once so it does not rerun), also when nothing was queued. A pass with only the artists line stale or missing (an upgrade, or `AREBUILD_FILE`; `hc.need` = 8) skips the cover scan altogether (`hc.cur` = count) so no album cover is looked at and the set holds only artist jobs; with the covers also stale it is the combined pass as before. A stalled or truncated pass writes no artists line and the next foreground runs it again; a library change makes both lines stale. Clear Cover Cache and Clear Track Durations do not drop it. The request is deleted like Rebuild Covers' (set finished unstalled, untruncated). The waiting pill reads `Rebuilding covers…`, else `Rebuilding artist photos…` while a request is pending (an upgrade's missing artists line reads `Checking library…`, then `Preparing artist photos n/m`). The set's capacity is twice the album count (at most `CC_MAX_JOBS`). Details, discovery rules and the cache: [Artists](artists.md#artist-photos).
 
 ## Worker priority
 

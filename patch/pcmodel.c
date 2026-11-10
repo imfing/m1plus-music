@@ -33,9 +33,12 @@ _Static_assert(
 #define PM_RING_TMP PM_STATE_DIR "/resume.tmp"
 #define PM_SPEED_FILE PM_STATE_DIR "/speed"
 #define PM_SPEED_TMP PM_STATE_DIR "/speed.tmp"
+#define PM_ORDER_FILE PM_STATE_DIR "/order"
+#define PM_ORDER_TMP PM_STATE_DIR "/order.tmp"
 #define PM_DNAME 11 /* struct dirent (32-bit, MIPS o32): d_ino, d_off, d_reclen (2), d_type (1), d_name at 11 */
 #define PM_PATH 400
 #define PM_MAX_FILES 400 /* files looked at in one show folder */
+#define PM_WORK (PC_MAX_EPS + PM_MAX_FILES) /* pc_load_show's merged entries at most */
 #define PM_META_MAX 65536 /* bytes of a metadata file read */
 #define PM_LINE_MAX 4096
 
@@ -171,8 +174,6 @@ void pc_when(unsigned pub, unsigned now, char *out, unsigned size) {
             pc_fmt(out, size, TR("%dh ago"), d / 3600);
         else if (d < 7 * 86400)
             pc_fmt(out, size, TR("%dd ago"), d / 86400);
-        else
-            d = 0;
         if (out[0]) return;
     }
     p = localtime(&t);
@@ -541,14 +542,19 @@ typedef struct {
 
 static pc_ep_t *pm_sort_eps __attribute__((section(".scratch")));
 
-/* Newest first: the date, then the file name (the later name first: a numbered series reads from its last), the entry order last. */
+/* How pc_load_show sorts: pm_sort_name (a show of copied files only: by file name, digit runs by value, rather than by date) and pm_sort_old (oldest first: the exact reverse). */
+static int pm_sort_name __attribute__((section(".scratch"))), pm_sort_old __attribute__((section(".scratch")));
+
+/* Newest first: the date, then the file name (the later name first: a numbered series reads from its last; digit runs by value, so Ep 10 is later than Ep 2), the entry order last.
+ * A show with no metadata (every episode a copied file) puts the name before the date, as the dates are only the copy order. Oldest first is the reverse of all that. */
 static int pm_ep_cmp(unsigned a, unsigned b) {
     const pc_ep_t *x = &pm_sort_eps[a], *y = &pm_sort_eps[b];
-    int d;
-    if (x->pub != y->pub) return x->pub > y->pub ? -1 : 1;
-    d = cc_nocase(y->file, x->file);
-    if (d) return d;
-    return a < b ? -1 : a > b;
+    int d = 0;
+    if (pm_sort_name) d = cc_key_cmp(y->file, x->file);
+    if (!d && x->pub != y->pub) d = x->pub > y->pub ? -1 : 1;
+    if (!d) d = cc_key_cmp(y->file, x->file);
+    if (!d) d = a < b ? -1 : a > b;
+    return pm_sort_old ? -d : d;
 }
 
 /* A title from a file name: the name without its extension. */
@@ -673,10 +679,13 @@ int pc_load_show(const pc_show_t *show, pc_ep_t *out, int max) {
     pc_ep_t *work;
     unsigned *order, got;
     char *buf;
-    int nf, nm = 0, n, i;
+    int nf, nm = 0, n, i, skip;
     if (!pc_root(root) || max <= 0) return 0;
     files = calloc(PM_MAX_FILES, sizeof *files);
-    work = calloc((unsigned)(PC_MAX_EPS + PM_MAX_FILES), sizeof *work);
+    work = calloc(
+        1, PM_WORK *
+               (sizeof *work +
+                sizeof *order)); /* the entries, then the sort's index (one allocation: no list is returned unsorted) */
     if (!files || !work) {
         free(files);
         free(work);
@@ -688,19 +697,18 @@ int pc_load_show(const pc_show_t *show, pc_ep_t *out, int max) {
         nm = pc_parse_eps(buf, got, work, PC_MAX_EPS);
         free(buf);
     }
-    n = pm_merge(work, nm, PC_MAX_EPS + PM_MAX_FILES, files, nf, root, show->dir);
-    order = calloc((unsigned)(n ? n : 1), sizeof *order);
-    if (order) {
-        for (i = 0; i < n; ++i) order[i] = (unsigned)i;
-        pm_sort_eps = work;
-        cc_heapsort(order, (unsigned)n, pm_ep_cmp);
-        if (n > max) n = max;
-        for (i = 0; i < n; ++i) memcpy(&out[i], &work[order[i]], sizeof *out);
-    } else {
-        if (n > max) n = max;
-        memcpy(out, work, (unsigned)n * sizeof *out); /* no memory to sort in: the entries in file order */
-    }
-    free(order);
+    n = pm_merge(work, nm, PM_WORK, files, nf, root, show->dir);
+    order = (unsigned *)(work + PM_WORK);
+    for (i = 0; i < n; ++i) order[i] = (unsigned)i;
+    pm_sort_eps = work;
+    pm_sort_name = nm == 0; /* no metadata entry: copied files only */
+    pm_sort_old = show->hash ? pc_order_get(show->hash) : 0;
+    cc_heapsort(order, (unsigned)n, pm_ep_cmp);
+    skip = 0;
+    if (n > max)
+        skip = pm_sort_old ? n - max : 0,
+        n = max; /* the newest max either way: the order changes the rows' order, never which episodes are listed */
+    for (i = 0; i < n; ++i) memcpy(&out[i], &work[order[skip + i]], sizeof *out);
     free(files);
     free(work);
     return n;
@@ -730,6 +738,35 @@ unsigned pc_show_of(const char *path) {
         pm_cpy_n(name, sizeof name, p, (int)n);
     }
     return pc_hash(name);
+}
+
+/* The picture of an episode's show folder (the best of cover / folder .jpg .png .jpeg, the Shows page's choice) as "file://<path>" in url; NULL for a path that is not an
+ * episode, a folder with no picture, one too big to decode (pc_cover_ok) or a url that does not fit. One readdir of the folder. */
+const char *pc_show_cover(const char *path, char *url, unsigned size) {
+    static const char prefix[] = PM_ROOT "/podcasts/";
+    char dir[PM_PATH], best[PC_FILE];
+    unsigned n = sizeof prefix - 1;
+    int top = 99, rank;
+    void *d;
+    char *ent;
+    if (!pc_is_path(path)) return (const char *)0;
+    while (path[n] != '/') ++n;
+    if (n >= sizeof dir) return (const char *)0;
+    memcpy(dir, path, n), dir[n] = 0;
+    if (!(d = opendir(dir))) return (const char *)0;
+    best[0] = 0;
+    while ((ent = readdir(d)) != (char *)0) {
+        const char *name = pm_name(ent);
+        if (pm_len(name) >= PC_FILE) continue;
+        rank = pm_cover_rank(name);
+        if (rank >= 0 && rank < top) top = rank, pm_cpy(best, PC_FILE, name);
+    }
+    closedir(d);
+    pm_cpy(url, size, "file://");
+    if (!best[0] || !pm_cat(url, size, dir) || !pm_cat(url, size, "/") || !pm_cat(url, size, best) ||
+        !pc_cover_ok(url + 7))
+        return (const char *)0;
+    return url;
 }
 
 static unsigned pm_be16(const unsigned char *b) { return (unsigned)b[0] << 8 | b[1]; }
@@ -800,8 +837,6 @@ static struct {
     unsigned n;
     int loaded, dirty;
     unsigned rev;
-    unsigned sp[2 + PC_SPEED_SLOTS * 2]; /* the speeds: "PCS1", count, then (show hash, mode) pairs */
-    int sp_loaded;
 } pm __attribute__((section(".scratch")));
 
 static struct {
@@ -967,52 +1002,88 @@ int pc_continue(const pc_show_t *shows, int nshows, pc_cont_t *out, int max) {
 /* ---------------------------------------------------------------------------
  * Speed per show
  */
-static void pm_speed_load(void) {
+/* A small table of (show hash, value) pairs in a file on the card: magic, count, then the pairs. The speed table (PCS1) and the episode order table (PCO1) share the code and the slot count. */
+typedef struct {
+    int loaded;
+    unsigned w[2 + PC_SPEED_SLOTS * 2]; /* magic, count, then the pairs (a magic of 0: no table) */
+} pm_tab_t;
+
+#define PM_TAB_SPEED 0
+#define PM_TAB_ORDER 1
+static pm_tab_t pm_tabs[2] __attribute__((section(".scratch")));
+
+static unsigned pm_tab_magic(int k) { return k == PM_TAB_SPEED ? 0x31534350u : 0x314f4350u; } /* "PCS1", "PCO1" */
+static const char *pm_tab_file(int k) { return k == PM_TAB_SPEED ? PM_SPEED_FILE : PM_ORDER_FILE; }
+static const char *pm_tab_tmp(int k) { return k == PM_TAB_SPEED ? PM_SPEED_TMP : PM_ORDER_TMP; }
+
+static void pm_tab_load(int k) {
+    pm_tab_t *t = &pm_tabs[k];
     int fd;
-    if (pm.sp_loaded) return;
-    pm.sp_loaded = 1;
-    fd = open(PM_SPEED_FILE, O_RDONLY, 0);
+    unsigned head[2];
+    if (t->loaded) return;
+    t->loaded = 1;
+    fd = open(pm_tab_file(k), O_RDONLY, 0);
     if (fd < 0) return;
-    {
-        unsigned head[2];
-        if (read(fd, head, 8) == 8 && head[0] == 0x31534350u && head[1] <= PC_SPEED_SLOTS && /* "PCS1" */
-            read(fd, pm.sp + 2, head[1] * 8) == (int)(head[1] * 8)) {
-            pm.sp[0] = head[0], pm.sp[1] = head[1];
-        }
-    }
+    if (read(fd, head, 8) == 8 && head[0] == pm_tab_magic(k) && head[1] <= PC_SPEED_SLOTS &&
+        read(fd, t->w + 2, head[1] * 8) == (int)(head[1] * 8))
+        t->w[0] = head[0], t->w[1] = head[1];
     close(fd);
 }
 
-int pc_speed_get(unsigned show) {
+/* The value kept for show, else -1 (a value of max or more is not one: the caller's default). */
+static int pm_tab_get(int k, unsigned show, unsigned max) {
+    pm_tab_t *t = &pm_tabs[k];
     unsigned i;
-    pm_speed_load();
-    if (pm.sp[0] != 0x31534350u) return 0;
-    for (i = 0; i < pm.sp[1]; ++i)
-        if (pm.sp[2 + 2 * i] == show) return pm.sp[3 + 2 * i] < PC_SPEEDS ? (int)pm.sp[3 + 2 * i] : 0;
+    pm_tab_load(k);
+    if (t->w[0] != pm_tab_magic(k)) return -1;
+    for (i = 0; i < t->w[1]; ++i)
+        if (t->w[2 + 2 * i] == show) return t->w[3 + 2 * i] < max ? (int)t->w[3 + 2 * i] : -1;
+    return -1;
+}
+
+/* Kept and saved at once; 0 when the card could not take it (the old table stays). A new show past the slot count pushes the oldest out. */
+static int pm_tab_set(int k, unsigned show, unsigned value) {
+    pm_tab_t *t = &pm_tabs[k];
+    unsigned i, at;
+    unsigned saved[2 + PC_SPEED_SLOTS * 2];
+    pm_tab_load(k);
+    memcpy(saved, t->w, sizeof saved);
+    if (t->w[0] != pm_tab_magic(k)) t->w[0] = pm_tab_magic(k), t->w[1] = 0;
+    for (at = 0; at < t->w[1] && t->w[2 + 2 * at] != show; ++at) {
+    }
+    if (at == t->w[1]) { /* a new show: the oldest goes when the table is full */
+        if (t->w[1] < PC_SPEED_SLOTS)
+            ++t->w[1];
+        else
+            for (i = 1; i < t->w[1]; ++i)
+                t->w[2 + 2 * (i - 1)] = t->w[2 + 2 * i], t->w[3 + 2 * (i - 1)] = t->w[3 + 2 * i];
+        at = t->w[1] - 1;
+    }
+    t->w[2 + 2 * at] = show, t->w[3 + 2 * at] = value;
+    if (pod_card_write(PM_STATE_DIR, pm_tab_file(k), pm_tab_tmp(k), t->w, 8, t->w + 2, t->w[1] * 8) == 0) return 1;
+    memcpy(t->w, saved, sizeof saved); /* not saved: the old table stays */
     return 0;
 }
 
+int pc_speed_get(unsigned show) {
+    int v = pm_tab_get(PM_TAB_SPEED, show, PC_SPEEDS);
+    return v < 0 ? 0 : v;
+}
+
 int pc_speed_set(unsigned show, int mode) {
-    unsigned i, at;
-    unsigned saved[2 + PC_SPEED_SLOTS * 2];
     if (mode < 0 || mode >= PC_SPEEDS || !show) return 0;
-    pm_speed_load();
-    memcpy(saved, pm.sp, sizeof saved);
-    if (pm.sp[0] != 0x31534350u) pm.sp[0] = 0x31534350u, pm.sp[1] = 0;
-    for (at = 0; at < pm.sp[1] && pm.sp[2 + 2 * at] != show; ++at) {
-    }
-    if (at == pm.sp[1]) { /* a new show: the oldest goes when the table is full */
-        if (pm.sp[1] < PC_SPEED_SLOTS)
-            ++pm.sp[1];
-        else
-            for (i = 1; i < pm.sp[1]; ++i)
-                pm.sp[2 + 2 * (i - 1)] = pm.sp[2 + 2 * i], pm.sp[3 + 2 * (i - 1)] = pm.sp[3 + 2 * i];
-        at = pm.sp[1] - 1;
-    }
-    pm.sp[2 + 2 * at] = show, pm.sp[3 + 2 * at] = (unsigned)mode;
-    if (pod_card_write(PM_STATE_DIR, PM_SPEED_FILE, PM_SPEED_TMP, pm.sp, 8, pm.sp + 2, pm.sp[1] * 8) == 0) return 1;
-    memcpy(pm.sp, saved, sizeof saved); /* not saved: the old table stays */
-    return 0;
+    return pm_tab_set(PM_TAB_SPEED, show, (unsigned)mode);
+}
+
+/* The episode order of a show: 0 newest first (the default), 1 oldest first. */
+int pc_order_get(unsigned show) {
+    int v = pm_tab_get(PM_TAB_ORDER, show, 2);
+    return v < 0 ? 0 : v;
+}
+
+int pc_order_set(unsigned show, int order) {
+    if (order < 0 || order > 1 || !show) return 0;
+    return pm_tab_set(PM_TAB_ORDER, show, (unsigned)order);
 }
 
 void pc_speed_apply(unsigned show) {

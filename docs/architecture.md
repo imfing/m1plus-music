@@ -43,6 +43,8 @@ for commands, [UI](ui.md) for layout/assets, and [history](history.md) for recor
 | [Rows](modules/rows.md) | Stock row edits, layout and text sizing |
 | [Shuffle](modules/shuffle.md) | Song, album and folder queues |
 | [Now Playing](modules/nowplaying.md) | Cover tint, remaining time and rounded artwork |
+| [Timed cover page](modules/bigcover.md) | The ten-second enlarged cover gets its own 320 px picture |
+| [Charge Limit](modules/charging.md) | Settings > System > Battery: charging pauses at 80-95 % while the player runs, on the status bar's battery hook |
 | [Lyrics page](modules/lyrics.md) | Our own lyrics lines over the stock rows: anchor, opacity falloff, eased scroll |
 | [More sheet](modules/playmore.md) | Playback options, Cassette Mode, Vinyl Mode and Find Cover & Lyrics entries |
 | [Find Cover & Lyrics](modules/onlineart.md) | Online album covers (iTunes, Deezer) and lyrics (LRCLIB) for the playing track: page, worker, storage |

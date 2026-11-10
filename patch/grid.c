@@ -8,6 +8,7 @@
 #include "covercache.h"
 #include "common.h"
 #include "grid.h"
+#include "azlist.h"
 
 void grid_shape(grid_t *g, int side, int round, int blend) {
     if (round > GRID_MAX_ROUND) round = GRID_MAX_ROUND;
@@ -288,22 +289,30 @@ static void grid_fill(void *canvas, int x0, int x1, int y0, int y1, unsigned c, 
     canvas_fill_rect(canvas, x0, y0, x1 - x0, y1 - y0);
 }
 
+/* The y of list row r in the content: after the section headers above it when the page has them (g->az), else r * LIST_ROW_H. */
+static int grid_row_y(const grid_t *g, int r) { return g->az ? az_row_y((const az_t *)g->az, r) : r * LIST_ROW_H; }
+
 void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int r0, int r1, int off, int view_h,
                      int press, int shift, int chev, grid_tile_t *(*tile_of)(void *, int), void *ctx) {
-    int r, pass;
+    int r, pass,
+        inset =
+            g->az
+                ? az_inset((const az_t *)g->az)
+                : 0; /* the A-Z rail's footprint (patch/azlist.c): hairline end, chevron and text end move left by it */
     if (chev && !g->chev) g->chev = pod_make_chevron();
     for (r = r0; r <= r1; ++r) {
         grid_tile_t *t = tile_of(ctx, r);
-        int y = r * LIST_ROW_H - off;
+        int y = grid_row_y(g, r) - off;
         if (press == t->album) grid_fill(canvas, 0, GRID_LIST_W, y, y + LIST_ROW_H - 1, LIST_PRESS, view_h);
         grid_blit(canvas, g, t, LIST_ART_X + shift, y + LIST_ART_Y, view_h);
-        grid_fill(canvas, LIST_TEXT_X + shift, LIST_HAIR_END, y + LIST_ROW_H - 1, y + LIST_ROW_H, LIST_HAIR, view_h);
+        grid_fill(canvas, LIST_TEXT_X + shift, LIST_HAIR_END - inset, y + LIST_ROW_H - 1, y + LIST_ROW_H, LIST_HAIR,
+                  view_h);
         if (chev && !t->nochev && g->chev) { /* centred on the row above its hairline, cut to the window by hand */
             int cy = y + (LIST_ROW_H - 1 - POD_CHEV_H) / 2, top = cy < 0 ? -cy : 0,
                 bottom = view_h > 0 && cy + POD_CHEV_H > view_h ? view_h - cy : POD_CHEV_H, src[4], dst[4];
             if (bottom > top) {
                 src[0] = 0, src[1] = top, src[2] = POD_CHEV_W, src[3] = bottom - top;
-                dst[0] = LIST_CHEV_X, dst[1] = cy + top, dst[2] = POD_CHEV_W, dst[3] = bottom - top;
+                dst[0] = LIST_CHEV_X - inset, dst[1] = cy + top, dst[2] = POD_CHEV_W, dst[3] = bottom - top;
                 canvas_draw_image(canvas, g->chev, src, dst);
             }
         }
@@ -314,11 +323,11 @@ void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int 
         widget_prepare_text_style(pass ? st_sub : st_title, canvas);
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, tile_of(ctx, r), pass, LIST_TEXT_X + shift,
-                      r * LIST_ROW_H - off +
+                      grid_row_y(g, r) - off +
                           (pass                   ? LIST_SUB_Y
                            : tile_of(ctx, r)->mid ? (LIST_ROW_H - LIST_TITLE_H) / 2
                                                   : LIST_TITLE_Y),
-                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV : LIST_TEXT_W) - shift,
+                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV : LIST_TEXT_W) - shift - inset,
                       pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
 }

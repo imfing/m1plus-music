@@ -59,7 +59,7 @@ ORDER = ['Sub One', 'bravo', 'Alpha Show', 'Sub Two']
 def style_px(m):
     m.px = {m.widgets[n]: px for n, px, *_ in pod_ui.PS_STYLES}
     m.px.update({m.widgets[n]: px for n, px in (('label_row_title', 21), ('label_row_sub', 18))})
-    m.px.update({m.widgets['pg_sh_speed_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_refresh_vl']: pod_ui.PS_SHEET_PX})
+    m.px.update({m.widgets['pg_sh_speed_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_refresh_vl']: pod_ui.PS_SHEET_PX, m.widgets['pg_sh_order_vl']: pod_ui.PS_SHEET_PX})
 
 
 def machine(extra=None, cardf=card):
@@ -450,6 +450,16 @@ def cont_tests(ctx):
     expect(len(nav) == 1 and nav[0][1] == 'playing_page' and paths == [B3, B2, B1] and idx == 1 and m.state(hash_of(B2)) == (1, 600, 1200),
            f'a tap on the item plays that episode as the Show page\'s resume pill does (class 1, the show\'s files in the list\'s order, its place kept) ({paths}, {idx})')
     expect(PCP.title_text(m) == 'Podcasts' and m.props.get((m.sv, 'virtual_h')) == lay(m, cont=1)['h'], 'the page stays on the Shows level (its episodes are let go again)')
+    # under Oldest First the queue runs the other way: the rows below the episode are the newer ones
+    m = opened()
+    m.call(PSYMS['pc_order_set'], a0=PCP.pc_hash('bravo'), a1=1, count=30000000)
+    progress(m, B2, 600, 1200)
+    refg(m)
+    m.calls = []; m.pt = (0, 1200, 1)
+    PCP.tap(m, 14 + 10, lay(m, cont=1)['y_shelf'] + o['PP_HEAD_PITCH'] + 10)
+    q, idx = m.played
+    paths = [m.read_cstr(m.word(r + O['REC_PATH'])) for r in q]
+    expect(paths == [B1, B2, B3] and idx == 1 and m.state(hash_of(B2)) == (1, 600, 1200), f'Continue Listening under Oldest First: the queue is b1, b2, b3 and starts at the second, its place kept ({paths}, {idx})')
     # a tap on the item when its file went: nothing starts
     m = opened()
     progress(m, B2, 600, 1200)

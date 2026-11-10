@@ -43,11 +43,22 @@ class QM(SG.SongsMachine):
         super().__init__(*a, **k)
         for n in ('mclGetPlayType', 'start_playqueue', 'mclSetGaplessMode'): self.handlers[pod.FUNCTIONS[n][2]] = n
         self.install_libcstl()
+        self.pics, self.pic_fp, self.dir_log = {}, {}, []   # path -> the picture file's bytes (an episode's show cover: pc_cover_ok seeks through its header), open handle -> [path, position]
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
         a0 = u.reg_read(UC_MIPS_REG_A0)
+        a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
+        if name == 'opendir': self.dir_log.append(self.read_cstr(a0))   # (every folder read of the machine's life; the base mock answers)
         if name == 'mclGetPlayType': ret = self.ptype
+        elif name == 'fopen' and self.read_cstr(a0) in self.pics:
+            path = self.read_cstr(a0); self.calls.append(('fopen', path, self.read_cstr(a1))); ret = self.alloc(4); self.pic_fp[ret] = [path, 0]
+        elif name == 'fseek' and a0 in self.pic_fp: self.pic_fp[a0][1] = a1; ret = 0
+        elif name == 'fread' and a3 in self.pic_fp:
+            path, pos = self.pic_fp[a3]; data = self.pics[path][pos:pos + a1 * a2]
+            if data: self.u.mem_write(a0, data)
+            self.pic_fp[a3][1] += len(data); ret = len(data) // a1
+        elif name == 'fclose' and a0 in self.pic_fp: self.pic_fp.pop(a0); ret = 0
         elif name == 'mclSetGaplessMode':   # stock's setter: the byte, and for 0 with a preload open (state 1) {mcl-closegapless} and state -1
             self.calls.append(('mclSetGaplessMode', a0)); self.u.mem_write(pod.DATA['MCL_GAPLESS'][0], bytes((a0 & 255,)))
             if a0 == 0 and self.word(pod.DATA['MCL_PRELOAD'][0]) == 1: self.setword(pod.DATA['MCL_PRELOAD'][0], -1); self.calls.append(('closegapless',))
@@ -57,10 +68,11 @@ class QM(SG.SongsMachine):
         u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 
 
-def queue_machine(n=6, pos=1, titles=None, cover=True, cues=(), tracks=None, library=None):
+def queue_machine(n=6, pos=1, titles=None, cover=True, cues=(), tracks=None, library=None, paths=None):
     """The page's widgets as widget structs (window > list_view > scroll_view > view_queue, for demo's own widget_to_local) and the player on an n track queue at pos. Track i is
     Artist {i // 3} / Album {i // 3}; a cover file for the first two albums (cover: True, 'marker' for the empty "no art" file, False for none). tracks: [(artist, album)] instead.
-    library: [(artist, album, has_cover)], the library's album records (what getAllAlbum's query returns) and their cache files, instead of the first two albums' files."""
+    library: [(artist, album, has_cover)], the library's album records (what getAllAlbum's query returns) and their cache files, instead of the first two albums' files.
+    paths: the tracks' file paths instead of /mnt/mmc/m/{i}.flac (a podcast episode is a file in a show folder under the Podcasts folder)."""
     m = QM()
     m.load_image = 0
     for w in WIDGETS: Machine.widget(m, w)
@@ -70,9 +82,10 @@ def queue_machine(n=6, pos=1, titles=None, cover=True, cues=(), tracks=None, lib
     for i in range(n):
         title = titles[i] if titles else NAMES[i % len(NAMES)] if n <= len(NAMES) else f'Track {i + 1}'
         artist, album = tracks[i] if tracks else (f'Artist {i // 3}', f'Album {i // 3}')
-        r = m.record(album=album, artist=artist, path=f'/mnt/mmc/m/{i}.flac', title=title, name=f'{i}.flac', rid=100 + i)
+        path = paths[i] if paths else f'/mnt/mmc/m/{i}.flac'
+        r = m.record(album=album, artist=artist, path=path, title=title, name=path.rsplit('/', 1)[1], rid=100 + i)
         if i in cues: m.setword(r + O['REC_CUE_START'], 1000 * i)
-        m.present.add(f'/mnt/mmc/m/{i}.flac')
+        m.present.add(path)
         recs.append(r)
     m.songs = recs
     m.play(recs, pos)
@@ -376,6 +389,49 @@ def loader_tests(ctx):
     m.call(PSYMS['qp_on_load'], count=900000000)
     expect(not m.loads and any(c[0] == 'timer_add' for c in m.calls), 'a list that is being dragged decodes nothing and looks again next tick')
     m.u.mem_write(m.sv + O['SC_PRESSED'], bytes([0, 0]))
+    destroy(m)
+
+
+def episode_open(paths, tracks, pos=0):
+    """A queue of podcast episodes (and tracks) over show folders: Story Show has cover.jpg and folder.jpg (cover.jpg wins, the Shows page's rank) beside other pictures,
+    Big Show's cover.jpg is too big to decode, Bare Show has no picture. The page open and every row loaded once."""
+    m = queue_machine(n=len(paths), pos=pos, paths=paths, tracks=tracks)
+    m.listing[EP_S] = [('.', 4), ('..', 4), ('Ep 1.mp3', 8), ('art.jpg', 8), ('folder.jpg', 8), ('cover.jpg', 8)]
+    for nm in ('art.jpg', 'folder.jpg', 'cover.jpg'):
+        m.pics[f'{EP_S}/{nm}'] = jpeg_header(600); m.images[f'file://{EP_S}/{nm}'] = (8, 8, COVER_PIX[2])
+    m.listing[EP_B] = [('.', 4), ('b.mp3', 8), ('cover.jpg', 8)]
+    m.pics[f'{EP_B}/cover.jpg'] = jpeg_header(3000); m.images[f'file://{EP_B}/cover.jpg'] = (8, 8, COVER_PIX[2])
+    m.listing[EP_N] = [('.', 4), ('n.mp3', 8)]
+    m.top_main = m.window
+    r, calls = open_queue(m)
+    assert r == 0, f'the page did not open ({r})'
+    load_all(m)
+    return m
+
+
+EP_S, EP_B, EP_N = '/mnt/mmc/Podcasts/Story Show', '/mnt/mmc/podcasts/Big Show', '/mnt/mmc/podcasts/Bare Show'
+
+
+def episode_tests(ctx):
+    """5c. A podcast episode shows its show folder's picture (the Podcasts page's choice), in the header and the rows; it is never looked up as an album."""
+    expect = ctx.expect
+    story = [f'{EP_S}/Ep {i}.mp3' for i in range(1, 7)]
+    m = episode_open(story, [('Host', 'Story Show')] * 6)
+    blits, texts, fills = paint(m)
+    expect(covers_of(m) and set(covers_of(m)) == {f'file://{EP_S}/cover.jpg'}, f'the header and every row: the show\'s cover.jpg (before folder.jpg; another picture is not a cover) ({sorted(set(covers_of(m)))})')
+    expect(len([b for b in blits if tuple(b[2][2:]) == (64, 64)]) == 1 and len([b for b in blits if b[2][2] == 52]) == 4, f'the header\'s cover and the four rows in view (the last cut at the window\'s edge) are painted ({[tuple(b[2]) for b in blits]})')
+    expect(m.dir_log.count(EP_S) == 1, f'one show: its folder is read once while the page is open ({m.dir_log})')
+    expect(not m.__dict__.get('queries'), 'no album lookup (no cover map query) for episodes')
+    destroy(m)
+    r, calls = open_queue(m); load_all(m)
+    expect(r == 0 and m.dir_log.count(EP_S) == 2, f'the next open reads the folder again (a picture added meanwhile shows) ({m.dir_log})')
+    destroy(m)
+
+    paths = [f'{EP_B}/b.mp3', f'{EP_N}/n.mp3', story[0], '/mnt/mmc/m/3.flac']
+    m = episode_open(paths, [('B', 'Big Show'), ('N', 'Bare Show'), ('Host', 'Story Show'), ('Artist 0', 'Album 0')])
+    blits, texts, fills = paint(m)
+    expect(set(covers_of(m)) == {f'file://{EP_S}/cover.jpg', 'file://' + m.cover_paths[0]}, f'a show whose picture is too big and a show with none: the placeholder (no file decoded); a song keeps its album\'s cache file ({sorted(set(covers_of(m)))})')
+    expect(len([b for b in blits if tuple(b[2][2:]) == (64, 64)]) == 1 and len([b for b in blits if tuple(b[2][2:]) == (52, 52)]) == 3, 'every row and the header still have a cover blit')
     destroy(m)
 
 
@@ -1022,7 +1078,7 @@ def clear_tests(ctx):
            'mclSetGaplessMode (prologue, the byte store, the preload test and close) and the three player words are pinned')
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, rows_tests, loader_tests, collab_tests, cmap_tests, scroll_tests, play_tests, mode_tests, tick_tests, shuffle_tests, clear_tests]   # tools/check.py runs each as its own task
+SECTIONS = [asset_tests, open_tests, header_tests, rows_tests, loader_tests, episode_tests, collab_tests, cmap_tests, scroll_tests, play_tests, mode_tests, tick_tests, shuffle_tests, clear_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

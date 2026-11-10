@@ -30,6 +30,10 @@ TREE = {
     '/mnt/mmc/Music/Kind of Blue': [(T_FILE, 'a.flac')],
     '/mnt/mmc/Podcasts': [(T_DIR, '.cache')],   # only a dot name: the stock load lists it, our page shows "Empty folder"
     '/mnt/mmc/Sort': [(T_FILE, 'b.mp3'), (T_DIR, 'zeta'), (T_FILE, 'A.flac'), (T_FILE, '10 x.ogg'), (T_DIR, 'Alpha'), (T_FILE, '2 x.mp3'), (T_LIST, 'Mix.m3u8'), (T_FILE, 'c.FLAC'), (T_DIR, 'beta')],   # the listing order is not the name order
+    # a CUE rip (cue_tests enters it; no storage lists it otherwise): stock's parser makes one record per TRACK, (type, TITLE, the image's file name, start, end), all with the image's path
+    '/mnt/mmc/Cue': [(T_DIR, 'Scans'), (T_FILE, 'Zebra', 'B side.flac', 0, 300), (T_FILE, 'Apple', 'B side.flac', 300, 600), (T_FILE, 'Mango', 'B side.flac', 600, 0), (T_FILE, '01 intro.mp3'),
+                     (T_FILE, 'Kiwi', 'A side.flac', 0, 200), (T_FILE, 'Fig', 'A side.flac', 200, 0)],
+    '/mnt/mmc/Cue/Scans': [(T_FILE, 'x.flac')],
     '/mnt/mmc/Blank': [],   # nothing at all: toolsLoadDirectory returns 0
     '/mnt/mmc/.m1plus': [],
 }
@@ -53,8 +57,9 @@ class FM(SG.SongsMachine):
                 r = self.record(path=url, title='', name=name); self.setword(r + O['REC_TYPE'], type); recs.append(r)
         else:
             recs = []
-            for type, name in TREE.get(self.path, []):
-                r = self.record(path=f'{self.path}/{name}', title='', name=name); self.setword(r + O['REC_TYPE'], type); recs.append(r)
+            for type, name, *cue in TREE.get(self.path, []):
+                r = self.record(path=f'{self.path}/{cue[0] if cue else name}', title=name if cue else '', name=name); self.setword(r + O['REC_TYPE'], type); recs.append(r)
+                if cue: self.setword(r + O['REC_CUE_START'], cue[1]); self.setword(r + O['REC_CUE_END'], cue[2])
         self.shown = recs
         self.deques[self.shown_h] = recs
         self.setword(SHOWLIST, self.shown_h)
@@ -657,7 +662,51 @@ def order_tests(ctx):
     expect(vis(m, 'sg_bar')[0] == 0 and vis(m, 'btn_select') == (1, 1), 'leaving select mode brings Select back')
 
 
-SECTIONS = [asset_tests, open_tests, rows_tests, levels_tests, play_tests, select_tests, stale_tests, order_tests]   # tools/check.py runs each as its own task
+def cue_tests(ctx):
+    """9. A CUE image's tracks (one path, a TITLE and a start each): shown together in the CUE's order where the image file sorts; the row tapped is the track played; the queue is the rows."""
+    expect = ctx.expect
+    CUE = '/mnt/mmc/Cue'
+    B, A, INTRO = ['Zebra', 'Apple', 'Mango'], ['Kiwi', 'Fig'], ['01 intro.mp3']
+    START = {'Zebra': 0, 'Apple': 300, 'Mango': 600, 'Kiwi': 0, 'Fig': 200, '01 intro.mp3': 0}
+    ORDERS = {None: INTRO + A + B, b'a\n': B + A + INTRO,       # Name: the image's file name ("A side.flac", "B side.flac") places its tracks; Z-A keeps each image's own order
+              b'1\n': B + INTRO + A, b'b\n': A + INTRO + B,     # Date Modified: the image's
+              b'2\n': A + B + INTRO, b'c\n': INTRO + A + B}     # Type: the image's extension, then its name
+    def shown(m):
+        names, vh = {}, m.props.get((m.sv, 'virtual_h'), 0) or VIEW_H
+        for off in range(0, max(vh - VIEW_H, 0) + 200, 200):
+            scroll_to(m, off); _, texts, _ = paint(m)
+            for (t, r), s in texts:
+                if s == 'label_row_title': names[r[1] + off] = t
+        scroll_to(m, 0)
+        return [names[y] for y in sorted(names)]
+    root = TREE['/mnt/mmc']
+    TREE['/mnt/mmc'] = root[:1] + [(T_DIR, 'Cue')] + root[1:]
+    try:
+        for saved, files in ORDERS.items():
+            for row, name in enumerate(files):
+                m = folder_machine()
+                m.mtimes = {f'{CUE}/Scans': 50, f'{CUE}/B side.flac': 300, f'{CUE}/01 intro.mp3': 200, f'{CUE}/A side.flac': 100}
+                if saved is not None: m.fs['/mnt/data/m1plus/folders-sort'] = saved
+                open_page(m); enter(m, 'SD'); tap_row(m, shown(m).index('Cue'))
+                m.present.update(f'{CUE}/{n}' for n in ('A side.flac', 'B side.flac', '01 intro.mp3'))
+                rows = shown(m)
+                if row == 0: expect(rows == ['Scans'] + files, f'folders-sort {saved!r}: each image\'s tracks together in the CUE\'s order, placed as the image file ({rows})')
+                calls = tap_row(m, 1 + row)
+                ll = [c for c in calls if c[0] == 'loadSongList']
+                q, idx = m.played if getattr(m, 'played', None) else ([], -1)
+                qn = [m.read_cstr(m.word(r + O['REC_NAME'])) for r in q]
+                expect(ll == [('loadSongList', name, START[name], 1)] and qn == files and idx == row and m.word(q[idx] + O['REC_CUE_START']) == START[name],
+                       f'folders-sort {saved!r}: a tap on {name} plays it (index {idx} of {qn}), the queue is the rows shown ({ll})')
+        # Play: the first row's track
+        m = opened(); enter(m, 'SD'); enter(m, 'Cue')
+        m.present.update(f'{CUE}/{n}' for n in ('A side.flac', 'B side.flac', '01 intro.mp3'))
+        m.calls.clear(); click(m, 'btn_play')
+        q, idx = m.played if getattr(m, 'played', None) else ([], -1)
+        expect(idx == 0 and [m.read_cstr(m.word(r + O['REC_NAME'])) for r in q] == ORDERS[None], f'Play: the first row, the queue in the rows\' order ({idx})')
+    finally: TREE['/mnt/mmc'] = root
+
+
+SECTIONS = [asset_tests, open_tests, rows_tests, levels_tests, play_tests, select_tests, stale_tests, order_tests, cue_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

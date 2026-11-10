@@ -7,7 +7,8 @@
  * do with sections and the index and neither owns:
  *   sections  az_sections: the non-decreasing labelling of the rows' ranks ("#" 0, A..Z 1..26) that puts the most rows under their own letter; the
  *             list keeps its order, a stray stays in the section around it. sec_start / sec_letter, at most SG_MAX_SEC (28) sections.
- *   geometry  the header of section s is at az_hdr_y(s) = top + s * SG_HDR_H + sec_start[s] * row; a row's y, the row under a y, the rows in view.
+ *   geometry  the header of section s is at az_hdr_y(s) = top + s * hdr_h + sec_start[s] * row (hdr_h is SG_HDR_H, or 0 with Section Headers off); a row's y, the row under a y, the rows in view.
+ *   switches  az_prefs: Index Rail (on by default; off: norail) and Section Headers (on by default: hdr_h), read when a page opens (docs/modules/artists.md).
  *   headers   az_paint_heads: the bare 20 px letters and the pinned header (an opaque black backing, the next header pushes it up).
  *   rail      the compact A-Z index (az_rail_*): plan, widget fit, paint (letters, dots, the touched letter's disc), touch (grab, jump), the bubble.
  * The page owns the scroll_view, the rows and the timers; it fills in the az_t fields marked (page) and calls these.
@@ -30,10 +31,21 @@ typedef struct {
     unsigned char sec_letter[SG_MAX_SEC];
     int grab, rail_on,
         rail_i; /* a finger holds the rail; it has set a letter (the disc and the bubble show); the letter's section */
-    int rail_origin; /* optional viewport origin; zero preserves the standard list layout */
-    int view_h; /* optional viewport height; zero uses GRID_VIEW_H */
-    int rail_only; /* jump to row boundaries without section headers */
+    int hdr_h; /* the section header's height: SG_HDR_H, 0 with Section Headers off (az_prefs sets it: the page calls it when it opens) */
+    int norail; /* Index Rail off (az_prefs): no rail, no bubble; the rows keep the full list-row width (az_inset 0) */
 } az_t;
+
+/* The rail's footprint on the rows: SG_RAIL_INSET while the rail is shown (sections and the Index Rail switch on), else 0. Every row of an A-Z page subtracts it from the list-row spec's
+ * right side (hairline end LIST_HAIR_END, chevron x LIST_CHEV_X, text end LIST_TEXT_X + LIST_TEXT_W[_CHEV], the "..." zone's right edge RM_MORE_RIGHT); az_end is the hairline's end. */
+int az_inset(const az_t *az);
+int az_end(const az_t *az);
+
+/* The two switches of Settings > Library (appearance-index-rail, appearance-headers), read when a page opens: az_prefs sets hdr_h and norail. */
+void az_prefs(az_t *az);
+int azrail_setting(void);
+int azrail_toggle(void);
+int azhead_setting(void);
+int azhead_toggle(void);
 
 /* The rank of a character in the sections: 0 "#" (a digit, '*', anything else), 1..26 'A'..'Z' (either case). */
 int az_rank_of(int c);

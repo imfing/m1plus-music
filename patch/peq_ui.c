@@ -395,11 +395,7 @@ void peq_opened(void *win) {
     }
     pq.out_t =
         widget_lookup(win, "pod_note0_t", 1); /* the grey line under the switch card: which output's EQ this is */
-    pq.note = widget_lookup(win, "pod_note1", 1); /* the hint's item (an optional piece), its label wraps */
-    if (pq.note) {
-        void *hint = widget_lookup(pq.note, "pod_note1_t", 1);
-        if (hint) label_set_line_wrap(hint, 1);
-    }
+    pq.note = widget_lookup(win, "pod_note1", 1); /* the hint's item (an optional piece); open_page wraps its label */
     pq.gap = widget_lookup(win, "pod_gap0", 1);
     pq.curve_value = widget_lookup(win, "pod_value1", 1);
     snprintf(name, sizeof name, "pod_row%d",

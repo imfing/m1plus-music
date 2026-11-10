@@ -8,7 +8,7 @@ from harness import *   # noqa: F401,F403  (test/patch.py initialises the harnes
 ROOT = '/mnt/mmc/Podcasts'
 EMPTY_HINT = 'No podcasts. Copy a folder for each show into Podcasts on the card, or put subscriptions.txt there and choose Import from Card in the menu at the top right.'
 STATE = '/mnt/mmc/.m1plus/podcasts'
-RING, SPEED = STATE + '/resume', STATE + '/speed'
+RING, SPEED, ORDER = STATE + '/resume', STATE + '/speed', STATE + '/order'
 PLAYSPEED_MODE = pod.DATA['PLAYSPEED_MODE'][0]
 EPS_HEAD = 'M1PLUS-EPISODES 1\n'
 SCREEN_Y0 = 80   # the list's top on the screen: the 30 px system bar and the 50 px navbar
@@ -271,7 +271,7 @@ def scan_tests(ctx):
     # without metadata: the file names and dates
     alpha = arr + O['PC_SHOW_SIZE'] * [s['dir'] for s in shows].index('Alpha Show')
     e = m.episodes(alpha)
-    expect([x['file'] for x in e] == ['ep2.mp3', 'Ep10.M4A', 'ep1.mp3'] and [x['title'] for x in e] == ['ep2', 'Ep10', 'ep1'] and [x['pub'] for x in e] == [2000, 2000, 1000],
+    expect([x['file'] for x in e] == ['Ep10.M4A', 'ep2.mp3', 'ep1.mp3'] and [x['title'] for x in e] == ['Ep10', 'ep2', 'ep1'] and [x['pub'] for x in e] == [2000, 2000, 1000],
            f'no metadata: the episodes are the audio files (mp3 m4a ...; not notes.txt, the picture or a dot file), the title the name without its extension, the date the file\'s, newest first, ties by name descending: {[x["file"] for x in e]}')
     expect(all(x['state'] == O['PC_LOCAL'] and x['dur'] == 0 and x['guid'] == 0 and x['hash'] == pc_hash(f'{ROOT}/Alpha Show/{x["file"]}') for x in e),
            'they are PC_LOCAL with no duration, and the ring key is the hash of the full path')
@@ -478,6 +478,64 @@ def resume_tests(ctx):
     expect(m.seeks == [500], 'then the jump')
 
 
+def order_tests(ctx):
+    """The episode order per show: the table file (PCO1), the order of the list in both values, a show of copied files by natural file name, a feed show by date."""
+    expect = ctx.expect
+    SH = pc_hash('Alpha Show')
+    m = PM()
+    expect(m.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 0, 'a show with no order set: newest first (0)')
+    ok = m.call(PSYMS['pc_order_set'], a0=SH, a1=1, count=30000000); set_calls = list(m.calls)
+    expect(ok == 1 and m.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 1, 'set oldest first (1): kept')
+    d = m.fs[ORDER]
+    expect(d[:4] == b'PCO1' and struct.unpack_from('<I', d, 4)[0] == 1 and struct.unpack_from('<2I', d, 8) == (SH, 1) and len(d) == 16, f'the file: "PCO1", the count, (show hash, value) pairs ({d!r})')
+    expect(('rename', ORDER + '.tmp', ORDER) in set_calls and SPEED not in m.fs, 'written atomically, beside (not in) the speed table')
+    for bad in (2, -1, 100):
+        expect(m.call(PSYMS['pc_order_set'], a0=SH, a1=bad, count=30000000) == 0 and m.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 1, f'value {bad} is refused, the old one stays')
+    expect(m.call(PSYMS['pc_order_set'], a0=0, a1=1, count=30000000) == 0, 'no show, no order')
+    m.call(PSYMS['pc_speed_set'], a0=SH, a1=2, count=30000000)
+    expect(m.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 1 and m.call(PSYMS['pc_speed_get'], a0=SH, count=2000000) == 2 and m.fs[SPEED][:4] == b'PCS1', 'the speed table is its own file: both keep their value')
+    m2 = PM(); m2.fs[ORDER] = m.fs[ORDER]
+    expect(m2.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 1 and m2.call(PSYMS['pc_order_get'], a0=SH + 1, count=2000000) == 0, 'the file is read back; another show is newest first')
+    m3 = PM(); m3.fs[ORDER] = b'PCO1' + struct.pack('<I', 1) + struct.pack('<2I', SH, 5)
+    expect(m3.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 0, 'a stored value over 1 is newest first')
+    for what, data in (('bad magic', b'XXXX' + bytes(12)), ('the speed table\'s magic', b'PCS1' + struct.pack('<I', 1) + struct.pack('<2I', SH, 1)), ('count over 64', b'PCO1' + struct.pack('<I', 65) + bytes(8 * 65)), ('truncated', b'PCO1' + struct.pack('<I', 3) + bytes(8))):
+        m4 = PM(); m4.fs[ORDER] = data
+        expect(m4.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 0, f'{what}: newest first')
+    m5 = PM()
+    for i in range(70): m5.call(PSYMS['pc_order_set'], a0=100 + i, a1=1, count=30000000)
+    expect(struct.unpack_from('<I', m5.fs[ORDER], 4)[0] == 64 and m5.call(PSYMS['pc_order_get'], a0=100, count=2000000) == 0 and m5.call(PSYMS['pc_order_get'], a0=169, count=2000000) == 1, '64 shows; the oldest are forgotten')
+    m6 = PM(); m6.fail.add(('write', ORDER + '.tmp'))
+    expect(m6.call(PSYMS['pc_order_set'], a0=SH, a1=1, count=30000000) == 0 and m6.call(PSYMS['pc_order_get'], a0=SH, count=2000000) == 0, 'a failed save: reported, and the old table (none) stays')
+    m6.card_mounted = False
+    expect(m6.call(PSYMS['pc_order_set'], a0=SH, a1=1, count=30000000) == 0 and ORDER not in m6.fs, 'no card: not saved')
+    # the list: copied files only (Alpha Show: ep1 1000, ep2 2000, Ep10 2000) by natural name, case folded
+    m = card_machine()
+    shows, arr = m.shows()
+    names = [s['dir'] for s in shows]
+    alpha, bravo = (arr + O['PC_SHOW_SIZE'] * names.index(n) for n in ('Alpha Show', 'bravo'))
+    files = lambda a: [x['file'] for x in m.episodes(a)]
+    expect(files(alpha) == ['Ep10.M4A', 'ep2.mp3', 'ep1.mp3'], f'copied files, newest first: descending natural name, Ep10 before ep2 before ep1 whatever their dates ({files(alpha)})')
+    for f, mt in (('EP3.mp3', 500), ('ep11.mp3', 100), ('ep09.mp3', 9000)): m.put(f'{ROOT}/Alpha Show/{f}', b'', mt)
+    expect(files(alpha) == ['ep11.mp3', 'Ep10.M4A', 'ep09.mp3', 'EP3.mp3', 'ep2.mp3', 'ep1.mp3'], f'digit runs by value ("ep09" after Ep10, EP3 between), case ignored, dates ignored ({files(alpha)})')
+    m.call(PSYMS['pc_order_set'], a0=pc_hash('Alpha Show'), a1=1, count=30000000)
+    expect(files(alpha) == ['ep1.mp3', 'ep2.mp3', 'EP3.mp3', 'ep09.mp3', 'Ep10.M4A', 'ep11.mp3'], f'oldest first: ascending natural name ({files(alpha)})')
+    expect([x['file'] for x in m.episodes(alpha, 4)] == ['EP3.mp3', 'ep09.mp3', 'Ep10.M4A', 'ep11.mp3'], 'at most max: the newest max, still oldest first (the order never changes which episodes are listed)')
+    m.call(PSYMS['pc_order_set'], a0=pc_hash('Alpha Show'), a1=0, count=30000000)
+    expect([x['file'] for x in m.episodes(alpha, 4)] == ['ep11.mp3', 'Ep10.M4A', 'ep09.mp3', 'EP3.mp3'], 'newest first, at most max: the same four, newest first')
+    m.call(PSYMS['pc_order_set'], a0=pc_hash('Alpha Show'), a1=1, count=30000000)
+    # a feed show (entries): by date, either way, the rest of the list unchanged
+    newest = ['b4.mp3', 'b2.mp3', 'b3.mp3', 'extra.mp3', 'b1.mp3', 'b5.mp3']
+    expect(files(bravo) == newest, f'a show with metadata stays date sorted ({files(bravo)})')
+    m.call(PSYMS['pc_order_set'], a0=pc_hash('bravo'), a1=1, count=30000000)
+    e = m.episodes(bravo)
+    expect([x['file'] for x in e] == newest[::-1] and [x['pub'] for x in e] == [42, 3000, 3500, 4000, 5000, 6000], f'oldest first: the exact reverse, by date ({[x["file"] for x in e]})')
+    m.calloc_fail_size = 6 * 4   # (what the sort's own index of six entries once was: a separate allocation whose failure listed the metadata's newest-first order)
+    expect([x['file'] for x in m.episodes(bravo)] == newest[::-1], f'no smaller allocation can leave the list unsorted: still oldest first ({[x["file"] for x in m.episodes(bravo)]})')
+    m.calloc_fail_size = 0; m.calloc_fail = True
+    expect(m.episodes(bravo) == [], 'no memory for the merge: no episodes (as before), never a list in another order')
+    m.calloc_fail = False
+
+
 def speed_tests(ctx):
     """The speed per show: the table file, the stock mode and message, and putting it back for music."""
     expect = ctx.expect
@@ -610,7 +668,7 @@ def cover_tests(ctx):
 SHEET_ROWS = [r[0] for r in pod_ui.PS_SHEET_ROWS]
 PG_WIDGETS = (['podcasts_listview', 'view_grid', 'label_status', 'label_title', 'img_nb_fade', 'label_row_title', 'label_row_sub', 'pg_big', 'img_ah_tint',
                'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_globe', 'btn_search', 'ps_field', 'ps_hint', 'ps_text', 'ps_clear', 'ps_mag', 'btn_selall', 'pg_bar', 'pg_del', 'pg_unsubp', 'pod_pd_scrim', 'pod_pd_card', 'pod_pd_title', 'pod_pd_name', 'pod_pd_track', 'pod_pd_fill', 'pod_pd_count', 'pod_pd_cancel',
-               'pg_sh_scrim', 'pg_sh_card', 'pg_sh_speed_vl', 'pg_sh_refresh_vl'] + [n for n, *_ in pod_ui.PS_STYLES] + [f'pg_sh_{r}{s}' for r in SHEET_ROWS for s in ('', '_tx', '_hr')])
+               'pg_sh_scrim', 'pg_sh_card', 'pg_sh_speed_vl', 'pg_sh_refresh_vl', 'pg_sh_order_vl'] + [n for n, *_ in pod_ui.PS_STYLES] + [f'pg_sh_{r}{s}' for r in SHEET_ROWS for s in ('', '_tx', '_hr')])
 T0 = 1700000000   # 2023-11-14 22:13:20 UTC
 DAY = 86400
 
@@ -1085,7 +1143,7 @@ def asset_tests(ctx):
     expect(tree.find('label_status').h >= 60, 'the hint has room for three lines')
     # the item
     item = next(i for i, r in enumerate(P.ITEMS) if r.label == 'Podcasts')
-    expect(item == 20 == len(P.ITEMS) - 4 and P.ITEMS[item].action == P.ACT_PODCASTS == 23 and P.ID_CHARS[item] == 'l' and item not in P.DEFAULT_MENU and P.PAGES[P.PAGES.index(P.PODCASTS) + 1:] == [P.TAPE, P.NPSET_PAGE, P.KEYBOARD, P.KEYBOARDS_PAGE, P.THEME_PAGE, P.ABOUT_PAGE, P.SEARCH, P.ALBUM_PAGE, P.VINYL, P.FOLDERS, P.QUEUE_PAGE, P.RECORD_PAGE, P.VINYL_WHITE, P.VTHEME_PAGE, P.ONLINEART, P.CACHE_PAGE, P.COVLIST, P.FILES_PAGE, P.UPDATE, P.RELNOTES, P.BG_PAGE, P.ACCENT_PAGE, P.APPEARANCE_PAGE, P.PULLDOWN_PAGE, P.RADIO, P.RADIONP, P.RADIOINFO, P.SONGINFO, P.REGION_PAGE, P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE, P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.SUBSONIC_PAGE]
+    expect(item == 20 == len(P.ITEMS) - 3 and P.ITEMS[item].action == P.ACT_PODCASTS == 23 and P.ID_CHARS[item] == 'l' and item not in P.DEFAULT_MENU and P.PAGES[P.PAGES.index(P.PODCASTS) + 1:] == [P.TAPE, P.NPSET_PAGE, P.KEYBOARD, P.KEYBOARDS_PAGE, P.THEME_PAGE, P.ABOUT_PAGE, P.SEARCH, P.ALBUM_PAGE, P.VINYL, P.FOLDERS, P.QUEUE_PAGE, P.RECORD_PAGE, P.VINYL_WHITE, P.VTHEME_PAGE, P.ONLINEART, P.CACHE_PAGE, P.COVLIST, P.FILES_PAGE, P.UPDATE, P.RELNOTES, P.BG_PAGE, P.ACCENT_PAGE, P.APPEARANCE_PAGE, P.PULLDOWN_PAGE, P.RADIO, P.RADIONP, P.RADIOINFO, P.SONGINFO, P.REGION_PAGE, P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE, P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.BATTERY_PAGE, P.CHGLIMIT_PAGE, P.IDLE_PAGE, P.LOCK_PAGE, P.LOCKWALL_PAGE, P.LOCKSTYLE_PAGE, P.LOCKINFO_PAGE, P.NEXTALBUM_PAGE]
            and P.PODCASTS.kind == 'podcasts', 'Podcasts is item 20 (saved as "l"), before Search, hidden from the menu by default; its page follows the Pod (the Tape pages come after it)')
     expect(P.EXTRAS_GROUPS[1][1][-4] == 'Podcasts' and P.EXTRAS_GROUP_OF[item] == 1 and P.EXTRAS_GROUPS[0][1] == ('Now Playing', 'Shuffle', 'Pod')
            and P.parse_menu_full(b'123456l\n') == ([1, 2, 3, 4, 5, 6, 20], []) and P.format_menu([1, 2, 20]) == '12l\n', 'Extras lists it in the Library group, before Radio and Search; the saved list carries it as l')
@@ -1327,7 +1385,7 @@ def tag_tests(ctx):
     expect(mm.read_cstr(mm.word(q[0] + O['REC_ARTIST'])) == 'Alpha Show' and mm.read_cstr(mm.word(q[0] + O['REC_TITLE'])) == 'ep2', 'a record queued by the page carries the episode title and the show as artist')
 
 
-SECTIONS = [when_tests, width_tests, tag_tests, text_tests, scan_tests, ring_tests, resume_tests, speed_tests, strip_tests, cover_tests, open_tests, level_tests, touch_tests, lifecycle_tests, asset_tests, integration_tests]
+SECTIONS = [when_tests, width_tests, tag_tests, text_tests, scan_tests, ring_tests, resume_tests, speed_tests, order_tests, strip_tests, cover_tests, open_tests, level_tests, touch_tests, lifecycle_tests, asset_tests, integration_tests]
 
 
 def run(ctx):

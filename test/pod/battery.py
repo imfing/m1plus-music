@@ -161,15 +161,18 @@ def run(ctx):
     expect(m.call(PSYMS['battpct_toggle'], count=4000000) == 0xffffffff and m.fs[FILE] == b'1\n' and FILE + '.tmp' not in m.fs and tick(m) == 87,
            'a failed save: -1, the file and the behaviour are unchanged')
 
-    # 6. The row: Settings > Home Screen > Status Bar > Battery Percentage (a switch, off by default)
-    H = P.HOMESET_PAGE
-    layout = [type(x).__name__ + (':' + x.label if isinstance(x, P.Row) else ':' + x.text if hasattr(x, 'text') else '') for x in H.layout]
+    # 6. The row: Settings > System > Battery > Battery Percentage (a switch, off by default)
+    H = P.BATTERY_PAGE
+    lay = lambda pg: [type(x).__name__ + (':' + x.label if isinstance(x, P.Row) else ':' + x.text if hasattr(x, 'text') else '') for x in pg.layout]
+    layout = lay(H)
     bp_i = next(i for i, r in enumerate(H.rows) if r.action == P.ACT_BATTPCT)
     expect(H.rows[bp_i].label == 'Battery Percentage' and P.ACT_BATTPCT == 36 and P.ACT_BATTPCT in P.SWITCH_ACTIONS and P.row_kind(H.rows[bp_i]) == 'switch'
-           and layout[-5:-2] == ['Hdr:Status Bar', 'Row:Battery Percentage', 'Note:The exact charge beside the battery icon'] and layout[-2:] == ['Row:Regenerate Daily Mix', 'Note:A new mix the next time Home opens'],
-           f'the Home Screen page has a Status Bar header, the Battery Percentage switch row and its note before Regenerate Daily Mix ({layout[-5:]})')
+           and layout == ['Row:Battery Percentage', 'Note:The exact charge beside the battery icon', 'Row:Charge Limit', 'Note:Applies while the player is on'] and bp_i == 0,
+           f'the Battery page lists the Battery Percentage switch row and its note, then Charge Limit ({layout})')
+    expect(not any(r.action == P.ACT_BATTPCT for r in P.HOMESET_PAGE.rows) and 'Hdr:Status Bar' not in lay(P.HOMESET_PAGE) and lay(P.HOMESET_PAGE)[-2:] == ['Row:Regenerate Daily Mix', 'Note:A new mix the next time Home opens'],
+           'the Home Screen page has no Status Bar header or Battery Percentage row; Regenerate Daily Mix stays last')
     S = P.SETTINGS_PAGE
-    hs_i = next(i for i, r in enumerate(S.rows) if r.action == P.ACT_PAGE and r.arg == P.HOMESET_PAGE_INDEX)
+    hs_i = next(i for i, r in enumerate(S.rows) if r.action == P.ACT_PAGE and r.arg == P.BATTERY_PAGE_INDEX)
     rows_s = PSYMS[f'pod_rows_{P.SETTINGS_PAGE_INDEX}']; on_row = PSYMS['on_row']
 
     def open_home(saved=None):
@@ -194,7 +197,7 @@ def run(ctx):
     m.click(f'pod_row{bp_i}')
     expect(m.fs.get(FILE) == b'1\n' and images(m) == [], 'a failed save changes neither the file nor the switch')
     for loc in pod_i18n.LOCALES:
-        expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Status Bar', 'Battery Percentage', 'The exact charge beside the battery icon')), f'the header, row and note have a text in {loc}')
+        expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Battery Percentage', 'The exact charge beside the battery icon')), f'the row and note have a text in {loc}')
 
     # 7. The assets: the hidden label in the system bar and in the pull-down
     import awtk_ui, statusbar

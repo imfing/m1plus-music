@@ -28,6 +28,10 @@ int pod_card_mounted(
  * the folders made first. 0 on success, -1 (nothing written) with the card not mounted. */
 int pod_card_write(const char *dir, const char *path, const char *tmp, const void *a, unsigned na, const void *b,
                    unsigned nb);
+/* The topmost opened window called name (the asset's root name, not the navigator_to path) brought to the front by stock's own restack, nothing closed. The window, or NULL (no such window, it is closing, or stock refused) with the stack as it was. */
+void *pod_restack_window(const char *name);
+/* A stock page: its opened window called window (the asset's root name; NULL: none) restacked as pod_restack_window does, else stock's navigator_to(path) (always, for NULL: a page whose init a restack would not redo). RET_OK, or navigator_to's result. */
+int pod_open_stock(const char *path, const char *window);
 int pod_is_type(void *w, const char *type); /* w is a widget of exactly this type name */
 /* The navbar's small title (docs/modules/navbar.md "Small titles"): pod_title_gone(off, head) is 1 once the page's heading has scrolled away (head 0: the large title, SG_COLLAPSE;
  * else the offset a header's name is gone at); pod_title_set shows or hides w when on differs from *cur. */

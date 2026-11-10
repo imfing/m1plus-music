@@ -36,6 +36,7 @@
 #include "i18n.h"
 #include "podcasts.h"
 #include "home.h"
+#include "nextalbum.h"
 
 #define P(r, off) (*(char **)((char *)(r) + (off)))
 #define I(r, off) (*(int *)((char *)(r) + (off)))
@@ -401,6 +402,7 @@ int sh_load_playlist(void *queue, int pos, int cls) {
     int r;
     void *q;
     unsigned n;
+    na_on_load(); /* Continue with Next Album: the armed load of an album page keeps its order, every other load drops it */
     sh_enter();
     r = stock_loadplaylist_trampoline(queue, pos, cls);
     drop_order();
@@ -676,7 +678,8 @@ int shuffle_play(int kind) {
         /* loadSongList finds a song by file name and CUE start, so a duplicate name (01.flac in
          * every album) would always start at the first; the drawn row's own index wins when it is
          * the same song */
-        if (at < n && !strcmp(str(deque_at(queue, at), REC_PATH), str(pick, REC_PATH)))
+        if (at < n && !strcmp(str(deque_at(queue, at), REC_PATH), str(pick, REC_PATH)) &&
+            I(deque_at(queue, at), REC_CUE_START) == I(pick, REC_CUE_START)) /* (a CUE image's tracks share the path) */
             idx = at;
         else if (found >= 0 && (unsigned)found < n)
             idx = (unsigned)found;

@@ -97,7 +97,6 @@ enum { RD_IDLE = 0, RD_CONNECTING = 1, RD_PLAYING = 2, RD_ERROR = 3, RD_STOPPED 
 enum {
     RD_EV_PLAY,
     RD_EV_BAD,
-    RD_EV_BT,
     RD_EV_FAILSTART,
     RD_EV_STOP,
     RD_EV_LOCAL,
@@ -165,6 +164,6 @@ extern int rn_backtoplayer(void *ctx, void *e);
 /* The hook (tools/pod.py START_PLAYER): installed over mclStartPlayer; local music stops the radio first, then stock runs. */
 extern int rd_start_player(void);
 /* The hooks over stock's save_stop_player / save_start_player (tools/pod.py SAVE_STOP, SAVE_START): the pair every output change runs around set_outputchannel. While a station runs,
- * the first stops the stream and the second restarts it on the new output (or refuses on Bluetooth) instead of stock's mclStartPlayer of the old local track. */
+ * the first stops the stream and the second restarts it on the new output instead of stock's mclStartPlayer of the old local track. */
 extern void rd_save_stop(void);
 extern void rd_save_start(int paused);

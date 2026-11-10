@@ -37,6 +37,7 @@ import os, stat, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import awtk_ui
 import battery_art
+import cdefs
 from awtk_text import Ttf, awtk_width, fit_size, worst_case_text
 from modlib import clone_workdir, edit_ui
 
@@ -71,6 +72,18 @@ STOCK_IMG_SIZE = (40, 23)                     # img_battery w h
 STOCK_SLIDE = (136, 448, 48, 22)              # img_slide (screens_rightslide.png, 48 x 22)
 GLYPHS = {'btn_imgpause1_style': ('np_pause', 'np_pause_down'), 'btn_imgplay1_style': ('np_play', 'np_play_down')}
 NEXT_GLYPH = ('np_next', 'np_next_down')
+
+# The mini player layout (payload hook 24, patch/lockscreen.c): the numbers are patch/offsets.inc's (LK_*, and the Home bar's MB_*), read here so the C and the
+# preview / tests cannot drift. Card in window coordinates, the other widgets in the card; apply_mini() is the layout the hook gives the same tree at run time.
+_C = cdefs.defines(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'patch', 'offsets.inc'), strings=True)
+MINI_GLASS = 'mb_glass'
+MINI_RECT = {'view_bottomview': (_C['LK_MINI_X'], _C['LK_MINI_Y'], _C['MB_W'], _C['MB_H']),
+             'view_img_icon': (_C['MB_ART_X'], _C['MB_ART_Y'], _C['MB_ART'], _C['MB_ART']),
+             'view_scrlabel_title': (_C['MB_TEXT_X'], _C['MB_TITLE_Y'], _C['MB_TEXT_W'], _C['MB_TITLE_H']),
+             'view_scrlabel_artist': (_C['MB_TEXT_X'], _C['MB_ARTIST_Y'], _C['MB_TEXT_W'], _C['MB_ARTIST_H']),
+             'btn_play': (_C['MB_PLAY_X'], 0, _C['MB_BTN_W'], _C['MB_H']),
+             'btn_next': (_C['MB_NEXT_X'], 0, _C['MB_BTN_W'], _C['MB_H'])}
+MINI_TITLE_PX, MINI_ARTIST_PX, MINI_ARTIST_RGB = _C['LK_TITLE_PX'], _C['LK_ARTIST_PX'], _C['LK_ARTIST_RGB']
 
 # The small battery gauge: the app sets img_battery's image to screens_battery / screens_charge /
 # screens_lowbattery (by name, 0x53f5f0..0x53f694, nowhere else in demo or the other ui files) and
@@ -177,6 +190,22 @@ def check_touch(root, cover_rect):
     for x, y in ((cx + cw // 2, cy + ch // 2), (cx + 4, cy + 4), (cx + cw - 5, cy + ch - 5)):
         t = hit(root, (0, 0, SCREEN_W, SCREEN_H), x, y)
         assert t is strip and inside(t, gesture), f'touch on the cover at ({x},{y}) lands on {t.name or t.type}'
+
+def apply_mini(root):
+    """The mini player layout on a screensaver_page tree (a model of what patch/lockscreen.c does at run time; the cover rect is returned for check_touch)."""
+    for n, (x, y, w, h) in MINI_RECT.items():
+        wd = root.find(n); assert wd is not None, n
+        wd.x, wd.y, wd.w, wd.h = x, y, w, h
+    strip, title, artist = root.find('view_bottomview'), root.find('view_scrlabel_title'), root.find('view_scrlabel_artist')
+    assert strip.x + strip.w <= SCREEN_W and strip.y + strip.h <= SCREEN_H and strip.y + strip.h < root.find('img_slide').y
+    for st in STATES:
+        strip.set(f'style:{st}:bg_image', MINI_GLASS)
+        title.set(f'style:{st}:font_size', str(MINI_TITLE_PX)); artist.set(f'style:{st}:font_size', str(MINI_ARTIST_PX))
+        artist.set(f'style:{st}:text_color', MINI_ARTIST_RGB)
+    x, y, w, h = MINI_RECT['view_img_icon']
+    cover_rect = (strip.x + x, strip.y + y, w, h)
+    check_touch(root, cover_rect)
+    return cover_rect
 
 def edit_page_style(out):
     """The page theme's play / pause styles (the app swaps btn_play between them) point at the

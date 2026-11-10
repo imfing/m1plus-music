@@ -195,6 +195,13 @@ def texts_of(frame): return [t for t, _ in frame[0]]
 def rows_of(texts): return [t for t, r in sorted(texts, key=lambda tr: tr[1][1]) if BARH <= r[1] < 240 and ((r[0] == 62 and (r[1] - BARH) % O["IP_TALL_H"] == 4) or (r[0] in (8, 10) and (r[1] - BARH) % ROWH in (0, 4)))]
 
 
+def pc_hash(name):   # patch/pcmodel.c pc_hash: FNV-1a over the lower-cased bytes (a show's key)
+    h = 2166136261
+    for c in name.encode('utf-8'):
+        h = ((h ^ (c + 32 if 65 <= c <= 90 else c)) * 16777619) & 0xffffffff
+    return h or 1
+
+
 def pc_rows(texts):   # the episode rows: their text is indented for the dot
     return [t for t, r in sorted(texts, key=lambda tr: tr[1][1]) if BARH <= r[1] < 240 and r[0] == 8 + 16 and (r[1] - BARH) % ROWH == 0]
 
@@ -1866,6 +1873,23 @@ def podcasts_tests(ctx):
     sp = [c for c in m.calls if c[0] == 'start_player']
     expect(len(sp) == 1 and sp[0][2:] == (1, O['PLAY_MODE']) and m.played and len(m.played[0]) == 2 and m.played[1] == 1, f'a tap starts the show\'s episodes as a class 1 queue at that row ({sp}, {m.played and m.played[1]})')
     expect(m.word(G_CLASS) == 1 and 'Now Playing' in texts_of(m.paint()), 'the class is the folder class and the Pod\'s own Now Playing is in front')
+    # the show's Episode Order: copied files by natural name (a10 is later than a2 whatever the dates), either way; the queue follows the rows
+    def alpha(oldest):
+        m = PCIM()
+        m.class_lists[O['CLASS_ALL_SONGS']] = []
+        for f, mt in (('a1.mp3', 1000), ('a2.mp3', 2000), ('a10.mp3', 500)): m.put(f'{root}/Alpha/{f}', b'x', mtime=mt)
+        if oldest: assert m.call(PSYMS['pc_order_set'], a0=pc_hash('Alpha'), a1=1, count=30000000) == 1
+        m.open(); m.timers = []
+        go(m); m.tap(CX, CY)
+        return m
+    m = alpha(False)
+    expect(pc_rows(m.paint()[0]) == ['a10', 'a2', 'a1'], f'newest first: a10, a2, a1 ({pc_rows(m.paint()[0])})')
+    m = alpha(True)
+    expect(pc_rows(m.paint()[0]) == ['a1', 'a2', 'a10'], f'oldest first: a1, a2, a10 ({pc_rows(m.paint()[0])})')
+    m.turn(0, STEP_DEG + 5); m.calls = []
+    m.tap(CX, CY)
+    q = m.played
+    expect(q and [m.read_cstr(m.word(r + O['REC_PATH'])).rsplit('/', 1)[1] for r in q[0]] == ['a1.mp3', 'a2.mp3', 'a10.mp3'] and q[1] == 1, f'oldest first: a tap on a2 queues a1, a2, a10 and starts at the second ({q and q[1]})')
     # a card with no podcasts: an empty Podcasts level
     m = PCIM(); m.class_lists[O['CLASS_ALL_SONGS']] = []; m.open(); m.timers = []
     go(m)

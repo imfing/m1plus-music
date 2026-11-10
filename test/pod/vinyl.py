@@ -94,6 +94,10 @@ class VM(Machine):
         self.calls = []
         return self.call(PSYMS['vinyl_open'], count=60000000) & 0xffffffff
 
+    def open_idle(self):
+        self.calls = []
+        return self.call(PSYMS['vinyl_open_idle'], count=60000000) & 0xffffffff
+
     def first(self):
         self.calls = []; self.rects = []
         self.call(PSYMS['vn_first'], a0=0, count=400000000)
@@ -914,6 +918,49 @@ def touch_tests(ctx):
     expect(not m2.cmds and 'navigator_back' not in m2.names(), 'no page: a touch handler left behind does nothing')
 
 
+def idle_touch_tests(ctx):
+    """A page opened by Now Playing's timer (vinyl_open_idle): a tap on the record closes it (docs/modules/vinyl.md "Touch"); the keys and chevron are unchanged; a More-opened page is unchanged."""
+    expect = ctx.expect
+    nm = lambda c: [x[0] for x in c]
+
+    def auto():
+        m = machine(status=3); assert m.open_idle() == 0
+        m.timers = []; m.first()
+        return m
+    m = auto()
+    m.cmds = []; calls = m.gesture((96, 196), (99, 194))
+    expect(m.cmds == [] and nm(calls).count('navigator_back') == 1, 'auto-opened: a tap on the record closes the page, plays / pauses nothing')
+    m = auto()
+    calls = m.gesture((16, 12), (18, 14))
+    expect('navigator_back' in nm(calls) and not m.cmds, 'auto-opened: the chevron still closes')
+    m.ptr('down', 246, 449, 3000)
+    expect(ndiff(m.frame_words(), model(0, O['VN_PARK'], None, playkey=0, pressed=K_PLAY))[0] == 0, 'auto-opened: the play key still shows pressed')
+    m.cmds = []; m.ptr('up', 248, 452, 3080)
+    expect(m.cmds == [('playpause',)] and 'navigator_back' not in nm(m.calls), 'auto-opened: the play key still plays / pauses')
+    for pt, cmd in (((200, 449), 'prev'), ((292, 449), 'next')):
+        m.cmds = []; m.ptr('down', *pt, 5000); m.ptr('up', pt[0] + 2, pt[1], 5060)
+        expect(m.cmds == [(cmd, 5060, 0)] and 'navigator_back' not in nm(m.calls), f'auto-opened: {cmd} still works')
+    m.cmds = []; calls = m.gesture((96, 196), (160, 196))
+    expect(not m.cmds and 'navigator_back' not in nm(calls), 'auto-opened: a drag across the record does nothing')
+    m.cmds = []; calls = m.gesture((300, 300), (301, 300))
+    expect(not m.cmds and 'navigator_back' not in nm(calls), 'auto-opened: a tap beside the record does nothing')
+    # the timer on a page that is already up changes nothing
+    m = opened(status=3)
+    expect(m.open_idle() == 0, 'the timer on a More-opened page: 0, left alone')
+    m.cmds = []; calls = m.gesture((96, 196), (99, 194))
+    expect(m.cmds == [('playpause',)] and 'navigator_back' not in nm(calls), 'and its record tap still plays / pauses')
+    m = auto()
+    expect(m.open() == 0, 'More on an auto-opened page: 0, left alone')
+    m.cmds = []; calls = m.gesture((96, 196), (99, 194))
+    expect(m.cmds == [] and 'navigator_back' in nm(calls), 'and its record tap still closes')
+    # destroyed: the flag goes with the page
+    fn, cx = m.bound[(WIN, EVT_DESTROY)]; m.call(fn, a0=cx, a1=0, count=3000000)
+    m.windows = {}; m.bound = {}
+    assert m.open() == 0; m.timers = []; m.first()
+    m.cmds = []; calls = m.gesture((96, 196), (99, 194))
+    expect(m.cmds == [('playpause',)] and 'navigator_back' not in nm(calls), 'after the auto-opened page was destroyed a More-opened page plays / pauses on the record tap')
+
+
 def life_tests(ctx):
     expect = ctx.expect
     m = machine(); m.windows['m1plus_vinyl'] = 0
@@ -976,4 +1023,4 @@ def run(ctx):
     for fn in SECTIONS: fn(ctx)
 
 
-SECTIONS = [number_tests, asset_tests, draw_tests, record_tests, cover_record_tests, cover_change_tests, setting_tests, theme_tests, theme_setting_tests, motion_tests, text_tests, touch_tests, life_tests]
+SECTIONS = [number_tests, asset_tests, draw_tests, record_tests, cover_record_tests, cover_change_tests, setting_tests, theme_tests, theme_setting_tests, motion_tests, text_tests, touch_tests, idle_touch_tests, life_tests]

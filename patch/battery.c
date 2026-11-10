@@ -5,11 +5,12 @@
  * Stock never reads the AXP2101 gauge: get_battery_capacity (0x4e6dd8) buckets the battery voltage into 0/20/40/60/80/100 (another table, and a +10 animation, while
  * charging) and leaves the result in the global power_capacity (0xa059ec), which show_sysbar_face (0x544b48, the status bar's 1 s timer) and the pull-down's face read
  * for the fill; the return value is dropped there. The one hook is the call-site word `jalr get_battery_capacity` at 0x5450f8 in show_sysbar_face, now `jal bp_capacity`.
- * bp_capacity runs stock's function first, and then, only while Settings > Home Screen > Battery Percentage is on and the kill switch /mnt/mmc/m1plus-off is absent and
+ * bp_capacity runs stock's function first, and then, only while Settings > System > Battery > Battery Percentage is on and the kill switch /mnt/mmc/m1plus-off is absent and
  * /sys/class/power_supply/battery/capacity reads a plain integer 0..100, stores that percentage in power_capacity (so the fill, the charging picture's fill and the
  * pull-down's bar use the real level, charging included) and shows "N%" in the label pod_pct that sits left of the outline (its twin pod_pct_dd in the pull-down's bar).
  * At BP_LOW (5) percent or less on battery (and when stock's own bucket is 0) the stored value is 0, which is how stock's own test shows the red bar_lowpower (battery.md "Other readers").
  * In every other case the stock value stays and the labels are hidden (visible and sensitive off). The icon pictures stay stock's (charging, low).
+ * The same tick then runs the Charge Limit's check (patch/charging.c chg_tick: the kill switch and, when it was read here, the gauge).
  *
  * The right icon group lays its visible children out right-aligned, so the label (the group's last child but the Screenshot camera, hidden in the asset) makes the icons
  * to its left move aside by its width; the width follows the text (BP_W2 .. BP_W4, measured at build time), and a change of it asks the group to lay out again.
@@ -21,6 +22,7 @@
 #include "stock.h"
 #include "home.h"
 #include "battery.h"
+#include "charging.h"
 
 static struct {
     int state; /* the setting: 0 not read yet, 1 off, 2 on */
@@ -29,7 +31,7 @@ static struct {
 
 static int bp_read_setting(void) { return set_read(BP_FILE, 0) == '1'; }
 
-/* Settings > Home Screen > Battery Percentage: 1 on, 0 off (the default). */
+/* Settings > System > Battery > Battery Percentage: 1 on, 0 off (the default). */
 int battpct_setting(void) { return bp_read_setting(); }
 
 int battpct_toggle(void) {
@@ -39,8 +41,8 @@ int battpct_toggle(void) {
     return next;
 }
 
-/* The gauge as a plain integer 0..100 (digits, then the end or a newline): the value, else -1. */
-static int bp_gauge(void) {
+/* The gauge as a plain integer 0..100 (digits, then the end or a newline): the value, else -1. Also the Charge Limit's input (patch/charging.c). */
+int battery_gauge(void) {
     char b[8];
     int fd = open(BP_GAUGE, O_RDONLY, 0), n, i = 0, v = 0;
     if (fd < 0) return -1;
@@ -86,12 +88,13 @@ static void bp_label(void *w, int pct) {
 
 /* The hook (tools/pod.py BATTERY_SITE): stock's get_battery_capacity, then the real percentage when asked for. Returns what stock's function returned, or the percentage. */
 int bp_capacity(void) {
-    int cap = get_battery_capacity(), pct = -1;
+    int cap = get_battery_capacity(), pct = -1, killed = access(KILL_SD, F_OK) == 0;
     void *bar, *wm;
-    if (access(KILL_SD, F_OK) != 0) {
+    if (!killed) {
         if (bp.state == 0) bp.state = bp_read_setting() ? 2 : 1;
-        if (bp.state == 2) pct = bp_gauge();
+        if (bp.state == 2) pct = battery_gauge();
     }
+    chg_tick(killed, pct); /* the Charge Limit (patch/charging.c), on the same tick */
     if (pct < 0 && !bp.shown) return cap; /* off and nothing to hide: stock, no lookups */
     if (pct >= 0) {
         /* stock picks bar_lowpower only for power_capacity <= 0, and only when it reaches that test (not on the charging / full pictures: show_sysbar_face 0x54510c..0x54514c) */

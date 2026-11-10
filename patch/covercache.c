@@ -18,6 +18,7 @@
 #include "home.h"
 #include "podcasts.h"
 #include "pccover.h"
+#include "artistphoto.h"
 #endif
 #include "covercache.h"
 #include "durations.h"
@@ -135,6 +136,38 @@ void cc_box(const unsigned char *data, unsigned w, unsigned h, unsigned stride, 
         return;
     }
     for (y = 0; y < side; ++y) ar_push(&a, base + y * stride, 4, at[0], at[1], at[2], at[3], box_emit, &o);
+}
+
+typedef struct {
+    unsigned *out, size, tw, ox, oy, ty;
+} fit_out_t;
+
+static void fit_emit(void *user, const unsigned char *rgb) {
+    fit_out_t *o = user;
+    unsigned *d = o->out + (o->oy + o->ty++) * o->size + o->ox, x, n = o->tw;
+    for (x = 0; x < n; ++x, rgb += 3) *d++ = 0xff000000u | rgb[0] | rgb[1] << 8 | rgb[2] << 16;
+}
+
+/* The whole picture w x h fitted inside size x size, never cropped, centred over bg (a word 0xAABBGGRR) in out (size x size words): its longer side becomes size, the other follows
+ * (at least 1), by the exact area average of ar_push, so a picture of exactly size on its longer side is copied pixel for pixel and any other ratio is filtered, up and down. The
+ * pixels around a non-square picture are bg. 1; 0 (out untouched) when the sizes are over ar_init's limits (size over AR_MAX, a picture over 8192 or AR_LIMIT pixels). */
+int cc_fit(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at, unsigned size,
+           unsigned bg, unsigned *out) {
+    ar_t a;
+    fit_out_t o;
+    unsigned tw, th, y;
+    if (!w || !h || !size) return 0;
+    if (w >= h)
+        tw = size, th = h * size / w;
+    else
+        th = size, tw = w * size / h;
+    if (!th) th = 1;
+    if (!tw) tw = 1;
+    if (!ar_init(&a, w, h, tw, th)) return 0;
+    for (y = 0; y < size * size; ++y) out[y] = bg;
+    o.out = out, o.size = size, o.tw = tw, o.ox = (size - tw) / 2, o.oy = (size - th) / 2, o.ty = 0;
+    for (y = 0; y < h; ++y) ar_push(&a, data + y * stride, 4, at[0], at[1], at[2], at[3], fit_emit, &o);
+    return 1;
 }
 
 /* Stock's resize 0x5e00bc (toolsGetAlbumCover / toolsGetExternCover) with the picture decoded to w x h and t the requested size on both sides. The wider side (the
@@ -288,6 +321,27 @@ int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsi
     }
     if (unload) widget_unload_image(w, bitmap);
     return data != (const unsigned char *)0;
+}
+
+/* cc_decode's twin for a picture that must not be cropped: the whole picture fitted inside size x size over bg (cc_fit). 1 when out was written. */
+int cc_decode_fit(void *w, const char *url, int unload, unsigned size, unsigned bg, unsigned *out) {
+    static const unsigned char at[4][4] = BITMAP_RGBA_AT;
+    unsigned bitmap[32]; /* bitmap_t is 0x48 bytes */
+    unsigned iw, ih, format;
+    const unsigned char *data;
+    int ok = 0;
+    memset(bitmap, 0, sizeof bitmap);
+    if (widget_load_image(w, url, bitmap)) return 0;
+    iw = bitmap[0], ih = bitmap[1];
+    format = (unsigned)(*(unsigned short *)((char *)bitmap + BITMAP_FORMAT)) - 1u;
+    data = format < 4 && iw && ih && iw <= 4096 && ih <= 4096 ? bitmap_lock_buffer_for_read(bitmap)
+                                                              : (const unsigned char *)0;
+    if (data) {
+        ok = cc_fit(data, iw, ih, bitmap_get_line_length(bitmap), at[format], size, bg, out);
+        bitmap_unlock_buffer(bitmap);
+    }
+    if (unload) widget_unload_image(w, bitmap);
+    return ok;
 }
 
 /* A stock list copied into a deque of our own, so later stock queries cannot pull it away. */
@@ -546,9 +600,40 @@ unsigned cc_cmap_key(cc_cmap_t *map, const char *album) {
 
 void cc_cmap_free(cc_cmap_t *map) { free(map); }
 
-/* s without leading white space (toolsTrimLeft) and without a following "The " (when something follows it). */
+/* The bytes of the punctuation character at s that so_name skips in front of a name, else 0: ASCII punctuation (everything printable that is not a
+ * letter, digit or space), and these opening / quote marks: Latin-1 inverted ! ? and guillemets, the general punctuation single, double and
+ * angle quotes (U+2018 2019 201A 201C 201D 201E 2039 203A), CJK brackets (U+3008..U+3011 less U+300A.. which are included too: 〈 〉 《 》 「 」 『 』 【 】)
+ * and the full-width ( ) [ ] { } " ' (U+FF08 FF09 FF3B FF3D FF5B FF5D FF02 FF07). Any other non-ASCII character counts as a letter. */
+static unsigned so_punct(const unsigned char *s) {
+    unsigned c = s[0];
+    if (c < 0x80) return c > ' ' && c < 0x7f && !(c >= '0' && c <= '9') && !((c | 0x20) >= 'a' && (c | 0x20) <= 'z');
+    if (c == 0xc2) return s[1] == 0xa1 || s[1] == 0xbf || s[1] == 0xab || s[1] == 0xbb ? 2 : 0;
+    if (c == 0xe2 && s[1] == 0x80) {
+        c = s[2];
+        return c == 0x98 || c == 0x99 || c == 0x9a || c == 0x9c || c == 0x9d || c == 0x9e || c == 0xb9 || c == 0xba ? 3
+                                                                                                                    : 0;
+    }
+    if (c == 0xe3 && s[1] == 0x80) return s[2] >= 0x88 && s[2] <= 0x91 ? 3 : 0;
+    if (c == 0xef && s[1] == 0xbc)
+        return s[2] == 0x88 || s[2] == 0x89 || s[2] == 0x82 || s[2] == 0x87 || s[2] == 0xbb || s[2] == 0xbd ? 3 : 0;
+    if (c == 0xef && s[1] == 0xbd) return s[2] == 0x9b || s[2] == 0x9d ? 3 : 0;
+    return 0;
+}
+
+/* s without leading white space (toolsTrimLeft), without a leading run of punctuation (so_punct, with white space between) when a letter or digit
+ * (or a non-ASCII character that is not so_punct) follows it, and without a following "The " (when something follows it). A name of
+ * punctuation only ("!!!", "...") keeps it. */
 static const char *so_name(const char *s) {
+    const unsigned char *p;
+    unsigned l;
     while (*s == ' ' || (*s >= '\t' && *s <= '\r')) ++s;
+    p = (const unsigned char *)s;
+    for (;;) {
+        while (*p == ' ' || (*p >= '\t' && *p <= '\r')) ++p;
+        if (!(l = so_punct(p))) break;
+        p += l;
+    }
+    if (*p && p != (const unsigned char *)s) s = (const char *)p;
     if (fold((unsigned char)s[0]) == 't' && fold((unsigned char)s[1]) == 'h' && fold((unsigned char)s[2]) == 'e' &&
         s[3] == ' ' && s[4])
         return s + 4;
@@ -775,11 +860,19 @@ static int so_cmp(unsigned a, unsigned b) {
     return d ? (so_rev ? -d : d) : a < b ? -1 : a > b;
 }
 
-/* The stock (title) order, as it is or backwards: Z-A. */
+/* The title order's fallback when there are no keys: the stock order, as it is or backwards (Z-A). */
 static int so_title_cmp(unsigned a, unsigned b) {
     int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0;
     if (ua != ub) return ua - ub;
     return (a < b) != (so_rev != 0) ? -1 : 1;
+}
+
+/* The Title order: the album titles' keys (one per row, so_key[i]) as the Artist order compares names; ties keep the stock order. */
+static int so_tkey_cmp(unsigned a, unsigned b) {
+    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0, d;
+    if (ua != ub) return ua - ub;
+    d = cc_key_cmp(so_key[a], so_key[b]);
+    return d ? (so_rev ? -d : d) : a < b ? -1 : a > b;
 }
 
 /* The key texts of the albums being sorted: even i the artist of row i / 2, odd i its title. */
@@ -787,6 +880,9 @@ static const char *so_text(const void *ctx, unsigned i) {
     void *r = ((void *const *)ctx)[i / 2];
     return cc_str(r, i & 1 ? REC_ALBUM : REC_ARTIST);
 }
+
+/* The album titles being sorted: i the title of row i. */
+static const char *so_title(const void *ctx, unsigned i) { return cc_str(((void *const *)ctx)[i], REC_ALBUM); }
 
 /* One-off: the retired Settings > Library > Album Order file. When ALBUMS_SORT_FILE is missing its meaning moves there ("0" Title, anything else Artist), then
  * the old file (and its .tmp) is deleted, whether or not that write worked (a failed write leaves the default, Artist). Nothing else reads it. */
@@ -797,7 +893,7 @@ static void sort_migrate(void) {
     unlink(OLD_ORDER_FILE), unlink(OLD_ORDER_TMP);
 }
 
-/* The album order (the Albums page's "..." card, ALBUMS_SORT_FILE): one character, 0 Title (the stock order), 1 Artist, 2 Recently Added, 3 Year, or a, b, c, d for the same order in its other
+/* The album order (the Albums page's "..." card, ALBUMS_SORT_FILE): one character, 0 Title (our name keys, as Artist), 1 Artist, 2 Recently Added, 3 Year, or a, b, c, d for the same order in its other
  * direction (Z-A, Oldest First). A missing or invalid file is Artist, not reversed. */
 static int sort_char(void) {
     sort_migrate();
@@ -953,7 +1049,7 @@ unsigned *cc_album_order(void *albums) {
 unsigned *cc_album_order_mode(void *albums, int mode, int rev) {
     unsigned n = albums ? deque_size(albums) : 0, i;
     unsigned *v;
-    if (!n || (mode == CC_SORT_TITLE && !rev)) return (unsigned *)0;
+    if (!n) return (unsigned *)0;
     so_rev = rev;
     v = calloc(n, sizeof *v);
     so_rec = calloc(n, sizeof *so_rec);
@@ -964,23 +1060,23 @@ unsigned *cc_album_order_mode(void *albums, int mode, int rev) {
         if (mode == CC_SORT_ARTIST)
             so_key = cc_name_keys(2 * n, so_text, so_rec);
         else if (mode == CC_SORT_TITLE)
-            so_key = (const char **)so_rec; /* (only "it worked": Z-A by title is the stock order backwards) */
+            so_key = cc_name_keys(n, so_title, so_rec);
         else {
             so_rank = calloc(n, sizeof *so_rank), so_year = calloc(n, sizeof *so_year);
             if (so_rank && so_year && so_stats(n)) so_key = (const char **)so_rank; /* (only "it worked") */
         }
     }
-    if (!v || !so_rec || !so_key) {
+    if (!v || !so_rec || (!so_key && mode != CC_SORT_TITLE)) {
         free(v);
         v = (unsigned *)0;
     } else
         cc_heapsort(v, n,
                     mode == CC_SORT_ARTIST   ? so_cmp
-                    : mode == CC_SORT_TITLE  ? so_title_cmp
+                    : mode == CC_SORT_TITLE  ? (so_key ? so_tkey_cmp : so_title_cmp) /* (no keys: the stock order) */
                     : mode == CC_SORT_RECENT ? so_recent_cmp
                                              : so_year_cmp);
     free(so_rec);
-    if (mode == CC_SORT_ARTIST) free((void *)so_key);
+    if (mode == CC_SORT_ARTIST || mode == CC_SORT_TITLE) free((void *)so_key);
     free(so_rank);
     free(so_year);
     so_rec = (void **)0, so_key = (const char **)0, so_rank = so_year = (unsigned *)0;
@@ -1017,18 +1113,23 @@ typedef struct {
     char path[CR_PATH];
 } img_t;
 
+#define CC_ARTIST_JOB 1 /* job_t sec of an artist photo job (a cover job never sets it) */
+#define CC_RECHECK_JOB 2 /* ... of the re-check of one artist: track holds the albums' first tracks, one per line */
+
 typedef struct {
     char *track; /* the album's first track, copied so the thread never reads stock deques */
     unsigned
         key; /* 0: the one transient job (xf below), not a cache job (cc_build_add refuses key 0); CC_DURATIONS: the path's dur_key */
     unsigned size,
-        sec; /* CC_DURATIONS: the file's size when queued, and its measured seconds (written by the worker before done advances) */
+        sec; /* CC_DURATIONS: the file's size when queued, and its measured seconds (written by the worker before done advances). An artist photo job (patch/artistphoto.c; key the artist key): sec 1, size 1 = check it again even if it has a result */
 } job_t;
 
 /* The one transient extraction a set may hold instead of cache jobs (cc_build_add_file): where it writes and how big. Set before the worker starts, read only by it. */
 static struct {
     char dst[80];
     unsigned px;
+    int aspect; /* 1: the picture keeps its aspect ratio at exactly px too, and stock's own resize is never the fallback (cc_build_add_aspect) */
+    int only; /* with aspect: 1 the embedded picture only, 2 the folder's only (the source stock's page shows); 0 both (cc_build_add_file) */
 } xf __attribute__((section(".scratch")));
 
 static struct {
@@ -1242,7 +1343,7 @@ static int art_lock(int phase, const char *track) {
 
 /* The embedded picture, as toolsGetAlbumCover finds it (taglib_album_picture: 2 a JPEG, 1 a PNG, saved to TAG_TMP, moved to TAG_COPY under the lock), shrunk by pv_cover. No picture, or
  * one pv_cover refuses (PV_REFUSED): 0, and stock's call is not made (it would ask taglib the same, or decode it). */
-static int art_embedded(const char *track, const char *dst, unsigned px) {
+static int art_embedded(const char *track, const char *dst, unsigned px, int aspect) {
     int kind, r = 0;
     if (!art_lock(PH_EMB_TAGS, track)) return 0;
     kind = taglib_album_picture(track, (char *)dst, TAG_LIMIT_A, TAG_LIMIT_B);
@@ -1251,8 +1352,9 @@ static int art_embedded(const char *track, const char *dst, unsigned px) {
     pthread_mutex_unlock((void *)PARSE_COVER_MUTEX);
     if (kind != 1 && kind != 2) return 0;
     at(PH_EMB_SHRINK, "embedded", 0, 0, kind == 2 ? 1 : 2, 0); /* (the picture is not opened again to say more) */
-    if (!access(TAG_COPY, 4)) r = pv_cover(TAG_COPY, dst, px);
+    if (!access(TAG_COPY, 4)) r = aspect ? pv_cover_aspect(TAG_COPY, dst, px) : pv_cover(TAG_COPY, dst, px);
     unlink(TAG_COPY);
+    if (aspect) return r == 1; /* (stock's resize would stretch an exact-size picture) */
     if (r != 0 && r != -1) return r == 1; /* done, or refused */
     if (!art_lock(PH_EMB_STOCK, track)) return 0;
     r = toolsGetAlbumCover(track, dst, px, px) == 1;
@@ -1283,7 +1385,7 @@ static int fl_ext(const char *name) { /* the last extension is .jpg, .png or .jp
  * folder.jpeg, cover.png, cover.jpg, cover.jpeg, <track>.png, <track>.jpg, <track>.jpeg in that order the file of that name (any case) moves to the front, so the order tried is the
  * reverse of that list for the files that exist (<track>.jpeg first, folder.png last of them), then the others as listed. The first whose header is a picture within stock's
  * file size limit goes to pv_cover. 1 when the cover was made; any other outcome is stock's own call (which does the same walk again and handles what is left). */
-static int art_folder(const char *track, const char *dst, unsigned px) {
+static int art_folder(const char *track, const char *dst, unsigned px, int aspect) {
     static const char *const pri[6] = {"folder.png", "folder.jpg", "folder.jpeg",
                                        "cover.png",  "cover.jpg",  "cover.jpeg"};
     static const char *const ext[3] = {".png", ".jpg", ".jpeg"};
@@ -1334,12 +1436,13 @@ static int art_folder(const char *track, const char *dst, unsigned px) {
                 !(kind == 2 && size > 0 && size <= FL_STOCK_PNG))
                 continue;
             at(PH_FOLDER_SHRINK, path, w, h, (unsigned)kind, sof);
-            r = pv_cover(path, dst, px), done = 1;
+            r = aspect ? pv_cover_aspect(path, dst, px) : pv_cover(path, dst, px), done = 1;
         }
     free(names);
     if (r == 1) return 1;
     if (r == PV_REFUSED) return 0; /* no art, as for an embedded one */
 stock:
+    if (aspect) return 0;
     if (!art_lock(PH_FOLDER_STOCK, track)) return 0;
     r = toolsGetExternCover(track, dst, px, px) == 1;
     pthread_mutex_unlock((void *)PARSE_COVER_MUTEX);
@@ -1347,8 +1450,11 @@ stock:
 }
 
 /* The album's art at px x px into dst: the embedded picture, else the folder's. Takes the lock itself, around the stock calls only. */
-static int art_make(const char *track, const char *dst, unsigned px) {
-    return art_embedded(track, dst, px) || (!cb.cancelled && art_folder(track, dst, px));
+static int art_make(const char *track, const char *dst, unsigned px, int aspect, int only) {
+    if (only)
+        return only == 1 ? art_embedded(track, dst, px, aspect)
+                         : art_folder(track, dst, px, aspect); /* (the other source is never a substitute) */
+    return art_embedded(track, dst, px, aspect) || (!cb.cancelled && art_folder(track, dst, px, aspect));
 }
 
 /* A transient extraction (the Pod's cover pane, docs/modules/ipod.md): the album's art, fitted inside px x px by art_make (never upscaled), into xf.dst through
@@ -1358,7 +1464,7 @@ static void build_file(const job_t *j) {
     int ok;
     snprintf(tmp, sizeof tmp, "%s.tmp", xf.dst);
     if (access(j->track, F_OK)) return;
-    ok = art_make(j->track, tmp, xf.px);
+    ok = art_make(j->track, tmp, xf.px, xf.aspect, xf.only);
     if (cb.cancelled) { /* the pane has gone (and removed xf.dst): publish nothing */
         unlink(tmp);
         return;
@@ -1462,6 +1568,14 @@ static void build_art(const job_t *j) {
         build_file(j);
         return;
     }
+    if (j->sec == CC_ARTIST_JOB) {
+        ap_job(j->track, j->key, (int)j->size, &cb.cancelled);
+        return;
+    }
+    if (j->sec == CC_RECHECK_JOB) {
+        ap_recheck_job(j->track, j->key, &cb.cancelled);
+        return;
+    }
     if (access(j->track, F_OK)) return; /* storage gone: no marker, the next open retries */
     cc_path(dst, sizeof dst, j->key, "");
     cc_path(tmp, sizeof tmp, j->key, ".tmp");
@@ -1476,7 +1590,7 @@ static void build_art(const job_t *j) {
     cb.cur = j->key, cb.began = 0, ++cb.seq;
     cb.phase = PH_NONE, cb.img.path[0] = 0, cb.img.w = cb.img.h = cb.img.kind = cb.img.sof = 0;
     pthread_mutex_unlock(cb_mutex);
-    ok = art_make(j->track, tmp, ART_SIZE);
+    ok = art_make(j->track, tmp, ART_SIZE, 0, 0);
     pthread_mutex_lock(cb_mutex);
     cb.cur = 0;
     pthread_mutex_unlock(cb_mutex);
@@ -1533,6 +1647,7 @@ static void build_free(void) {
     for (i = 0; i < cb.total; ++i)
         if (cb.jobs) free(cb.jobs[i].track);
     free(cb.jobs);
+    ap_lib_free();
     cb.jobs = (job_t *)0;
     cb.cap = 0;
     cb.total = cb.done = cb.cancelled = 0;
@@ -1554,6 +1669,7 @@ int cc_build_open(unsigned capacity, int mode) {
         capacity = mode == CC_DURATIONS ? CC_MAX_LEN_JOBS : CC_MAX_JOBS;
     cb.jobs = calloc(capacity ? capacity : 1, sizeof(job_t));
     if (!cb.jobs) return 0;
+    ap_lib_free();
     cb.cap = capacity;
     cb.mode = mode;
     cb.done = cb.total = cb.cancelled = cb.stalled = cb.truncated = cb.claimed = 0;
@@ -1572,6 +1688,40 @@ int cc_build_add(const char *track, unsigned key) {
     j->track = strdup(track);
     if (!j->track) return -1;
     j->key = key;
+    ++cb.total;
+    return 1;
+}
+
+/* An album for the artist photos: its track folder joins the purity snapshot (every album, jobs or not), and the artist gets one job per set when it has no result yet (or force). */
+int cc_build_add_artist(const char *track, const char *artist, int force) {
+    char path[72];
+    job_t *j;
+    unsigned key = ap_key(artist);
+    if (!cb.jobs || cb.running || cb.mode == CC_DURATIONS || !track || !*track) return 0;
+    if (key == ap_key("Unknown Artist"))
+        key = 0; /* no artist: it joins the snapshot (a folder it is in is no artist's own) but gets no job */
+    if (!ap_lib_add(track, key) || !key || !ap_first(key)) return 0;
+    snprintf(path, sizeof path, AP_DIR "/a%08x-44.jpg", key);
+    if (!force && !access(path, F_OK)) return 0;
+    if ((unsigned)cb.total >= cb.cap) return -1;
+    j = &cb.jobs[cb.total];
+    j->track = strdup(track);
+    if (!j->track) return -1;
+    j->key = key, j->sec = CC_ARTIST_JOB, j->size = (unsigned)(force != 0);
+    ++cb.total;
+    return 1;
+}
+
+int cc_build_artist_ok(void) { return ap_lib_ok(); }
+
+int cc_build_add_recheck(const char *tracks, unsigned key) {
+    job_t *j;
+    if (!cb.jobs || cb.running || cb.mode == CC_DURATIONS || !key || !tracks || !*tracks) return 0;
+    if ((unsigned)cb.total >= cb.cap) return -1;
+    j = &cb.jobs[cb.total];
+    j->track = strdup(tracks);
+    if (!j->track) return -1;
+    j->key = key, j->sec = CC_RECHECK_JOB, j->size = 0;
     ++cb.total;
     return 1;
 }
@@ -1597,7 +1747,7 @@ int cc_build_dur(int i, unsigned *key, unsigned *size, unsigned *sec) {
     return 1;
 }
 
-int cc_build_add_file(const char *track, const char *dst, unsigned px) {
+static int build_add_file(const char *track, const char *dst, unsigned px, int aspect, int only) {
     unsigned n;
     job_t *j;
     if (!cb.jobs || cb.running || cb.total || !track || !*track || !dst || !*dst || !px) return 0;
@@ -1609,8 +1759,16 @@ int cc_build_add_file(const char *track, const char *dst, unsigned px) {
         xf.dst[n] = dst[n]; /* (a path that does not fit is cut: the callers' is short) */
     xf.dst[n] = 0;
     xf.px = px;
+    xf.aspect = aspect;
+    xf.only = only;
     cb.total = 1;
     return 1;
+}
+
+int cc_build_add_file(const char *track, const char *dst, unsigned px) { return build_add_file(track, dst, px, 0, 0); }
+int cc_build_add_aspect(const char *track, const char *dst, unsigned px, int source) {
+    if (source != 2 && source != 3) return 0; /* (only the two sources the worker can search) */
+    return build_add_file(track, dst, px, 1, source == 2 ? 1 : 2);
 }
 
 void cc_build_stop(void) {
@@ -1641,6 +1799,7 @@ int cc_build_start(void) {
     if (cb.mode != CC_DURATIONS) {
         mkdir(CARD_DIR, 0755); /* the folder, then the cache in it (EEXIST is fine) */
         mkdir(ART_DIR, 0755);
+        mkdir(AP_DIR, 0755);
     }
     cb.exited = 0;
     if ((cb.mode != CC_DURATIONS && !card_space(ART_DIR)) ||

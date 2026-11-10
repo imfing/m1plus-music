@@ -113,9 +113,9 @@ def artists_page(s, album_artist=False, other=None, scroll=0, touched=None, to=N
                       if min(seg2(xx * 8 + 2 * j + 1, yy * 8 + 2 * i + 1, 14, 14, 68, 64), seg2(xx * 8 + 2 * j + 1, yy * 8 + 2 * i + 1, 68, 64, 14, 114)) <= 64)
             chev.putpixel((xx, yy), (0x8A, 0x8A, 0x8A, hit * 255 // 16))
     for n, ry in rows:
-        d.rectangle((24, ry + row - 1, O_['SG_TEXT_END'] - 1, ry + row - 1), fill=PS.HAIR)
-        s.text(tall, 24, ry + row / 2, s.clip(n, 21, 252 - 24), 21)
-        tall.alpha_composite(chev, (262, ry + (row - 16) // 2))
+        d.rectangle((24, ry + row - 1, O_['LIST_HAIR_END'] - O_['SG_RAIL_INSET'] - 1, ry + row - 1), fill=PS.HAIR)   # the rail is shown: everything moves left by SG_RAIL_INSET (patch/azlist.c az_inset)
+        s.text(tall, 24, ry + row / 2, s.clip(n, 21, O_['LIST_TEXT_X'] + O_['LIST_TEXT_W_CHEV'] - O_['SG_RAIL_INSET'] - 24), 21)
+        tall.alpha_composite(chev, (O_['LIST_CHEV_X'] - O_['SG_RAIL_INSET'], ry + (row - 16) // 2))
     scroll = max(0, min(dict(secs)[to] if to else scroll, end - 400))   # to: the rail's jump, section `to`'s header at the window's top
     im = PI.pod_page(s, 'm1plus_artists', 0, title=' ')
     im = im.crop((0, 0, 320, 50)); full = Image.new('RGBA', (320, 450), (0, 0, 0, 255)); full.paste(im, (0, 0))
@@ -188,7 +188,6 @@ def minibar_page(s, title, artist, rgb, playing=True, scroll=0, blur=True, shelf
     (the tree's own mb_glass.png composited as the device blends it), the cover (rgb: its colour, None: the placeholder disc) with rounded
     corners, the title and artist cut to their boxes, the white bar glyphs. tools/pod_ui.py's numbers."""
     import pod_ui as U
-    k = 4   # the cover's corners drawn 4x and reduced
     nrows = len(P.DEFAULT_MENU) + 1   # the default menu's rows and Extras
     base = menu_page(s, None, home=True).convert('RGBA')
     im = Image.new('RGBA', base.size, (0, 0, 0, 255))
@@ -204,26 +203,9 @@ def minibar_page(s, title, artist, rgb, playing=True, scroll=0, blur=True, shelf
         content.paste(base.crop((0, 10, 320, 10 + nrows * U.ROW_H)), (0, 0)); content.paste(bottom, (0, nrows * U.ROW_H))
         if scroll is None: scroll = nrows * U.ROW_H + bottom.height + U.MB_PAD - 430
         im.paste(content.crop((0, scroll, 320, scroll + 430)), (0, 10))
-    if blur:   # the experimental backdrop blur (patch/minibar.c mb_blur) as its bit-exact model computes it, on the RGB565 pixels under the pill
-        import pod_blur
-        px = im.convert('RGB').load()
-        def get(x, y):
-            r, g, b = px[U.MB_X + x, U.MB_Y + y]; return (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
-        for (x, y), v in pod_blur.blur(get).items():
-            r, g, b = v >> 11, v >> 5 & 63, v & 31
-            im.putpixel((U.MB_X + x, U.MB_Y + y), (r << 3 | r >> 2, g << 2 | g >> 4, b << 3 | b >> 2, 255))
-    im.alpha_composite(s.img('mb_glass'), (U.MB_X, U.MB_Y))
+    import preview_minibar
     art = PI.sample_cover(rgb, U.MB_ART)
-    mask = Image.new('L', (U.MB_ART * k, U.MB_ART * k), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, U.MB_ART * k - 1, U.MB_ART * k - 1), radius=U.MB_ART_R * k, fill=255)
-    art.putalpha(mask.resize((U.MB_ART, U.MB_ART), Image.LANCZOS))
-    im.alpha_composite(art, (U.MB_X + U.MB_ART_X, U.MB_Y + U.MB_ART_Y))
-    x = U.MB_X + U.MB_TEXT_X
-    s.text(im, x, U.MB_Y + U.MB_TITLE_Y + U.MB_TITLE_H / 2, s.clip(title, U.MB_TITLE_PX, U.MB_TEXT_W), U.MB_TITLE_PX)
-    s.text(im, x, U.MB_Y + U.MB_ARTIST_Y + U.MB_ARTIST_H / 2, s.clip(artist, U.MB_ARTIST_PX, U.MB_TEXT_W), U.MB_ARTIST_PX, tuple(int(U.MB_ARTIST_RGB[i:i + 2], 16) for i in (1, 3, 5)))
-    for name, bx in (('mb_pause' if playing else 'mb_play', U.MB_PLAY_X), ('mb_next', U.MB_NEXT_X)):
-        g = s.img(name)
-        im.alpha_composite(g, (U.MB_X + bx + (U.MB_BTN_W - g.width) // 2, U.MB_Y + (U.MB_H - g.height) // 2))
+    preview_minibar.draw(im, U.MB_X, U.MB_Y, s.img, lambda im_, x, cy, t, px, col=None: s.text(im_, x, cy, t, px, col) if col else s.text(im_, x, cy, t, px), s.clip, title, artist, art, playing, blur)   # shared with the lock screen's mini layout
     return im.convert('RGB')
 
 def extras_page(s, data):
@@ -301,6 +283,10 @@ def main():
         p = lambda n: os.path.join(t, n)
         run('preview_lockscreen.py', raw, p('lock.png'), f'release={raw}/ui/screensaver_page.bin',
             f'release={raw}/ui/screensaver_page.bin,idle,charging,pct=40', '--wallpaper', 'stock')
+        outdir = os.path.dirname(os.path.abspath(out))   # lock-mini.png: the Lock Screen "Mini Player" layout (setting lockscreen-layout = 1): playing over the stock and a busy wallpaper, nothing queued
+        run('preview_lockscreen.py', raw, os.path.join(outdir, 'lock-mini.png'), f'large={raw}/ui/screensaver_page.bin', f'mini={raw}/ui/screensaver_page.bin,mini',
+            f'mini idle={raw}/ui/screensaver_page.bin,mini,idle', '--wallpaper', 'stock')
+        run('preview_lockscreen.py', raw, os.path.join(outdir, 'lock-mini-busy.png'), f'mini={raw}/ui/screensaver_page.bin,mini', '--wallpaper', 'busy')
         run('preview_cover.py', work, p('cf.png'), p('land.png'))
         run('preview_battery.py', work, p('bat.png'))
         lock, cf, bat, land = (Image.open(p(n + '.png')).convert('RGB') for n in ('lock', 'cf', 'bat', 'land'))

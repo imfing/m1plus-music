@@ -17,12 +17,12 @@ import preview_nowplaying as NP
 
 ROW_H, SCREEN_H, SHEET_W, SV_W = 50, 480, 320, 310
 PAGE1 = ['listitem4', 'listitem5', 'listitem2', 'pod_tape', 'pod_vinyl', 'pod_more']   # Look up album, Look up artist, Add to playlist, Cassette Mode, Vinyl Mode, More
-PAGE2 = ['pod_back', 'listitem1', 'listitem0', 'pod_art', 'listitem6']             # the back header, Playback speed, A-B repeat, Find Cover & Lyrics, Delete
+PAGE2 = ['pod_back', 'listitem1', 'pod_sleep', 'listitem0', 'pod_art', 'listitem6']   # the back header, Playback speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete
 ART_DIM = 100                                                                     # the Find Cover & Lyrics row's opacity (of 255) with the Wi-Fi off (patch/playmore.c PM_ART_DIM)
 DIM_ALPHA = 130                                                                   # the asset's highlight="default(alpha=130)"
 KEYS = {'scrlabel0': 'player_abrepeat', 'scrlabel1': 'Speed', 'scrlabel2': 'batch_addplaylist', 'scrlabel3': 'player_onlinesearch',
         'scrlabel4': 'player_albuminfo', 'scrlabel5': 'player_songerinfo', 'scrlabel6': 'player_delete', 'label1_msg': 'Files below 48 kHz only',
-        'pod_more_label': 'More', 'pod_back_label': 'More', 'pod_tape_label': 'Cassette Mode', 'pod_vinyl_label': 'Vinyl Mode', 'pod_art_label': 'Cover & Lyrics'}
+        'pod_more_label': 'More', 'pod_back_label': 'More', 'pod_tape_label': 'Cassette Mode', 'pod_vinyl_label': 'Vinyl Mode', 'pod_art_label': 'Cover & Lyrics', 'pod_sleep_label': 'powerm_sleep'}
 SPEED_SEL = {'img_1x': 'p_1_sel'}                                                  # 1.0X is the selected speed in the mock-up
 
 
@@ -36,7 +36,7 @@ def sheet(p, im, tree, order, pressed=None, offline=False):
     transparent over it (the painter draws no row fill), the hairlines and the pressed band (`pressed`: a row name) as the rows' inline styles."""
     h = len(order) * ROW_H; sy = SCREEN_H - h
     im.alpha_composite(Image.new('RGBA', (SHEET_W, SCREEN_H), (0, 0, 0, DIM_ALPHA)), (0, 0))
-    glass = p.image('pm_sheet6' if len(order) == len(PAGE1) else 'pm_sheet'); assert glass and glass.size == (SHEET_W, h), 'the page\'s own glass picture (pod_glass: pm_sheet6 for six rows, pm_sheet for five), not a crop'
+    glass = p.image('pm_sheet6'); assert glass and glass.size == (SHEET_W, h), 'the page\'s own glass picture (pod_glass: pm_sheet6 for the six rows of both pages), not a crop'
     im.alpha_composite(glass, (0, sy))
     hair = tint(tree.find('listitem1').get('style:normal:border_color'))
     for pos, name in enumerate(order):
@@ -47,7 +47,7 @@ def sheet(p, im, tree, order, pressed=None, offline=False):
                 if c.name.startswith('img_'):
                     c.y, c.h = 8, 20
                     if c.name in SPEED_SEL: c.set('image', SPEED_SEL[c.name])
-        if name in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_art'):
+        if name in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_art', 'pod_sleep'):
             row.remove('visible'); row.remove('sensitive')       # the asset starts it hidden; the payload shows it
         if name == pressed:
             im.alpha_composite(Image.new('RGBA', (SV_W, ROW_H), tint(tree.find(name).get('style:pressed:bg_color'))), (0, sy + pos * ROW_H))

@@ -23,6 +23,8 @@ and [UI reference](ui.md). Hardware observations below do not validate later bui
   menus, Favorite and Get Info, and the long-lyric-line reboot fix.
 - **1.3.1, 2026-11-07:** fixes for the pull-down's Settings tiles, long lyric lines opened
   mid-song and the stock Equalizer row, which now opens the Equalizer page.
+- **1.3.2, 2026-11-08:** a steady Now Playing quality line, a sharp enlarged cover and lyric
+  lines that no longer clip their last letter.
 
 ## Device findings
 

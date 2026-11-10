@@ -29,6 +29,7 @@
 #include "offsets.inc"
 #include "stock.h"
 #include "home.h"
+#include "common.h"
 
 #define PD_N 8
 #define PD_FILE_MAX 12 /* tools/pod_pages.py PULLDOWN_FILE_MAX */
@@ -148,19 +149,13 @@ static void pd_reconcile(void) {
  * (window_manager_switch_to, nothing closed, Back returns to where the user came from); otherwise (or if that fails) stock's call. The page's own init sets the flag when it opens; a restacked page runs no
  * init, so the flag is set here; a page that will not open leaves no flag of 2. Any other name is the stock call. A tap only. */
 int pd_open_settings(const char *name) {
-    void *wm = window_manager();
     unsigned i;
     int ret;
     for (i = 0; i < 2 && strcmp(name, PD_SET[i].nav); i++) {
     }
-    if (i < 2 && wm) {
-        int above;
-        void *win = pd_window(wm, PD_SET[i].window, &above);
-        if (win && widget_is_window_opened(win) &&
-            window_manager_switch_to(wm, window_manager_get_top_window(wm), win, 0) == RET_OK) {
-            *PD_SET[i].flag = 1;
-            return RET_OK;
-        }
+    if (i < 2 && pod_restack_window(PD_SET[i].window)) {
+        *PD_SET[i].flag = 1;
+        return RET_OK;
     }
     ret = navigator_to(name);
     if (i < 2 && ret != RET_OK) *PD_SET[i].flag = 0;

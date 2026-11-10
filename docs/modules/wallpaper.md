@@ -2,6 +2,8 @@
 
 ## Wallpaper (`tools/mod_wallpaper.py`, `tools/wallpaper_prepare.py`)
 
+How a wallpaper is chosen (the folder, the list, the tap, who reads it) and our picker page: [lock screen](lockscreen.md) "Wallpaper picker".
+
 With no custom wallpaper `get_screensaver_image` (`0x4d7524`) and `config_init` keep the resource name
 `screensaver_default` as `SCREENSAVERPATH`; a chosen picture is `file://` plus its path. Only the
 resource changes: `images/xx/screensaver_default.png` (320x480; `xx` is the only set that has it;

@@ -1,6 +1,6 @@
 """Internet Radio (patch/radio.c, patch/radiopage.c, patch/radionp.c, docs/modules/radio.md): the parsers (playlist, CSV stations, countries and genres, the escape, the caption), the pure
 state table (every cell, the single restart, the Wi-Fi rule), the start through stock's hciplayer (the DAC readied, the resume position, the URL, the refusals), the tick that reconciles with
-stock's status (connecting, playing, pause, stall, end, time-out, socket change, Bluetooth), stop from every state and the hand-over hook, the keep-awake calls, the directory fetch (guards,
+stock's status (connecting, playing, pause, stall, end, time-out, socket change), stop from every state and the hand-over hook, the keep-awake calls, the directory fetch (guards,
 options, answers), the card files (favourites written atomically, recent stations) and the pages (asset, rows, taps, the sheet, Now Playing). The compiled payload runs under Unicorn;
 hciplayer, the network and the DAC are not run: stock's calls are mocks that set the same flags stock does."""
 import os, struct
@@ -111,6 +111,7 @@ def stack(m, *words):
 
 def machine():
     m = RM()
+    m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the countries' rail tests (the switch defaults on)
     for sym in ('stock_start_player_trampoline', 'stock_save_stop_trampoline', 'stock_save_start_trampoline'):
         m.handlers[PSYMS[sym]] = sym
     return m
@@ -233,8 +234,7 @@ sI, sC, sP, sE, sS, sA = ST['IDLE'], ST['CONNECTING'], ST['PLAYING'], ST['ERROR'
 TABLE = {
     'PLAY':      [(sC, START, 0), (sC, STOP | START, 0), (sC, STOP | START, 0), (sC, START, 0), (sC, START, 0), (sC, STOP | START, 0)],
     'BAD':       [(sE, 0, 1), (sE, STOP, 1), (sE, STOP, 1), (sE, 0, 1), (sE, 0, 1), (sE, STOP, 1)],
-    'BT':        [(sE, 0, 2), (sE, STOP, 2), (sE, STOP, 2), (sE, 0, 2), (sE, 0, 2), (sE, STOP, 2)],
-    'FAILSTART': [(sE, STOP, 3)] * 6,
+    'FAILSTART': [(sE, STOP, 2)] * 6,
     'STOP':      [None, (sS, STOP, 0), (sS, STOP, 0), (sS, 0, 0), None, (sS, STOP, 0)],
     'LOCAL':     [None, (sS, STOP, 0), (sS, STOP, 0), None, None, (sS, STOP, 0)],
     'REROUTE':   [None, (sC, STOP | START, 0), (sC, STOP | START, 0), None, None, (sA, STOP | START | PAUSE, 0)],
@@ -242,13 +242,13 @@ TABLE = {
     'HEAR':      [None, (sP, 0, 0), None, None, None, (sP, 0, 0)],
     'PAUSE':     [None, (sA, 0, 0), (sA, 0, 0), None, None, None],
     'RESUME':    [None, None, None, None, None, (sP, 0, 0)],
-    'ENDED':     [None, (sC, RETRY, 5), (sE, STOP, 4), None, None, (sE, STOP, 4)],
-    'STALL':     [None, None, (sC, STOP | START, 6), None, None, None],
-    'TIMEOUT':   [None, (sE, STOP, 7), None, None, None, None],
-    'NOWIFI':    [(sE, 0, 8), (sE, STOP, 8), (sE, STOP, 8), (sE, 0, 8), (sE, 0, 8), (sE, STOP, 8)],
+    'ENDED':     [None, (sC, RETRY, 4), (sE, STOP, 3), None, None, (sE, STOP, 3)],
+    'STALL':     [None, None, (sC, STOP | START, 5), None, None, None],
+    'TIMEOUT':   [None, (sE, STOP, 6), None, None, None, None],
+    'NOWIFI':    [(sE, 0, 7), (sE, STOP, 7), (sE, STOP, 7), (sE, 0, 7), (sE, 0, 7), (sE, STOP, 7)],
 }
 EV = {name: k for k, name in enumerate(TABLE)}   # (the order of the enum in radio.h)
-WHY = ['', 'Unsupported address', 'Bluetooth is not supported', 'Could not start', 'Playback ended', 'Could not connect', 'Stream stalled', 'No response', 'No Wi-Fi', 'Player not ready']
+WHY = ['', 'Unsupported address', 'Could not start', 'Playback ended', 'Could not connect', 'Stream stalled', 'No response', 'No Wi-Fi', 'Player not ready']
 
 
 def table_tests(ctx):
@@ -262,10 +262,10 @@ def table_tests(ctx):
             got = step(m, st, EV[name])
             if got != want: bad.append((name, st, got, want))
     expect(not bad, f'all 84 + 6 cells of the state table ({bad[:3]})')
-    expect(step(m, sC, EV['ENDED'], tries=1) == (sE, STOP, 5) and step(m, sP, EV['STALL'], tries=1) == (sE, STOP, 6),
+    expect(step(m, sC, EV['ENDED'], tries=1) == (sE, STOP, 4) and step(m, sP, EV['STALL'], tries=1) == (sE, STOP, 5),
            'a second early end or stall is the error state (one restart per play), with a stop')
-    expect(step(m, sC, EV['ENDED'], wifi=0) == (sE, STOP, 8) and step(m, sP, EV['STALL'], wifi=0) == (sE, STOP, 8) and step(m, sC, EV['TIMEOUT'], wifi=0) == (sE, STOP, 8)
-           and step(m, sP, EV['ENDED'], wifi=0) == (sE, STOP, 8), 'with Wi-Fi gone an end, a stall or a time-out says "No Wi-Fi" and restarts nothing')
+    expect(step(m, sC, EV['ENDED'], wifi=0) == (sE, STOP, 7) and step(m, sP, EV['STALL'], wifi=0) == (sE, STOP, 7) and step(m, sC, EV['TIMEOUT'], wifi=0) == (sE, STOP, 7)
+           and step(m, sP, EV['ENDED'], wifi=0) == (sE, STOP, 7), 'with Wi-Fi gone an end, a stall or a time-out says "No Wi-Fi" and restarts nothing')
     expect(step(m, sC, EV['BAD'], wifi=0) == (sE, STOP, 1), 'a refused address keeps its own words whatever the Wi-Fi does')
     expect(step(m, 9, 0) == (9, 0, 0) and step(m, sI, 99) == (sI, 0, 0), 'an unknown state or event changes nothing')
     for st in (sI, sC, sP, sE, sS, sA):
@@ -305,9 +305,12 @@ def play_tests(ctx):
     for url in ('file:///etc/passwd', 'ftp://x.example/s', 'rtsp://x.example/s', 'concat:a|b://x', 'http://x.example/a|b', 'http://x.example/a}b'):
         l, r = play(m, f'#EXTINF:-1,Bad\n{url}\n')
         expect(r == 0 and state(m) == ST['ERROR'] and error(m) == 'Unsupported address' and not m.proc and 'stop_player' not in [c[0] for c in m.after], f'{url}: only plain http(s) addresses without "|" or "}}" play, nothing is started')
-    m = machine(); m.out_way = 1
+    m = machine(); m.out_way = 1; m.setword(G_OUT, 2)
     l, r = play(m)
-    expect(r == 0 and state(m) == ST['ERROR'] and 'Bluetooth' in error(m) and not m.proc and 'stop_player' not in [c[0] for c in m.after], "Bluetooth output: no radio, stock's player untouched")
+    names = [c[0] for c in m.after]
+    expect(r == 1 and starts(m) == ['http://one.example/a'] and ('set_outputchannel', 2, 2, 0) in m.after and 'stop_player' in names
+           and not [n for n in names if n in ('mclSetPcmMode', 'mclSetDacPwr', 'set_devicevolume')],
+           "Bluetooth output: it starts after set_outputchannel(2, 2, 0) (the way 1 for hciplayer), the built-in DAC's readying is skipped")
     m = machine(); m.out_way = 2; m.setword(G_OUT, 3)
     l, r = play(m)
     names = [c[0] for c in m.after]
@@ -448,10 +451,10 @@ def poll_tests(ctx):
     m.ps = 3; m.hs = 0; m.clock += 500; poll(m)
     m.run = 0; m.ps = 1; m.clock += 500; poll(m)
     expect(state(m) == ST['ERROR'], 'paused, then stock stopped: not stuck on Paused')
-    # ---- the output switches to Bluetooth mid-stream
+    # ---- the way changing alone (the pair has not run) is not read by the tick
     m = machine(); up(m)
-    m.out_way = 1; m.clock += 500; poll(m)
-    expect(state(m) == ST['ERROR'] and 'Bluetooth' in error(m) and stops(m) == 1, 'Bluetooth took the output: stopped, said so')
+    m.out_way = 1; m.clock += 500; m.hs = 1; poll(m)
+    expect(state(m) == ST['PLAYING'] and not stops(m), 'the output way is not read by the tick: only the pair of hooks reroutes')
 
 
 def stop_tests(ctx):
@@ -603,20 +606,27 @@ def reroute_tests(ctx):
     rv = m.call(PSYMS['rd_start_player'], count=40000000)
     expect(rv == 1 and m.proc == [('mclStop',)] and state(m) == ST['STOPPED'], 'a local track picked while Paused after a switch stops the radio')
     m = machine(); up(m); switch(m, 1, 0, a0=1); m.proc = []
-    switch(m, 2, 1, a0=1)
-    expect(state(m) == ST['ERROR'] and 'Bluetooth' in error(m), 'Bluetooth after a paused reroute is still the error')
-    # ---- Bluetooth: the error, stock's restart never runs
+    first, second = switch(m, 2, 1, a0=1)
+    expect(starts(m) == ['http://one.example/a'] and state(m) == ST['PAUSED'] and ('set_outputchannel', 2, 2, 0) in second and m.proc[-1] == ('mclSetPause',)
+           and not [c for c in second if c[0] in ('mclSetPcmMode', 'mclSetDacPwr', 'set_devicevolume')],
+           f'Bluetooth after a paused reroute: restarted on it and Paused, no DAC readying ({m.proc})')
+    # ---- Bluetooth: the same Reroute as the jacks, stock's restart never runs
     m = machine(); up(m); m.proc = []
-    first, second = switch(m, 2, 1)
-    expect(state(m) == ST['ERROR'] and 'Bluetooth' in error(m) and not starts(m) and not [c for c in first + second if c[0] in ('stock_save_stop', 'stock_save_start', 'stock_start_player')],
-           f'switch to Bluetooth: Error "Bluetooth is not supported", no start, the trampoline not called ({first + second})')
+    first, second = switch(m, 2, 1, a0=1)
+    expect(state(m) == ST['PAUSED'] and starts(m) == ['http://one.example/a'] and not [c for c in first + second if c[0] in ('stock_save_stop', 'stock_save_start', 'stock_start_player')],
+           f'switch to Bluetooth: the station restarts on it and stays Paused, the trampoline not called ({first + second})')
     m = machine(); up(m)
-    switch(m, 2, 0)
-    expect(state(m) == ST['ERROR'] and 'Bluetooth' in error(m), 'the selector 2 alone is Bluetooth as well')
-    # a stop with no start half (Bluetooth linking): the next tick says so
+    first, second = switch(m, 1, 0, a0=1)
+    first, second = switch(m, 2, 1, a0=0)
+    expect(state(m) == ST['PAUSED'] and starts(m) == ['http://one.example/a'], 'Bluetooth connecting while paused on a jack: restarted and Paused again')
+    # a Bluetooth link dropping: stock's pair back to a jack
+    m = machine(); up(m); switch(m, 2, 1, a0=1)
+    first, second = switch(m, 0, 0, a0=1)
+    expect(state(m) == ST['PAUSED'] and ('set_outputchannel', 0, 2, 0) in second and ('set_devicevolume', 17) in second, 'Bluetooth disconnecting: back on the jack, the DAC readied, Paused')
+    # a stop with no start half (Bluetooth linking): the next tick reads the dead stream
     m = machine(); up(m); m.out_way = 1
     m.call(PSYMS['rd_save_stop'], count=4000000); m.clock += 500; poll(m)
-    expect(state(m) == ST['ERROR'] and 'Bluetooth' in error(m), 'a stop with no start while the way is Bluetooth: Bluetooth error at the tick')
+    expect(state(m) == ST['ERROR'] and error(m) == 'Playback ended', 'a stop with no start while the way is Bluetooth reads as an end at the tick')
     m = machine(); up(m)
     m.call(PSYMS['rd_save_stop'], count=4000000); m.clock += 500; poll(m)
     expect(state(m) == ST['ERROR'] and error(m) == 'Playback ended', 'a stop with no start on a jack reads as an end at the tick')
@@ -972,7 +982,7 @@ def asset_tests(ctx):
     P = pod_pages
     root = ui('m1plus_radio'); f = root.find
     expect(root.name == 'm1plus_radio_page' == P.RADIO.name and P.RADIO.kind == 'radio' and P.RADIO in P.PAGES and ui('m1plus_radionp').name == 'm1plus_radionp_page' == P.RADIONP.name and P.RADIONP in P.PAGES
-           and P.PAGES[-19:-16] == [P.RADIO, P.RADIONP, P.RADIOINFO] and P.PAGES[-14:-9] == [P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE] and P.PAGES[-9:-1] == [P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE], 'the pages m1plus_radio, m1plus_radionp and m1plus_radioinfo are built and follow the Pull-down page in the page table (Get Info, the Podcast Region picker and the Wi-Fi pages come after them)')
+           and P.PAGES[-26:-23] == [P.RADIO, P.RADIONP, P.RADIOINFO] and P.PAGES[-21:-16] == [P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE] and P.PAGES[-16:] == [P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.BATTERY_PAGE, P.CHGLIMIT_PAGE, P.IDLE_PAGE, P.LOCK_PAGE, P.LOCKWALL_PAGE, P.LOCKSTYLE_PAGE, P.LOCKINFO_PAGE, P.NEXTALBUM_PAGE], 'the pages m1plus_radio, m1plus_radionp and m1plus_radioinfo are built and follow the Pull-down page in the page table (Get Info, the Podcast Region picker and the Wi-Fi pages come after them)')
     expect(all(f(n) is not None for n in PAGE_WIDGETS if n != 'radio_scrollview'), 'every widget the stations page looks up is in the asset')
     lv, sv, grid = f('radio_listview'), f('radio_scrollview'), f('view_grid')
     expect((lv.y, lv.h) == (50, VIEW_H) and sv.w == 310 and f('scroll_bar_m') is not None and grid.get('style:normal:bg_color') == '#000000', 'a stock list under the 50 px navbar holding the content view')
@@ -1234,8 +1244,8 @@ def levels_tests(ctx):
     m = opened()
     tap_row(m, 1, root=True)
     expect(text_of(m, 'label_status') == 'No recently played stations' and vis(m, 'btn_more') == (1, 1), 'no recently played stations: a caption, the "..." stays (Clear Recently Played)')
-    # a station that does not start (a Bluetooth output) still opens Now Playing, which says why
-    m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.out_way = 1
+    # a station that does not start (no Wi-Fi) still opens Now Playing, which says why
+    m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.wifi = 0
     tap_row(m, 0, root=True); calls = tap_cell(m, 0)
     expect(('window_open', 'm1plus_radionp') in calls and m.call(PSYMS['rd_state']) == ST['ERROR'], 'a station that cannot start leaves its reason to Now Playing')
     # the Now Playing row never starts a station: nothing active, a toast and nothing else
@@ -1247,7 +1257,7 @@ def levels_tests(ctx):
     m = opened(); l, r = play(m); poll(m); m.call(PSYMS['rd_stop'], count=40000000); m.proc = []
     m.call(PSYMS['rp_on_fg'], a0=0, count=40000000)
     expect(rows_text(m)[0] == 'Now Playing' and idle_row(m) == (['No radio is playing'], False, False) and m.call(PSYMS['rd_state']) == ST['STOPPED'], 'stopped: the same toast, no page, the station is not started again')
-    m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.out_way = 1
+    m = page_machine(); m.put_text(FAVS, FAV_TEXT); open_radio(m); np_widgets(m); m.wifi = 0
     tap_row(m, 0, root=True)
     back = m.bound[(m.widgets['btn_return'], O['EVT_CLICK'])]
     tap_cell(m, 0)
@@ -1353,6 +1363,25 @@ def directory_tests(ctx):
     expect(sites[1] == f'https://all.api.radio-browser.info/csv/stations/bycountrycodeexact/DE?{QUERY}' and text_of(m, 'sg_title') == 'Germany' and grid_titles(m) == ['Alpha FM', 'Beta Radio'],
            f"a country: its stations by the code, the title is its name ({sites[1:]})")
     expect(vis(m, 'rd_credit') == (0, 0), "a country's stations: no credit")
+    # the Index Rail and Section Headers switches (both on by default), read when the page opens: with the headers off the rows close up and no letter shows
+    keep = m
+    for rail, heads in ((b'0\n', b'1\n'), (b'1\n', b'0\n'), (b'0\n', b'0\n')):
+        m = page_machine(); m.fs[AZRAIL_FILE], m.fs[AZHEAD_FILE] = rail, heads; open_radio(m)
+        m.answer = COUNTRIES_CSV.encode(); sites_of(m)
+        tap_dir(m, 1); finish(m); tick(m)
+        hh = 28 if heads == b'1\n' else 0
+        ys = [52 + (sec[i] + 1) * hh + i * 52 for i in range(4)]
+        blits, texts, fills = paint(m)
+        ts = [r[1] for (t, r), st in texts if st == 'label_row_title']
+        what = f'rail {rail.strip().decode()}, headers {heads.strip().decode()}'
+        expect(ts == [y + (52 - O['LIST_TITLE_H']) // 2 for y in ys] and bool(rows_text(m, 'label_hdr')) == bool(hh) and not (not hh and [f_ for f_ in fills if f_[0] == O['SG_HDR_BG']]),
+               f'{what}: the countries at {ys} and the section letters only with the headers ({ts})')
+        gap = O['SG_RAIL_INSET'] if rail == b'1\n' else 0   # the rail's footprint (patch/azlist.c az_inset): chevron, text end and hairline end move left by it; rail off: the list-row spec
+        ws = [r[2] for (t, r), st in texts if st == 'label_row_title']
+        expect(ws and all(w == O['LIST_TEXT_X'] + O['LIST_TEXT_W_CHEV'] - gap - 24 for w in ws) and sorted({b[2][0] for b in blits if b[2][2] == 10}) == [O['LIST_CHEV_X'] - gap]
+               and {f_[3] for f_ in fills if f_[0] == 0xff222222 and f_[4] == 1} == {O['LIST_HAIR_END'] - gap - 24}, f'{what}: names to x {O["LIST_TEXT_X"] + O["LIST_TEXT_W_CHEV"] - gap}, chevrons at x {O["LIST_CHEV_X"] - gap}, hairlines to x {O["LIST_HAIR_END"] - gap}')
+        expect(vis(m, 'sg_rail') == ((1, 1) if rail == b'1\n' else (0, 0)) and m.props.get((m.sv, 'virtual_h'), 0) >= ys[3] + 52, f'{what}: the rail is {"shown" if rail == b"1\n" else "hidden and insensitive"}')
+    m = keep
     click(m, 'btn_return')
     expect(rows_text(m) == names and text_of(m, 'sg_title') == 'Countries' and vis(m, 'sg_rail') == (1, 1), 'Back: the countries and the rail')
     click(m, 'btn_return')

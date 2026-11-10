@@ -118,7 +118,7 @@ int rd_playlist(char *buf, unsigned *name, unsigned *url, unsigned *info, int ma
 /* The CSV record at *pp, decoded in place into NUL-terminated fields (offsets from base in off[0..max)); *pp moves past its line end. The write point never passes the read point. Returns
  * the field count, 0 at the end of the text. */
 static int rd_csv_record(char **pp, char *base, unsigned *off, int max) {
-    char *r = *pp, *w = r;
+    char *r = *pp, *w;
     int n = 0;
     while (*r == '\n' || *r == '\r') ++r;
     w = r;
@@ -654,7 +654,6 @@ const char *rd_error(void) { return rd.error; }
 
 static const char *const RD_WHY[] = {"",
                                      "Unsupported address",
-                                     "Bluetooth is not supported",
                                      "Could not start",
                                      "Playback ended",
                                      "Could not connect",
@@ -681,12 +680,9 @@ static const rd_cell RD_TABLE[RD_EV_N][ST] = {
     /* BAD       */
     {C(ERROR, 0, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, RD_A_STOP, 1), C(ERROR, 0, 1), C(ERROR, 0, 1),
      C(ERROR, RD_A_STOP, 1)},
-    /* BT        */
-    {C(ERROR, 0, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, 0, 2), C(ERROR, 0, 2),
-     C(ERROR, RD_A_STOP, 2)},
     /* FAILSTART */
-    {C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3),
-     C(ERROR, RD_A_STOP, 3), C(ERROR, RD_A_STOP, 3)},
+    {C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2),
+     C(ERROR, RD_A_STOP, 2), C(ERROR, RD_A_STOP, 2)},
     /* STOP      */
     {Z, C(STOPPED, RD_A_STOP, 0), C(STOPPED, RD_A_STOP, 0), C(STOPPED, 0, 0), Z, C(STOPPED, RD_A_STOP, 0)},
     /* LOCAL     */ {Z, C(STOPPED, RD_A_STOP, 0), C(STOPPED, RD_A_STOP, 0), Z, Z, C(STOPPED, RD_A_STOP, 0)},
@@ -699,12 +695,12 @@ static const rd_cell RD_TABLE[RD_EV_N][ST] = {
     /* HEAR      */ {Z, C(PLAYING, 0, 0), Z, Z, Z, C(PLAYING, 0, 0)},
     /* PAUSE     */ {Z, C(PAUSED, 0, 0), C(PAUSED, 0, 0), Z, Z, Z},
     /* RESUME    */ {Z, Z, Z, Z, Z, C(PLAYING, 0, 0)},
-    /* ENDED     */ {Z, C(CONNECTING, RD_A_RETRY | RD_AGAIN, 5), C(ERROR, RD_A_STOP, 4), Z, Z, C(ERROR, RD_A_STOP, 4)},
-    /* STALL     */ {Z, Z, C(CONNECTING, RD_A_STOP | RD_A_START | RD_AGAIN, 6), Z, Z, Z},
-    /* TIMEOUT   */ {Z, C(ERROR, RD_A_STOP, 7), Z, Z, Z, Z},
+    /* ENDED     */ {Z, C(CONNECTING, RD_A_RETRY | RD_AGAIN, 4), C(ERROR, RD_A_STOP, 3), Z, Z, C(ERROR, RD_A_STOP, 3)},
+    /* STALL     */ {Z, Z, C(CONNECTING, RD_A_STOP | RD_A_START | RD_AGAIN, 5), Z, Z, Z},
+    /* TIMEOUT   */ {Z, C(ERROR, RD_A_STOP, 6), Z, Z, Z, Z},
     /* NOWIFI: a start (a tap, Retry, Resume, an output change) with no connection: no attempt, "No Wi-Fi" at once; a running stream is stopped */
-    {C(ERROR, 0, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, RD_A_STOP, 8), C(ERROR, 0, 8), C(ERROR, 0, 8),
-     C(ERROR, RD_A_STOP, 8)},
+    {C(ERROR, 0, 7), C(ERROR, RD_A_STOP, 7), C(ERROR, RD_A_STOP, 7), C(ERROR, 0, 7), C(ERROR, 0, 7),
+     C(ERROR, RD_A_STOP, 7)},
 };
 
 /* The pure step: the new state | actions << 8 | why << 16. tries = restarts used by this play, wifi = a connection exists. */
@@ -716,7 +712,7 @@ int rd_step(int state, int ev, int tries, int wifi) {
     if (c.next == N) c.next = (unsigned char)state;
     act = c.act & ~RD_AGAIN, why = c.why;
     if (c.act & RD_AGAIN && (tries || !wifi)) c.next = RD_ERROR, act = RD_A_STOP;
-    if (c.next == RD_ERROR && !wifi && ev >= RD_EV_ENDED) why = 8; /* the network is gone: say so */
+    if (c.next == RD_ERROR && !wifi && ev >= RD_EV_ENDED) why = 7; /* the network is gone: say so */
     return c.next | act << 8 | why << 16;
 }
 
@@ -758,11 +754,12 @@ static int rd_playable(const char *u) {
 }
 
 /* The output readied as stock's start_player does before each track: set_outputchannel(output, 2, 0) for every output (it also moves mclSetOutputWay to 0 for the jacks, 2 for
- * USB audio). For the built-in DAC, q2-pod's dac_take adds: its power when only the idle timer cut it, PCM mode, unmuted (stop_player mutes), the volume. Without it hciplayer logs
- * "Audio device got stuck!" and is silent. A USB DAC keeps its own power and volume. (Bluetooth, output 2, never gets here: rd_play and rd_poll refuse it.) */
+ * USB audio, 1 for Bluetooth, where it also switches the DAC off and hciplayer gets {mcl-setoutputway\1} and plays to bluealsa). For the built-in DAC, q2-pod's dac_take adds: its power
+ * when only the idle timer cut it, PCM mode, unmuted (stop_player mutes), the volume. Without it hciplayer logs "Audio device got stuck!" and is silent. A USB DAC keeps its own power and
+ * volume, and Bluetooth has no DAC to ready (the volume is the headset's). */
 static void rd_dac(void) {
     int out = *(int *)G_HEADSET_OUTPUT;
-    if (out != 2) set_outputchannel(out, 2, 0);
+    set_outputchannel(out, 2, 0);
     if (mclGetOutputWay() != 0) return;
     if (out >= 2 && *(int *)DACOFF_TIME < 0) mclSetDacPwr(1);
     mclSetPcmMode();
@@ -778,7 +775,7 @@ static void rd_begin(void) {
     rd.t_start = (unsigned)time_now_ms();
     if (*(volatile int *)HCI_SOCK_FD == -1) { /* hciplayer is not there: nothing would be sent */
         rd_apply(RD_EV_FAILSTART);
-        rd_copy(rd.error, sizeof rd.error, RD_WHY[9]);
+        rd_copy(rd.error, sizeof rd.error, RD_WHY[8]);
         return;
     }
     rd_dac();
@@ -790,12 +787,6 @@ static void rd_begin(void) {
     rd.fd = *(volatile int *)HCI_SOCK_FD;
     rd.last_hear = rd.t_start;
     if (r != 1) rd_apply(RD_EV_FAILSTART);
-}
-
-/* Bluetooth is the output way other than 0 (built-in DAC) and 2 (USB audio), or the selector stock's set_outputchannel was just given (2). */
-static int rd_bt(void) {
-    int way = mclGetOutputWay();
-    return (way != 0 && way != 2) || *(int *)G_HEADSET_OUTPUT == 2;
 }
 
 static void rd_timer_off(void) {
@@ -820,9 +811,9 @@ int rd_start_player(void) {
 
 /* The output changes under a running station (a jack, a USB DAC, Bluetooth, the DSD mode): stock runs save_stop_player, set_outputchannel (and the volume), save_start_player in one
  * handler on the UI thread, and the second restarts the track it saved, which would stop the radio as a local track and play the old one. While a station runs, the first stops the
- * stream (mclStop, like the radio's own Stop; the state stays) and the second is the Reroute event: the same station again on the output stock just set (Bluetooth: the error), not
+ * stream (mclStop, like the radio's own Stop; the state stays) and the second is the Reroute event: the same station again on the output stock just set (Bluetooth included), not
  * counted against the restart allowance. Stock's saved play status is never touched, so nothing of stock's restarts later. The UI-thread tick cannot fall between the two; a stop with no
- * start (Bluetooth pairing, linking) reads as an end or Bluetooth in the next tick. With no radio both are one comparison and stock's function. */
+ * start (Bluetooth pairing, linking) reads as an end in the next tick. With no radio both are one comparison and stock's function. */
 void rd_save_stop(void) {
     if (rd_running())
         mclStop();
@@ -833,10 +824,7 @@ void rd_save_stop(void) {
 void rd_save_start(int paused) {
     peqout_sync(0); /* the output just changed under the track: its EQ is in place before stock restarts it */
     if (rd_running())
-        rd_apply(rd_bt()                 ? RD_EV_BT
-                 : get_wifisignal() <= 0 ? RD_EV_NOWIFI
-                 : paused                ? RD_EV_REROUTE_PAUSED
-                                         : RD_EV_REROUTE);
+        rd_apply(get_wifisignal() <= 0 ? RD_EV_NOWIFI : paused ? RD_EV_REROUTE_PAUSED : RD_EV_REROUTE);
     else
         stock_save_start_trampoline(paused);
 }
@@ -850,10 +838,6 @@ void rd_poll(void) {
     if (rd.state != RD_PAUSED) { /* a paused stream lets the player sleep as paused local music does */
         reset_poweroptions_timer(1, 1, 0);
         if (*(int *)DACOFF_TIME > 0) *(int *)DACOFF_TIME = 0;
-    }
-    if (rd_bt()) {
-        rd_apply(RD_EV_BT);
-        return;
     }
     if (rd.retry_at) { /* a restart after an early end is due */
         if ((int)(now - rd.retry_at) >= 0) rd_begin();
@@ -909,8 +893,6 @@ int rd_play(const rd_list_t *l, int i) {
     if (!rd.list.n) return 0;
     if (!rd_playable(rd_url(&rd.list, rd.at)))
         rd_apply(RD_EV_BAD);
-    else if (rd_bt())
-        rd_apply(RD_EV_BT);
     else if (get_wifisignal() <= 0)
         rd_apply(
             RD_EV_NOWIFI); /* no connection: no attempt, no 20 s wait; local music keeps playing, the next tap after Wi-Fi is back starts */

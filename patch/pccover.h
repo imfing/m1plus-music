@@ -20,6 +20,13 @@
  * CV_QUALITY, by the exact area average. Returns 1; -1 when stock keeps the picture as it is (smaller than size) or it is an interlaced PNG; PV_REFUSED for a progressive JPEG over PV_COVER_PROGRESSIVE_PX or 8192 on a side; 0 on any other failure (not a picture this
  * takes, too large, an error): nothing is left at dst, and the caller falls back to stock's own extraction. Worker thread only. */
 int pv_cover(const char *src, const char *dst, unsigned size);
+/* pv_cover for a picture shown on its own (the timed cover page): the same, except that a picture whose longer side is exactly size keeps its aspect ratio (320 x 240 stays 320 x 240) instead of being stretched to size x size as stock does. */
+int pv_cover_aspect(const char *src, const char *dst, unsigned size);
+
+/* An artist photo: the JPEG or PNG at src cropped to a square (a landscape picture: the centred one; a portrait picture: the one starting a third of the extra height from the top, so a head
+ * stays in) and area-averaged to size x size, JPEG quality CV_QUALITY. A picture whose short side is below size is cropped but not enlarged. Returns 1; 0 on any failure (an interlaced PNG, not a
+ * picture this takes, too large, an error): nothing is left at dst. Worker thread only. */
+int pv_square(const char *src, const char *dst, unsigned size);
 
 /* The JPEG at src into dst: fitted inside PV_SIZE x PV_SIZE, aspect kept, never upscaled, written as a baseline JPEG. libjpeg's own 1/2, 1/4 or 1/8 scaling does the first reduction while it
  * decodes, one row at a time, and an area average the rest, so a 3000 x 3000 picture needs a few hundred kB, not the 27 MB its bitmap would. Returns 1; on any failure (not a baseline or

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Approximate PIL mock-up of the 320x480 lock screen (ui/screensaver_page.bin); not pixel-exact AWTK.
 
-  preview_lockscreen.py RAW_DIR OUT.png LABEL=UI.bin[,pct=N][,charging][,idle][,raw=DIR] ...  [--wallpaper KIND]
+  preview_lockscreen.py RAW_DIR OUT.png LABEL=UI.bin[,pct=N][,charging][,idle][,mini][,raw=DIR] ...  [--wallpaper KIND]
 
 RAW_DIR is rootfs/release/assets/default/raw (images/, fonts/default.ttf, styles/); raw=DIR overrides it
 for one panel (e.g. a "before" tree). Text is sized like AWTK's stb font backend (font_size = ascender -
 descender) and placed by its middle/left/right rules. Button icons come from the page theme
 (styles/screensaver_page.bin, then default.bin) like AWTK's window theme lookup.
 App-driven content is sample data: the cover is a synthetic picture, title/artist sample strings;
-`idle` draws the nothing-queued state (the app hides view_bottomview). The wallpaper is app-driven too;
+`idle` draws the nothing-queued state (the app hides view_bottomview); `mini` gives the tree the mini player layout
+(mod_lockscreen.apply_mini, the model of what patch/lockscreen.c does when /mnt/data/m1plus/lockscreen-layout is 1). The wallpaper is app-driven too;
 by default a plain gradient stands in for it; --wallpaper busy draws a synthetic busy picture (to show
 a translucent card, docs/ui.md); --wallpaper stock uses the tree's screensaver_default (the stock picture, handy locally and not
 for committing, or the mod's drawn bokeh field). A bg_color with alpha (#RRGGBBAA) is blended, as demo's canvas fill does.
@@ -16,7 +17,7 @@ for committing, or the mod's drawn bokeh field). A bg_color with alpha (#RRGGBBA
 import argparse, datetime, os, sys
 from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import awtk_ui, awtk_style
+import awtk_ui, awtk_style, mod_lockscreen, preview_minibar
 from awtk_text import MONTHS, WEEKDAYS as WDAYS
 
 W, H = 320, 480
@@ -96,7 +97,7 @@ class Painter:
         layer = Image.new('RGBA', (W, H)); ImageDraw.Draw(layer).text((x, top + f.getmetrics()[0]), s, font=f,
                                                                    fill=wd.get('style:normal:text_color', '#FFFFFF'), anchor='ls')
         im.alpha_composite(layer.crop(clip), clip[:2])
-    def render(self, root, pct, charging, idle):
+    def render(self, root, pct, charging, idle, mini=False):
         if self.wallpaper == 'stock':
             im = self.icon('screensaver_default').resize((W, H))
         elif self.wallpaper == 'busy':
@@ -105,10 +106,22 @@ class Painter:
             im = Image.new('RGBA', (W, H))
             for y in range(H):
                 ImageDraw.Draw(im).line([(0, y), (W, y)], fill=(30 + y // 12, 45 + y // 10, 90 + y // 8))
+        self.mini = mini
         self.walk(im, root, 0, 0, (0, 0, W, H), pct, charging, idle)
+        if mini and not idle:   # the bar is drawn as the Home bar's (tools/preview_minibar.py: blur model, glass, rounded cover, Home glyphs) over the wallpaper
+            x, y = mod_lockscreen.MINI_RECT['view_bottomview'][:2]
+            preview_minibar.draw(im, x, y, self.icon, self.line, self.cut, TITLE, ARTIST, synthetic_cover(36, 36))
         return im
+    def cut(self, s, px, room):
+        f = self.font(px)
+        while s and f.getlength(s) > room: s = s[:-2] + '…' if not s.endswith('…') else s[:-2] + '…'
+        return s
+    def line(self, im, x, cy, s, px, rgb=None):
+        f = self.font(px); top = round(cy - px / 2)
+        layer = Image.new('RGBA', (W, H)); ImageDraw.Draw(layer).text((x, top + f.getmetrics()[0]), s, font=f, fill=rgb or (255, 255, 255), anchor='ls')
+        im.alpha_composite(layer)
     def walk(self, im, wd, ox, oy, clip, pct, charging, idle):
-        if wd.get('visible') == 'false' or idle and wd.name == 'view_bottomview': return
+        if wd.get('visible') == 'false' or (idle or self.mini) and wd.name == 'view_bottomview': return
         r = (ox + wd.x, oy + wd.y, wd.w or W, wd.h or H)
         c = (max(clip[0], r[0]), max(clip[1], r[1]), min(clip[2], r[0] + r[2]), min(clip[3], r[1] + r[3]))
         if c[0] >= c[2] or c[1] >= c[3]: return
@@ -149,11 +162,13 @@ def main():
     painters, shots = {}, []
     for spec in a.panels:
         label, rest = spec.split('=', 1); path, *opts = rest.split(',')
-        pct = next((int(o[4:]) for o in opts if o.startswith('pct=')), 86); charging, idle = 'charging' in opts, 'idle' in opts
+        pct = next((int(o[4:]) for o in opts if o.startswith('pct=')), 86); charging, idle, mini = 'charging' in opts, 'idle' in opts, 'mini' in opts
         raw = next((o[4:] for o in opts if o.startswith('raw=')), a.raw)
         p = painters.setdefault(raw, Painter(raw, a.wallpaper))
         state = ('nothing queued, ' if idle else '') + f'{pct}%{", charging" if charging else ""}'
-        shots.append((f'{label}  ({state})', p.render(awtk_ui.parse(open(path, 'rb').read()), pct, charging, idle)))
+        root = awtk_ui.parse(open(path, 'rb').read())
+        if mini: mod_lockscreen.apply_mini(root)
+        shots.append((f'{label}  ({state})', p.render(root, pct, charging, idle, mini)))
     top, pad = 18, 10
     out = Image.new('RGB', (len(shots) * (W + pad) + pad, H + top + 18), (40, 40, 40)); d = ImageDraw.Draw(out)
     for i, (label, im) in enumerate(shots):

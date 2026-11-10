@@ -149,8 +149,10 @@ void so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev
         int f = reorder(queue, pick);
         if (f >= 0) found = f;
     }
-    if (n) { /* loadSongList finds a song by file name and CUE start: a duplicate name (01.flac) would always start at the first, so the row's own index wins */
-        if ((unsigned)at < n && !strcmp(cc_str(deque_at(queue, (unsigned)at), REC_PATH), cc_str(pick, REC_PATH)))
+    if (n) { /* loadSongList finds a song by file name and CUE start: a duplicate name (01.flac) would always start at the first, so the row's own index wins (the same song: its path and its CUE start, since the tracks of a CUE image share the path) */
+        void *q = deque_at(queue, (unsigned)at < n ? (unsigned)at : 0);
+        if ((unsigned)at < n && !strcmp(cc_str(q, REC_PATH), cc_str(pick, REC_PATH)) &&
+            I(q, REC_CUE_START) == I(pick, REC_CUE_START))
             idx = (unsigned)at;
         else if (found >= 0 && (unsigned)found < n)
             idx = (unsigned)found;

@@ -209,7 +209,7 @@ def paint_tests(ctx):
         SG.pick(m, 'select')
         blits, texts, styles, fills = SG.paint(m)
         t = titles_of(texts)
-        expect(not dot_blits(blits) and t and all(r[2] == 296 - tx - O['SG_SEL_COL'] for r in t.values()), f'select mode: no "..." and the text ends at 296 as before ({sorted({r[2] for r in t.values()})})')
+        expect(not dot_blits(blits) and t and all(r[2] == (O["LIST_HAIR_END"] if plain else SG.TEXT_END) - tx - O["SG_SEL_COL"] for r in t.values()), f'select mode: no "..." and the text ends at the hairline end (284 with the rail) ({sorted({r[2] for r in t.values()})})')
         SG.click(m, 'btn_return')
         blits, texts, styles, fills = SG.paint(m)
         t = titles_of(texts)
@@ -227,7 +227,7 @@ def paint_tests(ctx):
         lay = lay_of(m, False)
         blits, texts, styles, fills = SG.paint(m)
         t = titles_of(texts)
-        expect(not dot_blits(blits) and t and all(r[2] == 296 - tx for r in t.values()), f'{what}: no "...", the text ends at 296 as before')
+        expect(not dot_blits(blits) and t and all(r[2] == SG.TEXT_END - tx for r in t.values()), f'{what}: no "...", the text ends at the hairline\'s end (284 with the rail)')
         calls = SG.tap(m, 252, lay.row_y(2) + 30)
         expect(any(c[0] == 'navigator_to_with_context' and c[1] == 'playing_page' for c in calls) and SG.vis(m, 'vs_card') == (0, 0), f'{what}: a tap where the "..." would be plays the song')
     # the album page

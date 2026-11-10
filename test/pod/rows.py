@@ -228,6 +228,8 @@ def rows_tests(expect):
     # the boot guard's hook on home_page_init, the same two words
     allowed |= {pod.fileoff(built, pod.HOME_INIT), pod.fileoff(built, pod.HOME_INIT) + 4}
     allowed |= {pod.fileoff(built, pod.PLAYING_INIT), pod.fileoff(built, pod.PLAYING_INIT) + 4}           # the Now Playing init hook
+    allowed |= {pod.fileoff(built, pod.BIGCOVER_INIT), pod.fileoff(built, pod.BIGCOVER_INIT) + 4}         # the timed cover page init hook (patch/bigcover.c)
+    allowed |= {pod.fileoff(built, pod.LOCKSCREEN_INIT), pod.fileoff(built, pod.LOCKSCREEN_INIT) + 4}     # the lock screen init hook (patch/lockscreen.c)
     allowed |= {pod.fileoff(built, pod.PLAYMORE_INIT), pod.fileoff(built, pod.PLAYMORE_INIT) + 4}         # the More dialog init hook
     allowed |= {pod.fileoff(built, pod.PULLDOWN_INIT), pod.fileoff(built, pod.PULLDOWN_INIT) + 4}         # the pull-down init hook
     allowed |= {pod.fileoff(built, pod.START_PLAYER), pod.fileoff(built, pod.START_PLAYER) + 4}           # the mclStartPlayer hook (Internet Radio's hand-over)
@@ -238,13 +240,18 @@ def rows_tests(expect):
     allowed.add(pod.fileoff(built, pod.SCAN_SITE))                                                       # the library scan's folder test (patch/common.c pod_scan_dir)
     allowed |= {pod.fileoff(built, h) + k for h in (pod.SETMODE, pod.LOADPL, pod.FILETIME) for k in (0, 4)}               # the Shuffle hooks (patch/shuffle.c)
     allowed |= {pod.fileoff(built, a) for a, _ in pod.MODE_SITES}                                           # the 19 play mode display sites (jal sh_display_mode)
+    allowed |= {pod.fileoff(built, pod.LOCKROW), pod.fileoff(built, pod.LOCKROW) + 4}                                  # the Display page's Lock Screen row: its jump to our Lock Screen page (patch/lockscreen.c lk_redirect)
     allowed |= {pod.fileoff(built, pod.EQ_ROW), pod.fileoff(built, pod.EQ_ROW) + 4}                                  # the Play Settings Equalizer row's jump to the 10-Band editor (patch/tenband.c)
+    allowed |= {pod.fileoff(built, pod.NEXTALBUM_SITE), pod.fileoff(built, pod.NEXTALBUM_SITE) + 4}                     # mclNextSong's List play end branch (Continue with Next Album, hook 24)
     allowed.add(pod.fileoff(built, pod.CLEAR_SITE))                                                      # dmr_serverstart's deque_clear call (jal sh_clear_queue)
     allowed.add(pod.fileoff(built, pod.UPDATE_SITE))                                                     # update_firmware's version compare operand (docs/modules/version.md)
     for a, old, *_ in pod.autotime.EDITS: allowed |= {pod.fileoff(built, a) + k for k in range(0, len(old), 4)}   # the clock sync's string literals (tools/autotime.py)
+    allowed |= {pod.fileoff(built, a) for a, *_ in pod.coex.EDITS}                                      # Wi-Fi and Bluetooth together: four beqz -> b (tools/coex.py)
     allowed |= {pod.fileoff(built, a) for a, *_ in pod.themeoff.EDITS}                                   # stock theme1 off: the clamp, the System page's row table and count (tools/themeoff.py)
     allowed.update(pod.fileoff(built, a) for a, _ in pod.LINEOUT_SITES)                                  # the jalr widget_set_text_utf8 of label_volume in show_sysbar_face and dropdown_showface (patch/lineout.c)
-    allowed.add(pod.fileoff(built, pod.WIFIHUB_SITE))                                                    # the All System Settings Wi-Fi row's navigator_to call (patch/wifipage.c wifi_hub_open)
+    allowed.add(pod.fileoff(built, pod.IDLE_SITE))                                                       # the timed open's navigator_to call (patch/bigcover.c bc_timed_open)
+    allowed.add(pod.fileoff(built, pod.WIFIHUB_SITE))                                                  # the All System Settings Wi-Fi row's navigator_to call (patch/wifipage.c wifi_hub_open)
+    allowed.add(pod.fileoff(built, pod.TIDALKB_SITE))                                                    # the stock Tidal search page's edit_set_focus call (patch/tidalkb.c tidal_kb_focus)
     allowed.update(pod.fileoff(built, a) for a in pod.PULLDOWN_OPEN_SITES)                               # on_wm_tsmove_fun's two navigator_to calls that open the page a pull-down tile chose (patch/pulldown.c pd_open_settings)
     allowed.add(pod.fileoff(built, pod.BATTERY_SITE))                                                    # show_sysbar_face's get_battery_capacity call (patch/battery.c)
     allowed |= {pod.fileoff(built, pod.timezones.SELECT), pod.fileoff(built, pod.timezones.SELECT) + 4}   # select_timezone's hook (tools/timezones.py)

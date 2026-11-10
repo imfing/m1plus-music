@@ -49,6 +49,8 @@ typedef struct {
     void *volatile fout;
     volatile int enc_up, made, werr;
     ar_t ar;
+    unsigned sq, sq_x0, sq_y0, sq_side,
+        sq_y; /* sq: only the square sq_side wide at (sq_x0, sq_y0) of the source goes into the average */
 } pv_out_t;
 
 static unsigned *pv_w(void *c, unsigned off) { return (unsigned *)((unsigned char *)c + off); }
@@ -58,6 +60,15 @@ static void pv_out_init(pv_out_t *o) {
     *(void **)o->err.pub = (void *)PV_ERR_EXIT;
     *(void **)o->enc = &o->err;
     o->fout = (void *)0, o->enc_up = o->made = o->werr = 0;
+    o->sq = o->sq_x0 = o->sq_y0 = o->sq_side = o->sq_y = 0;
+}
+
+/* The square of an ow x oh picture (the short side, centred across a landscape picture, a third of the extra height down a portrait one) and its target side (t, never enlarged). */
+static void pv_square_set(pv_out_t *o, unsigned ow, unsigned oh, unsigned t, unsigned *tw, unsigned *th) {
+    unsigned side = ow < oh ? ow : oh;
+    o->sq = 1, o->sq_side = side, o->sq_y = 0;
+    o->sq_x0 = (ow - side) / 2, o->sq_y0 = (oh - side) / 3;
+    *tw = *th = side > t ? t : side;
 }
 
 /* The podcast size of an ow x oh source: fitted inside PV_SIZE, aspect kept, never upscaled. */
@@ -71,6 +82,7 @@ static void pv_pod_fit(unsigned ow, unsigned oh, unsigned *tw, unsigned *th) {
 
 /* The encoder for an ow x oh source into dst at tw x th. 1, or 0 when dst cannot be opened or the sizes are out of the average's range. */
 static int pv_out_begin(pv_out_t *o, unsigned ow, unsigned oh, unsigned tw, unsigned th, int quality, const char *dst) {
+    if (o->sq) ow = oh = o->sq_side;
     if (!ar_init(&o->ar, ow, oh, tw, th)) return 0;
     jpeg_CreateCompress(o->enc, PV_VERSION, PV_ENC_SIZE);
     o->enc_up = 1;
@@ -96,6 +108,11 @@ static void pv_emit(void *user, const unsigned char *rgb) {
 
 /* The next source row (ow pixels of n = 1 or 3 bytes) into the average. 0 on failure. */
 static int pv_out_row(pv_out_t *o, const unsigned char *row, unsigned n) {
+    if (o->sq) {
+        unsigned y = o->sq_y++;
+        if (y < o->sq_y0 || y >= o->sq_y0 + o->sq_side) return 1;
+        row += o->sq_x0 * n;
+    }
     if (o->ar.j >= o->ar.oh) return 0;
     ar_push(&o->ar, row, n, 0, n == 3 ? 1 : 0, n == 3 ? 2 : 0, n, pv_emit, o);
     return !o->werr;
@@ -117,9 +134,18 @@ static int pv_out_close(pv_out_t *o, const char *dst, int ok) {
     return ok;
 }
 
+/* The size of an album cover: stock's (cc_stock_fit); aspect: a picture whose longer side is exactly t keeps its shape too (stock stretches it to t x t). 0: kept as it is (smaller than t). */
+static int pv_fit(unsigned w, unsigned h, unsigned t, int aspect, unsigned *tw, unsigned *th) {
+    if (aspect && (w > h ? w : h) == t) {
+        *tw = w, *th = h;
+        return 1;
+    }
+    return cc_stock_fit(w, h, t, tw, th);
+}
+
 /* The JPEG at src into dst. cover = 0: a podcast cover (PV_SIZE, quality PV_QUALITY, a progressive picture held to PC_COVER_MAX_PX). cover = the size t of an album cover: stock's size and
  * quality 90, the decode scale the smallest picture that still has both target sides; a picture stock keeps as it is (smaller than t) is not touched: -1. Else 1 or 0. */
-static int pv_jpeg(const char *src, const char *dst, unsigned cover) {
+static int pv_jpeg(const char *src, const char *dst, unsigned cover, int aspect, int square) {
     unsigned char dec[PV_DEC_SIZE] __attribute__((aligned(8)));
     pv_out_t o;
     void *volatile fin = (void *)0;
@@ -146,10 +172,14 @@ static int pv_jpeg(const char *src, const char *dst, unsigned cover) {
     if (jpeg_read_header(dec, 1) != 1) goto done;
     n = *pv_w(dec, JF_COMPONENTS);
     if (n != 1 && n != 3) goto done; /* gray or colour; CMYK is refused */
-    if (cover) {
+    if (square) {
+        unsigned sh = w < h ? w : h;
+        for (d = 8; d > 1 && (sh + d - 1) / d < cover; d >>= 1) {
+        } /* the largest reduction that keeps the short side at the target or more */
+    } else if (cover) {
         unsigned sw, sh;
         cc_stock_dims(w, h, n, &sw, &sh);
-        if (!cc_stock_fit(sw, sh, cover, &tw, &th)) {
+        if (!pv_fit(sw, sh, cover, aspect, &tw, &th)) {
             keep = 1;
             goto done;
         }
@@ -163,12 +193,16 @@ static int pv_jpeg(const char *src, const char *dst, unsigned cover) {
     if (!jpeg_start_decompress(dec)) goto done;
     ow = *pv_w(dec, JF_OUT_WIDTH), oh = *pv_w(dec, JF_OUT_HEIGHT);
     if (!ow || !oh || ow > 8192) goto done;
-    if (!cover) pv_pod_fit(ow, oh, &tw, &th);
+    if (square)
+        pv_square_set(&o, ow, oh, cover, &tw, &th);
+    else if (!cover)
+        pv_pod_fit(ow, oh, &tw, &th);
     row = calloc(ow * n, 1);
     if (!row || !pv_out_begin(&o, ow, oh, tw, th, cover ? CV_QUALITY : PV_QUALITY, dst)) goto done;
     for (y = 0; y < oh; ++y) {
         line[0] = (unsigned char *)row;
         if (jpeg_read_scanlines(dec, line, 1) != 1 || !pv_out_row(&o, (unsigned char *)row, n)) goto done;
+        if (square && y + 1 >= o.sq_y0 + o.sq_side) break; /* the rest is below the square */
     }
     ok = pv_out_end(&o);
 done:
@@ -179,14 +213,14 @@ done:
     return keep ? -1 : ok;
 }
 
-int pv_shrink(const char *src, const char *dst) { return pv_jpeg(src, dst, 0); }
+int pv_shrink(const char *src, const char *dst) { return pv_jpeg(src, dst, 0, 0, 0); }
 
 static int pv_png_row(void *user, const unsigned char *rgb, unsigned w) {
     (void)w;
     return pv_out_row(user, rgb, 3);
 }
 
-static int pv_png(const char *src, const char *dst, unsigned cover) {
+static int pv_png(const char *src, const char *dst, unsigned cover, int aspect, int square) {
     pv_out_t o;
     void *volatile fin = (void *)0;
     pp_t *volatile pp = (pp_t *)0;
@@ -206,8 +240,10 @@ static int pv_png(const char *src, const char *dst, unsigned cover) {
         keep = r < 0;
         goto done;
     }
-    if (cover) {
-        if (!cc_stock_fit(w, h, cover, &tw, &th)) { /* stock keeps a picture smaller than the request */
+    if (square)
+        pv_square_set(&o, w, h, cover, &tw, &th);
+    else if (cover) {
+        if (!pv_fit(w, h, cover, aspect, &tw, &th)) { /* stock keeps a picture smaller than the request */
             keep = 1;
             goto done;
         }
@@ -222,10 +258,19 @@ done:
     return ok ? 1 : -keep;
 }
 
-int pv_shrink_png(const char *src, const char *dst) { return pv_png(src, dst, 0); }
+int pv_shrink_png(const char *src, const char *dst) { return pv_png(src, dst, 0, 0, 0); }
 
-int pv_cover(const char *src, const char *dst, unsigned size) {
+static int pv_pick(const char *src, const char *dst, unsigned size, int aspect) {
     unsigned w, h, sof;
     int kind = pc_pic_info(src, &w, &h, &sof);
-    return kind == 1 ? pv_jpeg(src, dst, size) : kind == 2 ? pv_png(src, dst, size) : 0;
+    return kind == 1 ? pv_jpeg(src, dst, size, aspect, 0) : kind == 2 ? pv_png(src, dst, size, aspect, 0) : 0;
 }
+
+int pv_square(const char *src, const char *dst, unsigned size) {
+    unsigned w, h, sof;
+    int kind = pc_pic_info(src, &w, &h, &sof);
+    return kind == 1 ? pv_jpeg(src, dst, size, 0, 1) : kind == 2 ? pv_png(src, dst, size, 0, 1) : 0;
+}
+
+int pv_cover(const char *src, const char *dst, unsigned size) { return pv_pick(src, dst, size, 0); }
+int pv_cover_aspect(const char *src, const char *dst, unsigned size) { return pv_pick(src, dst, size, 1); }

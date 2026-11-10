@@ -93,7 +93,7 @@ Not done (a stock limit, no hook): tracks **with embedded art** keep it on stock
 
 None new. `get_wifisignal`, `widget_set_opacity`, `get_playtimeandlength` and the widget calls were already pinned; the sheet's hook is `dialog_playmore_dialog_init` (`PLAYMORE_PINS`, unchanged). `tools/pod.py` `SOURCES` gains `onlineart.c`.
 `pcnet.c` gains the job code; `covercache.c` one early return (`build_art`); `playmore.c` the row. The asset: `ui/m1plus_onlineart.bin` (`tools/pod_ui.py build_onlineart_page`, `pod_pages.ONLINEART`), the row `pod_art` in both
-themes' `playmore_dialog.bin` (`tools/mod_lists.py`), `pod_ic_art` (`tools/mod_icons.py`), `pm_sheet` now 320 x 250 (page 2 has five rows; `PM_PAGE2_N` 5), translations (`tools/pod_i18n.py`: Cover & Lyrics, Covers, Lyrics,
+themes' `playmore_dialog.bin` (`tools/mod_lists.py`), `pod_ic_art` (`tools/mod_icons.py`), `pm_sheet` 320 x 250 (page 2 then had five rows; it now has six, `PM_PAGE2_N` 6, and uses `pm_sheet6`: playmore.md), translations (`tools/pod_i18n.py`: Cover & Lyrics, Covers, Lyrics,
 Saving…, Synced, Use This Cover, Replace Cover, No Lyrics Found, No Covers Found, Lyrics Service Busy, Cover Service Busy, Try Again and the explanations (`pod_ui.OA_ES_STATES`), Save Lyrics, Replace Lyrics, and the Podcasts' Saved; the failure words are the Podcasts ones). `pcdetail.c` exports `pd_lines`; the Search page's `SE_*` numbers are used as they are.
 
 ## Tests
@@ -106,7 +106,7 @@ Saving…, Synced, Use This Cover, Replace Cover, No Lyrics Found, No Covers Fou
   tabs, the confirmation (nothing written until the pill, Use / Replace, the current frame, compilation keys, no folder picture for the card's root, failures, the Wi-Fi lost, Back while it downloads, a busy slot), the lyrics rows (title, grey line, badges, scrolled taps) and detail (tags stripped, wrapped, gaps, scrolling,
   Save / Replace, the `.lrc` name rule, a failed write, Saved badge), the downloads pausing and resuming, destroy, no track, a wrong asset.
 - Added with the states: `test/pod/onlineart.py` `busy_tests` (one 503 / 429 -> PN_OVERLOAD from exactly one request and no waiting, a busy get skips search, 404 / 500 get still searches, Cancel with a busy get, iTunes busy + Deezer OK, both busy, `pn_art_again` of each part), `test/pod/onlineartpage.py` `state_tests` (every state in 13 languages with its glyph, title, text and pill, the stacking, insensitive decorations) and `again_tests` (Try Again restarts only its tab, waits for a busy slot, a failing guard), and the wrapping of an English, a CJK and a space-less line without an ellipsis.
-- `test/pod/playmore.py`: the row on page 2 (five rows, 250 px, the glass `pm_sheet`), the Wi-Fi dimming looked at on each visit, the tap, a refusing page, a stale handler, the text fit.
+- `test/pod/playmore.py`: the row on page 2 (six rows, 300 px, the glass `pm_sheet6`), the Wi-Fi dimming looked at on each visit, the tap, a refusing page, a stale handler, the text fit.
 
 ## Device checks (not run)
 

@@ -176,9 +176,9 @@ def page_tests(ctx):
     sysrows = [r.label for r in P.SETTINGS_PAGE.rows]
     a_i = next(i for i, r in enumerate(P.SETTINGS_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.APPEARANCE_PAGE_INDEX)
     expect(P.SETTINGS_PAGE.rows[a_i].label == 'Appearance' and sysrows[sysrows.index('Display') + 1] == 'Appearance' and sysrows[sysrows.index('Display') + 2] == 'Keyboards'
-           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is P.APPEARANCE_PAGE and P.APPEARANCE_PAGE.title == 'Appearance' and [r.label for r in P.APPEARANCE_PAGE.rows] == ['Background', 'Accent', 'Control Center']
+           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is P.APPEARANCE_PAGE and P.APPEARANCE_PAGE.title == 'Appearance' and [r.label for r in P.APPEARANCE_PAGE.rows] == ['Background', 'Accent', 'Lock Screen', 'Control Center']
            and P.PAGES[P.PULLDOWN_PAGE_INDEX] is P.PULLDOWN_PAGE and P.PULLDOWN_PAGE.title == 'Control Center' and P.PULLDOWN_PAGE.rows == [] and P.PULLDOWN_PAGE.kind == 'pdcfg',
-           'Settings > System has an Appearance link row right after Display; its page has Background and Accent, then the Control Center row in a card of its own, which opens the page of that title')
+           'Settings > System has an Appearance link row right after Display; its page has Background, Accent and Lock Screen, then the Control Center row in a card of its own, which opens the page of that title')
     arrow = lambda m, i: m.click(f'pod_row{i}', x=ZX + ZW // 2)
 
     def open_page(data=None):
@@ -318,12 +318,23 @@ NAV = {'sysset_page': 'systemset/sysset_page', 'playset_page': 'playset/playset_
 FLAG = {'sysset_page': SYS, 'playset_page': PLAY}
 
 
+# What the stock pages' handlers start and stop (disassembled; docs/modules/settings.md "Stock pages"): page -> event -> (resources started, resources stopped).
+# Bluetooth: init 0x4a411c starts discovery (btStartSearch, when Bluetooth is on) and the list timer, 0x12c handler 0x4a2a20 removes the timer and calls btStopSearch, 0x12d handler 0x4a3a28 only rebuilds the list and restores the timer.
+# Wi-Fi: init 0x4b1048.. scans (wifi_scan, when Wi-Fi is on) on every open and adds the poll timer, 0x12c handler 0x4afec8 clears the scan countdown and removes the timer, 0x12d handler 0x4b0a34 rebuilds the list and restores the timer.
+# Display: a list built once, no 0x12c / 0x12d handler.
+STOCK_LIFE = {'bluetooth_page': {'init': (('bt_search', 'bt_timer'), ()), 'bg': ((), ('bt_search', 'bt_timer')), 'fg': (('bt_timer',), ())},
+              'wifi_page': {'init': (('wifi_scan', 'wifi_timer'), ()), 'bg': ((), ('wifi_timer',)), 'fg': (('wifi_timer',), ())},
+              'display_page': {}}
+
+
 class SF(PD):
     """The window manager's children as a stack of named windows (the name at +0x10, as the payload reads it), the two flags, and the stock calls the page opening makes."""
 
     def __init__(self, stack=(), sys=0, play=0, **kw):
         super().__init__(**kw)
         self.stack, self.nav_fail, self.switch_fail, self.seen = [], False, False, None
+        self.run, self.life, self.bt_on, self.wifi_on = set(), [], False, True   # what the stock pages have started (STOCK_LIFE), the events they got, Bluetooth and Wi-Fi enabled
+        self.did = []   # every resource start, in order: what init does per open ('wifi_scan', 'bt_search') shows up once per open
         for n in stack: self.push(n)
         self.setword(SYS, sys); self.setword(PLAY, play)
 
@@ -335,6 +346,16 @@ class SF(PD):
         self.children[self.wm] = [w for _, w in self.stack]
         main = [w for n, w in self.stack if 'dialog' not in n]
         self.top_main = main[-1] if main else 0
+
+    def event(self, page, ev):
+        """One stock lifecycle event of a stock page (STOCK_LIFE): init on a new open, 'bg' = EVT_WINDOW_TO_BG (0x12c), 'fg' = EVT_WINDOW_TO_FG (0x12d)."""
+        self.life.append((page, ev))
+        if page not in STOCK_LIFE or ev not in STOCK_LIFE[page]: return
+        start, stop = STOCK_LIFE[page][ev]
+        start = [r for r in start if (r != 'bt_search' or self.bt_on) and (r != 'wifi_scan' or self.wifi_on)]
+        self.did += start
+        self.run |= set(start)
+        self.run -= set(stop)
 
     def names_(self): return [n for n, _ in self.stack if 'dialog' not in n]
     def flags(self): return (self.word(SYS), self.word(PLAY))
@@ -352,11 +373,14 @@ class SF(PD):
             self.calls.append(('switch_to', self.name_of(a1), self.name_of(a2), a3))
             ret = 1
             if not self.switch_fail and a0 == self.wm:
-                ent = next(e for e in self.stack if e[1] == a2); self.stack.remove(ent); self.stack.append(ent); self.sync(); ret = 0
+                ent = next(e for e in self.stack if e[1] == a2); old = self.name_of(a1)
+                self.stack.remove(ent); self.stack.append(ent); self.sync(); ret = 0
+                self.event(old, 'bg')   # window_manager_switch_to with a3 0 (0x678a04): EVT_WINDOW_TO_BG (0x12c) to the window left, then the old window is not closed
+                self.calls.append(('to_fg', ent[0])); self.event(ent[0], 'fg')   # and EVT_WINDOW_TO_FG (0x12d) (0x6789e8) to the restacked window
         elif name == 'navigator_to':
             page = self.read_cstr(a0); self.calls.append(('navigator_to', page)); ret = 0x10
             if not self.nav_fail:
-                short = page.split('/')[-1]; self.push(short); ret = 0
+                short = page.split('/')[-1]; self.push(short); ret = 0; self.event(short, 'init')   # a new window: its init runs
                 if short in FLAG: self.setword(FLAG[short], 1)   # the page's init
         else:
             return super()._hook(u, address, size, _)
@@ -484,8 +508,111 @@ def flags_tests(ctx):
            'the tile handlers\' flag tests (they reject a nonzero flag; stock is untouched) are pinned with the rest')
 
 
-SECTIONS = [hook_tests, page_tests, files_tests, flags_tests]
 
 
 def run(ctx):
     for section in SECTIONS: section(ctx)
+
+
+def stockopen_tests(ctx):
+    """pod_open_stock (patch/common.c), which the Settings ACT_STOCK rows, the Wi-Fi row of the All System Settings hub (wifi_hub_open) and the Sleep Timer link use: a stock page
+    that has no single_instance property is restacked when its window is still in the stack (the top-right Now Playing button leaves it there under the player), else opened by
+    navigator_to. The model: navigator_to always adds a window, the Now Playing button restacks the player, a restack delivers EVT_WINDOW_TO_FG."""
+    expect, P = ctx.expect, pod_pages
+    H, PL = 'home_page', 'playing_page'
+
+    def to_player(m):
+        """The top-right Now Playing button: the player is restacked (EVT_WINDOW_TO_BG to the page it leaves, EVT_WINDOW_TO_FG to the player), or opened."""
+        old = m.stack[-1][0] if m.stack else None
+        ent = next((e for e in m.stack if e[0] == PL), None)
+        if ent: m.stack.remove(ent); m.stack.append(ent); m.sync(); m.event(old, 'bg'); m.event(PL, 'fg')
+        else: m.push(PL); m.event(old, 'bg'); m.event(PL, 'init')
+
+    def open_(m, path, window):
+        return m.call(PSYMS['pod_open_stock'], a0=m.cstr(path), a1=m.cstr(window) if window else 0, count=3000000)
+
+    kinds = lambda m: [c for c in m.calls if c[0] in ('navigator_to', 'switch_to', 'to_fg')]
+    names = [(path, window) for path, _, window in P.STOCK_PAGES]
+    expect(len(names) == 3 and all(window is None or path.split('/')[-1] == window for path, window in names) and [w for _, w in names].count(None) == 2
+           and dict(names)['systemset/bluetooth_page'] is None and dict(names)['systemset/wifi_page'] is None
+           and dict(names)['systemset/display_page'] == 'display_page',
+           'Display names its window (the last component of the path); Bluetooth (its background handler stops discovery and only init restarts it) and Wi-Fi (init scans on every open, the foreground handler only rebuilds the list) are opened afresh each time')
+    for path, window in names:
+        if window is None: continue
+        m = SF([H, PL])
+        for cycle in range(5):
+            m.calls = []; r = open_(m, path, window)
+            if cycle == 0: R0 = set(m.run)
+            if cycle == 0: ok = kinds(m) == [('navigator_to', path)]
+            else: ok = [c[0] for c in kinds(m)] == ['switch_to', 'to_fg'] and kinds(m)[1] == ('to_fg', window) and kinds(m)[0][2:] == (window, 0)
+            expect(r == 0 and ok and m.names_().count(window) == 1 and m.names_()[-1] == window,
+                   f'{window} cycle {cycle}: {"opened by navigator_to" if cycle == 0 else "restacked, nothing opened, its foreground event delivered"}; one window, in front ({kinds(m)}, {m.names_()})')
+            expect(m.run == R0 and m.life.count((window, 'init')) == 1 and m.life.count((window, 'fg')) == cycle,
+                   f'{window} cycle {cycle}: what init started is running (the restack runs no init, a new open does): {sorted(m.run)} against {sorted(R0)}, {m.life.count((window, "init"))} init(s)')
+            to_player(m)
+            expect(m.names_()[-1] == PL and m.names_().count(window) == 1 and m.life.count((window, 'bg')) == cycle + 1, f'{window} cycle {cycle}: the Now Playing button leaves the page under the player, its background event delivered')
+            expect(m.run == R0, f'{window} cycle {cycle}: the background event stops nothing ({sorted(m.run)})')
+        m = SF([H, window, 'albuminfo_page', PL, 'allmusic_page']); m.calls = []; r = open_(m, path, window)
+        expect(r == 0 and [c[0] for c in kinds(m)] == ['switch_to', 'to_fg'] and m.names_() == [H, 'albuminfo_page', PL, 'allmusic_page', window], f'{window} deep in the stack is brought to the front, the others keep their order ({m.names_()})')
+        m = SF([H, window]); m.switch_fail = True; m.calls = []; r = open_(m, path, window)
+        expect(r == 0 and [c[0] for c in kinds(m)] == ['switch_to', 'navigator_to'], f'{window}: a restack that stock refuses falls back to navigator_to')
+        m = SF([H, window]); m.home_opened = 0; m.calls = []; r = open_(m, path, window)
+        expect(r == 0 and [c[0] for c in kinds(m)] == ['navigator_to'] and m.names_().count(window) == 2, f'{window} that is closing is not restacked: navigator_to')
+        m = SF([H, window]); m.wm = 0; m.calls = []; r = open_(m, path, window)
+        expect(r == 0 and [c[0] for c in kinds(m)] == ['navigator_to'], f'{window}: no window manager, navigator_to')
+        m = SF([H]); m.nav_fail = True; m.calls = []; r = open_(m, path, window)
+        expect(r == 0x10 and [c[0] for c in kinds(m)] == ['navigator_to'] and m.names_() == [H], f'{window} that will not open: the navigator_to result is returned ({r:#x})')
+        m = SF([H, window]); m.nav_fail = True; m.calls = []; r = open_(m, path, window)
+        expect(r == 0 and [c[0] for c in kinds(m)] == ['switch_to', 'to_fg'], f'{window} in the stack: opened though navigator_to would refuse')
+
+    # -- Bluetooth: its background handler stops discovery and only init restarts it, so the page is opened afresh, init (btStartSearch) running each time
+    bt = next(p for p, w, win in P.STOCK_PAGES if p.endswith('bluetooth_page')); bwin = dict(names)[bt]
+    for enabled in (True, False):
+        m = SF([H, PL]); m.bt_on = enabled
+        for cycle in range(3):
+            m.calls = []; r = open_(m, bt, bwin)
+            expect(r == 0 and kinds(m) == [('navigator_to', bt)] and m.names_().count('bluetooth_page') == cycle + 1 and m.names_()[-1] == 'bluetooth_page'
+                   and m.life.count(('bluetooth_page', 'init')) == cycle + 1 and ('bt_search' in m.run) == enabled and 'bt_timer' in m.run,
+                   f'Bluetooth ({"on" if enabled else "off"}) reopened after the Now Playing button, cycle {cycle}: a fresh window, init ran again, discovery is {"running" if enabled else "not started"} ({kinds(m)}, {sorted(m.run)})')
+            to_player(m)
+            expect('bt_search' not in m.run and m.names_()[-1] == PL, f'Bluetooth cycle {cycle}: the background handler stopped discovery')
+    m = SF([H, 'bluetooth_page', PL]); m.bt_on = True; m.event('bluetooth_page', 'init'); m.event('bluetooth_page', 'bg'); m.calls = []; r = open_(m, bt, bwin)
+    expect(r == 0 and kinds(m) == [('navigator_to', bt)] and 'bt_search' in m.run, 'a Bluetooth window deeper in the stack is not restacked: a new one is opened and discovery runs')
+
+    # -- every page: what init does per open (STOCK_LIFE: wifi_scan with Wi-Fi on, btStartSearch with Bluetooth on) has happened again after open, Now Playing button, reopen,
+    #    whether through a fresh init or through the foreground handler
+    per_open = {'wifi_page': 'wifi_scan', 'bluetooth_page': 'bt_search', 'display_page': None}
+    for path, _, window in P.STOCK_PAGES:
+        page = path.split('/')[-1]
+        m = SF([H, PL]); m.bt_on = True
+        for cycle in range(3):
+            open_(m, path, window); to_player(m)
+        assert page in per_open
+        eff = per_open[page]
+        expect(eff is None or m.did.count(eff) == 3, f'{page}: {eff} ran once for each of the three opens, one open, Now Playing button, reopen apart ({m.did})')
+    wp = next(p for p, w, win in P.STOCK_PAGES if p.endswith('wifi_page'))
+    m = SF([H, PL]); m.wifi_on = False; open_(m, wp, None); to_player(m); open_(m, wp, None)
+    expect('wifi_scan' not in m.did and m.names_().count('wifi_page') == 2, 'Wi-Fi off: no scan on either open')
+
+    # -- the stock Wi-Fi page from the Settings row (our page refused) and from the hub row (kill switch): a fresh window and a scan on every reopen
+    def settings_row(m): return open_(m, wp, None)   # the ACT_STOCK row's call (patch/m1plus.c) with the window of POD_STOCK
+    def hub_row(m): return m.call(PSYMS['wifi_hub_open'], a0=m.cstr(wp), count=30000000)
+    for name, opener, kill in (('Settings row', settings_row, False), ('hub row', hub_row, True)):
+        m = SF([H, PL])
+        if kill: m.present.add('/mnt/mmc/m1plus-off')
+        for cycle in range(4):
+            m.calls = []; r = opener(m)
+            expect(r == 0 and kinds(m) == [('navigator_to', wp)] and m.names_().count('wifi_page') == cycle + 1 and m.names_()[-1] == 'wifi_page'
+                   and m.life.count(('wifi_page', 'init')) == cycle + 1 and m.did.count('wifi_scan') == cycle + 1 and 'wifi_timer' in m.run,
+                   f'Wi-Fi {name}, Wi-Fi on, cycle {cycle}: a fresh window, init ran and scanned again ({kinds(m)}, {m.did})')
+            to_player(m)
+        m = SF([H, 'wifi_page', PL]); m.wifi_on = True
+        if kill: m.present.add('/mnt/mmc/m1plus-off')
+        m.event('wifi_page', 'init'); m.event('wifi_page', 'bg'); m.calls = []; r = opener(m)
+        expect(r == 0 and kinds(m) == [('navigator_to', wp)] and m.did.count('wifi_scan') == 2, f'Wi-Fi {name}: a stock window deeper in the stack is not restacked, a new one scans')
+    m = SF([H]); m.present.add('/mnt/mmc/m1plus-off'); m.nav_fail = True
+    r = m.call(PSYMS['wifi_hub_open'], a0=m.cstr('systemset/wifi_page'), count=30000000)
+    expect(r == 0x10, 'hub Wi-Fi row: a page that will not open returns the navigator_to result, as before')
+
+
+SECTIONS = [hook_tests, page_tests, files_tests, flags_tests, stockopen_tests]

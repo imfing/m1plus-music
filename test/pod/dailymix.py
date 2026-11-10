@@ -283,8 +283,8 @@ def run(ctx):
     homeset = awtk_ui.parse(open(os.path.join(raw, 'ui', 'm1plus_homeset.bin'), 'rb').read())
     rows = [w for w in homeset.find('pod_scrollview').children if w.type == 'list_item']
     lab_w = lambda r: next(w for w in r.children if w.type == 'hscroll_label').w
-    expect([r.name for r in rows] == [f'pod_row{i}' for i in range(6)] and lab_w(rows[1]) == lab_w(rows[0]), 'Settings > Home Screen has six rows (Regenerate Daily Mix the last); the Daily Mix switch row has the Recent Albums row\'s label box')
-    sw_room, act_room = lab_w(rows[1]), lab_w(rows[5])
+    expect([r.name for r in rows] == [f'pod_row{i}' for i in range(5)] and lab_w(rows[1]) == lab_w(rows[0]), 'Settings > Home Screen has five rows (Regenerate Daily Mix the last); the Daily Mix switch row has the Recent Albums row\'s label box')
+    sw_room, act_room = lab_w(rows[1]), lab_w(rows[4])
     over = []
     for l in D.LOCALES:
         if width(D.tr(l, 'Made for You'), D.DM_HEAD_PX) > D.DM_HEAD_W - 4: over.append((l, 'header'))
@@ -334,10 +334,10 @@ def run(ctx):
                f'{n}.png: the 48 px glass disc (pressed={pressed}) with the white play glyph in the middle, the committed file')
     expect(set(n for n in ('dm_disc', 'dm_disc_down') if os.path.exists(os.path.join(mod_icons.PNG, n + '.png'))) == {'dm_disc', 'dm_disc_down'}
            and {'dm_disc', 'dm_disc_down'} <= set(mod_icons.pod_names()), 'the disc images are committed and added by the build')
-    regen_row, daily_row = rows[5], rows[1]
+    regen_row, daily_row = rows[4], rows[1]
     expect(not [w for w in regen_row.children if w.type == 'image' and w.name != 'pod_icon'] and any(w.name == 'pod_switch1' for w in daily_row.children) and not any(w.name.startswith('pod_switch') for w in regen_row.children)
-           and homeset.find('pod_note4') is not None and homeset.find('pod_note4').get('sensitive') == 'false' and homeset.find('pod_row5').get('style:normal:bg_image') == 'pod_cd_single',
-           'Regenerate Daily Mix is an action row without a chevron or a switch, in a card of its own (a single piece) and note (pod_note4) at the end of the page, the payload hides with it; Daily Mix has the switch pod_switch1')
+           and homeset.find('pod_note3') is not None and homeset.find('pod_note3').get('sensitive') == 'false' and homeset.find('pod_row4').get('style:normal:bg_image') == 'pod_cd_single',
+           'Regenerate Daily Mix is an action row without a chevron or a switch, in a card of its own (a single piece) and note (pod_note3) at the end of the page, the payload hides with it; Daily Mix has the switch pod_switch1')
     expect(pod_pages.ACT_DAILY in pod_pages.SWITCH_ACTIONS and pod_pages.ACT_REGEN in pod_pages.NO_CHEVRON_ACTIONS and pod_pages.ACT_REGEN not in pod_pages.SWITCH_ACTIONS,
            'the rows\' kinds in tools/pod_pages.py')
 

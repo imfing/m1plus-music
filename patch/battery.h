@@ -6,7 +6,7 @@
 #pragma once
 
 #define BP_FILE \
-    "/mnt/data/m1plus/battery-percentage" /* "1" = on, anything else or missing = off (Settings > Home Screen > Status Bar) */
+    "/mnt/data/m1plus/battery-percentage" /* "1" = on, anything else or missing = off (Settings > System > Battery) */
 #define BP_TMP "/mnt/data/m1plus/battery-percentage.tmp"
 #define BP_GAUGE \
     "/sys/class/power_supply/battery/capacity" /* the AXP2101 fuel gauge: an integer 0..100 and a newline */
@@ -20,3 +20,5 @@
 #define BP_W_W 8 /* widget->w */
 #define BP_W_H 0xc /* widget->h */
 #define BP_W_PARENT 0x44 /* widget->parent */
+
+int battery_gauge(void); /* the gauge, 0..100, or -1 (patch/battery.c; the Charge Limit's input too) */

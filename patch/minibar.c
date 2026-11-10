@@ -49,6 +49,7 @@
 #include "stock.h"
 #include "home.h"
 #include "covercache.h"
+#include "minibar.h"
 #include "common.h"
 #include "i18n.h"
 #include "podcasts.h"
@@ -69,18 +70,12 @@ static struct {
     int shown; /* the bar is up */
     int playing; /* the glyph shown: 1 pause (playing), 0 play, -1 neither set yet */
     unsigned key; /* the track the labels and the cover were made for, 0 none */
-    unsigned fkey; /* the hash of the /tmp cover file the cover was made from, 0 when it was not */
-    int settle; /* ticks left that read the /tmp file again */
-    void *bmp; /* the cover, MB_ART x MB_ART RGBA8888 */
-    unsigned char corner[MB_ART_R * MB_ART_R]; /* the top left corner's coverage outside the arc, 0..255 */
-    unsigned *pl; /* the backdrop blur's half-resolution plane, MB_HW x MB_HH words (heap, freed with the page) */
-    int blur; /* the blur is registered and still allowed (a structural mismatch clears it) */
-    int fix; /* a frame was partial: invalidate the whole pill at the next chance */
+    mb_art_t art; /* the cover (shared with the lock screen's bar), its /tmp file hash and settle ticks */
+    mb_blur_t bl; /* the backdrop blur (shared with the lock screen's bar): the plane, allowed, partial frame */
     int recent_pending; /* dark album changes need publishing when the screen is lit */
     int radio; /* the bar shows the radio (see mb_radio); next is greyed then */
     unsigned rkey; /* the station the cover was made for (a hash of its address), 0 none */
     int rlogo; /* the station's logo is not cached yet: look again on the next ticks */
-    unsigned char x0[MB_HH]; /* per half row: the first block inside the pill */
 } mb __attribute__((section(".scratch")));
 
 /* Hidden and out of the hit test together (this AWTK's widget_find_target ignores visible). */
@@ -131,10 +126,10 @@ static void mb_hide(void) {
     if (!mb.shown) return;
     mb.shown = 0;
     mb.key = 0;
-    mb.fkey = 0;
+    mb.art.fkey = 0;
     mb.rkey = 0;
     mb.rlogo = 0;
-    mb.settle = 0;
+    mb.art.settle = 0;
     mb_vis(mb.bar, 0);
     mb_pad(0);
 }
@@ -150,7 +145,7 @@ static void mb_show(void) {
  * The card: texts, cover (its look, the pill fill and edge, is the asset's style: nothing is coloured per track)
  */
 
-static unsigned mb_track_key(void *t) {
+unsigned mb_track_key(void *t) {
     unsigned h = cc_fnv(cc_fnv(cc_fnv(FNV_SEED, cc_str(t, REC_PATH)), cc_str(t, REC_TITLE)), cc_str(t, REC_NAME));
     h = (h ^ *(unsigned *)((char *)t + REC_CUE_START)) * MB_HASH_PRIME;
     return h | !h;
@@ -165,71 +160,95 @@ static void mb_labels(void *t) {
 }
 
 /* The four corners' alpha: 255 less the coverage outside the arc (the colour channels are left as they are). */
-static void mb_round(unsigned *px) {
+/* The bitmap's locked pixels, the bitmap and its corner table made on first use; NULL: no cover (the card paints none). */
+unsigned *mb_art_begin(mb_art_t *a) {
+    if (!a->bmp) {
+        a->bmp = bitmap_create_ex(MB_ART, MB_ART, MB_ART * 4, BITMAP_RGBA8888);
+        if (a->bmp) pod_corner_fill(a->corner, MB_ART_R);
+    }
+    return a->bmp ? (unsigned *)bitmap_lock_buffer_for_write(a->bmp) : (unsigned *)0;
+}
+
+/* The four corners' alpha: 255 less the coverage outside the arc (the colour channels are left as they are); unlocks. */
+void mb_art_end(mb_art_t *a, unsigned *px) {
     unsigned k, x, y;
     for (k = 0; k < 4; ++k)
         for (y = 0; y < MB_ART_R; ++y)
             for (x = 0; x < MB_ART_R; ++x) {
                 unsigned *p = px + (k & 2 ? MB_ART - 1 - y : y) * MB_ART + (k & 1 ? MB_ART - 1 - x : x);
-                *p = (*p & 0xffffff) | (255u - mb.corner[y * MB_ART_R + x]) << 24;
+                *p = (*p & 0xffffff) | (255u - a->corner[y * MB_ART_R + x]) << 24;
             }
+    bitmap_unlock_buffer(a->bmp);
 }
 
-/* The playing track's cover into mb.bmp. first: a new track (the /tmp file is read again for a few ticks). */
-static void mb_cover(void *t, int first) {
+/* The playing track's cover into the bitmap. first: a new track (the /tmp file is read again for a few ticks). 1 when the bitmap changed. */
+int mb_art_cover(mb_art_t *a, void *win, void *t, int first) {
     char url[80], tmp[40];
     const char *file = (const char *)0, *path;
     unsigned album = *cc_str(t, REC_ALBUM) ? cc_album_key(t) : 0, *px, i;
     int busy = 0;
-    if (!mb.bmp) {
-        mb.bmp = bitmap_create_ex(MB_ART, MB_ART, MB_ART * 4, BITMAP_RGBA8888);
-        if (mb.bmp) pod_corner_fill(mb.corner, MB_ART_R);
-    }
-    if (!mb.bmp) return; /* no cover (the card paints none) */
-    px = (unsigned *)bitmap_lock_buffer_for_write(mb.bmp);
-    if (!px) return;
-    if (first) mb.settle = MB_SETTLE;
-    mb.fkey = 0;
+    px = mb_art_begin(a);
+    if (!px) return 0;
+    if (first) a->settle = MB_SETTLE;
+    a->fkey = 0;
     file = album ? cc_url(url, album) : (const char *)0;
     if (file) {
-        if (first) mb.settle = 0; /* the cache file is the album's, not the track's: nothing to wait for */
+        if (first) a->settle = 0; /* the cache file is the album's, not the track's: nothing to wait for */
     } else if ((path = np_cover_file(&busy)) != (const char *)0 && !busy) {
-        mb.fkey = np_file_key(path);
-        if (mb.fkey) {
+        a->fkey = np_file_key(path);
+        if (a->fkey) {
             snprintf(tmp, sizeof tmp, "file://%s", path);
             file = tmp;
         }
     }
-    if (!file || !cc_decode(mb.win, file, 1, MB_ART, 1,
+    if (!file || !cc_decode(win, file, 1, MB_ART, 1,
                             px)) { /* the stock placeholder disc, as the grid's tiles have it, else flat grey */
         for (i = 0; i < MB_ART * MB_ART; ++i) px[i] = MB_GREY;
-        cc_decode(mb.win, "p_default", 0, MB_ART, 1, px);
+        cc_decode(win, "p_default", 0, MB_ART, 1, px);
     }
-    mb_round(px);
-    bitmap_unlock_buffer(mb.bmp);
-    widget_invalidate_force(mb.card, (void *)0);
+    mb_art_end(a, px);
+    return 1;
 }
 
 /* Demo writes the /tmp cover a little after the track changes: look again for MB_SETTLE ticks and redo the cover if the file is new. */
-static void mb_settle(void *t) {
+int mb_art_settle(mb_art_t *a, void *win, void *t) {
     int busy = 0;
     const char *path = np_cover_file(&busy);
     unsigned k;
-    if (busy) return; /* being replaced: not counted */
-    mb.settle--;
+    if (busy) return 0; /* being replaced: not counted */
+    a->settle--;
     k = path ? np_file_key(path) : 0;
-    if (k && k != mb.fkey) mb_cover(t, 0);
+    return k && k != a->fkey ? mb_art_cover(a, win, t, 0) : 0;
+}
+
+/* In the card's coordinates (the card's EVT_AFTER_PAINT): the resident cover. Nothing is decoded here. */
+void mb_art_paint(mb_art_t *a, void *canvas) {
+    int src[4], dst[4];
+    if (!canvas || !a->bmp) return;
+    src[0] = 0, src[1] = 0, src[2] = MB_ART, src[3] = MB_ART;
+    dst[0] = MB_ART_X, dst[1] = MB_ART_Y, dst[2] = MB_ART, dst[3] = MB_ART;
+    canvas_draw_image(canvas, a->bmp, src, dst);
+}
+
+void mb_art_free(mb_art_t *a) {
+    if (a->bmp) bitmap_destroy(a->bmp);
+    a->bmp = (void *)0;
+}
+
+static void mb_cover(void *t, int first) {
+    if (mb_art_cover(&mb.art, mb.win, t, first)) widget_invalidate_force(mb.card, (void *)0);
+}
+
+static void mb_settle(void *t) {
+    if (mb_art_settle(&mb.art, mb.win, t)) widget_invalidate_force(mb.card, (void *)0);
 }
 
 /* The card's own EVT_AFTER_PAINT, in the card's coordinates: the resident cover. Nothing is decoded here. */
 static int mb_on_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
-    int src[4], dst[4];
     (void)ctx;
-    if (!canvas || !mb.win || !mb.bmp || !mb.shown) return RET_OK;
-    src[0] = 0, src[1] = 0, src[2] = MB_ART, src[3] = MB_ART;
-    dst[0] = MB_ART_X, dst[1] = MB_ART_Y, dst[2] = MB_ART, dst[3] = MB_ART;
-    canvas_draw_image(canvas, mb.bmp, src, dst);
+    if (!canvas || !mb.win || !mb.art.bmp || !mb.shown) return RET_OK;
+    mb_art_paint(&mb.art, canvas);
     return RET_OK;
 }
 
@@ -265,11 +284,11 @@ static unsigned mb_inset(unsigned y) {
     return MB_R - (mb_isqrt(4 * MB_R * MB_R - d2 * d2) >> 1);
 }
 
-static void mb_blur_init(void) {
+static void mb_blur_init(mb_blur_t *bl) {
     unsigned hy, a, b;
     for (hy = 0; hy < MB_HH; ++hy) {
         a = mb_inset(2 * hy), b = mb_inset(2 * hy + 1);
-        mb.x0[hy] = (unsigned char)(((a > b ? a : b) + 2) >> 1); /* (max inset + 1 + 1) / 2 */
+        bl->x0[hy] = (unsigned char)(((a > b ? a : b) + 2) >> 1); /* (max inset + 1 + 1) / 2 */
     }
 }
 
@@ -290,22 +309,22 @@ static void mb_line(unsigned *v, int n, int stride, int left) {
 #define MB_PEEK(p, off) (*(int *)((char *)(p) + (off)))
 
 /* The blur of the pill under canvas (translated to the card). 0: not done (see above). */
-static void mb_blur(void *canvas) {
+static void mb_blur(mb_blur_t *bl, void *canvas) {
     char *lcd = (char *)MB_PEEK(canvas, CANVAS_LCD), *fb;
     int ox = MB_PEEK(canvas, CANVAS_OX), oy = MB_PEEK(canvas, CANVAS_OY), w, h, pitch, hy, hx, x0;
-    unsigned *pl = mb.pl, v, px;
+    unsigned *pl = bl->pl, v, px;
     if (!lcd || !pl) return;
     w = MB_PEEK(lcd, LCD_W), h = MB_PEEK(lcd, LCD_H), pitch = MB_PEEK(lcd, LCD_LINE);
     fb = (char *)MB_PEEK(lcd, LCD_FB);
     if ((unsigned)MB_PEEK(lcd, LCD_BEGIN) != LCD_565_BEGIN || !fb || ((unsigned)fb & 3) || w < MB_W || w > 2048 ||
         h < MB_H || h > 2048 || pitch < 2 * w || pitch > 8192 || (pitch & 3) || ox < 0 || oy < 0 || (ox & 1) ||
         ox + MB_W > w || oy + MB_H > h) {
-        mb.blur = 0; /* not the lcd this was written for: no blur on this page */
+        bl->on = 0; /* not the lcd this was written for: no blur on this page */
         return;
     }
     if (MB_PEEK(canvas, CANVAS_CLIP) > ox || MB_PEEK(canvas, CANVAS_CLIP + 4) > oy ||
         MB_PEEK(canvas, CANVAS_CLIP + 8) < ox + MB_W - 1 || MB_PEEK(canvas, CANVAS_CLIP + 12) < oy + MB_H - 1) {
-        mb.fix = 1; /* a partial repaint: the whole pill again next */
+        bl->fix = 1; /* a partial repaint: the whole pill again next */
         return;
     }
     fb += oy * pitch + ox * 2;
@@ -319,7 +338,7 @@ static void mb_blur(void *canvas) {
     for (hx = 0; hx < MB_HW; ++hx) mb_line(pl + hx, MB_HH, MB_HW, 2), mb_line(pl + hx, MB_HH, MB_HW, 1);
     for (hy = 0; hy < MB_HH; ++hy) {
         unsigned *r0 = (unsigned *)(fb + 2 * hy * pitch), *r1 = (unsigned *)((char *)r0 + pitch);
-        for (x0 = mb.x0[hy], hx = x0; hx < MB_HW - x0; ++hx) {
+        for (x0 = bl->x0[hy], hx = x0; hx < MB_HW - x0; ++hx) {
             v = pl[hy * MB_HW + hx];
             v = v - ((v >> 3) & MB_DARK) + MB_HALF;
             px = ((v >> 22) & 0x1Fu) << 11 | ((v >> 12) & 0x3Fu) << 5 | ((v >> 2) & 0x1Fu);
@@ -328,10 +347,33 @@ static void mb_blur(void *canvas) {
     }
 }
 
+/* The shared entry (the Home bar's and the lock bar's before-paint handlers): the blur when it is still allowed. */
+void mb_blur_paint(mb_blur_t *bl, void *canvas) {
+    if (canvas && bl->on) mb_blur(bl, canvas);
+}
+
+/* The plane, unless the SD file m1plus-noblur turns the blur off or there is no memory. */
+int mb_blur_alloc(mb_blur_t *bl) {
+    if (access(MB_BLUR_OFF, F_OK) == 0) return 0;
+    bl->pl = (unsigned *)calloc(MB_HW * MB_HH, sizeof(unsigned));
+    return bl->pl != (unsigned *)0;
+}
+
+/* Every handler is registered: the blur runs. */
+void mb_blur_enable(mb_blur_t *bl) {
+    mb_blur_init(bl);
+    bl->on = 1;
+}
+
+void mb_blur_free(mb_blur_t *bl) {
+    if (bl->pl) free(bl->pl);
+    memset(bl, 0, sizeof *bl);
+}
+
 static int mb_on_before_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     (void)ctx;
-    if (canvas && mb.win && mb.shown && mb.blur) mb_blur(canvas);
+    if (canvas && mb.win && mb.shown) mb_blur_paint(&mb.bl, canvas);
     return RET_OK;
 }
 
@@ -341,7 +383,7 @@ static int mb_on_before_paint(void *ctx, void *e) {
 static int mb_on_scroll(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (mb.win && mb.blur && mb.shown) widget_invalidate_force(mb.card, (void *)0);
+    if (mb.win && mb.bl.on && mb.shown) widget_invalidate_force(mb.card, (void *)0);
     return RET_OK;
 }
 
@@ -349,7 +391,7 @@ static int mb_on_scroll(void *ctx, void *e) {
 static int mb_on_touch(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (mb.win && mb.blur) widget_invalidate_force(mb.card, (void *)0);
+    if (mb.win && mb.bl.on) widget_invalidate_force(mb.card, (void *)0);
     return RET_OK;
 }
 
@@ -411,14 +453,9 @@ static void mb_radio_cover(const rd_list_t *l, int at) {
     char fav[RD_FAV_MAX + 1], path[48], url[64];
     unsigned *px, g[MB_GLYPH * MB_GLYPH], i, x, y, o;
     int ok = 0, st;
-    if (!mb.bmp) {
-        mb.bmp = bitmap_create_ex(MB_ART, MB_ART, MB_ART * 4, BITMAP_RGBA8888);
-        if (mb.bmp) pod_corner_fill(mb.corner, MB_ART_R);
-    }
-    if (!mb.bmp) return;
-    px = (unsigned *)bitmap_lock_buffer_for_write(mb.bmp);
+    px = mb_art_begin(&mb.art);
     if (!px) return;
-    mb.fkey = 0, mb.settle = 0, mb.rlogo = 0;
+    mb.art.fkey = 0, mb.art.settle = 0, mb.rlogo = 0;
     mb_fav(l, at, fav, sizeof fav);
     if (fav[0]) {
         st = rd_logo_file(rd_logo_hash(fav), path, sizeof path);
@@ -447,8 +484,7 @@ static void mb_radio_cover(const rd_list_t *l, int at) {
             cc_decode(mb.win, "p_default", 0, MB_ART, 1, px);
         }
     }
-    mb_round(px);
-    bitmap_unlock_buffer(mb.bmp);
+    mb_art_end(&mb.art, px);
     widget_invalidate_force(mb.card, (void *)0);
 }
 
@@ -478,7 +514,7 @@ static void mb_work_radio(void) {
     if (!mb.radio) { /* from local to radio: nothing of the track stays */
         mb.radio = 1;
         mb.key = mb.rkey = 0;
-        mb.settle = 0;
+        mb.art.settle = 0;
         mb_next_look(0); /* a live station has no next: the button stays, greyed and inert */
         mb_pause_look(1); /* and no pause: its slot stops the station */
     }
@@ -500,8 +536,8 @@ static void mb_work_radio(void) {
         mb_show();
     }
     mb_glyph();
-    if (mb.fix) {
-        mb.fix = 0;
+    if (mb.bl.fix) {
+        mb.bl.fix = 0;
         widget_invalidate_force(mb.card, (void *)0);
     }
 }
@@ -536,7 +572,7 @@ static void mb_work(void) {
         mb.key = key;
         mb_labels(t);
         mb_cover(t, 1);
-    } else if (mb.settle > 0) {
+    } else if (mb.art.settle > 0) {
         mb_settle(t);
     }
     if (!mb.shown) {
@@ -544,8 +580,8 @@ static void mb_work(void) {
         mb_show();
     }
     mb_glyph();
-    if (mb.fix) { /* a frame under the pill was partial: the whole pill again, so the blur is not seamed */
-        mb.fix = 0;
+    if (mb.bl.fix) { /* a frame under the pill was partial: the whole pill again, so the blur is not seamed */
+        mb.bl.fix = 0;
         widget_invalidate_force(mb.card, (void *)0);
     }
 }
@@ -592,8 +628,8 @@ static void mb_unarm(void) {
 
 static void mb_stop(void) {
     mb_unarm();
-    if (mb.bmp) bitmap_destroy(mb.bmp);
-    if (mb.pl) free(mb.pl);
+    mb_art_free(&mb.art);
+    mb_blur_free(&mb.bl);
     memset(&mb, 0, sizeof mb);
 }
 
@@ -680,19 +716,15 @@ static void mb_blur_setup(void) {
         &mb.sv}; /* the buttons, and the list (a row's press highlight repaints only the row) */
     static const int ev[3] = {EVT_POINTER_DOWN, EVT_POINTER_UP, EVT_POINTER_ABORT};
     int ok, i, j;
-    if (access(MB_BLUR_OFF, F_OK) == 0) return;
-    mb.pl = (unsigned *)calloc(MB_HW * MB_HH, sizeof(unsigned));
-    ok = mb.pl && widget_on(mb.card, EVT_BEFORE_PAINT, mb_on_before_paint, (void *)0);
+    if (!mb_blur_alloc(&mb.bl)) return;
+    ok = widget_on(mb.card, EVT_BEFORE_PAINT, mb_on_before_paint, (void *)0);
     ok = ok && widget_on(mb.sv, EVT_SCROLL, mb_on_scroll, (void *)0);
     for (i = 0; ok && i < 4; ++i)
         for (j = 0; ok && j < 3; ++j) ok = widget_on(*btn[i], ev[j], mb_on_touch, (void *)0) != 0;
-    if (ok) {
-        mb_blur_init();
-        mb.blur = 1;
-    } else if (mb.pl) {
-        free(mb.pl);
-        mb.pl = (unsigned *)0;
-    }
+    if (ok)
+        mb_blur_enable(&mb.bl);
+    else
+        mb_blur_free(&mb.bl);
 }
 
 /* The Home instance of the menu is up (patch/home.c, after the list took the whole window). */

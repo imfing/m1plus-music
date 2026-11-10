@@ -17,10 +17,12 @@
 #include "stock.h"
 #include "home.h"
 #include "battery.h"
+#include "charging.h"
 #include "ipod_theme.h"
 #include "radio.h"
 #include "pcregion.h"
 #include "peq.h"
+#include "nextalbum.h"
 
 enum { K_CHAR, K_PRESENT, K_MENU, K_LINES, K_TEXT };
 
@@ -29,27 +31,23 @@ struct sf_file {
     char kind;
 };
 
-/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 32 setting files from SF_SETTING on. */
+/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 37 setting files from SF_SETTING on. */
 static const struct sf_file sf_files[] = {
-    {START_FILE, K_CHAR},          {MARKER, K_PRESENT},
-    {BAD_NOTE, K_PRESENT},         {KILL_DATA, K_PRESENT},
-    {SET_DIR, K_PRESENT},          {ALBUMS_FILE, K_CHAR},
-    {ALBUMS_SORT_FILE, K_CHAR},    {ARTISTS_SORT_FILE, K_CHAR},
-    {GENRES_SORT_FILE, K_CHAR},    {COMPOSERS_SORT_FILE, K_CHAR},
-    {SONGS_SORT_FILE, K_CHAR},     {FOLDERS_SORT_FILE, K_CHAR},
-    {PLAYLISTS_SORT_FILE, K_CHAR}, {PLAYLISTS_FILE, K_CHAR},
-    {RECENTADD_VIEW_FILE, K_CHAR}, {LANDSCAPE_FILE, K_CHAR},
-    {TAPETHEME_FILE, K_CHAR},      {VINYLREC_FILE, K_CHAR},
-    {VINYLTHEME_FILE, K_CHAR},     {IP_THEME_FILE, K_CHAR},
-    {ACCENT_FILE, K_CHAR},         {BG_FILE, K_CHAR},
-    {SHELF_FILE, K_CHAR},          {DAILY_SET_FILE, K_CHAR},
-    {MENU_FILE, K_MENU},           {PULLDOWN_FILE, K_MENU},
-    {KBZH_FILE, K_CHAR},           {PCSEARCH_FILE, K_CHAR},
-    {PCREGION_FILE, K_TEXT},       {BP_FILE, K_CHAR},
-    {SHUFFLE_FILE, K_CHAR},        {PEQ_STATE, K_PRESENT},
-    {SEARCH_RECENT_FILE, K_LINES}, {RD_VIEW_FILE, K_CHAR},
-    {RD_RECENT_FILE, K_PRESENT},   {REBUILD_FILE, K_PRESENT},
-    {WIFINET_FILE, K_PRESENT},
+    {START_FILE, K_CHAR},          {MARKER, K_PRESENT},         {BAD_NOTE, K_PRESENT},
+    {KILL_DATA, K_PRESENT},        {SET_DIR, K_PRESENT},        {ALBUMS_FILE, K_CHAR},
+    {ALBUMS_SORT_FILE, K_CHAR},    {ARTISTS_SORT_FILE, K_CHAR}, {GENRES_SORT_FILE, K_CHAR},
+    {COMPOSERS_SORT_FILE, K_CHAR}, {SONGS_SORT_FILE, K_CHAR},   {FOLDERS_SORT_FILE, K_CHAR},
+    {PLAYLISTS_SORT_FILE, K_CHAR}, {PLAYLISTS_FILE, K_CHAR},    {RECENTADD_VIEW_FILE, K_CHAR},
+    {LANDSCAPE_FILE, K_CHAR},      {VOLKEYS_FILE, K_CHAR},      {TAPETHEME_FILE, K_CHAR},
+    {VINYLREC_FILE, K_CHAR},       {VINYLTHEME_FILE, K_CHAR},   {IDLE_FILE, K_CHAR},
+    {IP_THEME_FILE, K_CHAR},       {ACCENT_FILE, K_CHAR},       {BG_FILE, K_CHAR},
+    {LK_LAYOUT_FILE, K_CHAR},      {AZRAIL_FILE, K_CHAR},       {AZHEAD_FILE, K_CHAR},
+    {SHELF_FILE, K_CHAR},          {DAILY_SET_FILE, K_CHAR},    {MENU_FILE, K_MENU},
+    {PULLDOWN_FILE, K_MENU},       {KBZH_FILE, K_CHAR},         {PCSEARCH_FILE, K_CHAR},
+    {PCREGION_FILE, K_TEXT},       {BP_FILE, K_CHAR},           {CHG_FILE, K_CHAR},
+    {SHUFFLE_FILE, K_CHAR},        {PEQ_STATE, K_PRESENT},      {NA_FILE, K_CHAR},
+    {SEARCH_RECENT_FILE, K_LINES}, {RD_VIEW_FILE, K_CHAR},      {RD_RECENT_FILE, K_PRESENT},
+    {REBUILD_FILE, K_PRESENT},     {AREBUILD_FILE, K_PRESENT},  {WIFINET_FILE, K_PRESENT},
 };
 #define SF_FILES (sizeof sf_files / sizeof sf_files[0])
 #define SF_SETTING 5 /* the first setting file's row: the rows before it (guard files, folder) are never deleted */

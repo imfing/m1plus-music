@@ -96,6 +96,7 @@ marker is durable; a later misbehaviour after the 5 s window is not caught.
 | `/mnt/data/m1plus/home-recent-albums` | Settings > Home Screen > Recent Albums: `0` = the shelf is off, missing or anything else = on |
 | `/mnt/data/m1plus/albums-view` | the Albums page's mode: `1`/missing = the grid (`ALBUMS_DEFAULT_GRID`), `0` = the list (same write; section 5a) |
 | `/mnt/data/m1plus/coverflow-landscape` | Cover Flow's presentation: `1` = landscape, `0`/missing = portrait (atomic write at each switch tap; section 4) |
+| `/mnt/data/m1plus/coverflow-volume-keys` | Cover Flow's Volume Buttons switch: `1` = the volume buttons step the shelf, `0`/missing = off (atomic write at each switch tap; coverflow.md "Volume buttons") |
 | `/mnt/data/m1plus/home-menu` | the menu's shown items in order, then the items turned off: one character per item (`0`-`8` the menu items, `a`-`i` the Extras tiles = ids 9-17, `j` Settings = id 18, `k` the Pod = id 19, `l` Podcasts = id 20, `m` Search = id 21, `pod_pages.ID_CHARS`), then optionally `-` and the items turned off (not listed on the Extras page), then `\n`; `12345\n` is the default (the file missing; Now Playing, Shuffle and Settings are items hidden by default). The Extras row is not in the file: it is always the menu's last row. Read with the limits below; written atomically at each change on Settings > Main Menu or Settings > Extras |
 | `/mnt/mmc/m1plus-log` | opt-in: if this empty file exists, events are appended to `/mnt/mmc/m1plus.log` (armed, boot ok, marker found, kill switch) |
 

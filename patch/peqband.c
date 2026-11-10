@@ -206,7 +206,7 @@ static void bd_ring(void) {
     double y;
     bd.ring_x = bd.ring_y = -1;
     if (!p || bd.band >= p->count || !bd.ring) return;
-    c = (int)(pp_db10(p->bands[bd.band].frequency / 20.0) / 10.0 * GR_DECADE - 0.5 + 0.5);
+    c = (int)(pp_db10(p->bands[bd.band].frequency / 20.0) / 10.0 * GR_DECADE);
     c = c < 0 ? 0 : c >= GR_PW ? GR_PW - 1 : c;
     y = GR_PY0 + GR_PH / 2 + 0.5 - bd.g.db[c] * (GR_PH / 2.0) / bd.g.range;
     bd.ring_x = GR_CARD_X + GR_PX0 + c;

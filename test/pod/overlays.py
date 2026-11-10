@@ -3,6 +3,8 @@ import os
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
 import mod_overlays as mo
 from PIL import Image
+from unicorn import UC_HOOK_MEM_WRITE
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_V0, UC_MIPS_REG_PC, UC_MIPS_REG_RA
 
 
 def run(ctx):
@@ -61,6 +63,92 @@ def run(ctx):
     q = open(os.path.join(stock, '..', '..', 'ui', 'poweroff_page.bin'), 'rb').read()
     expect(p == q, 'poweroff_page.bin is stock (only shutdown.png changed)')
     scrim_tests(ctx)
+    coex_tests(ctx)
+
+
+BT_EXIT_INIT, BT_INITSTATUS, WIFI_FLAG, BT_FLAG = 0xa038a8, 0xa038a4, 0x97caf8, 0xa05ac0   # stock's bytes / words (docs/modules/addresses.md "Wi-Fi and Bluetooth together")
+
+
+class CoexMachine(Machine):
+    """The stock Wi-Fi switch-on handlers run for real over the built demo (the Control Center tile 0x474ec8, the settings page row handler 0x4b0a88; its closing list refresh 0x4b0814 is trapped), with the calls around them trapped:
+    wifi_switch (toggles wififlag as stock does), switchBluetooth, usleep, the confirm (Machine's navigator_to_with_context: confirm_yes) and every write to bt_exit_init is recorded."""
+    CC_TILE, SETTINGS_ROW = 0x474ec8, 0x4b0a88
+
+    def __init__(self):
+        super().__init__()
+        self.sw = []   # ('wifi_switch', a0), ('switchBluetooth', a0, a1), ('usleep', a0), ('getFormatString', key), in order
+        self.exit_writes = []
+        for a, n in {0x507a8c: 'wifi_switch', 0x4d516c: 'switchBluetooth', 0x7423e0: 'usleep', 0x4ccc18: 'getFormatString', 0x742da0: 'memset', 0x66a9a8: 'widget_get_window', 0x506d60: 'settings_pre', 0x4b0814: 'settings_pre', 0x742fd0: 'settings_pre', 0x7435b0: 'atoi'}.items():
+            self.handlers[a] = n
+        self.u.hook_add(UC_HOOK_MEM_WRITE, lambda u, access, address, size, value, _: self.exit_writes.append(value), begin=BT_EXIT_INIT, end=BT_EXIT_INIT)
+
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address)
+        a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+        if name == 'wifi_switch':
+            self.sw.append(('wifi_switch', a0)); on = self.u.mem_read(WIFI_FLAG, 1)[0]; self.u.mem_write(WIFI_FLAG, bytes([0 if on else 1]))
+        elif name == 'switchBluetooth':
+            self.sw.append(('switchBluetooth', a0, a1)); self.u.mem_write(BT_FLAG, bytes([0 if self.u.mem_read(BT_FLAG, 1)[0] else 1]))
+        elif name == 'usleep':
+            self.sw.append(('usleep', a0))
+        elif name == 'getFormatString':
+            self.sw.append(('getFormatString', self.read_cstr(a0)))
+        elif name == 'settings_pre':
+            pass
+        else: return super()._hook(u, address, size, _)
+        u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+
+    def switch_on(self, which, bt_start, yes, bt=True):
+        """Wi-Fi off, Bluetooth on (bt) and starting (bt_start: bt_initstatus != 0); the tile / the settings row is tapped and the warning answered OK (yes) or Cancel."""
+        self.sw, self.exit_writes = [], []
+        self.u.mem_write(WIFI_FLAG, b'\0'); self.u.mem_write(BT_FLAG, bytes([int(bt)]))
+        self.setword(BT_INITSTATUS, int(bt_start)); self.u.mem_write(BT_EXIT_INIT, b'\0')
+        self.confirm_yes = yes
+        if which == 'tile': self.call(self.CC_TILE, a0=self.alloc(0x40), count=3000000)
+        else:
+            ev = self.alloc(0x40); self.u.mem_write(ev, bytes(0x40)); self.setword(ev + 0x10, self.cstr('0'))
+            self.call(self.SETTINGS_ROW, a0=ev, a1=self.alloc(0x40), count=3000000)
+        return self
+
+
+def coex_tests(ctx):
+    """Wi-Fi and Bluetooth together (tools/coex.py): the stock handlers run over the build. Wi-Fi on while Bluetooth is on shows the warning and, on OK, only calls wifi_switch(1): nothing of stock's
+    cancellation of a Bluetooth start in progress runs (bt_exit_init is never written, no wait, no switch-off), so Bluetooth keeps starting and stays on. Cancel changes nothing. The Bluetooth-side
+    handlers have no preamble: their `beqz v0` after OK is `b`. Every neighbouring word is stock's, and the two question keys are called at the pinned addresses."""
+    import struct
+    import coex, paths
+    expect = ctx.expect
+    stock_demo = open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', pod.DEMO), 'rb').read()
+    built = open(DEMO, 'rb').read()
+    w = lambda b, a: struct.unpack_from('<I', b, pod.fileoff(b, a))[0]
+    expect([a for a, *_ in coex.EDITS] == [0x474d98, 0x474fd8, 0x4a3b64, 0x4b0b9c], 'the four callers of the switch-on question are patched')
+    for a, old, new, what in coex.EDITS:
+        target = a + 4 + 4 * (new & 0xffff)
+        expect(w(stock_demo, a) == old and w(built, a) == new and new >> 16 == 0x1000 and target in (0x474db0, 0x475028, 0x4a3b78, 0x4b0c00),
+               f'{a:#x}: stock {old:#010x} -> b, to {target:#x} ({what})')
+    expect(all(w(stock_demo, a) == old and w(built, a) == old for a, old, _ in coex.PINS), 'the neighbouring words (the Wi-Fi flag test, the confirm call and test, the wifi_switch call setup) are stock\'s, in the stock demo and in the build')
+    # static: the Wi-Fi-side branches land on the lw t9 of wifi_switch(1) (jalr + a0 = 1), past the whole preamble; the Bluetooth-side ones on switchBluetooth's call setup (no preamble before)
+    expect(w(built, 0x475028) == 0x8f99a994 and w(built, 0x47502c) == 0x0320f809 and w(built, 0x475030) == 0x24040001 and w(built, 0x4b0c00) == 0x8f99a994 and w(built, 0x4b0c04) == 0x0320f809 and w(built, 0x4b0c08) == 0x24040001,
+           'the Wi-Fi-side branches land on lw t9 wifi_switch, jalr, a0 = 1')
+    # the question itself: msg_wifi_open / msg_bt_open are the keys the four callers pass to getFormatString (0x7445dc, 0x7445a8)
+    for key, addr, sites in (('msg_wifi_open', 0x7445dc, (0x474fb0, 0x4b0b74)), ('msg_bt_open', 0x7445a8, (0x474d6c, 0x4a3b38))):
+        o = pod.fileoff(built, addr)
+        expect(built[o:o + len(key) + 1] == key.encode() + b'\0' and all(w(built, s) & 0xffff == addr & 0xffff and w(built, s) >> 16 == 0x2484 for s in sites), f'{key} at {addr:#x} is passed at {[hex(s) for s in sites]}')
+    # run: Wi-Fi switched on with Bluetooth on, from the Control Center tile and from the settings page's row handler
+    for which in ('tile', 'row'):
+        m = CoexMachine()
+        m.widget('img_btswitch'); m.widget('img_wifiswitch')
+        for starting in (True, False):
+            m.switch_on(which, starting, yes=True)
+            seq = [c[0] if c[0] != 'getFormatString' else c[1] for c in m.sw]
+            expect(seq == ['msg_wifi_open', 'wifi_switch'] and m.sw[1] == ('wifi_switch', 1), f'{which}, Bluetooth {"starting" if starting else "up"}, OK: the warning, then wifi_switch(1) alone (no wait, no switch-off): {m.sw}')
+            expect(m.exit_writes == [] and m.u.mem_read(BT_EXIT_INIT, 1)[0] == 0 and m.word(BT_INITSTATUS) == int(starting), f'{which}, starting={starting}: bt_exit_init is never written, bt_initstatus left alone ({m.exit_writes})')
+            expect(m.u.mem_read(BT_FLAG, 1)[0] == 1 and m.u.mem_read(WIFI_FLAG, 1)[0] == 1, f'{which}, starting={starting}: Bluetooth stays on, Wi-Fi is on')
+            m.switch_on(which, starting, yes=False)
+            expect([c for c in m.sw if c[0] != 'getFormatString'] == [] and m.exit_writes == [] and m.u.mem_read(BT_FLAG, 1)[0] == 1 and m.u.mem_read(WIFI_FLAG, 1)[0] == 0,
+                   f'{which}, starting={starting}, Cancel: nothing is called or written, Wi-Fi stays off: {m.sw}')
+        m.switch_on(which, False, yes=True, bt=False)
+        expect([c[0] for c in m.sw] == ['wifi_switch'], f'{which}: Bluetooth off: no warning, wifi_switch(1) ({m.sw})')
 
 
 def scrim_tests(ctx):

@@ -17,7 +17,8 @@
  *   - the times: label_playtime and label_playlen carry stock's elapsed and total (stock rewrites both on every tick);
  *     np_elapsed and np_remaining, labels of the asset, show "m:ss" and "-m:ss" from get_playtimeandlength while that
  *     call gives a length, and stock's two show again whenever it does not.
- *   - the info page's lines (np_info): rewritten as "Label: value" with spaced units, only when stock wrote them anew.
+ *   - the info page's lines (np_info): rewritten as "Label: value" with spaced units, only when stock wrote them anew;
+ *     the quality line is shown by np_quality, a label of ours, because stock rewrites label_info on every tick.
  * EXPERIMENTAL, the status bar: while the page is in front its bg_color is the page's colour on the first row (np_bar_color),
  * set from np_set_color; EVT_WINDOW_TO_BACKGROUND, the destroy, a replaced page and the tick's top-window check put the stock
  * black back (np_bar_black). Nothing is done unless both window events are registered.
@@ -62,6 +63,9 @@ static struct {
     int fg; /* 1 from the page's start and EVT_WINDOW_TO_FOREGROUND, 0 after EVT_WINDOW_TO_BACKGROUND */
     int barok; /* 1: both window events are registered, so the status bar may be tinted (else it never is) */
     int bar; /* 1: the status bar's bg_color is ours (np_bar_color) and must go back to black */
+    void *q; /* np_quality (ours): the quality line shown in place of label_info, 0 if the page lacks it */
+    unsigned qdone; /* the hash of the text np_quality holds, 0 none yet */
+    int qown; /* 1: np_quality is the visible quality line and label_info is hidden */
     void *info[NP_INFO_N]; /* the info page's labels (np_info_names), 0 for one the page lacks */
     unsigned
         done[NP_INFO_N]; /* the hash of the text each label held after our last look: stock's text, or what we wrote */
@@ -383,10 +387,48 @@ __attribute__((noinline)) int np_info_text(int i, const char *s, char *out, unsi
     return 1;
 }
 
+/* The quality line. Stock rewrites label_info with the compact text on every page tick, so a rewrite there would
+ * alternate with stock's and the centred text would jump between the two widths. np_quality (a label of the asset, the
+ * rectangle and look of label_info, hidden and insensitive) carries the formatted line: written only when its text
+ * changes, and shown with label_info hidden once it holds text. Stock keeps writing label_info, our data source.
+ * A page without np_quality, or a failed read or write, leaves label_info as stock shows it. */
+static void np_quality(void) {
+    char s[NP_INFO_BUF], out[NP_INFO_BUF + 64];
+    const char *text;
+    unsigned h;
+    int need;
+    if (!np.q || !np.info[0]) return;
+    need = pod_text_utf8(np.info[0], s, sizeof s);
+    if (need > 0 && (unsigned)need < sizeof s) { /* else none, empty or cut short */
+        text = np_info_text(0, s, out, sizeof out) ? out : s;
+        h = np_hash(text);
+        if (h == np.qdone || widget_set_text_utf8(np.q, text) == RET_OK) {
+            np.qdone = h;
+            goto own;
+        }
+    }
+    /* stock's text could not be shown as ours: give the line back to label_info, so a stale line never stays up */
+    if (np.qown) {
+        widget_set_visible(np.q, 0, 0);
+        widget_set_visible(np.info[0], 1, 0);
+    }
+    np.qown = 0;
+    np.qdone = 0;
+    return;
+own:
+    if (np.qdone && !np.qown) {
+        np.qown = 1;
+        widget_set_visible(np.q, 1, 0);
+        widget_set_visible(np.info[0], 0, 0);
+        widget_set_sensitive(np.info[0], 0);
+    }
+}
+
 static void np_info(void) {
     char s[NP_INFO_BUF], out[NP_INFO_BUF + 64];
     unsigned i, h, n;
-    for (i = 0; i < NP_INFO_N; ++i) {
+    np_quality();
+    for (i = 1; i < NP_INFO_N; ++i) { /* 0, the quality line, is np_quality's */
         int need = np.info[i] ? pod_text_utf8(np.info[i], s, sizeof s) : -1;
         /* none, empty, or too long for s (cut short): leave it */
         if (need <= 0 || (unsigned)need >= sizeof s) continue;
@@ -509,6 +551,7 @@ static void np_start(void *win) {
     if (!np.el || !np.pt) np.el = np.pt = (void *)0; /* only the pair is swapped */
     np.shown = np.eshown = -1;
     for (n = 0; n < NP_INFO_N; ++n) np.info[n] = widget_lookup(win, np_info_names[n], 1);
+    np.q = widget_lookup(win, "np_quality", 1);
     np.color = NP_NEUTRAL & 0xffffff; /* the asset's window colour */
     if (!widget_on(win, EVT_DESTROY, np_on_destroy, win)) {
         memset(&np, 0, sizeof np);

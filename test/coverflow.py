@@ -50,6 +50,8 @@ def build(tmp):
     lib.cc_stock_fit.argtypes = [ctypes.c_uint] * 3 + [ctypes.POINTER(ctypes.c_uint)] * 2
     lib.cc_stock_dims.restype = None
     lib.cc_stock_dims.argtypes = [ctypes.c_uint] * 3 + [ctypes.POINTER(ctypes.c_uint)] * 2
+    lib.cc_fit.restype = ctypes.c_int   # the timed cover page's whole-picture fit (patch/bigcover.c)
+    lib.cc_fit.argtypes = [ctypes.c_char_p] + [ctypes.c_uint] * 3 + [ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(ctypes.c_uint)]
     for f in (lib.cc_sample, lib.cc_box):
         f.restype = None
         f.argtypes = [ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
@@ -428,6 +430,43 @@ def main():
         out2 = (ctypes.c_uint * 4)()
         lib.cc_box(bytes(padded), 4, 4, 24, rgba, 2, out2)
         expect(all(v == 0xff000000 | 50 | 60 << 8 | 70 << 16 for v in out2), 'cc_box honours the stride')
+
+        # 11b. cc_fit, the timed cover page's fit: the whole picture inside size x size over a background, never cropped.
+        def fit(w, h, img, size, bg=0xff141414, stride=None, order=rgba):
+            o = (ctypes.c_uint * (size * size))()
+            ok = lib.cc_fit(bytes(img), w, h, stride or w * 4, order, size, bg, o)
+            return ok, list(o)
+        edge = bytearray()
+        for y in range(40):
+            for x in range(60):
+                edge += bytes((x * 4, y * 6, (x + y) & 255, 255))
+        ok, o = fit(60, 40, edge, 60)
+        expect(ok and all(o[(10 + y) * 60 + x] == 0xff000000 | x * 4 | y * 6 << 8 | ((x + y) & 255) << 16 for y in range(40) for x in range(60))
+               and all(o[y * 60 + x] == 0xff141414 for y in list(range(10)) + list(range(50, 60)) for x in range(60)),
+               'cc_fit with a longer side of exactly size is a pixel copy, centred, the bars the background')
+        ok, o = fit(40, 60, bytes(edge[:40 * 60 * 4]), 60)
+        expect(ok and all(o[y * 60 + x] == 0xff141414 for y in range(60) for x in list(range(10)) + list(range(50, 60))), 'cc_fit centres a tall picture, the side bars the background')
+        sq = bytes((9, 8, 7, 255)) * 100
+        ok, o = fit(10, 10, sq, 15)
+        expect(ok and set(o) == {0xff000000 | 9 | 8 << 8 | 7 << 16}, 'cc_fit enlarges a square filtered and keeps a flat colour')
+        ok, o = fit(10, 10, sq, 4, bg=0xff00ff00)
+        expect(ok and set(o) == {0xff000000 | 9 | 8 << 8 | 7 << 16}, 'cc_fit reduces a square, the result has no background pixel')
+        wide = bytes((100, 100, 100, 255)) * (30 * 10)
+        ok, o = fit(30, 10, wide, 12, bg=0xff0000ff)
+        expect(ok and all(o[y * 12 + x] == (0xff646464 if 4 <= y < 8 else 0xff0000ff) for y in range(12) for x in range(12)), 'cc_fit 30 x 10 into 12: 12 x 4 at y 4 (the other side follows the ratio)')
+        thin = bytes((1, 2, 3, 255)) * 100
+        ok, o = fit(100, 1, thin, 10)
+        expect(ok and sum(1 for v in o if v == 0xff030201) == 10, 'cc_fit keeps a one pixel high result for a very wide picture')
+        half = bytes((200, 100, 50, 128)) * 4
+        ok, o = fit(2, 2, half, 2)
+        expect(ok and o[0] == 0xff000000 | 100 | 50 << 8 | 25 << 16, 'cc_fit composes alpha over black like the other filters')
+        ok, o = fit(4, 4, bytes(bytearray((50, 60, 70, 255)) * 4 + bytearray((255, 255, 255, 255)) * 2) * 4, 4, stride=24)
+        expect(ok and all(v == 0xff000000 | 50 | 60 << 8 | 70 << 16 for v in o), 'cc_fit honours the stride')
+        sentinel = (ctypes.c_uint * 4)(7, 7, 7, 7)
+        expect(lib.cc_fit(b'\0' * 16, 0, 2, 8, rgba, 2, 0, sentinel) == 0 and lib.cc_fit(b'\0' * 16, 2, 2, 8, rgba, 0, 0, sentinel) == 0 and list(sentinel) == [7] * 4
+               and lib.cc_fit(b'\0' * 16, 2, 2, 8, rgba, 2, 0, sentinel) == 1, 'cc_fit refuses an empty picture or size and leaves the output alone')
+        big = (ctypes.c_uint * 4)(7, 7, 7, 7)
+        expect(lib.cc_fit(b'\0' * 16, 2, 2, 8, rgba, 600, 0, big) == 0 and list(big) == [7] * 4, 'cc_fit refuses a size over the filter\'s row limit (AR_MAX)')
 
         # 12. Both filters against an independent model (the division per pixel, spelled out), pixel for pixel, for 1:1,
         #     integral and fractional ratios, enlargements, wide and tall sources, a padded stride, every byte order.

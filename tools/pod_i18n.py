@@ -50,9 +50,11 @@ STOCK = {
     'msg_nottf': 'No TF Card Found',
     'msg_nototg': 'No OTG Found',
     'msg_notfile': 'File Not Found',
-    # the Wi-Fi page's two confirmations: stock's own texts (patch/wifipage.c)
+    # the Wi-Fi page's three confirmations: stock's own texts (patch/wifipage.c); msg_wifi_open holds the coex warning (COEX_TEXT)
     'msg_wifidisconnect': 'Disconnect Now?',
     'msg_wificancelsave': 'Delete Record?',
+    'msg_wifi_open': 'Bluetooth audio may stutter while Wi-Fi is on.',
+    'powerm_sleep': 'Sleep Timer',   # Now Playing's More sheet row that opens the stock Power page: the same text as that page's own Sleep Timer row (patch/playmore.c)
 }
 
 _L = LOCALES[1:]    # the order of the translations below (English is the key)
@@ -111,7 +113,7 @@ TEXT = dict([
        'Desarrollador', 'Sviluppatore', 'นักพัฒนา', 'Programista', 'Разработчик', 'Розробник'),
     _t('Playback', '播放', '播放', '再生', '재생', 'Lecture', 'Wiedergabe',
        'Reproducción', 'Riproduzione', 'การเล่น', 'Odtwarzanie', 'Воспроизведение', 'Відтворення'),
-    # Settings (docs/modules/settings.md): the top page's rows, headers and notes. Rows with a value at the right (Play Mode, Language, Theme) have short labels: the value takes the room.
+    # Settings (docs/modules/settings.md): the top page's rows, headers and notes. Rows with a value at the right (Language, Theme) have short labels: the value takes the room.
     _t('Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi',
        'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi', 'Wi-Fi'),
     _t('Bluetooth', '蓝牙', '藍牙', 'Bluetooth', '블루투스', 'Bluetooth', 'Bluetooth',
@@ -120,8 +122,6 @@ TEXT = dict([
        'Activado', 'Attivo', 'เปิด', 'Wł.', 'Вкл.', 'Увімк.'),
     _t('Off', '关', '關', 'オフ', '꺼짐', 'Désactivé', 'Aus',
        'Desactivado', 'Disattivo', 'ปิด', 'Wył.', 'Выкл.', 'Вимк.'),
-    _t('Play Mode', '播放模式', '播放模式', '再生モード', '재생 모드', 'Lecture', 'Modus',
-       'Modo', 'Modalità', 'โหมดเล่น', 'Tryb', 'Режим', 'Режим'),
     _t('EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ',
        'EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ'),
     _t('All Playback Settings', '全部播放设置', '全部播放設定', 'すべての再生設定', '모든 재생 설정', 'Réglages de lecture', 'Wiedergabe-Optionen',
@@ -181,6 +181,17 @@ TEXT = dict([
        'Nueva mezcla al abrir Inicio', "Nuovo mix all'apertura", 'มิกซ์ใหม่เมื่อเปิดหน้าหลัก', 'Nowy miks po otwarciu', 'Новый микс при открытии', 'Новий мікс при відкритті'),
     _t('Applies the next time Cassette Mode opens.', '下次打开磁带模式时生效。', '下次開啟錄音帶模式時生效。', '次回カセットモード起動時に反映', '다음에 카세트 모드를 열 때 적용됩니다.', "S'applique à la prochaine ouverture.", 'Gilt beim nächsten Öffnen.',
        'Se aplica la próxima vez que se abre.', 'Si applica alla prossima apertura.', 'มีผลเมื่อเปิดครั้งถัดไป', 'Zastosowane przy następnym otwarciu.', 'Применится при следующем открытии.', 'Застосується при наступному відкритті.'),
+    # Settings > Now Playing > Idle Display (patch/bigcover.c, docs/modules/bigcover.md "Idle view")
+    _t('Idle Display', '空闲显示', '閒置顯示', '待機表示', '대기 화면', 'Affichage veille', 'Ruheanzeige',
+       'Vista reposo', 'Vista inattiva', 'แสดงขณะว่าง', 'Ekran czuwania', 'Экран простоя', 'Заставка'),
+    _t('Album Cover', '专辑封面', '專輯封面', 'アルバムカバー', '앨범 커버', 'Pochette', 'Albumcover',
+       'Portada', 'Copertina', 'ปกอัลบั้ม', 'Okładka', 'Обложка', 'Обкладинка'),
+    _t('Cassette', '磁带', '錄音帶', 'カセット', '카세트', 'Cassette', 'Kassette',
+       'Casete', 'Cassetta', 'เทป', 'Kaseta', 'Кассета', 'Касета'),
+    _t('Vinyl', '黑胶', '黑膠', 'レコード', '바이닐', 'Vinyle', 'Vinyl',
+       'Vinilo', 'Vinile', 'แผ่นเสียง', 'Winyl', 'Винил', 'Вініл'),
+    _t('Shown after 10 seconds on Now Playing.', '在正在播放界面停留10秒后显示。', '在正在播放畫面停留10秒後顯示。', '再生画面で10秒後に表示されます。', '지금 재생 화면에서 10초 후 표시됩니다.', "Affichée après 10 s sur Lecture en cours.", 'Nach 10 Sekunden auf „Jetzt läuft“.',
+       'Se muestra tras 10 s en Reproduciendo.', 'Mostrata dopo 10 secondi in Riproduzione.', 'แสดงหลัง 10 วินาทีในหน้ากำลังเล่น', 'Pokazywane po 10 s na ekranie odtwarzania.', 'Через 10 с на экране «Сейчас играет».', 'Через 10 секунд на екрані «Зараз грає».'),
     # The Wi-Fi page (patch/wifipage.c, docs/modules/wifi.md): the group headers, Other..., the toasts and the Bluetooth question
     _t("Enterprise isn't supported yet", '暂不支持企业级网络', '暫不支援企業級網路', 'エンタープライズは未対応です', '엔터프라이즈는 아직 지원되지 않음', 'Entreprise : pas encore pris en charge', 'Enterprise wird noch nicht unterstützt',
        'Empresarial aún no es compatible', 'Enterprise non ancora supportato', 'ยังไม่รองรับเครือข่ายองค์กร', 'Enterprise nie jest jeszcze obsługiwane', 'Корпоративные сети пока не поддерживаются', 'Корпоративні мережі ще не підтримуються'),
@@ -190,10 +201,10 @@ TEXT = dict([
        'Red no compatible', 'Rete non supportata', 'ไม่รองรับเครือข่ายนี้', 'Ta sieć nie jest obsługiwana', 'Эта сеть не поддерживается', 'Ця мережа не підтримується'),
     _t("Couldn't connect", '无法连接', '無法連線', '接続できません', '연결할 수 없음', 'Connexion impossible', 'Verbindung fehlgeschlagen',
        'No se pudo conectar', 'Impossibile connettersi', 'เชื่อมต่อไม่ได้', 'Nie można połączyć', 'Не удалось подключиться', 'Не вдалося підключитися'),
-    _t('MY NETWORKS', '我的网络', '我的網路', 'マイネットワーク', '내 네트워크', 'MES RÉSEAUX', 'MEINE NETZWERKE',
-       'MIS REDES', 'LE MIE RETI', 'เครือข่ายของฉัน', 'MOJE SIECI', 'МОИ СЕТИ', 'МОЇ МЕРЕЖІ'),
-    _t('NETWORKS', '网络', '網路', 'ネットワーク', '네트워크', 'RÉSEAUX', 'NETZWERKE',
-       'REDES', 'RETI', 'เครือข่าย', 'SIECI', 'СЕТИ', 'МЕРЕЖІ'),
+    _t('My Networks', '我的网络', '我的網路', 'マイネットワーク', '내 네트워크', 'Mes réseaux', 'Meine Netzwerke',
+       'Mis redes', 'Le mie reti', 'เครือข่ายของฉัน', 'Moje sieci', 'Мои сети', 'Мої мережі'),
+    _t('Networks', '网络', '網路', 'ネットワーク', '네트워크', 'Réseaux', 'Netzwerke',
+       'Redes', 'Reti', 'เครือข่าย', 'Sieci', 'Сети', 'Мережі'),
     _t('Other…', '其他…', '其他…', 'その他…', '기타…', 'Autre…', 'Andere…',
        'Otra…', 'Altra…', 'อื่น ๆ…', 'Inna…', 'Другая…', 'Інша…'),
     # The Wi-Fi info page (patch/wifipage.c, docs/modules/wifi.md): its rows, and the security's name (the standards' names stay as they are)
@@ -235,10 +246,6 @@ TEXT = dict([
     _t('WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3', 'WPA3'),
     _t('Enterprise', '企业级', '企業級', 'エンタープライズ', '엔터프라이즈', 'Entreprise', 'Enterprise',
        'Empresarial', 'Enterprise', 'องค์กร', 'Enterprise', 'Корпоративная', 'Корпоративна'),
-    _t('Bluetooth is on. Turn it off before using Wi-Fi?', '蓝牙已开启，使用 Wi-Fi 前要关闭蓝牙吗？', '藍牙已開啟，使用 Wi-Fi 前要關閉藍牙嗎？', 'Bluetooth がオンです。Wi-Fi を使う前にオフにしますか？', '블루투스가 켜져 있습니다. Wi-Fi를 사용하기 전에 끌까요?',
-       'Bluetooth est activé. Le désactiver avant d’utiliser le Wi-Fi ?', 'Bluetooth ist an. Vor der WLAN-Nutzung ausschalten?',
-       'Bluetooth está activado. ¿Desactivarlo antes de usar Wi-Fi?', 'Il Bluetooth è attivo. Disattivarlo prima di usare il Wi-Fi?', 'Bluetooth เปิดอยู่ ปิดก่อนใช้ Wi-Fi หรือไม่', 'Bluetooth jest włączony. Wyłączyć go przed użyciem Wi-Fi?',
-       'Bluetooth включён. Отключить его перед использованием Wi-Fi?', 'Bluetooth увімкнено. Вимкнути його перед використанням Wi-Fi?'),
     _t('Off: the device starts on Shanling Home', '关闭：设备启动后进入山灵主页', '關閉：裝置啟動後進入山靈主頁', 'オフ：Shanling ホームで起動', '끔: Shanling 홈으로 시작', "Désactivé : démarre sur l'accueil Shanling", 'Aus: Start im Shanling-Start',
        'Desactivado: inicia en Inicio Shanling', 'Disattivo: avvio da Home Shanling', 'ปิด: เริ่มที่หน้าหลัก Shanling', 'Wył.: start z ekranu Shanling', 'Выкл.: запуск с экрана Shanling', 'Вимк.: запуск з екрана Shanling'),
     _t('Show, hide and reorder the menu', '显示、隐藏和排序菜单项', '顯示、隱藏及排序選單項目', 'メニュー項目の表示・非表示・並べ替え', '메뉴 항목 표시, 숨기기, 순서 변경', 'Afficher, masquer, réordonner le menu', 'Menü ein-, ausblenden, anordnen',
@@ -281,6 +288,10 @@ TEXT = dict([
        'Preparando carátulas', 'Preparazione copertine', 'กำลังเตรียมปก', 'Przygotowanie okładek', 'Подготовка обложек', 'Готуємо обкладинки'),
     _t('Rebuilding covers', '正在重建封面', '正在重建封面', 'カバーを再構築中', '커버 다시 만드는 중', 'Reconstruction des pochettes', 'Cover werden neu erstellt',
        'Reconstruyendo carátulas', 'Ricostruzione copertine', 'กำลังสร้างปกใหม่', 'Odbudowa okładek', 'Пересоздание обложек', 'Перестворення обкладинок'),
+    _t('Preparing artist photos', '正在准备艺人照片', '正在準備藝人照片', 'アーティスト写真を準備中', '아티스트 사진 준비 중', "Préparation des photos d'artistes", 'Künstlerfotos werden erstellt',
+       'Preparando fotos de artistas', 'Preparazione foto artisti', 'กำลังเตรียมรูปศิลปิน', 'Przygotowanie zdjęć wykonawców', 'Подготовка фото исполнителей', 'Готуємо фото виконавців'),
+    _t('Rebuilding artist photos', '正在重建艺人照片', '正在重建藝人照片', 'アーティスト写真を再構築中', '아티스트 사진 다시 만드는 중', 'Reconstruction des photos', 'Künstlerfotos werden neu erstellt',
+       'Reconstruyendo fotos de artistas', 'Ricostruzione foto artisti', 'กำลังสร้างรูปศิลปินใหม่', 'Odbudowa zdjęć wykonawców', 'Пересоздание фото исполнителей', 'Перестворення фото виконавців'),
     _t('Covers will rebuild on Home', '封面将在主屏幕重建', '封面將在主畫面重建', 'カバーはホームで再構築', '홈 화면에서 커버를 다시 만듭니다',
        "Pochettes refaites sur l'accueil", 'Cover auf Home neu erstellt', 'Carátulas se rehacen en Inicio',
        'Copertine rifatte in Home', 'จะสร้างปกใหม่ที่หน้าหลัก', 'Okładki odbudują się na Home', 'Обложки обновятся в Home',
@@ -306,6 +317,15 @@ TEXT = dict([
     # the Settings > Cover Flow sub-page (landscape switch; sort order, valued Artist or Album: "Album" is the stock key 'album')
     _t('Landscape', '横屏', '橫向', '横向き', '가로 모드', 'Paysage', 'Querformat',
        'Horizontal', 'Orizzontale', 'แนวนอน', 'Poziomo', 'Горизонтально', 'Горизонтально'),
+    # Settings > Library > Cover Flow > Volume Buttons (patch/coverflow.c on_volkey) and its note
+    _t('Volume Buttons', '音量键', '音量鍵', '音量ボタン', '볼륨 버튼', 'Boutons de volume', 'Lautstärketasten',
+       'Teclas de volumen', 'Tasti volume', 'ปุ่มปรับเสียง', 'Przyciski głośności', 'Кнопки громкости', 'Кнопки гучності'),
+    _t('In Cover Flow, the volume buttons move between albums.', '在封面流中，音量键用于切换专辑。', '在封面流中，音量鍵用於切換專輯。',
+       'カバーフローでは、音量ボタンでアルバムを切り替えます。', '커버 플로우에서 볼륨 버튼으로 앨범을 넘깁니다.',
+       "Dans Cover Flow, les boutons de volume changent d'album.", 'In Cover Flow wechseln die Lautstärketasten das Album.',
+       'En Cover Flow, los botones de volumen cambian de álbum.', 'In Cover Flow, i tasti volume cambiano album.',
+       'ใน Cover Flow ปุ่มปรับเสียงใช้เลื่อนระหว่างอัลบั้ม', 'W Cover Flow przyciski głośności przełączają albumy.',
+       'В Cover Flow кнопки громкости переключают альбомы.', 'У Cover Flow кнопки гучності перемикають альбоми.'),
     _t('Artist', '歌手', '歌手', 'アーティスト', '아티스트', 'Artiste', 'Künstler',
        'Artista', 'Artista', 'ศิลปิน', 'Wykonawca', 'Исполнитель', 'Виконавець'),
     # Settings > Library > Rebuild Covers: the row, and the message of the stock confirm dialog (a centred white 20 px label
@@ -331,6 +351,8 @@ TEXT = dict([
        'Comprobando biblioteca…', 'Controllo libreria…', 'กำลังตรวจสอบคลัง…', 'Sprawdzanie biblioteki…', 'Проверка медиатеки…', 'Перевірка медіатеки…'),
     _t('Rebuilding covers…', '正在重建封面…', '正在重建封面…', 'カバーを再構築中…', '커버 다시 만드는 중…', 'Reconstruction des pochettes…', 'Cover werden neu erstellt…',
        'Reconstruyendo carátulas…', 'Ricostruzione copertine…', 'กำลังสร้างปกใหม่…', 'Odbudowa okładek…', 'Пересоздание обложек…', 'Перестворення обкладинок…'),
+    _t('Rebuilding artist photos…', '正在重建艺人照片…', '正在重建藝人照片…', 'アーティスト写真を再構築中…', '아티스트 사진 다시 만드는 중…', 'Reconstruction des photos…', 'Künstlerfotos werden neu erstellt…',
+       'Reconstruyendo fotos de artistas…', 'Ricostruzione foto artisti…', 'กำลังสร้างรูปศิลปินใหม่…', 'Odbudowa zdjęć wykonawców…', 'Пересоздание фото исполнителей…', 'Перестворення фото виконавців…'),
     _t('%d track, %s', '%d 首歌，%s', '%d 首歌，%s', '%d曲、%s', '%d곡, %s', '%d titre, %s', '%d Titel, %s', '%d canción, %s', '%d brano, %s', '%d เพลง, %s', 'Utwory: %d, %s', 'Песен: %d, %s', 'Пісень: %d, %s'),
     _t('%d tracks, %s', '%d 首歌，%s', '%d 首歌，%s', '%d曲、%s', '%d곡, %s', '%d titres, %s', '%d Titel, %s', '%d canciones, %s', '%d brani, %s', '%d เพลง, %s', 'Utwory: %d, %s', 'Песен: %d, %s', 'Пісень: %d, %s'),
     _t('%d minute', '%d 分钟', '%d 分鐘', '%d分', '%d분', '%d minute', '%d Minute', '%d minuto', '%d minuto', '%d นาที', '%d min', '%d мин', '%d хв'),
@@ -403,6 +425,22 @@ TEXT = dict([
        '¿Recrear todas las carátulas? Puede tardar unos minutos.', 'Ricreare tutte le copertine? Potrebbe richiedere alcuni minuti.',
        'สร้างปกทั้งหมดใหม่หรือไม่ อาจใช้เวลาสองสามนาที', 'Odbudować wszystkie okładki? Może to potrwać kilka minut.',
        'Пересоздать все обложки? Это может занять несколько минут.', 'Оновити всі обкладинки? Це може тривати кілька хвилин.'),
+    # Settings > Library > Rebuild Artist Photos (the row, the confirm of the stock dialog, the toast) and the Developer > Cache page's Artist Photos card (patch/m1plus.c arebuild_ask, patch/homecover.c)
+    _t('Rebuild Artist Photos', '重建歌手照片', '重建歌手相片', 'アーティスト写真を再作成', '아티스트 사진 다시 만들기', 'Recréer photos artistes', 'Künstlerfotos neu erstellen',
+       'Recrear fotos de artistas', 'Ricrea foto artisti', 'สร้างรูปศิลปินใหม่', 'Odbuduj zdjęcia', 'Обновить фото артистов', 'Оновити фото виконавців'),
+    _t('Rebuild all artist photos? This may take a few minutes.', '重建所有歌手照片？这可能需要几分钟。', '重建所有歌手相片？這可能需要幾分鐘。',
+       'すべてのアーティスト写真を再作成しますか？数分かかる場合があります。', '모든 아티스트 사진을 다시 만들까요? 몇 분 걸릴 수 있습니다.',
+       'Recréer toutes les photos d\'artistes ? Cela peut prendre quelques minutes.', 'Alle Künstlerfotos neu erstellen? Das kann einige Minuten dauern.',
+       '¿Recrear todas las fotos de artistas? Puede tardar unos minutos.', 'Ricreare tutte le foto degli artisti? Potrebbe richiedere alcuni minuti.',
+       'สร้างรูปศิลปินทั้งหมดใหม่หรือไม่ อาจใช้เวลาสองสามนาที', 'Odbudować wszystkie zdjęcia wykonawców? Może to potrwać kilka minut.',
+       'Пересоздать все фото исполнителей? Это может занять несколько минут.', 'Оновити всі фото виконавців? Це може тривати кілька хвилин.'),
+    _t('Artist photos will rebuild on Home', '歌手照片将在主屏幕重建', '歌手相片將在主畫面重建', 'アーティスト写真はホームで再構築', '홈 화면에서 아티스트 사진을 다시 만듭니다',
+       "Photos refaites sur l'accueil", 'Fotos auf Home neu erstellt', 'Fotos se rehacen en Inicio', 'Foto rifatte in Home',
+       'จะสร้างรูปศิลปินใหม่ที่หน้าหลัก', 'Zdjęcia odbudują się na Home', 'Фото обновятся в Home', 'Фото оновимо в Home'),
+    _t('Artist Photos', '歌手照片', '歌手相片', 'アーティスト写真', '아티스트 사진', "Photos d'artistes", 'Künstlerfotos',
+       'Fotos de artistas', 'Foto artisti', 'รูปศิลปิน', 'Zdjęcia wykonawców', 'Фото исполнителей', 'Фото виконавців'),
+    _t('Photos', '照片', '相片', '写真', '사진', 'Photos', 'Fotos',
+       'Fotos', 'Foto', 'รูปภาพ', 'Zdjęcia', 'Фото', 'Фото'),
     # the Folders page's Delete confirm when a marked row is a folder (stock removes it with rm -rf; the dialog's wrapped label, at most three lines)
     _t('Delete folder and everything in it?', '删除文件夹及其中的所有内容？', '刪除資料夾及其中的所有內容？',
        'フォルダとその中身をすべて削除しますか？', '폴더와 그 안의 모든 항목을 삭제할까요?',
@@ -469,14 +507,44 @@ TEXT = dict([
     _t('Search words are sent to Apple.', '搜索词会发送给 Apple。', '搜尋詞會傳送給 Apple。', '検索語は Apple に送信されます。', '검색어는 Apple로 전송됩니다.', 'Les mots recherchés sont envoyés à Apple.',
        'Suchbegriffe werden an Apple gesendet.', 'Los términos se envían a Apple.', 'Le parole cercate vanno ad Apple.', 'คำค้นหาจะถูกส่งไปยัง Apple', 'Szukane słowa trafiają do Apple.',
        'Слова запроса отправляются в Apple.', 'Слова запиту надсилаються до Apple.'),
-    # Battery Percentage (patch/battery.c, docs/modules/battery.md): Settings > Home Screen > Status Bar
-    _t('Status Bar', '状态栏', '狀態列', 'ステータスバー', '상태 표시줄', 'Barre d’état', 'Statusleiste',
-       'Barra de estado', 'Barra di stato', 'แถบสถานะ', 'Pasek stanu', 'Строка состояния', 'Рядок стану'),
+    # Battery Percentage (patch/battery.c, docs/modules/battery.md): Settings > System > Battery
     _t('Battery Percentage', '电量百分比', '電量百分比', 'バッテリー残量', '배터리 잔량', 'Pourcentage', 'Akkustand',
        'Porcentaje', 'Percentuale', 'เปอร์เซ็นต์แบต', 'Poziom baterii', 'Процент заряда', 'Відсоток заряду'),
     _t('The exact charge beside the battery icon', '电池图标旁显示精确电量', '電池圖示旁顯示精確電量', 'バッテリーアイコンの横に正確な残量を表示', '배터리 아이콘 옆에 정확한 잔량 표시',
        'La charge exacte à côté de l’icône', 'Der genaue Ladestand neben dem Symbol', 'La carga exacta junto al icono', 'La carica esatta accanto all’icona',
        'ระดับแบตที่แน่นอนข้างไอคอน', 'Dokładny poziom obok ikony', 'Точный заряд рядом со значком', 'Точний заряд поруч зі значком'),
+    # Continue with Next Album (patch/nextalbum.c, docs/modules/nextalbum.md): Settings > Playback
+    _t('Continue Playing', '继续播放', '繼續播放', '続けて再生', '계속 재생', 'Enchaîner', 'Weiterspielen',
+       'Continuar', 'Continua', 'เล่นต่อ', 'Kontynuuj', 'Продолжить', 'Продовжити'),
+    _t('Next Albums', '下一张专辑', '下一張專輯', '次のアルバム', '다음 앨범', 'Albums suivants', 'Nächste Alben',
+       'Álbumes siguientes', 'Album successivi', 'อัลบั้มถัดไป', 'Kolejne albumy', 'След. альбомы', 'Наст. альбоми'),
+    _t('Plays the next album in the order of Albums, the artist or Cover Flow', '按专辑、艺人或封面流的顺序播放下一张专辑', '依專輯、藝人或封面流的順序播放下一張專輯',
+       'アルバム、アーティスト、カバーフローの順で次のアルバムを再生', '앨범, 아티스트 또는 커버 플로우 순서로 다음 앨범 재생',
+       'Lit l’album suivant dans l’ordre des Albums, de l’artiste ou de Cover Flow', 'Nächstes Album in der Reihenfolge von Alben, Künstler oder Cover Flow',
+       'Reproduce el siguiente álbum en el orden de Álbumes, del artista o de Cover Flow', 'Riproduce l’album successivo nell’ordine di Album, artista o Cover Flow',
+       'เล่นอัลบั้มถัดไปตามลำดับของอัลบั้ม ศิลปิน หรือ Cover Flow', 'Odtwarza następny album w kolejności Albumów, wykonawcy lub Cover Flow',
+       'Играет следующий альбом в порядке списка, исполнителя или Cover Flow', 'Грає наступний альбом у порядку списку, виконавця або Cover Flow'),
+    # Charge Limit (patch/charging.c, docs/modules/charging.md): Settings > System > Battery
+    _t('Battery', '电池', '電池', 'バッテリー', '배터리', 'Batterie', 'Batterie',
+       'Batería', 'Batteria', 'แบตเตอรี่', 'Bateria', 'Аккумулятор', 'Акумулятор'),
+    _t('Charge Limit', '充电上限', '充電上限', '充電上限', '충전 한도', 'Limite de charge', 'Ladelimit',
+       'Límite de carga', 'Limite di carica', 'ขีดจำกัดการชาร์จ', 'Limit ładowania', 'Лимит зарядки', 'Ліміт заряду'),
+    _t('Applies while the player is on', '仅在开机时生效', '僅在開機時生效', '電源オン中のみ有効', '켜져 있는 동안 적용',
+       'S’applique quand l’appareil est allumé', 'Gilt, solange das Gerät an ist', 'Se aplica con el equipo encendido',
+       'Vale a dispositivo acceso', 'ใช้ขณะเปิดเครื่อง', 'Działa, gdy urządzenie jest włączone', 'Действует, пока плеер включён', 'Діє, поки плеєр увімкнено'),
+    _t('Resumes a little below the limit', '略低于上限时恢复充电', '略低於上限時恢復充電', '上限を少し下回ると再開', '한도보다 조금 낮아지면 재개',
+       'Reprend un peu sous la limite', 'Lädt knapp unter dem Limit weiter', 'Se reanuda algo por debajo del límite', 'Riprende poco sotto il limite',
+       'ชาร์จต่อเมื่อต่ำกว่าขีดจำกัดเล็กน้อย', 'Wznawia nieco poniżej limitu', 'Возобновится чуть ниже предела', 'Відновиться трохи нижче межі'),
+    # A-Z lists (patch/azlist.c, docs/modules/settings.md): Settings > Library, the Index Rail and Section Headers switches
+    _t('Index Rail', '索引栏', '索引欄', '索引バー', '색인 막대', 'Index latéral', 'Index-Leiste',
+       'Índice lateral', 'Indice laterale', 'แถบดัชนี', 'Indeks boczny', 'Указатель', 'Покажчик'),
+    _t('Section Headers', '分区标题', '分區標題', 'セクション見出し', '섹션 머리글', 'En-têtes', 'Abschnittstitel',
+       'Encabezados', 'Intestazioni', 'หัวข้อส่วน', 'Nagłówki sekcji', 'Заголовки секций', 'Заголовки секцій'),
+    _t('List Navigation', '列表导航', '列表導覽', 'リストのナビゲーション', '목록 탐색', 'Navigation des listes', 'Listennavigation',
+       'Navegación de listas', 'Navigazione elenchi', 'การนำทางรายการ', 'Nawigacja list', 'Навигация по спискам', 'Навігація списками'),
+    _t('Songs, Artists, Albums and Radio lists', '歌曲、艺人、专辑和电台列表', '歌曲、藝人、專輯和電台列表', '曲、アーティスト、アルバム、ラジオのリスト', '노래, 아티스트, 앨범, 라디오 목록',
+       'Titres, artistes, albums et radios', 'Titel, Künstler, Alben und Radio', 'Canciones, artistas, álbumes y radio', 'Brani, artisti, album e radio',
+       'เพลง ศิลปิน อัลบั้ม และวิทยุ', 'Utwory, wykonawcy, albumy i radio', 'Песни, исполнители, альбомы и радио', 'Пісні, виконавці, альбоми й радіо'),
     _t('Searching…','正在搜索…', '正在搜尋…', '検索中…', '검색 중…', 'Recherche…', 'Suche läuft…',
        'Buscando…', 'Ricerca in corso…', 'กำลังค้นหา…', 'Szukanie…', 'Поиск…', 'Пошук…'),
     _t('Loading…', '正在加载…', '正在載入…', '読み込み中…', '불러오는 중…', 'Chargement…', 'Wird geladen…',
@@ -656,6 +724,9 @@ TEXT = dict([
     _t('Latest Episode', '最新一集', '最新一集', '最新エピソード', '최신 에피소드', 'Dernier épisode', 'Neueste Folge', 'Último episodio', 'Ultimo episodio', 'ตอนล่าสุด', 'Najnowszy odcinek', 'Последний выпуск', 'Останній випуск'),
     _t('Episodes', '单集', '單集', 'エピソード', '에피소드', 'Épisodes', 'Folgen', 'Episodios', 'Episodi', 'ตอน', 'Odcinki', 'Выпуски', 'Випуски'),
     _t('Playback Speed', '播放速度', '播放速度', '再生速度', '재생 속도', 'Vitesse de lecture', 'Wiedergabetempo', 'Velocidad', 'Velocità di riproduzione', 'ความเร็วในการเล่น', 'Prędkość odtwarzania', 'Скорость', 'Швидкість відтворення'),
+    _t('Episode Order', '节目顺序', '節目順序', 'エピソードの順序', '에피소드 순서', 'Ordre', 'Reihenfolge', 'Orden', 'Ordine', 'ลำดับตอน', 'Kolejność', 'Порядок', 'Порядок'),   # (the row shares its line with a value: the longer wordings of fr, de, es, it, pl, ru and uk are cut to one word, as the Region row's)
+    _t('Newest First', '最新优先', '最新優先', '新しい順', '최신순', 'Plus récents', 'Neueste zuerst', 'Más recientes', 'Più recenti', 'ใหม่สุดก่อน', 'Najnowsze', 'Сначала новые', 'Спочатку нові'),
+    _t('Oldest First', '最早优先', '最舊優先', '古い順', '오래된순', 'Plus anciens', 'Älteste zuerst', 'Más antiguos', 'Più vecchi', 'เก่าสุดก่อน', 'Najstarsze', 'Сначала старые', 'Спочатку старі'),
     _t('Refresh Feed', '刷新订阅源', '更新訂閱源', 'フィードを更新', '피드 새로고침', 'Actualiser', 'Aktualisieren', 'Actualizar', 'Aggiorna', 'รีเฟรชฟีด', 'Odśwież', 'Обновить', 'Оновити'),
     _t('Select Episodes', '选择节目', '選擇節目', 'エピソードを選択', '에피소드 선택', 'Sélectionner des épisodes', 'Folgen auswählen', 'Seleccionar episodios', 'Seleziona episodi', 'เลือกตอน', 'Wybierz odcinki', 'Выбрать выпуски', 'Вибрати випуски'),
     _t('Mark All as Played', '全部标为已播放', '全部標為已播放', 'すべて再生済みにする', '모두 재생함으로 표시', 'Tout marquer comme lu', 'Alle als gehört markieren', 'Marcar todo como reproducido', 'Segna tutto come riprodotto',
@@ -749,6 +820,8 @@ TEXT = dict([
        'Descubrir', 'Scopri', 'ค้นพบ', 'Odkrywaj', 'Обзор', 'Огляд'),   # the Podcasts page's row that opens the Discover charts, and the level's title
     _t('Search Apple Podcasts', '搜索 Apple Podcasts', '搜尋 Apple Podcasts', 'Apple Podcasts を検索', 'Apple Podcasts 검색', 'Chercher sur Apple Podcasts', 'Apple Podcasts durchsuchen',
        'Buscar en Apple Podcasts', 'Cerca su Apple Podcasts', 'ค้นหา Apple Podcasts', 'Szukaj w Apple Podcasts', 'Поиск в Apple Podcasts', 'Пошук в Apple Podcasts'),
+    _t('Search Tidal', '搜索 Tidal', '搜尋 Tidal', 'Tidal を検索', 'Tidal 검색', 'Chercher sur Tidal', 'Tidal durchsuchen',
+       'Buscar en Tidal', 'Cerca su Tidal', 'ค้นหา Tidal', 'Szukaj w Tidal', 'Поиск в Tidal', 'Пошук у Tidal'),   # the Tidal > Search bar's placeholder (patch/tidalkb.c; fits TK_TEXT_W, test/pod/tidalkb.py asset_tests)
     _t('Done', '完成', '完成', '完了', '완료', 'OK', 'Fertig',
        'Hecho', 'Fine', 'เสร็จ', 'Gotowe', 'Готово', 'Готово'),
     # Now Playing's More menu (patch/playmore.c): the row that opens the second page (and that page's back header), the short
@@ -922,6 +995,51 @@ TEXT = dict([
        'Fondo', 'Sfondo', 'พื้นหลัง', 'Tło', 'Фон', 'Тло'),
     _t('Tinted', '着色', '著色', 'ティント', '색조', 'Teinté', 'Getönt',
        'Teñido', 'Colorato', 'ปรับสี', 'Zabarwione', 'Тонированный', 'Тонований'),
+    # Settings > System > Appearance > Lock Screen (patch/lockscreen.c, docs/modules/lockscreen.md): the row and its picker's title, the two layouts and the note
+    _t('Lock Screen', '锁屏', '鎖定畫面', 'ロック画面', '잠금 화면', 'Écran de verrouillage', 'Sperrbildschirm',
+       'Pantalla de bloqueo', 'Schermata di blocco', 'หน้าจอล็อก', 'Ekran blokady', 'Экран блокировки', 'Екран блокування'),
+    _t('Enable', '启用', '啟用', '有効', '사용', 'Activer', 'Aktivieren',
+       'Activar', 'Attiva', 'เปิดใช้งาน', 'Włącz', 'Включить', 'Увімкнути'),
+    # (short in the languages whose full words do not fit beside the value of the row: the Lock Screen page's value row shows Large Cover / Mini Player at the right)
+    _t('Player Style', '播放器样式', '播放器樣式', 'スタイル', '스타일', 'Style', 'Player-Stil',
+       'Estilo', 'Stile', 'สไตล์เพลเยอร์', 'Styl', 'Стиль', 'Стиль'),
+    _t('Large Cover', '大封面', '大封面', '大きなジャケット', '큰 커버', 'Grande pochette', 'Großes Cover',
+       'Portada grande', 'Copertina grande', 'ปกใหญ่', 'Duża okładka', 'Крупная обложка', 'Велика обкладинка'),
+    _t('Mini Player', '小播放栏', '小播放列', 'ミニプレーヤー', '미니 플레이어', 'Mini-lecteur', 'Mini-Player',
+       'Minirreproductor', 'Mini player', 'มินิเพลเยอร์', 'Mini odtwarzacz', 'Мини-плеер', 'Міні-плеєр'),
+    _t('Applies the next time the lock screen opens.', '下次打开锁屏时生效。', '下次開啟鎖定畫面時生效。', '次回ロック画面を開いたときに反映', '다음에 잠금 화면을 열 때 적용됩니다.', "S'applique à la prochaine ouverture.", 'Gilt beim nächsten Öffnen.',
+       'Se aplica la próxima vez que se abre.', 'Si applica alla prossima apertura.', 'มีผลเมื่อเปิดครั้งถัดไป', 'Zastosowane przy następnym otwarciu.', 'Применится при следующем открытии.', 'Застосується при наступному відкритті.'),
+    # Settings > Lock Screen > Wallpaper (patch/lockscreen.c lkwp_*, docs/modules/lockscreen.md "Wallpaper picker"): the row and its page's title (stock has no word for it)
+    _t('Wallpaper', '壁纸', '桌布', '壁紙', '배경화면', "Fond d'écran", 'Hintergrundbild',
+       'Fondo de pantalla', 'Carta da parati', 'วอลเปเปอร์', 'Tapeta', 'Обои', 'Шпалери'),
+    # Settings > Lock Screen > Show Time: stock's clock switch with our own short label (stock's "Lockscreen Time Display" does not fit; the page already says Lock Screen)
+    _t('Show Time', '显示时间', '顯示時間', '時刻を表示', '시간 표시', "Afficher l'heure", 'Uhrzeit anzeigen',
+       'Mostrar hora', 'Mostra ora', 'แสดงเวลา', 'Pokaż godzinę', 'Показ времени', 'Показ часу'),
+    # Settings > Lock Screen > Custom Wallpaper: the row and the title of our instructions page (how to add your own pictures); our own label (stock's "Custom lock screen" does not fit in 7 languages)
+    _t('Custom Wallpaper', '自定义壁纸', '自訂桌布', 'カスタム壁紙', '맞춤 배경화면', 'Fond personnalisé', 'Eigener Hintergrund',
+       'Fondo personalizado', 'Sfondi personali', 'วอลเปเปอร์ของคุณ', 'Własna tapeta', 'Свои обои', 'Власні шпалери'),
+    # the page's three paragraphs (our wording of stock's screenlock_info1..3: the folder, the format, the count; the limits are stock's list builder's, docs/modules/lockscreen.md "List")
+    _t('Copy pictures to a folder named lockscreenimage at the top level of the card.', '将图片复制到存储卡根目录下名为 lockscreenimage 的文件夹中。', '將圖片複製到記憶卡根目錄下名為 lockscreenimage 的資料夾中。',
+       'カード直下の lockscreenimage フォルダに画像をコピーしてください。', '카드 최상위의 lockscreenimage 폴더에 사진을 복사하세요.',
+       'Copiez les images dans un dossier nommé lockscreenimage, à la racine de la carte.', 'Bilder in einen Ordner namens lockscreenimage im Hauptverzeichnis der Karte kopieren.',
+       'Copia las imágenes a una carpeta llamada lockscreenimage en la raíz de la tarjeta.', 'Copia le immagini in una cartella chiamata lockscreenimage nella radice della scheda.',
+       'คัดลอกรูปภาพไปยังโฟลเดอร์ชื่อ lockscreenimage ที่ระดับบนสุดของการ์ด', 'Skopiuj obrazy do folderu lockscreenimage w katalogu głównym karty.',
+       'Скопируйте изображения в папку lockscreenimage в корне карты.', 'Скопіюйте зображення до папки lockscreenimage у корені картки.'),
+    _t('JPG or PNG, exactly 320 x 480 pixels, under 1 MB each.', 'JPG 或 PNG 格式，分辨率须为 320 x 480，每张小于 1 MB。', 'JPG 或 PNG 格式，解析度須為 320 x 480，每張小於 1 MB。',
+       'JPG または PNG、320 x 480 ピクセルちょうど、1 枚 1 MB 未満。', 'JPG 또는 PNG, 정확히 320 x 480 픽셀, 장당 1MB 미만.',
+       'JPG ou PNG, exactement 320 x 480 pixels, moins de 1 Mo chacune.', 'JPG oder PNG, genau 320 x 480 Pixel, je unter 1 MB.',
+       'JPG o PNG, exactamente 320 x 480 píxeles, menos de 1 MB cada una.', 'JPG o PNG, esattamente 320 x 480 pixel, meno di 1 MB ciascuna.',
+       'JPG หรือ PNG ขนาด 320 x 480 พิกเซลพอดี แต่ละรูปน้อยกว่า 1 MB', 'JPG lub PNG, dokładnie 320 x 480 pikseli, każdy poniżej 1 MB.',
+       'JPG или PNG, ровно 320 x 480 пикселей, каждое меньше 1 МБ.', 'JPG або PNG, рівно 320 x 480 пікселів, кожне менше 1 МБ.'),
+    _t('Up to 5 pictures. Choose one in Wallpaper.', '最多 5 张图片，可在“壁纸”中选择。', '最多 5 張圖片，可在「桌布」中選擇。',
+       '画像は 5 枚まで。「壁紙」で選択してください。', '사진은 최대 5장입니다. 배경화면에서 선택하세요.',
+       "Jusqu'à 5 images. Choisissez-en une dans Fond d'écran.", 'Bis zu 5 Bilder. Eines unter Hintergrundbild auswählen.',
+       'Hasta 5 imágenes. Elige una en Fondo de pantalla.', 'Fino a 5 immagini. Scegline una in Carta da parati.',
+       'สูงสุด 5 รูป เลือกได้ในวอลเปเปอร์', 'Do 5 obrazów. Wybierz jeden w ustawieniu Tapeta.',
+       'До 5 изображений. Выберите одно в разделе «Обои».', 'До 5 зображень. Виберіть одне в розділі «Шпалери».'),
+    # the heading above them (the Release Notes page's "Version x.y.z" style, 22 px in 288 px: the Russian and Ukrainian are the short "photos" wording to fit)
+    _t('Add Your Own Pictures', '添加自己的图片', '加入自己的圖片', '自分の画像を追加', '내 사진 추가', 'Ajouter vos images', 'Eigene Bilder hinzufügen', 'Añadir tus imágenes',
+       'Aggiungi le tue immagini', 'เพิ่มรูปภาพของคุณ', 'Dodaj własne obrazy', 'Добавьте свои фото', 'Додайте власні фото'),
     # Settings > System > Accent (patch/palette.c, docs/modules/accent.md): the row and its picker's title, then the seven accents (the picker's rows and the row's value)
     _t('Accent', '强调色', '強調色', 'アクセント', '강조 색상', 'Couleur', 'Akzentfarbe',
        'Color de énfasis', 'Accento', 'สีเน้น', 'Akcent', 'Акцент', 'Акцент'),
@@ -1278,7 +1396,7 @@ def english(key):
 
 
 import pod_pages
-BRANDS = ('M1+ Music', 'Tidal', 'Pod', 'Navidrome') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',)   # shown as they are, no key (the Settings Files labels are file names)
+BRANDS = ('M1+ Music', 'Tidal', 'Pod') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',) + tuple(f'{p}%' for p in pod_pages.CHGLIMIT_VALUES)   # shown as they are, no key (the Settings Files labels are file names)
 
 
 def key_for(english):
@@ -1306,6 +1424,31 @@ def shown_english(w):
 def table_for(locale):
     """The language a table file holds: a stub table holds its twin's."""
     return TWINS.get(locale, locale)
+
+
+# Wi-Fi and Bluetooth together (tools/coex.py, docs/modules/overlays.md "Wi-Fi and Bluetooth together"): stock's two switch-on questions (msg_wifi_open, msg_bt_open: "turn the other radio off first?") become one warning,
+# the same text under both keys, shown before the requested radio is switched on with the other left on. Replaces the stock value in the 13 tables the language menu reaches.
+COEX_KEYS = ('msg_wifi_open', 'msg_bt_open')
+COEX_TEXT = {
+    'en_US': 'Bluetooth audio may stutter while Wi-Fi is on.',
+    'zh_CN': '同时使用 Wi-Fi 和蓝牙时，蓝牙音频可能断续。',
+    'zh_HK': '同時使用 Wi-Fi 和藍牙時，藍牙音訊可能斷續。',
+    'ja_JP': 'Wi-Fi がオンの間、Bluetooth の音声が途切れることがあります。',
+    'ko_KR': 'Wi-Fi가 켜져 있으면 Bluetooth 오디오가 끊길 수 있습니다.',
+    'fr_FR': "L'audio Bluetooth peut saccader lorsque le Wi-Fi est activé.",
+    'ge_DE': 'Die Bluetooth-Wiedergabe kann bei aktivem Wi-Fi stottern.',
+    'sp_ES': 'El audio Bluetooth puede entrecortarse con el Wi-Fi activado.',
+    'it_IT': "L'audio Bluetooth può interrompersi mentre il Wi-Fi è attivo.",
+    'th_TH': 'เสียง Bluetooth อาจสะดุดขณะเปิด Wi-Fi',
+    'po_PL': 'Dźwięk Bluetooth może się zacinać, gdy Wi-Fi jest włączone.',
+    'ru_RU': 'Звук Bluetooth может прерываться, пока включён Wi-Fi.',
+    'uk_UK': 'Звук Bluetooth може уривчастися, поки ввімкнено Wi-Fi.',
+}
+
+
+def coex_tables(tables):
+    """tables: {locale: [(key, value), ...]} -> the same with the shared warning under both stock keys (a stub table has neither key and is unchanged)."""
+    return {loc: [(k, COEX_TEXT[table_for(loc)] if k in COEX_KEYS else v) for k, v in items] for loc, items in tables.items()}
 
 
 def tr(locale, key, stock=None):

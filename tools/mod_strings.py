@@ -53,15 +53,29 @@ def check_texts(font):
                 if c != ' ': check(probe.box(c) is not None, f'{key!r} {loc}: no glyph with ink for U+{ord(c):04X} {c!r} in the shipped font')
 
 
+def check_coex(font, tables):
+    """The shared warning: a text for each of the 13 languages, drawable in the shipped font, replacing a stock value that every reachable table has."""
+    probe = StbText(font, 20)
+    check(sorted(pod_i18n.COEX_TEXT) == sorted(pod_i18n.LOCALES), 'the Wi-Fi + Bluetooth warning needs a text for each of the 13 languages')
+    for loc, t in pod_i18n.COEX_TEXT.items():
+        check(t and t == t.strip() and '%' not in t and all(ord(c) >= 0x20 for c in t), f'warning {loc}: empty or untidy text {t!r}')
+        for c in t:
+            if c != ' ': check(probe.box(c) is not None, f'warning {loc}: no glyph with ink for U+{ord(c):04X} {c!r} in the shipped font')
+        for k in pod_i18n.COEX_KEYS:
+            check(dict(tables[loc]).get(k), f'{loc}: stock key {k!r} missing or empty')
+
+
 def apply(work):
     tables = {loc: awtk_strings.load(p) for loc, p in table_paths(work).items()}
     for loc in pod_i18n.LOCALES:
         have = dict(tables[loc])
         for k in pod_i18n.STOCK:
             check(have.get(k), f'{loc}: stock key {k!r} missing or empty')
-        check(all(dict(tables['en_US']).get(k) == en for k, en in pod_i18n.STOCK.items()), 'a stock key no longer reads as the English in pod_i18n.STOCK')
-    check_texts(Ttf(os.path.join(work, FONT)))
-    new = pod_i18n.add_to_tables(tables)
+        check(all(dict(pod_i18n.coex_tables(tables)['en_US']).get(k) == en for k, en in pod_i18n.STOCK.items()), 'a stock key no longer reads as the English in pod_i18n.STOCK')
+    font = Ttf(os.path.join(work, FONT))
+    check_texts(font)
+    check_coex(font, tables)
+    new = pod_i18n.coex_tables(pod_i18n.add_to_tables(tables))   # (Wi-Fi and Bluetooth together: stock's two switch-on questions become one warning)
     grew = {}
     for loc, p in table_paths(work).items():
         data = awtk_strings.serialize(new[loc])

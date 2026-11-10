@@ -14,7 +14,7 @@ SORT_FLAG, SEL_VEC, NAV_TITLE, G_CLASS = pod.DATA['SORT_FLAG'][0], pod.DATA['SEL
 SHOWLIST = pod.DATA['PDEQ_SHOWLIST'][0]
 UI = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_songs.bin') if WORK else None
 ALL = O['CLASS_ALL_SONGS']
-TEXT_X, TEXT_END, SEL = O['LIST_TEXT_X'], O['SG_TEXT_END'], O['SG_SEL_COL']
+TEXT_X, TEXT_END, SEL = O['LIST_TEXT_X'], O['LIST_HAIR_END'] - O['SG_RAIL_INSET'], O['SG_SEL_COL']   # (the rail is on in these tests: the rows give up SG_RAIL_INSET)
 RAIL_X, RAIL_W = O['SG_RAIL_X'], O['SG_RAIL_W']
 WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_hname', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del',
            'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'sg_bubble_letter', 'sg_bar',
@@ -100,6 +100,7 @@ def songs_machine(songs, sort=0, albums=(), cached=True, window=0x20001000, big=
     """The page's widgets as widget structs (window > list_view > scroll_view > view_grid, and the rail, for demo's own widget_to_local), the library's songs
     [(title, artist, album, initial)], and a cover file for every album (those in cover_missing excepted)."""
     m = SongsMachine()
+    m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the rail tests below (the switch defaults on)
     m.window = window
     m.load_image = 0
     for w in WIDGETS: Machine.widget(m, w)
@@ -236,8 +237,9 @@ def pick(m, what):
 
 class Layout:
     """The model of the page's geometry from the letters of the songs (the payload's, written again)."""
-    def __init__(self, letters, sections=True, top=TOP):
+    def __init__(self, letters, sections=True, top=TOP, hh=HDR):   # hh: the header height, 0 with Section Headers off
         self.top = top
+        self.hh = hh
         self.n = len(letters)
         self.secs = []
         if sections and letters:   # the non-decreasing labelling (rank "#" 0, A..Z 1..26) with the most songs under their own letter; a tie starts a section late
@@ -258,10 +260,10 @@ class Layout:
             self.right = best[-1][26]
             self.secs = [(i, '#' if l == 0 else chr(64 + l)) for i, l in enumerate(labels) if i == 0 or l != labels[i - 1]]
 
-    def hdr_y(self, s): return self.top + s * HDR + self.secs[s][0] * ROW
+    def hdr_y(self, s): return self.top + s * self.hh + self.secs[s][0] * ROW
     def sec_of(self, i): return max(k for k, (st, _) in enumerate(self.secs) if st <= i)
-    def row_y(self, i): return self.top + ((self.sec_of(i) + 1) * HDR if self.secs else 0) + i * ROW
-    def content(self, pad=0): return self.top + len(self.secs) * HDR + self.n * ROW + FOOT + pad
+    def row_y(self, i): return self.top + ((self.sec_of(i) + 1) * self.hh if self.secs else 0) + i * ROW
+    def content(self, pad=0): return self.top + len(self.secs) * self.hh + self.n * ROW + FOOT + pad
 
 
 RAIL_P, RAIL_ITEMS, RAIL_DOT, RAIL_DISC = O['SG_RAIL_PITCH'], O['SG_RAIL_ITEMS'], O['SG_RAIL_DOT'], O['SG_RAIL_DISC']
@@ -514,12 +516,12 @@ def open_and_paint_tests(ctx):
            f'a 52 px cover at (10, row + LIST_ART_Y) for each row in view ({len(rows_in)}): {sorted(b[2][1] for b in covers)} vs {[lay.row_y(i) + O['LIST_ART_Y'] for i in rows_in]}')
     tx = {t: r for t, r in texts}
     titles = [(t, r) for t, r in texts if t in TITLES or t.endswith('…')]
-    expect(all(r[0] == TEXT_X and r[2] == TEXT_END - TEXT_X == 222 and r[3] == 24 for t, r in titles) and
+    expect(all(r[0] == TEXT_X and r[2] == TEXT_END - TEXT_X == 210 and r[3] == 24 for t, r in titles) and
            all(tx[TITLES[i]][1] == lay.row_y(i) + O['LIST_TITLE_Y'] for i in rows_in if TITLES[i] in tx),
-           'a title at (74, row + LIST_TITLE_Y) in a 222 x 24 rect: from x 74 to 296 (the rail\'s touch column starts there)')
+           'a title at (74, row + LIST_TITLE_Y) in a 210 x 24 rect: from x 74 to 284 (the rail\'s touch column starts there, SG_RAIL_X)')
     sub = [(t, r) for t, r in texts if t.startswith('Artist')]
-    expect(sub and all(r[0] == TEXT_X and r[2] == 222 and r[3] == 20 for t, r in sub) and all(s == 'label_row_sub' for (t, _), s in zip(texts, styles) if t.startswith('Artist')),
-           'the artist at (74, row + LIST_SUB_Y), 222 x 20, in the 18 px #AAAAAA style')
+    expect(sub and all(r[0] == TEXT_X and r[2] == 210 and r[3] == 20 for t, r in sub) and all(s == 'label_row_sub' for (t, _), s in zip(texts, styles) if t.startswith('Artist')),
+           'the artist at (74, row + LIST_SUB_Y), 210 x 20, in the 18 px #AAAAAA style')
     expect(all(s == 'label_row_title' for (t, _), s in zip(texts, styles) if t in TITLES) and all(s == 'label_hdr' for (t, _), s in zip(texts, styles) if len(t) == 1),
            'titles in the 21 px style, header letters in the 20 px one')
     hdr_texts = [(t, r) for t, r in texts if len(t) == 1]
@@ -533,7 +535,7 @@ def open_and_paint_tests(ctx):
     expect(not [fl for fl in fills if fl[0] in (0xff141414, 0xff222222) and fl[3] == 320] and not [fl for fl in fills if fl[0] == O['SG_HDR_BG']],
            'no band and no hairline under a header in the flow (the only backing is the pinned copy\'s black)')
     rh = [fl for fl in fills if fl[0] == O['LIST_HAIR'] and fl[3] != 320]
-    expect(all(h[1] == TEXT_X and h[3] == 222 and h[4] == 1 for h in rh) and sorted(h[2] for h in rh) == sorted(lay.row_y(i) + ROW - 1 for i in rows_in if lay.row_y(i) + ROW - 1 < VIEW_H),
+    expect(all(h[1] == TEXT_X and h[3] == TEXT_END - TEXT_X and h[4] == 1 for h in rh) and sorted(h[2] for h in rh) == sorted(lay.row_y(i) + ROW - 1 for i in rows_in if lay.row_y(i) + ROW - 1 < VIEW_H),
            f'a #222222 hairline under each row from x 74 to the rail: {sorted((h[1], h[2], h[3]) for h in rh)} vs {sorted(lay.row_y(i) + ROW - 1 for i in rows_in)}')
     expect(not any(fl[0] == O['LIST_PRESS'] for fl in fills), 'nothing is pressed at rest')
 
@@ -766,6 +768,44 @@ def rail_tests(ctx):
         expect(abs(dsc[0] + RAIL_DISC / 2 - (il + ir) / 2) <= 0.5 and abs(dsc[1] + RAIL_DISC / 2 - (it + ib) / 2) <= 0.5,
                f'the disc behind {rl.secs[i][1]} is centred on the letter\'s ink (disc centre {dsc[0] + RAIL_DISC / 2}, {dsc[1] + RAIL_DISC / 2}; ink centre {(il + ir) / 2}, {(it + ib) / 2})')
     touch(m, 'up', 306, rail_at(n_sec, 26), 'sg_on_rail')
+
+def switch_tests(ctx):
+    """The Index Rail and Section Headers switches (both on by default) (patch/azlist.c az_prefs, read when the page opens): the four combinations; with the headers off the
+    rows close up (header height 0), no letter or pinned band is painted, the rail (when on) still jumps to each section's first row; the rows keep the full list-row width with the rail off and end SG_RAIL_INSET earlier with it on."""
+    expect = ctx.expect
+    for rail, heads in ((b'0\n', b'1\n'), (b'0\n', b'0\n'), (b'1\n', b'0\n'), (b'1\n', b'1\n'), (None, None)):
+        m = songs_machine(TITLES)
+        if rail is None: del m.fs[AZRAIL_FILE]
+        else: m.fs[AZRAIL_FILE], m.fs[AZHEAD_FILE] = rail, heads
+        open_page(m)
+        hh = 0 if heads == b'0\n' else HDR
+        lay = Layout(letters_of(TITLES), hh=hh)
+        what = f'rail {rail.strip().decode() if rail else "unset"}, headers {heads.strip().decode() if heads else "unset"}'
+        on = rail != b'0\n'
+        expect(m.props.get((m.sv, 'virtual_h')) == lay.content() and vis(m, 'sg_rail') == ((1, 1) if on else (0, 0)), f'{what}: the content is {lay.content()} px and the rail is {"shown" if on else "hidden and insensitive"}')
+        letters = []
+        for off in range(0, lay.content() - VIEW_H, 120):
+            scroll_to(m, off)
+            _, texts, styles, fills = paint(m)
+            letters += [t for t, s in zip(texts, styles) if s == 'label_hdr']
+            if not hh: expect(not [f for f in fills if f[0] == O['SG_HDR_BG']], f'{what}: no pinned band at offset {off}')
+        expect(bool(letters) == bool(hh), f'{what}: section letters only with the headers')
+        scroll_to(m, 0)
+        _, texts, styles, fills = paint(m)
+        tops = [r[1] for (t, r), s in zip(texts, styles) if s == 'label_row_title']
+        expect(tops[:2] == [lay.row_y(0) + O['LIST_TITLE_Y'], lay.row_y(1) + O['LIST_TITLE_Y']], f'{what}: the first rows are at {lay.row_y(0)} and {lay.row_y(1)}')
+        hairs = {h[1] + h[3] for h in fills if h[0] == O['LIST_HAIR'] and h[3] != 320}
+        expect(hairs == {O['LIST_HAIR_END'] - (O['SG_RAIL_INSET'] if on else 0)}, f'{what}: the hairlines end at x {O["LIST_HAIR_END"] - (O["SG_RAIL_INSET"] if on else 0)}, the rail\'s footprint left free only while the rail is shown ({sorted(hairs)})')
+        if on:
+            n, pitch = len(lay.secs), RAIL_P
+            y0 = (VIEW_H - n * pitch) // 2
+            for k in (3, 6):
+                m.calls = []
+                touch(m, 'down', 306, SCREEN_Y0 + y0 + int((k + 0.5) * pitch), 'sg_on_rail')
+                want = min(lay.hdr_y(k), lay.content() - VIEW_H)
+                expect(off_of(m) == want and (hh or lay.hdr_y(k) == lay.top + lay.secs[k][0] * ROW), f'{what}: the rail jumps to section {lay.secs[k][1]} at {want}' + ('' if hh else ' (its first row)'))
+                touch(m, 'up', 306, SCREEN_Y0 + 100, 'sg_on_rail', 1100)
+
 
 def order_search_and_stale_tests(ctx):
     """9. The plain list of any other order, strays in the Title order; 10. the Initial byte; 11. the sort card; 12. Search; 13. the stock list replaced under the page."""
@@ -1042,7 +1082,7 @@ def collapse_and_select_tests(ctx):
     expect(len(marks) == len(covers) and all(b[2][0] == 9 and b[2][1] == c[2][1] - O['LIST_ART_Y'] + 19 for b, c in zip(marks, covers)) and all(c[2][0] == 40 for c in covers),
            'a 26 px mark at x 9 on each row, the cover at x 40 (30 px right)')
     ttl = [(t, r) for t, r in texts if t in TITLES]
-    expect(ttl and all(r[0] == 104 and r[2] == 192 for t, r in ttl), 'and the text from x 104 to 296 (192 px)')
+    expect(ttl and all(r[0] == 104 and r[2] == TEXT_END - 104 == 180 for t, r in ttl), 'and the text from x 104 to 284 (180 px)')
     bits = [b[0] for b in marks]
     expect(len(set(bits)) == 1, 'all unselected: one mark image')
     expect(pixel(m, bits[0], 0, 0) >> 24 == 0 and pixel(m, bits[0], 25, 25) >> 24 == 0 and pixel(m, bits[0], 13, 13) >> 24 == 255 and pixel(m, bits[0], 13, 2) >> 24 >= 128,
@@ -1622,7 +1662,7 @@ def lists_tests(ctx):
         m.artist_songs = {name: list(m.songs[:n]), 'Nina Simone': list(m.songs[n:])}
         return m, m.record(album='', artist=name, path='', title=name, name='', rid=7)
     m, row = artist_machine()
-    r = m.call(PSYMS['songs_open_artist'], a0=row, count=900000000)
+    r = m.call(PSYMS['songs_open_artist'], a0=row, a1=O['CLASS_ARTISTS'], count=900000000)
     calls = [c for c in m.calls if c[0] in ('loadAlbumList', 'loadAlbumdetailList', 'loadLocalClassList', 'window_open')]
     expect(r == 0 and [c[:2] for c in calls] == [('loadAlbumList', O['CLASS_ARTISTS']), ('loadAlbumdetailList', O['CLASS_ARTIST_ALBUMS']), ('window_open', 'm1plus_songs'),
                                                  ('loadLocalClassList', O['CLASS_ALBUMS']), ('loadLocalClassList', art_cls)]
@@ -1693,22 +1733,63 @@ def lists_tests(ctx):
     calls = click(m, 'sg_add')
     expect(('navigator_to_with_context', 'playlist_page', O['PICKER_ADD'] | art_cls) in calls, 'Add opens the playlist picker with class 0xff11')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # A composer's songs (the scoped Albums page's All Songs tile, Cover Flow's Songs button on a composer): the same page on the composer queries, class 0xff14
+    comp_cls = O['CLASS_14']
+    m = list_machine(titles)
+    m.artist_albums = {'Bach': [m.record(album=f'Album {i}', artist='Bach', rid=100 + i) for i in range(2)]}
+    m.composer_songs = {'Bach': list(m.songs[:4])}
+    row = m.record(album='', artist='Bach', path='', title='Bach', name='', rid=7)
+    r = m.call(PSYMS['songs_open_artist'], a0=row, a1=O['CLASS_COMPOSERS'], count=900000000)
+    calls = [c for c in m.calls if c[0] in ('loadAlbumList', 'loadAlbumdetailList', 'loadLocalClassList', 'window_open')]
+    expect(r == 0 and [c[:2] for c in calls] == [('loadAlbumList', O['CLASS_COMPOSERS']), ('loadAlbumdetailList', O['CLASS_COMPOSER_ALBUMS']), ('window_open', 'm1plus_songs'),
+                                                 ('loadLocalClassList', O['CLASS_ALBUMS']), ('loadLocalClassList', comp_cls)]
+           and m.word(G_CLASS) == comp_cls and m.word(ci0) == comp_cls and m.read_cstr(ci0 + O['CLASSINFO_ARTIST_14']) == 'Bach'
+           and m.deques[m.word(SHOWLIST)] == m.songs[:4],
+           f'songs_open_artist on a composer: loadAlbumList(0xf005), loadAlbumdetailList(0xff02, the All songs row), the page, then class 0xff14: his four songs ({calls})')
+    expect(m.wtext[m.widgets['sg_title']] == 'Bach' and vis(m, 'btn_coverflow') == (1, 1) and vis(m, 'btn_select') == (1, 1) and not is_shown(m, 'btn_search'),
+           'a composer\'s songs: titled with the composer, the artist\'s navbar (Cover Flow, Select, no Search)')
+    blits, texts, styles, fills = settle(m)
+    shown = [t for t, rc in texts]
+    expect(m.props[(m.sv, 'virtual_h')] == Layout(['A'] * 4, sections=False).content() and shown[:4] == titles[:4] and 'Artist 1' in shown
+           and not any(t.startswith('Album ') for t in shown), f'a plain list in the query\'s order whose second line is the artist (the composer is the title, not the performer) ({shown[:6]})')
+    snap = bytes(m.u.mem_read(ci0, nci))
+    m.u.mem_write(ci0, b'\xaa' * nci); m.setword(SHOWLIST, m.new_deque([]))
+    m.calls = []
+    m.call(PSYMS['sg_on_fg'], a0=0, a1=0, count=900000000)
+    expect([c[1] for c in m.calls if c[0] == 'loadLocalClassList'] == [comp_cls] and bytes(m.u.mem_read(ci0, nci)) == snap,
+           'a composer\'s songs read again on return: the record is put back first')
+    settle(m)
+    m.u.mem_write(ci0, b'\xaa' * nci)
+    calls = tap(m, 150, lay.row_y(1) + 30)
+    expect([c[3] for c in calls if c[0] == 'loadSongList'] == [comp_cls] and bytes(m.u.mem_read(ci0, nci)) == snap and m.played[1] == 1 and m.played[0] == m.songs[:4],
+           'a row plays the composer\'s songs with class 0xff14, the record put back before loadSongList')
+    pick(m, 'select'); tap(m, 150, lay.row_y(0) + 30)
+    m.confirm_answer = O['CONFIRM_DELETE_LIBRARY']
+    calls = click(m, 'sg_del')
+    bd = [c for c in calls if c[0] == 'batch_delete_file']
+    expect(bd and bd[0][1] == comp_cls and bd[0][6] == [0], 'Delete: batch_delete_file with class 0xff14 (the generic songtable loop)')
+    m.confirm_answer = None
+    pick(m, 'select'); tap(m, 150, lay.row_y(2) + 30)
+    m.windows['m1plus_playlists'] = 0
+    calls = click(m, 'sg_add')
+    expect(('navigator_to_with_context', 'playlist_page', O['PICKER_ADD'] | comp_cls) in calls, 'Add opens the playlist picker with class 0xff14 (batch_add_file\'s generic path)')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
     long_name = 'Miles Davis and the Quintet of Many Names'
     m, row = artist_machine(long_name)
-    m.call(PSYMS['songs_open_artist'], a0=row, count=900000000)
+    m.call(PSYMS['songs_open_artist'], a0=row, a1=O['CLASS_ARTISTS'], count=900000000)
     expect(m.wtext[m.widgets['sg_title']] == fitted(long_name, O['SG_TITLE_W']) and m.wtext[m.widgets['label_title']] == fitted(long_name, 110),
            'a long artist name is cut with an ellipsis, like a playlist\'s')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
     m, row = artist_machine(); m.artist_albums = {}   # no All songs row (the stock list is empty)
-    r = m.call(PSYMS['songs_open_artist'], a0=row, count=900000000)
+    r = m.call(PSYMS['songs_open_artist'], a0=row, a1=O['CLASS_ARTISTS'], count=900000000)
     expect(r & NONE == NONE and 'window_open' not in m.names() and 'loadAlbumdetailList' not in m.names(), 'an artist with no All songs row: -1, no page, the caller falls back')
     m, row = artist_machine(); m.windows['m1plus_songs'] = 0
-    expect(m.call(PSYMS['songs_open_artist'], a0=row, count=900000000) & NONE == NONE and not any(c[0] == 'stock_resume' for c in m.calls),
+    expect(m.call(PSYMS['songs_open_artist'], a0=row, a1=O['CLASS_ARTISTS'], count=900000000) & NONE == NONE and not any(c[0] == 'stock_resume' for c in m.calls),
            'a window that will not open: -1, no Home fallback')
-    expect(m.call(PSYMS['songs_open_artist'], a0=0, count=900000000) & NONE == NONE, 'no artist: -1')
+    expect(m.call(PSYMS['songs_open_artist'], a0=0, a1=O['CLASS_ARTISTS'], count=900000000) & NONE == NONE, 'no artist: -1')
 
 
-SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests]   # tools/check.py runs each as its own task
+SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

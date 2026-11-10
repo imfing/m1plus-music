@@ -28,6 +28,7 @@ class NowMachine(Machine):
         self.opened = []
         self.texts = {}           # label handle -> its text (latin-1 chars of the UTF-8 bytes, as read_cstr returns)
         self.get_ret = 0          # nonzero: widget_get_text finds no text
+        self.set_fail = set()     # label handles whose widget_set_text_utf8 fails (nothing stored)
         self.wide = {}            # label handle -> raw code points for widget_get_text (over texts)
         self.bar = 0              # the status bar's handle (0: the window manager has none)
         self.bar_styles = []      # (bar, "normal:bg_color", uint32)
@@ -43,14 +44,17 @@ class NowMachine(Machine):
 
     def bar_color(self): return self.bar_styles[-1][2] if self.bar_styles else None
     def bar_calls(self): return [c for c in self.calls if c[0] == 'widget_set_style' and c[1] == self.bar]
-    def info_page(self, stock):
+    def info_page(self, stock, quality=True):
         """The info page's labels (name -> the text stock wrote); returns {name: handle}."""
         out = {}
         for n, t in stock.items():
             out[n] = self.widget(n); self.texts[out[n]] = t.encode('utf-8').decode('latin-1')
+        if quality and 'label_info' in stock: self.widget('np_quality')
         return out
 
-    def label(self, name): return self.texts[self.widgets[name]].encode('latin-1').decode('utf-8')
+    def label(self, name):
+        if name == 'label_info' and self.props.get((self.widgets.get('np_quality'), 'visible')) == 1: name = 'np_quality'   # the visible quality line: np_quality while it is shown
+        return self.texts[self.widgets[name]].encode('latin-1').decode('utf-8')
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
@@ -74,7 +78,8 @@ class NowMachine(Machine):
             pos, ln, r = self.pt
             self.setword(a0, pos); self.setword(a1, ln); self.calls.append(('get_playtimeandlength',)); ret = r
         elif name == 'widget_set_text_utf8':   # the labels keep their text (the info page is read back)
-            t = self.read_cstr(a1); self.texts[a0] = t; self.calls.append(('widget_set_text_utf8', a0, t)); ret = 0
+            t = self.read_cstr(a1); self.calls.append(('widget_set_text_utf8', a0, t)); ret = 1 if a0 in self.set_fail else 0
+            if not ret: self.texts[a0] = t
         elif name == 'widget_get_text':   # the label's wide text (32 bit code points; NULL for a label without one, or while get_ret is set: a failed read); the payload encodes it (pod_text_utf8)
             t = self.texts.get(a0); self.calls.append(('widget_get_text', a0)); ret = 0
             if a0 in self.wide and not self.get_ret:   # raw code points (a test of bad ones: no surrogate survives a Python str)
@@ -288,10 +293,10 @@ def run(ctx):
                 'label_year': 'Era:1999', 'label_size': 'File Size:35.92MB', 'label_location': 'Location:SD:/Music/Kid A'}
     want_en = {'label_info': 'FLAC | 44.1 kHz | 16-bit | 950 kbps', 'label_album': 'Album: Kid A', 'label_genre': 'Genre: Rock',
                'label_year': 'Year: 1999', 'label_size': 'File Size: 35.92 MB', 'label_location': 'Location: SD:/Music/Kid A'}
-    def info(stock, lang=None, **kw):
+    def info(stock, lang=None, quality=True, **kw):
         m = NowMachine(); m.page(); m.src(0); m.pt = (30, 200, 1); m.set_language(lang) if lang else None
         for k, v in kw.items(): setattr(m, k, v)
-        m.info_page(stock); m.init(); return m
+        m.info_page(stock, quality); m.init(); return m
     sets = lambda m: [c for c in m.calls if c[0] == 'widget_set_text_utf8' and c[1] != m.widgets['np_remaining']]
     m = info(stock_en)
     expect({n: m.label(n) for n in stock_en} == want_en, f'English: "Label: value", spaced units, Genre and Year ({ {n: m.label(n) for n in stock_en} })')
@@ -344,9 +349,10 @@ def run(ctx):
                and m.label('label_album') == '专辑: Kid A' and m.label('label_size') == 'Z: 3.50 MB' and m.label('label_location') == 'W: SD:/a',
                f'{lang}: Genre / Year from our table, the other labels as stock wrote them ({m.label("label_genre")}, {m.label("label_year")})')
     # anything unexpected: stock's text stays
-    keep = {'label_album': 'Unknown', 'label_genre': ':Rock', 'label_size': '', 'label_location': 'x' * 600, 'label_info': 'A' * 511}
+    keep = {'label_album': 'Unknown', 'label_genre': ':Rock', 'label_size': '', 'label_location': 'x' * 600}
     m = info(keep)
     expect(all(m.label(n) == keep[n] for n in keep) and not sets(m), 'no colon, a leading colon, an empty text, a text too long to have been read whole: untouched')
+    m = info({'label_info': 'A' * 600}); expect(m.visible('np_quality') is None and m.label('label_info') == 'A' * 600 and not sets(m), 'a quality text too long to read whole: stock\'s label stays visible')
     # stock's widget_get_text_utf8 ignores its size and overran the 512 byte buffer with a longer tag: the payload encodes the wide text itself and leaves one that does not fit
     for t in ('Album:' + 'x' * 600, 'Album:' + '歌' * 200, 'Title:' + '😀' * 130, 'Album:' + 'x' * 506):
         m = info({'label_album': t}); k = len(t.encode('utf-8'))
@@ -357,6 +363,55 @@ def run(ctx):
     expect(all(m.label(n) == stock_en[n] for n in stock_en) and not sets(m), 'a failed read of the text: untouched')
     m = NowMachine(); m.page(); m.src(0); m.info_page({'label_album': 'Album:X'}); m.init()
     expect(m.label('label_album') == 'Album: X', 'an info page with only some of its labels works for those')
+    # ---- the quality line: stock writes label_info on EVERY tick; the visible line is np_quality, written once per text
+    QS, QF = 'FLAC|44.1kHz|16bit|950kbps', 'FLAC | 44.1 kHz | 16-bit | 950 kbps'
+    qset = lambda m: [c[2] for c in m.calls if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets.get('np_quality')]
+    li_set = lambda m: [c for c in m.calls if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets['label_info']]
+    m = info({'label_info': QS}); h_q, h_s = m.widgets['np_quality'], m.widgets['label_info']
+    expect(m.texts[h_q] == QF and m.visible('np_quality') == 1 and m.visible('label_info') == 0 and m.props.get((h_s, 'sensitive')) == 0,
+           'the formatted line is in np_quality, shown; stock\'s label_info hidden and insensitive')
+    expect(not li_set(m), 'label_info itself is never written by the payload')
+    m.calls = []
+    for _ in range(10):
+        m.texts[h_s] = QS; m.tick()     # stock rewrites the compact text on its tick
+    expect(not qset(m) and not li_set(m) and m.texts[h_q] == QF and m.visible('np_quality') == 1 and m.visible('label_info') == 0,
+           'stock rewriting label_info 10 times: the visible line stays the formatted text, written 0 more times, label_info untouched and hidden')
+    m.texts[h_s] = 'MP3|48kHz|16bit|320kbps'; m.calls = []; m.tick()
+    first = qset(m); m.tick()
+    expect(first == ['MP3 | 48 kHz | 16-bit | 320 kbps'] and not qset(m), f'a quality change on a track change updates np_quality once ({qset(m)})')
+    # after the takeover, any text that cannot be shown as ours gives the line back to stock (never a stale line), and
+    # the next good text takes it over again
+    # stock_back / ours: who shows the line, and m.label('label_info') (the visible line) is the text the screen has
+    stock_back = lambda m, t: m.visible('np_quality') == 0 and m.visible('label_info') == 1 and m.label('label_info') == t
+    ours = lambda m, t: m.visible('np_quality') == 1 and m.visible('label_info') == 0 and m.label('label_info') == t
+    m.texts[h_s] = 'A' * 600; m.calls = []; m.tick()
+    expect(not qset(m) and stock_back(m, 'A' * 600), 'an unreadable (too long) stock text after the takeover: np_quality hidden, stock label_info shown with its text')
+    m.texts[h_s] = QS; m.calls = []; m.tick()
+    expect(qset(m) == [QF] and ours(m, QF), 'readable again: np_quality takes the line over again')
+    m.texts[h_s] = 'AAC|44.1kHz|16bit|256kbps'; m.get_ret = 1; m.calls = []; m.tick(); m.get_ret = 0
+    expect(not qset(m) and stock_back(m, 'AAC|44.1kHz|16bit|256kbps'), 'a failed read after the takeover: stock label_info shown with the new text, np_quality hidden')
+    m.calls = []; m.tick()
+    expect(qset(m) == ['AAC | 44.1 kHz | 16-bit | 256 kbps'] and ours(m, 'AAC | 44.1 kHz | 16-bit | 256 kbps'), 'read works again: taken over again')
+    m.texts[h_s] = 'MP3|48kHz|16bit|320kbps'; m.set_fail.add(h_q); m.calls = []; m.tick(); m.set_fail.clear()
+    expect(stock_back(m, 'MP3|48kHz|16bit|320kbps') and m.texts[h_q].startswith('AAC'),
+           f'a failed write of a new quality text: the visible line is stock\'s new MP3 text, not the hidden old AAC ({m.label("label_info")})')
+    m.calls = []; m.tick()
+    expect(qset(m) == ['MP3 | 48 kHz | 16-bit | 320 kbps'] and ours(m, 'MP3 | 48 kHz | 16-bit | 320 kbps'), 'the write works again: taken over again')
+    m = NowMachine(); m.page(); m.src(0); m.pt = (30, 200, 1); m.info_page({'label_info': QS}); m.set_fail.add(m.widgets['np_quality']); m.init(); m.tick()
+    expect(m.visible('np_quality') is None and m.visible('label_info') is None and m.label('label_info') == QS, 'a write that never works: never taken over, stock as it was')
+    m = info({'label_info': QS}, quality=False)
+    expect(m.texts[m.widgets['label_info']] == QS and m.visible('label_info') is None and not li_set(m), 'no np_quality (creation failed): stock label_info is visible, untouched')
+    m.texts[m.widgets['label_info']] = QS; m.calls = []; m.tick(); m.tick()
+    expect(not li_set(m) and not any(c[0] == 'widget_set_visible' and c[1] == m.widgets['label_info'] for c in m.calls), 'and it stays stock')
+    m = NowMachine(); m.page(); m.src(0); m.widget('np_quality'); m.init()
+    expect(m.visible('np_quality') is None, 'no label_info: np_quality stays hidden')
+    m = info({'label_info': QS}); m.calls = []; m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0); m.texts[m.widgets['label_info']] = 'MP3|48kHz|16bit|320kbps'; m.tick()
+    expect(not qset(m), 'a stale timer after the page is destroyed writes nothing')
+    m = info({'label_info': QS})
+    h_q = m.widgets['np_quality']; m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0)
+    m.widgets['np_quality'] = m.alloc(0x80); m.widgets['label_info'] = m.alloc(0x80); m.texts[m.widgets['label_info']] = QS.encode().decode('latin-1')
+    m.init(win=WIN + 4); nq = m.widgets['np_quality']
+    expect(m.texts.get(nq) == QF and m.visible('np_quality') == 1, 'leaving and re-entering the page: the new page shows its own np_quality')
     m = info(stock_en); m.calls = []; m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0); m.texts[m.widgets['label_album']] = 'Album:Z'; m.tick()
     expect(m.label('label_album') == 'Album:Z' and not sets(m), 'after the page is gone a stray tick touches nothing')
 

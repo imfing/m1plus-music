@@ -24,7 +24,7 @@ O = PI.offsets()
 GREY, ACCENT = (0xAA, 0xAA, 0xAA), (0xEE, 0xEE, 0xEC)
 TOP, HDR_H, ROW_H = O['SG_TOP'], O['SG_HDR_H'], O['LIST_ROW_H']
 ART, ART_X, ART_Y = O['LIST_ART'], O['LIST_ART_X'], O['LIST_ART_Y']
-TEXT_X, TEXT_END, SEL_COL, MARK, BAR_H = O['LIST_TEXT_X'], O['SG_TEXT_END'], O['SG_SEL_COL'], O['SG_MARK'], O['SG_BAR_H']
+TEXT_X, TEXT_END, SEL_COL, MARK, BAR_H = O['LIST_TEXT_X'], O['LIST_HAIR_END'] - O['SG_RAIL_INSET'], O['SG_SEL_COL'], O['SG_MARK'], O['SG_BAR_H']
 PILL_Y, PILL_H, PILL_W, PILL_R = O['SG_PILL_Y'], O['SG_PILL_H'], O['SG_PILL_W'], O['SG_PILL_R']
 PILL_RGB, PILL_DOWN, GLYPH, GAP = (0x1E, 0x1E, 0x1E), (0x33, 0x33, 0x33), O['SG_PILL_GLYPH'], O['SG_PILL_GAP']
 BAND, HAIR = (0x14, 0x14, 0x14), (0x22, 0x22, 0x22)
@@ -151,8 +151,9 @@ def content(s, covers_on=True, select=None, title=None, head=False):
             header(s, im, v, y); continue
         title, artist, ci = v[:3]
         right = more_right(title_none)
-        room = TEXT_END - tx if select is not None else right - MORE_W - MORE_GAP - tx   # (select mode has no "...": the text ends at TEXT_END again)
-        d.rectangle((tx, y + ROW_H - 1, TEXT_END - 1, y + ROW_H - 1), fill=HAIR)
+        end = TEXT_END if title_none else O['LIST_HAIR_END']   # (without the rail the rows run to the list-row spec's end)
+        room = end - tx if select is not None else right - MORE_W - MORE_GAP - tx   # (select mode has no "...": the text ends at the hairline's end again)
+        d.rectangle((tx, y + ROW_H - 1, end - 1, y + ROW_H - 1), fill=HAIR)
         if select is None: im.alpha_composite(more, (dots_x(right, title_none), y + (ROW_H - 1 - DOTS_PX) // 2))
         if select is not None:
             mk = on if title in select else off

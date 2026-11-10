@@ -135,7 +135,7 @@ def cover_flow_tests(expect):
     artists_tap(m, 0)
     expect(shelf_value(m) == 0,
            "the artist's Cover Flow starts on its first (leftmost) album, not the stock slide_menu's item 1")
-    expect(('widget_set_text_utf8', m.widgets['label_album'], 'Kind of Blue') in m.calls
+    expect(('widget_set_text_utf8', m.widgets['label_album'], 'Bitches Brew') in m.calls
            and ('widget_set_text_utf8', m.widgets['label_artist'], 'Miles Davis') in m.calls, 'and its captions are set')
     m.tap(O['CF_CX'], count=60000000)
     expect(('navigator_to_with_context', 'albuminfo_page', O['CLASS_ARTIST_ALBUMS'], 0) in m.calls,

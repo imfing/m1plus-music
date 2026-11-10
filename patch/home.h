@@ -49,12 +49,18 @@
 #define LANDSCAPE_FILE \
     "/mnt/data/m1plus/coverflow-landscape" /* "1" = Cover Flow opens in landscape, anything else portrait (the default) */
 #define LANDSCAPE_TMP "/mnt/data/m1plus/coverflow-landscape.tmp"
+#define VOLKEYS_FILE \
+    "/mnt/data/m1plus/coverflow-volume-keys" /* "1" = the volume keys step Cover Flow, anything else or missing off (the default) */
+#define VOLKEYS_TMP "/mnt/data/m1plus/coverflow-volume-keys.tmp"
 #define OLD_ORDER_FILE \
     "/mnt/data/m1plus/album-order" /* the retired Settings > Library > Album Order ("0" Title, else Artist): cc_sort_mode moves it into ALBUMS_SORT_FILE once and deletes it */
 #define OLD_ORDER_TMP "/mnt/data/m1plus/album-order.tmp"
 #define TAPETHEME_FILE \
     "/mnt/data/m1plus/cassette-theme" /* the Cassette Mode theme: "1" = Chrome, "2" = Metal (each with an optional newline), anything else or missing = Normal (the default) */
 #define TAPETHEME_TMP "/mnt/data/m1plus/cassette-theme.tmp"
+#define IDLE_FILE \
+    "/mnt/data/m1plus/nowplaying-idle" /* where Now Playing's timed view goes: "1" Cassette, "2" Vinyl (each with an optional newline), anything else or missing = Album Cover (the default; docs/modules/bigcover.md "Idle view") */
+#define IDLE_TMP "/mnt/data/m1plus/nowplaying-idle.tmp"
 #define VINYLREC_FILE \
     "/mnt/data/m1plus/vinyl-record" /* Vinyl Mode's record colour: "1" Cover (with an optional newline), anything else or missing = Black (the default) */
 #define VINYLREC_TMP "/mnt/data/m1plus/vinyl-record.tmp"
@@ -64,9 +70,18 @@
 #define BG_FILE \
     "/mnt/data/m1plus/appearance-background" /* the background (patch/palette.c): "1" = Tinted, "2" = Light, "3" = Light Auto (07:00 - 18:59; Light is not in the picker), each with an optional newline, anything else or missing = Black (the default) */
 #define BG_TMP "/mnt/data/m1plus/appearance-background.tmp"
+#define LK_LAYOUT_FILE \
+    "/mnt/data/m1plus/lockscreen-layout" /* the lock screen layout (patch/lockscreen.c): "1" mini player, anything else or missing = the large cover (the default) */
+#define LK_LAYOUT_TMP "/mnt/data/m1plus/lockscreen-layout.tmp"
 #define ACCENT_FILE \
     "/mnt/data/m1plus/appearance-accent" /* the accent (patch/palette.c): one digit, the index 0 Neutral (default) .. 6 Champagne, with an optional newline; anything else or missing = Neutral */
 #define ACCENT_TMP "/mnt/data/m1plus/appearance-accent.tmp"
+#define AZRAIL_FILE \
+    "/mnt/data/m1plus/appearance-index-rail" /* Index Rail (patch/azlist.c): "1" = the A-Z rail and its bubble on the A-Z lists, "0" = off, anything else or missing = on (the default) */
+#define AZRAIL_TMP "/mnt/data/m1plus/appearance-index-rail.tmp"
+#define AZHEAD_FILE \
+    "/mnt/data/m1plus/appearance-headers" /* Section Headers (patch/azlist.c): "0" = no section letters and no pinned header, anything else or missing = on (the default) */
+#define AZHEAD_TMP "/mnt/data/m1plus/appearance-headers.tmp"
 #define MENU_FILE \
     "/mnt/data/m1plus/home-menu" /* the menu's visible items in order, one digit (item id) each (patch/menu.c); missing or invalid = the defaults */
 #define MENU_TMP "/mnt/data/m1plus/home-menu.tmp"
@@ -92,6 +107,9 @@
 #define REBUILD_FILE \
     "/mnt/data/m1plus/covers-rebuild" /* exists while a Settings > Library > Rebuild Covers is requested; Home's cover build (patch/homecover.c) does it and removes it when done */
 #define REBUILD_TMP "/mnt/data/m1plus/covers-rebuild.tmp"
+#define AREBUILD_FILE \
+    "/mnt/data/m1plus/artists-rebuild" /* exists while a rebuild of the artist photos is requested (Settings > Library > Rebuild Artist Photos writes it); Home's build (patch/homecover.c) checks every artist again and removes it when done */
+#define AREBUILD_TMP "/mnt/data/m1plus/artists-rebuild.tmp"
 #define STAMP_FILE \
     CARD_DIR \
     "/cache-stamp" /* what the library was when Home's last pass finished: "covers <albums> <hash>" and "tracks <albums> <hash>" lines (patch/homecover.c); on the card, like the cache it describes */
@@ -240,9 +258,13 @@ extern int kb_zh_toggle(void); /* flip it, saved atomically; the new state, or -
 extern int pcsearch_setting(
     void); /* patch/podcasts.c: Settings > Library > Podcasts > Podcast Discover: 1 on (the default), 0 off */
 extern int pcsearch_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
-extern int
-battpct_setting(void); /* patch/battery.c: Settings > Home Screen > Battery Percentage: 1 on, 0 off (the default) */
+extern int battpct_setting(
+    void); /* patch/battery.c: Settings > System > Battery > Battery Percentage: 1 on, 0 off (the default) */
 extern int battpct_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
+extern int azrail_setting(void); /* patch/azlist.c: Settings > Library > Index Rail: 1 on (the default), 0 off */
+extern int azrail_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
+extern int azhead_setting(void); /* patch/azlist.c: Settings > Library > Section Headers: 1 on (the default), 0 off */
+extern int azhead_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
 
 /* patch/m1plus.c (stages with the home feature) */
 extern int m1plus_open_entry(void);

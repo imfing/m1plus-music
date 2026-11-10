@@ -605,7 +605,7 @@ def home_tests(ctx):
     expect('loadLocalClassList' not in [c[0] for c in new if c[1:] == (O['CLASS_ALL_SONGS'],)], 'a library found complete is not read again at the next foreground')
     # ... until the library changed (another album count) or the table was cleared
     m.showlist.append(m.record(album='Album 99', artist='Artist 99', path='/mnt/mmc/m/99/1.flac', rid=99)); m.present.add('/mnt/mmc/m/99/1.flac')
-    m.files[art_file(album_key('Artist 99', 'Album 99'))] = 4096; m.present.add(art_file(album_key('Artist 99', 'Album 99')))
+    m.files[art_file(album_key('Artist 99', 'Album 99'))] = 4096; m.present.add(art_file(album_key('Artist 99', 'Album 99'))); m.files[HC.artist_file('Artist 99')] = 0; m.present.add(HC.artist_file('Artist 99'))
     m.files['/mnt/mmc/m/99/1.flac'] = 123; m.durations['/mnt/mmc/m/99/1.flac'] = 99
     HC.hook(m, 'hc_on_foreground'); new = HC.scan(m)
     expect([c for c in new if c[0] == 'loadLocalClassList' and c[1] == O['CLASS_ALL_SONGS']], 'a new album: the songs are read again')
@@ -616,7 +616,7 @@ def home_tests(ctx):
     m = machine(6, seed=[(p, 5_000_000 + i, 100 + i) for i, p in enumerate(paths(6))])
     HC.scan(m); lscan(m)
     m.showlist[0] = m.record(album='Album 98', artist='Artist 98', path='/mnt/mmc/m/98/1.flac', rid=98); m.present.add('/mnt/mmc/m/98/1.flac')
-    m.files[art_file(album_key('Artist 98', 'Album 98'))] = 4096; m.present.add(art_file(album_key('Artist 98', 'Album 98')))
+    m.files[art_file(album_key('Artist 98', 'Album 98'))] = 4096; m.present.add(art_file(album_key('Artist 98', 'Album 98'))); m.files[HC.artist_file('Artist 98')] = 0; m.present.add(HC.artist_file('Artist 98'))
     m.files['/mnt/mmc/m/98/1.flac'] = 123; m.durations['/mnt/mmc/m/98/1.flac'] = 98
     HC.hook(m, 'hc_on_foreground'); new = HC.scan(m)
     expect([c for c in new if c[0] == 'loadLocalClassList' and c[1] == O['CLASS_ALL_SONGS']], 'an album replaced (same count): the songs are read again')
@@ -711,7 +711,7 @@ def clear_tests(ctx):
     expect, P = ctx.expect, pod_pages
     d = P.CACHE_PAGE
     labels = [r.label for r in d.rows]
-    expect(labels.index('Clear Track Durations') == labels.index('Clear Cover Cache') + 2 and d.rows[labels.index('Clear Track Durations')].action == P.ACT_CLEARDUR == 44 and labels[-1] == 'Clear Track Durations', 'Cache has Clear Track Durations as its last row, in the Track Durations section after Measured Tracks (action 44; the ids of the others unchanged)')
+    expect(labels.index('Clear Track Durations') == labels.index('Clear Cover Cache') + 4 and d.rows[labels.index('Clear Track Durations')].action == P.ACT_CLEARDUR == 44 and labels[-1] == 'Clear Track Durations', 'Cache has Clear Track Durations as its last row, in the Track Durations section after Measured Tracks and the Artist Photos card (action 44; the ids of the others unchanged)')
     expect('Clear Track Durations' not in [r.label for r in P.DEVELOPER_PAGE.rows], 'Developer has no Clear Track Durations row')
     expect(P.ACT_CLEARCACHE == 42 and P.ACT_CCLIST == 43 and not [s for s in P.SETTING_FILES if 'durations' in s or 'lengths' in s], 'the earlier action ids are as they were; the Settings Files page lists no durations row (the table is on the card)')
     CONFIRM = 'Delete all measured track durations? They will be measured again on Home.'
@@ -740,7 +740,7 @@ def measured_tests(ctx):
     expect, P = ctx.expect, pod_pages
     lay = P.CACHE_PAGE.layout
     shape = [x.text if isinstance(x, P.Hdr) else 'gap' if x == P.GAP else x.label for x in lay]
-    expect(shape == ['Covers', 'Albums', 'Covers', 'No art', 'Missing', 'Old files', 'Size', 'gap', 'Status', 'gap', 'Clear Cover Cache', 'Track Durations', 'Measured Tracks', 'Clear Track Durations'], f'the Cache page: a Covers section (the counts, Status and Clear Cover Cache, the gaps kept), then a Track Durations section ({shape})')
+    expect(shape == ['Covers', 'Albums', 'Covers', 'No art', 'Missing', 'Old files', 'Size', 'gap', 'Status', 'gap', 'Clear Cover Cache', 'Artist Photos', 'Photos', 'None', 'Track Durations', 'Measured Tracks', 'Clear Track Durations'], f'the Cache page: a Covers section (the counts, Status and Clear Cover Cache, the gaps kept), an Artist Photos section (Photos, None), then a Track Durations section ({shape})')
     expect(P.CACHE_PAGE.key == 'm1plus_cache' and P.CACHE_PAGE.title == 'Cache' and P.CACHE_PAGE_INDEX == 32, 'the page keeps its key and index; its title is Cache')
     expect([r.label for r in P.DEVELOPER_PAGE.rows if r.action == P.ACT_PAGE and r.arg == P.CACHE_PAGE_INDEX] == ['Cache'], 'the Developer row reads Cache')
     mt = next(r for r in P.CACHE_PAGE.rows if r.label == 'Measured Tracks')

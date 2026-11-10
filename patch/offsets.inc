@@ -176,7 +176,12 @@
 #define GLYPH_FORMAT_ALPHA 0    /* glyph_t: x,y s16, w,h,advance u16 @0..9, format u8 @0xa (0 = 8 bit alpha, rows w bytes), pitch u8, data @0xc */
 
 /* Pointer events (Cover Flow's touch layer, the Albums grid) */
-#define EVT_POINTER_DOWN 0xff   /* input_device_status_on_input_event jump table @0x88f120 */
+#define EVT_KEY_DOWN 0x10f      /* widget_on_keydown tests 0x10f @0x670974; 0x110 is KEY_LONG_PRESS (@0x6a497c), not KEY_DOWN */
+#define EVT_KEY_UP 0x113        /* home_page_init binds on_wm_keyup_fun 0x4cd9ac with it (@0x534fbc); dialog_volume_dialog_init binds its window handler 0x47e330 (@0x47e494) */
+#define EV_KEY 0x18             /* the key event's code: on_wm_keyup_fun reads 0x18($a1) (0x4cda0c) */
+#define KEY_VOL_UP 0xdc         /* on_wm_keyup_fun, the volume dialog handler 0x47e330 */
+#define KEY_VOL_DOWN 0xdd
+#define EVT_POINTER_DOWN 0xff  /* input_device_status_on_input_event jump table @0x88f120 */
 #define EVT_POINTER_MOVE 0x101
 #define EVT_POINTER_UP 0x103
 #define EVT_POINTER_ABORT 0x107 /* widget_on_pointer_up/move dispatch it @0x6719b8 */
@@ -497,7 +502,7 @@
  * (at most LY_MAX; each row's int property "lrc_time" and its text, LY_BUF bytes). A move of the anchored line is a damped spring of LY_SPRING_MS per line (a table of 65 entries, overshoot cut at LY_OVERSHOOT_MAX px), each line starting LY_DELAY_MS
  * (shrinking 20/21 a line) after the one before, in LY_FRAME_MS steps; a move over LY_SNAP_LINES lines jumps. The window of lines laid out round the anchor is LY_POOL, those
  * further than LY_OFF_MAX px are not measured. Touch: a vertical drag over LY_TAP_PX scrolls, LY_IDLE_MS after the last touch the lines come back, a tap under LY_TAP_PX (not within
- * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_WRAP_SLACK px (LY_WRAP_SLACK_CJK for the default font): what a word wrap wastes of a row. get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
+ * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_FIT_W (LY_W less the style's 2 px margins each side) is what a one-row line may measure, LY_ROW_W (one less: stock's wrap check adds 1 px) what a row of a broken line may (ly_break). get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
 #define LY_W 264
 #define LY_VIEW_H 244
 #define LY_ANCHOR 85
@@ -520,8 +525,8 @@
 #define LY_TAP_PX 10
 #define LY_COAST_MS 200
 #define LY_HOLD_MS 1000
-#define LY_WRAP_SLACK 56
-#define LY_WRAP_SLACK_CJK 8
+#define LY_FIT_W 260
+#define LY_ROW_W 259
 #define LY_MISS_MAX 20
 /* The window "stage" from which a widget's style can be resolved: window_base_on_event's EVT_WINDOW_WILL_OPEN (0x12a) stores 2 (@0x676bb8, @0x676bc8), loads the
  * window's own theme (styles/playing_page.bin, where np_lyric_style lives) and resolves every widget's style (widget_update_style_recursive @0x676bd4). Stock
@@ -575,6 +580,14 @@
 #define MB_PLAY_X 194
 #define MB_NEXT_X 245
 #define MB_BTN_W 48
+/* The lock screen's mini player layout (patch/lockscreen.c, tools/mod_lockscreen.py MINI, docs/modules/lockscreen.md): the stock card re-laid as the Home bar's numbers
+ * above (MB_W x MB_H card with the mb_glass image, the MB_ART cover at MB_ART_X / MB_ART_Y, title and artist at MB_TEXT_X, play and next at MB_PLAY_X / MB_NEXT_X), at
+ * LK_MINI_X / LK_MINI_Y in the 320 x 480 window (10 px over the swipe hint); title and artist LK_TITLE_PX / LK_ARTIST_PX px, the artist colour LK_ARTIST_RGB. */
+#define LK_MINI_X 8
+#define LK_MINI_Y 386
+#define LK_TITLE_PX 17
+#define LK_ARTIST_PX 16
+#define LK_ARTIST_RGB "#D0D0D0"
 #define MB_FIRST_MS 120
 #define MB_TICK_MS 500
 #define MB_SETTLE 3
@@ -690,12 +703,12 @@
 /* Now Playing's More dialog (patch/playmore.c, docs/modules/playmore.md): ui/dialog/playmore_dialog.bin is a 320 px wide
  * sheet pinned at y 130 (the stock init, @0x479d10, and its to-background handler @0x4789f0) holding list_view playmore_listview >
  * scroll_view playmore_scrollview (310 px, the scroll bar scroll_bar_m beside it, 10 px) > list_item rows, PM_ROW_H (50, the
- * list_view's item_height) high each; the asset adds the hidden rows pod_more, pod_back, pod_tape, pod_vinyl, pod_goep and pod_art. The payload shows PM_PAGE_N rows (page 1) or PM_PAGE2_N
+ * list_view's item_height) high each; the asset adds the hidden rows pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art and pod_sleep. The payload shows PM_PAGE_N rows (page 1) or PM_PAGE2_N
  * (page 2) at a time and puts the sheet, as high as they are, on the bottom of the 480 px screen (the stock 130 + 350 ends there too). */
 #define PM_ROW_H 50
 #define PM_PAGE_N 6               /* page 1's rows (Look up album, Look up artist, Add to playlist, Cassette Mode, Vinyl Mode, More; the asset's pod_goep, Go to Podcasts, is the episode's first row): the sheet is that high (PM_ROW_H x) */
 #define PM_PAGE_EP_N 2            /* page 1 of a podcast episode (Go to Podcasts, More) */
-#define PM_PAGE2_N 5              /* page 2's rows (the back header, Speed, A-B repeat, Find Cover & Lyrics, Delete) */
+#define PM_PAGE2_N 6              /* page 2's rows (the back header, Speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete) */
 #define PM_SCREEN_H 480
 #define PM_DIALOG_W 320
 #define PM_SV_W 310
@@ -792,7 +805,14 @@
 #define AL_SHUFFLE_X 165
 #define AL_SHUFFLE_W 145
 #define AL_PILLS_END 92          /* where that page's pill block ends (SG_PILL_Y + SG_PILL_H): the grid's first gap or the list's first row follows, GRID_ROW_GAP under it */
-#define SG_BAR_PILL_W 145        /* the select bar's pills (Add to Playlist needs the room; the bar is below the rail, whose touch column ends at the bar's top) */
+#define AL_PHOTO_D 88            /* an artist's page with a photo header (patch/albums.c, docs/modules/albums.md): the circle, 88 px, centred, 8 px under the navbar (much smaller than the album page's 160 px cover) */
+#define AL_PHOTO_X 116
+#define AL_PHOTO_Y 8
+#define AL_NAME_Y 110            /* the name's box (PH_NAME_X / _W / _H): 14 px under the circle */
+#define AL_HEAD_PILL_Y 148       /* the pills' y, 16 px under the name's box */
+#define AL_HEAD_END 188          /* where that block ends (AL_HEAD_PILL_Y + SG_PILL_H): the grid's first gap or the list's first row follows, as AL_PILLS_END */
+#define AL_HEAD_COLLAPSE 132     /* the navbar shows the small title once the name's box (its bottom, AL_NAME_Y + PH_NAME_H) has scrolled away */
+#define SG_BAR_PILL_W 145       /* the select bar's pills (Add to Playlist needs the room; the bar is below the rail, whose touch column ends at the bar's top) */
 #define SG_BAR_PILL_X1 165
 #define PL_BAR_PILL_W 300        /* the Playlists page's select bar has the one pill, Delete, across the bar (x SG_PILL_X0, a 10 px margin each side) */
 #define SG_PILL_R 20
@@ -803,12 +823,12 @@
 #define SG_HDR_H 28
 #define SG_HDR_X 10
 #define SG_HDR_BG 0xff000000u
-#define SG_TEXT_END 296
 #define SG_SEL_COL 30
 #define SG_MARK 26
 #define SG_RAIL_X 284        /* the touch column: x 284..320, 36 wide; the drawn letters and dots stay centred on x SG_RAIL_CX */
 #define SG_RAIL_W 36
 #define SG_RAIL_CX 310
+#define SG_RAIL_INSET (LIST_HAIR_END - SG_RAIL_X) /* 26: while the rail is shown the rows give up this much on the right (the rail's touch column starts at SG_RAIL_X, the hairline ends at LIST_HAIR_END): hairline end, chevron x and text end move left by it (patch/azlist.c az_inset) */
 #define SG_RAIL_PAD 12       /* the widget is the drawn span plus this much above and below: a tap further from the span reaches the row */
 #define SG_RAIL_TEXT_W 24    /* the letters' rect (centred on SG_RAIL_CX, shifted by SG_RAIL_DX, which pod.py derives from the tree's font into stock.h with SG_RAIL_INK2) */
 #define SG_LIST_Y 50         /* the list's top in the window (the navbar's height) */
@@ -839,7 +859,8 @@
 #define PH_PILL_Y 220           /* the Play pill and Shuffle disc as drawn, 16 px under the name's box (no count line: the count is the list's footer); the rows start SG_TOP - SG_PILL_Y - SG_PILL_H = 12 px under them */
 #define PH_BTN_Y 218            /* PH_PILL_Y - (AH_BTN_H - AH_PILL_H) / 2: their 44 px buttons' top (the pill and the disc are drawn centred in them) */
 #define PH_TOP 272              /* PH_PILL_Y + SG_PILL_H + 12: where the rows start (SG_TOP is 104 under the large title) */
-#define PH_COLLAPSE 204         /* the navbar shows the small title once the name's box (its bottom, y 204) has scrolled away */
+#define PH_SHIFT 96             /* an artist's page with no photo (patch/albums.c, docs/modules/albums.md): the circle's room, AL_PHOTO_Y + AL_PHOTO_D, is taken out - the name (AL_NAME_Y), the pills (AL_HEAD_PILL_Y), the rows (AL_HEAD_END) and the small title's AL_HEAD_COLLAPSE all move up by it and nothing else changes: the name at y 14, the pills at y 52 (SG_PILL_Y), the block ending at AL_PILLS_END */
+#define PH_COLLAPSE 204        /* the navbar shows the small title once the name's box (its bottom, y 204) has scrolled away */
 #define SG_FOOT_H 52            /* the song count under the last row ("25 songs"): this much content, the text box SG_FOOT_GAP below the row, SG_FOOT_TEXT_H high, from x SG_HDR_X */
 #define SG_FOOT_GAP 14
 #define SG_FOOT_TEXT_H 20

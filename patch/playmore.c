@@ -3,12 +3,12 @@
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  *
- * The sheet is as high as its page's rows (page 1: PM_PAGE_N = 6 x 50 = 300 px, page 2: PM_PAGE2_N = 4 x 50 = 200 px) and sits on the bottom of the screen; the page
+ * The sheet is as high as its page's rows (page 1: PM_PAGE_N = 6 x 50 = 300 px, page 2: PM_PAGE2_N = 6 x 50 = 300 px) and sits on the bottom of the screen; the page
  * above it is dimmed by the asset's own dialog highlight (highlight="default(alpha=..)", the AWTK dialog highlighter the window
  * manager sets up when the dialog opens). The glass is the dialog's first child, an insensitive image (pod_glass) that gets the page's own picture and height
- * (pm_sheet6 300 px, pm_sheet 200 px): never a crop of a taller one. Page 1 (when it opens): Look up album (listitem4), Look up artist (5), Add to playlist
+ * (pm_sheet6, 300 px, both pages): never a crop of a taller one. Page 1 (when it opens): Look up album (listitem4), Look up artist (5), Add to playlist
  * (2), Cassette Mode (pod_tape, the asset's: it opens the landscape cassette page, patch/tape.c), Vinyl Mode (pod_vinyl: the turntable page, patch/vinyl.c) and "More" (pod_more, a row the asset adds, hidden until now; a chevron
- * at its right). A tap on More switches to page 2: a header row "< More" (pod_back, also the asset's; a tap returns to page 1), Playback speed (1), A-B repeat (0) and
+ * at its right). A tap on More switches to page 2: a header row "< More" (pod_back, also the asset's; a tap returns to page 1), Playback speed (1), Sleep Timer (pod_sleep: a link to the stock Power page), A-B repeat (0), Find Cover & Lyrics (pod_art) and
  * Delete (6, its label red in the asset). Online search (3) is never shown. A switch only hides one row set and shows the other and sets the sheet to the page's height;
  * there is no slide. A tap above the sheet closes it: that is the stock handler's (pointer y < dialog y), which works unchanged with the new y.
  *
@@ -36,13 +36,14 @@
 #include "covercache.h"
 #include "podcasts.h"
 
-#define PM_ROWS 13 /* listitem0..6, then pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art */
+#define PM_ROWS 14 /* listitem0..6, then pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art, pod_sleep */
 #define PM_MORE 7
 #define PM_BACK 8
 #define PM_TAPE 9
 #define PM_VINYL 10
 #define PM_GOEP 11 /* Go to Podcasts: page 1 of a podcast episode */
 #define PM_ART 12
+#define PM_SLEEP 13 /* Sleep Timer: a link to the stock Power page, page 2 */
 #define PM_ART_DIM \
     100 /* the Find Cover & Lyrics row's opacity (of 255) while the Wi-Fi is off: dimmed, and it takes no tap */
 #define GO_ALBUM 4 /* listitem4, Look up album */
@@ -57,13 +58,14 @@ extern int albums_open_artist(void *artists, unsigned index,
 static const unsigned char pm_page[3][PM_PAGE_N] = {
     {4, 5, 2, PM_TAPE, PM_VINYL,
      PM_MORE}, /* Look up album, Look up artist, Add to playlist, Cassette Mode, Vinyl Mode, More */
-    {PM_BACK, 1, 0, PM_ART, 6}, /* the back header, Playback speed, A-B repeat, Find Cover & Lyrics, Delete */
+    {PM_BACK, 1, PM_SLEEP, 0, PM_ART,
+     6}, /* the back header, Playback speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete */
     {PM_GOEP,
      PM_MORE}, /* page 1 of a podcast episode: Go to Podcasts, More (the rows that mean nothing for an episode are hidden) */
 };
 static const unsigned char pm_rows[3] = {PM_PAGE_N, PM_PAGE2_N, PM_PAGE_EP_N};
 static const char *const pm_glass[3] = {
-    "pm_sheet6", "pm_sheet",
+    "pm_sheet6", "pm_sheet6",
     "pc_sheet2"}; /* each set's own picture (pc_sheet2: the Podcasts page's 100 px glass, the same pane) */
 
 static struct {
@@ -121,7 +123,7 @@ static void pm_arrange(void) {
         if (!used[i]) widget_restack(pm.row[i], k++);
     widget_resize(
         pm.glass, PM_DIALOG_W,
-        h); /* the glass of the page's own height: pm_sheet6 (page 1, 300 px) or pm_sheet (page 2, 200 px), never a crop */
+        h); /* the glass of the page's own height: pm_sheet6 (pages 1 and 2, 300 px) or pc_sheet2 (an episode's page 1), never a crop */
     image_base_set_image(pm.glass, pm_glass[set]);
     widget_resize(pm.dlg, PM_DIALOG_W, h);
     widget_move(pm.dlg, 0, PM_SCREEN_H - h);
@@ -188,6 +190,20 @@ static int pm_on_art(void *ctx, void *e) {
     (void)e;
     if (!pm.dlg || ctx != pm.dlg || get_wifisignal() <= 0) return RET_OK;
     if (onlineart_open() == 0) window_close(ctx);
+    return RET_OK;
+}
+
+/* Sleep Timer (the row is pod_sleep, page 2): the stock Settings > Power page (powermanager_page: the Sleep Timer switch and its hour / minute selectors), opened over Now Playing. The page has no single_instance property,
+ * so a plain navigator_to stacks a new one every time. The pile-up needs the page's top-right Now Playing button, which restacks the player and leaves the Power page under it, and then reopening Sleep Timer; a plain
+ * Back closes the page. A Power window already in the stack is brought to the front (pod_open_stock, which restacks as the Settings tiles do); otherwise stock's open. The restacked page refreshes itself: stock's restack delivers
+ * EVT_WINDOW_TO_FG, and the handler the page's init bound for it (0x4a9b2c) runs the page refresh (0x4a9924: switch and selectors from the timer), so nothing here refreshes it (pinned in tools/pod.py PLAYMORE_PINS).
+ * Back (0x4a91d0) saves the picker values and calls navigator_back; with Now Playing directly below the page that returns to Now Playing. The page FIRST, the sheet closed once it is up (a window below the top one);
+ * a page that cannot open leaves the sheet. */
+static int pm_on_sleep(void *ctx, void *e) {
+    (void)e;
+    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
+    if (pod_open_stock("systemset/powermanager_page", "powermanager_page") != RET_OK) return RET_OK;
+    window_close(ctx);
     return RET_OK;
 }
 
@@ -333,9 +349,9 @@ static int pm_on_delete(void *ctx, void *e) {
 static void pm_start(void *dlg) {
     static const char *const names[PM_ROWS] = {"listitem0", "listitem1", "listitem2", "listitem3", "listitem4",
                                                "listitem5", "listitem6", "pod_more",  "pod_back",  "pod_tape",
-                                               "pod_vinyl", "pod_goep",  "pod_art"};
+                                               "pod_vinyl", "pod_goep",  "pod_art",   "pod_sleep"};
     void *more_label, *back_label, *speed_label, *note_label, *tape_label, *vinyl_label, *goep_label, *art_label,
-        *track;
+        *sleep_label, *track;
     unsigned i;
     if (pm.dlg) memset(&pm, 0, sizeof pm); /* an earlier dialog that never said it was gone */
     pm.dlg = dlg;
@@ -351,10 +367,11 @@ static void pm_start(void *dlg) {
     vinyl_label = widget_lookup(dlg, "pod_vinyl_label", 1);
     goep_label = widget_lookup(dlg, "pod_goep_label", 1);
     art_label = widget_lookup(dlg, "pod_art_label", 1);
+    sleep_label = widget_lookup(dlg, "pod_sleep_label", 1);
     if (!pm.lv || !pm.sv || !pm.bar || !pm.glass || !more_label || !back_label || !speed_label || !note_label ||
-        !tape_label || !vinyl_label || !goep_label || !art_label)
+        !tape_label || !vinyl_label || !goep_label || !art_label || !sleep_label)
         goto fail;
-    for (i = 0; i < PM_ROWS; i++) { /* exactly the asset: thirteen rows in the scroll_view */
+    for (i = 0; i < PM_ROWS; i++) { /* exactly the asset: fourteen rows in the scroll_view */
         pm.row[i] = widget_lookup(dlg, names[i], 1);
         if (!pm.row[i] || *(void **)((char *)pm.row[i] + W_PARENT) != pm.sv) goto fail;
     }
@@ -368,6 +385,8 @@ static void pm_start(void *dlg) {
     if (widget_set_tr_text(vinyl_label, "Vinyl Mode") != RET_OK) goto fail;
     if (widget_set_tr_text(goep_label, "Go to Podcasts") != RET_OK) goto fail;
     if (widget_set_tr_text(art_label, "Cover & Lyrics") != RET_OK) goto fail;
+    if (widget_set_tr_text(sleep_label, "powerm_sleep") != RET_OK)
+        goto fail; /* the stock key: the Power page's own row text */
     if (!widget_on(dlg, EVT_DESTROY, pm_on_destroy, dlg)) goto fail;
     if (!widget_on(pm.lv, EVT_WINDOW_TO_BG, pm_on_bg, dlg))
         goto fail; /* after the stock one on the dialog (top comment) */
@@ -377,6 +396,7 @@ static void pm_start(void *dlg) {
     if (!widget_on(pm.row[PM_VINYL], EVT_CLICK, pm_on_vinyl, dlg)) goto fail;
     if (!widget_on(pm.row[PM_GOEP], EVT_CLICK, pm_on_goep, dlg)) goto fail;
     if (!widget_on(pm.row[PM_ART], EVT_CLICK, pm_on_art, dlg)) goto fail;
+    if (!widget_on(pm.row[PM_SLEEP], EVT_CLICK, pm_on_sleep, dlg)) goto fail;
     if (!widget_on(pm.row[GO_ALBUM], EVT_CLICK, pm_on_lookup_album, dlg)) goto fail;
     if (!widget_on(pm.row[GO_ARTIST], EVT_CLICK, pm_on_lookup_artist, dlg)) goto fail;
     if (!widget_on(pm.row[PM_DELETE], EVT_CLICK, pm_on_delete, dlg)) goto fail;

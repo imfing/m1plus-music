@@ -127,6 +127,9 @@ def latin_initial(c):
     return d[0].lower() if len(d) > 1 and d[0].isascii() and d[0].isalpha() else None
 
 
+NAME_PUNCT = frozenset(c for c in map(chr, range(0x21, 0x7f)) if not c.isalnum()) | set('\u00a1\u00bf\u00ab\u00bb\u2018\u2019\u201a\u201c\u201d\u201e\u2039\u203a\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f\u3010\u3011\uff08\uff09\uff3b\uff3d\uff5b\uff5d\uff02\uff07')   # (the leading punctuation the name order skips)
+
+
 def name_sort_key(name):
     """The library name order, independently written: leading white space and a leading "The " dropped, a CJK character
     as its pinyin initial and a kana as its Hepburn initial, then per position a digit run (by value) before a symbol
@@ -134,6 +137,12 @@ def name_sort_key(name):
     Latin letter is its base letter (ß s, æ a, ø o ...) before a letter (ASCII case
     folded); a shorter key that is a prefix comes first."""
     s = name.lstrip(' \t\n\r\v\f')
+    t = s
+    while t:   # a leading run of punctuation (white space between) is skipped when something else follows it
+        t = t.lstrip(' \t\n\r\v\f')
+        if t and t[0] in NAME_PUNCT: t = t[1:]
+        else: break
+    if t: s = t
     if len(s) > 4 and s[:4].lower() == 'the ': s = s[4:]
     s = ''.join(PINYIN_INITIAL.get(c) or kana_initial(c) or latin_initial(c) or c for c in s)
     key = []
@@ -244,6 +253,7 @@ class Machine:
         self.tracklist = []         # what loadSongList leaves there
         self.artist_albums = {}     # artist name -> its album rows (loadAlbumList 0xf004)
         self.artist_songs = {}      # artist name -> all its song rows (loadLocalClassList(0xff11) after loadAlbumdetailList on the All songs row)
+        self.composer_songs = {}    # composer name -> all its song rows (0xff14 after loadAlbumdetailList(0xff02) on the composer's All songs row)
         self.free_mb = 1024
         self.thread_ok = True
         self.thread = None          # (start routine, argument) of the last pthread_create
@@ -393,9 +403,10 @@ class Machine:
         return r
 
     def artist_query(self):
-        """loadLocalClassList(0xff11) as stock reads the record: the all-songs flag (+8) and the artist (+0x10d)."""
+        """loadLocalClassList(0xff11) as stock reads the record: the all-songs flag (+8) and the artist (+0x10d); 0xff14 (a composer's) the composer at +0x20d."""
         ci = pod.DATA['CLASSINFO'][0]
         if not self.u.mem_read(ci + O['CLASSINFO_ALL_SONGS'], 1)[0]: return []
+        if self.word(ci) == O['CLASS_14']: return list(self.composer_songs.get(self.read_cstr(ci + O['CLASSINFO_ARTIST_14']), []))
         return list(self.artist_songs.get(self.read_cstr(ci + O['CLASSINFO_ARTIST']), []))
 
     CSTL_BASE = 0x77000000   # where install_libcstl maps the "library"
@@ -753,7 +764,7 @@ class Machine:
                 self.setword(pod.DATA['PDEQ_SHOWLIST'][0], self.new_deque(items))
                 u.reg_write(UC_MIPS_REG_V0, len(items)); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
                 return
-            if a0 == O['CLASS_ARTIST_SONGS']:   # getMusicByAlbumAndAlbumSonger: from the browsing record alone (all-songs flag +8, artist +0x10d)
+            if a0 in (O['CLASS_ARTIST_SONGS'], O['CLASS_14']):   # getMusicByAlbumAndAlbumSonger / AndComposer: from the browsing record alone (all-songs flag +8, artist +0x10d / composer +0x20d)
                 items = self.artist_query()
                 self.setword(pod.DATA['PDEQ_SHOWLIST'][0], self.new_deque(items))
                 u.reg_write(UC_MIPS_REG_V0, len(items)); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
@@ -787,6 +798,7 @@ class Machine:
             self.u.mem_write(pod.DATA['CLASSINFO'][0], bytes(O['CLASSINFO_SIZE']))   # memset, as stock
             self.setword(pod.DATA['CLASSINFO'][0], O['CLASS_COMPOSER_ALBUMS'] if a0 == O['CLASS_COMPOSERS'] else O['CLASS_ARTIST_ALBUMS'])
             if a0 == O['CLASS_ARTISTS']: self.u.mem_write(pod.DATA['CLASSINFO'][0] + O['CLASSINFO_ARTIST'], artist.encode() + b'\0')
+            if a0 == O['CLASS_COMPOSERS']: self.u.mem_write(pod.DATA['CLASSINFO'][0] + O['CLASSINFO_ARTIST_14'], artist.encode() + b'\0')   # (the composer's name at +0x20d, addresses.md)
             ret = len(items)
         elif name == 'loadAlbumdetailList':
             # loadAlbumdetailList(0xff01, album row POINTER): the all-songs flag (+8) and the album text (+0xd) into the record, class 0xff11, then that class's query
@@ -794,7 +806,7 @@ class Machine:
             ci = pod.DATA['CLASSINFO'][0]
             self.u.mem_write(ci + O['CLASSINFO_ALL_SONGS'], bytes([1 if self.word(a1 + O['REC_ID']) == 0xfffffffe else 0]))
             self.u.mem_write(ci + O['CLASSINFO_ALBUM'], self.read_cstr(self.word(a1 + O['REC_ALBUM'])).encode() + b'\0')
-            self.setword(ci, O['CLASS_ARTIST_SONGS'])
+            self.setword(ci, O['CLASS_14'] if a0 == O['CLASS_COMPOSER_ALBUMS'] else O['CLASS_ARTIST_SONGS'])   # (0xff02 -> 0xff14, 0xff01 -> 0xff11)
             items = self.artist_query()
             self.setword(pod.DATA['PDEQ_SHOWLIST'][0], self.new_deque(items))
             ret = len(items)
@@ -954,6 +966,7 @@ class Machine:
             ret = getattr(self, 'out_way', 0)   # 0 the jacks, 1 Bluetooth, 2 USB audio (a test sets m.out_way)
         elif name == 'write_int_config':
             self.calls.append(('write_int_config', a0, self.read_cstr(a1), self.read_cstr(a2)))
+            ret = getattr(self, 'config_ret', 0)   # toolsWriteConfig's: 0 done, -1 config.ini could not be opened (a test sets m.config_ret)
         elif name == 'toolsRandnum':
             ret = self.seed % a0 if a0 else 0
         elif name == 'time_now_ms':
@@ -1813,6 +1826,7 @@ COVER_WIDGETS = ['btn_return', 'btn_backtoplayer', 'btn_cancel', 'navigationbar_
 
 
 SORT_FILE, SORT_TMP = '/mnt/data/m1plus/albums-sort', '/mnt/data/m1plus/albums-sort.tmp'   # patch/home.h; the album order (0 Title, 1 Artist, 2 Recently Added, 3 Year)
+AZRAIL_FILE, AZHEAD_FILE = '/mnt/data/m1plus/appearance-index-rail', '/mnt/data/m1plus/appearance-headers'   # patch/home.h: the Index Rail and Section Headers switches (both on by default)
 OLD_ORDER_FILE, OLD_ORDER_TMP = '/mnt/data/m1plus/album-order', '/mnt/data/m1plus/album-order.tmp'   # the retired Album Order setting (patch/covercache.c migrates and deletes it)
 
 
@@ -1887,7 +1901,7 @@ def artist_rec(m, name, rid):
     return m.record(album='', artist=name, path='', title=name, name='', rid=rid)
 
 
-COMPOSER_ALBUMS = {'Bach': ['Goldberg Variations', 'Cello Suites'], 'Mozart': ['Requiem'], 'Unknown Composer': []}
+COMPOSER_ALBUMS = {'Bach': ['Cello Suites', 'Goldberg Variations'], 'Mozart': ['Requiem'], 'Unknown Composer': []}
 
 
 AR_WIDGETS = ('artists_listview', 'view_grid', 'sg_rail', 'sg_bubble', 'sg_bubble_letter', 'ar_title', 'label_hdr', 'label_rail', 'label_rail_on', 'label_row_title',
@@ -1930,7 +1944,7 @@ def view_switch(m, count):
 def utf8(s):
     """A text the harness read from payload memory (latin-1 of the UTF-8 bytes) as the text it is."""
     return s.encode('latin-1').decode('utf-8')
-ALBUMS_PAGE_WIDGETS = ('btn_coverflow', 'btn_play', 'btn_shuffle', 'label_row_sub', 'label_grid_title', 'label_grid_sub', 'al_title', 'img_nb_fade') + VS_WIDGETS
+ALBUMS_PAGE_WIDGETS = ('btn_coverflow', 'btn_play', 'btn_shuffle', 'label_row_sub', 'label_grid_title', 'label_grid_sub', 'al_title', 'al_name', 'img_nb_fade') + VS_WIDGETS
 
 
 def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), composers=(), genres=(), albums_page=False):
@@ -1942,6 +1956,7 @@ def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), co
     otherwise that window will not open and the tap falls back to Cover Flow on the artist, which
     the Cover Flow tests of this module drive."""
     m = cover_machine(albums=0, cls=ListMachine)
+    m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the rail tests of this page (the switch defaults on)
     for n in AR_WIDGETS: m.widget(n)
     if albums_page:
         for n in ALBUMS_PAGE_WIDGETS: m.widget(n)
@@ -1969,7 +1984,7 @@ def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), co
         m.class_lists[O['CLASS_COMPOSERS']] = [artist_rec(m, c, -1 if c.startswith('Unknown') else i + 1) for i, c in enumerate(composers)]
     if genres:
         m.class_lists[O['CLASS_GENRES']] = [artist_rec(m, g, -1 if g.startswith('Unknown') else i + 1) for i, g in enumerate(genres)]
-    albums = {'Miles Davis': ['Kind of Blue', 'Jazz Hits', 'Bitches Brew'], 'Nina Simone': ['Pastel Blues'],
+    albums = {'Miles Davis': ['Bitches Brew', 'Jazz Hits', 'Kind of Blue'], 'Nina Simone': ['Pastel Blues'],
               'Unknown Artist': []}
     albums.update({c: COMPOSER_ALBUMS.get(c, []) for c in composers})
     artists = tuple(artists) + tuple(composers)

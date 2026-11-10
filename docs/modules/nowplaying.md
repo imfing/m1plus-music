@@ -82,10 +82,18 @@ remaining value, clamped at zero. They replace the visibility of stock time labe
 than competing with stock text writes. Invalid lengths restore stock labels.
 Missing time widgets disable that portion without disabling tint.
 
-The page tick reads six stock info labels and rewrites changed, complete strings only.
-It spaces colons and units, translates Genre/Year, and spaces quality separators when the
-result fits. Failed reads, truncation or output overflow leave stock text.
-Stock text can appear for up to one 500 ms tick after a track change.
+The page tick reads the stock info labels and rewrites changed, complete strings only.
+It spaces colons and units and translates Genre/Year. Failed reads, truncation or output
+overflow leave stock text. Stock text can appear for up to one 500 ms tick after a track change.
+
+The quality line differs: stock rewrites `label_info` with the compact text on every tick, so
+rewriting it would alternate two widths in a centred label. The asset adds `np_quality`
+(same rectangle, size 18, centred, hidden, insensitive). The tick reads `label_info`, formats
+it (spaced separators when the result fits), writes `np_quality` only when that text changes,
+and then shows it while `label_info` is hidden and made insensitive. Stock keeps writing
+`label_info`, the data source. A page without `np_quality` leaves `label_info` visible and
+untouched. A failed read or write, or a text too long to read whole, hides `np_quality` and
+shows `label_info` again (so a stale line never stays up); the next good text takes it back.
 
 ## Pins, safety and validation
 

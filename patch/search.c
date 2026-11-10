@@ -998,7 +998,9 @@ static void se_play(int at) {
     n = deque_size(queue);
     if (n) { /* loadSongList finds a song by file name and CUE start: the row's own index in the list wins for a duplicate name */
         unsigned row = se.rows[at].idx;
-        if (row < n && !strcmp(cc_str(deque_at(queue, row), REC_PATH), cc_str(pick, REC_PATH)))
+        if (row < n && !strcmp(cc_str(deque_at(queue, row), REC_PATH), cc_str(pick, REC_PATH)) &&
+            I(deque_at(queue, row), REC_CUE_START) ==
+                I(pick, REC_CUE_START)) /* (a CUE image's tracks share the path) */
             idx = row;
         else if (found >= 0 && (unsigned)found < n)
             idx = (unsigned)found;

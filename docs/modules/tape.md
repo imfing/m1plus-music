@@ -100,8 +100,11 @@ page (the first build grabbed the pointer, which broke it). Portrait (c, r) is r
 | --- | --- |
 | began on the **top left screw**, the 50 x 50 area (0, 0) - (50, 50) around the screw at (24, 25) (the panel's top right corner: columns 270 .. 319, rows 0 .. 49), and ends in it | `navigator_back()`: the page closes, Now Playing is under it |
 | began on the screw and the finger left it before lifting | nothing; the screw is let go |
-| a move under 14 px in both axes anywhere else (a tap) | `playpause_quick_click`, then the page looks again at once (the mark and the timer's pace follow without waiting a tick) |
+| a move under 14 px in both axes anywhere else (a tap), page opened from the More sheet | `playpause_quick_click`, then the page looks again at once (the mark and the timer's pace follow without waiting a tick) |
+| the same tap, page **opened by Now Playing's timer** (Idle Display, `tape_open_idle`) | `navigator_back()`, like the screw (as stock's Album Cover page closes on a tap); nothing plays or pauses |
 | anything else (a long drag, a swipe in any direction), an abort | nothing |
+
+**Auto-opened flag.** `tape_open_idle` (called only by `bc_timed_open`, [bigcover](bigcover.md) "Idle view") is `tape_open` plus `tp.idle = 1` once the page is up; `tape_open` (the More sheet) never sets it. The flag is part of the page's state, so destroy clears it and a later More open starts without it. A timed open on a page that already exists (0, nothing opened) leaves its flag as it was, both ways. The screw, its pressed look, drags and aborts behave the same either way. Tests: `test/pod/tape.py` `idle_touch_tests`.
 
 While the finger is on the screw it is drawn **darker and turned** (`tape_screw`, drawn over the shell's screw by `tp_marks(4)`, only its 26 px square invalidated) and the normal screw comes back on
 release, so it reads as a control. The screw's top left corner is inside the pull-down zone: a drag down from it opens the control centre like anywhere at the top edge. No click sound (`hciplayer`

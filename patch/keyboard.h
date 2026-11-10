@@ -42,6 +42,11 @@ void keyboard_set_mask(
 void keyboard_set_go(
     const char *key,
     int enabled); /* the action key reads the translated string `key` (NULL keeps its label) and is dimmed and inert while not enabled (on_go does not fire) */
+void keyboard_set_max(
+    unsigned
+        bytes); /* after keyboard_attach: the embedded field takes this many bytes instead of KB_MAX (at most KB_MAX_LONG) */
+void keyboard_go(
+    void); /* the action key as if pressed (a page's own Search button): what is pending is committed, then on_go; nothing while the key is dimmed */
 void keyboard_detach(void); /* the page's destroy event */
 void keyboard_show(int on); /* show or hide the embedded pad (hidden: no touch, no caret) */
 int keyboard_shown(void);
@@ -49,6 +54,8 @@ int pinyin_hold(void); /* the Pinyin engine open for a page's life (0 ready); th
 void pinyin_release(void); /* after keyboard_detach: closes what pinyin_hold opened */
 const char *keyboard_text(void); /* the field's committed text (UTF-8) */
 void keyboard_set_text(const char *s); /* the field's text replaced (a recent search tapped); on_change gets it */
+int keyboard_busy(
+    void); /* a keyboard page is up or not destroyed yet (keyboard_open would return -1 for that reason, not for a failure to open) */
 int keyboard_open(const char *title, const char *placeholder, const char *initial, kb_done_fn on_done,
                   kb_cancel_fn on_cancel, unsigned flags);
 

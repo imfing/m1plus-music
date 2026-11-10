@@ -59,7 +59,7 @@ extern void pod_set_in_order(void); /* patch/shuffle.c: Shuffle and Repeat one b
 #define PG_TEXT_MAX 232 /* wide chars of a cell's description (at most PC_DESC_CUT bytes) and room for the ellipsis */
 #define PG_TITLE_MAX 100 /* wide chars of a title (95 bytes at most) */
 #define PG_PILL_MAX 48 /* wide chars of a pill's label */
-#define PG_SHEET_ROWS 13 /* the sheets' fixed rows (tools/pod_ui.py PS_SHEET_ROWS) */
+#define PG_SHEET_ROWS 14 /* the sheets' fixed rows (tools/pod_ui.py PS_SHEET_ROWS) */
 #define PG_AWAKE_MS 1000 /* the downloads' timer */
 
 enum {
@@ -152,7 +152,8 @@ enum {
     SR_IMPORT,
     SR_DELPLAYED,
     SR_EXPORT,
-    SR_SAVE
+    SR_SAVE,
+    SR_ORDER
 }; /* the sheets' rows, tools/pod_ui.py PS_SHEET_ROWS */
 enum { SH_NONE = 0, SH_SHOW = 1, SH_CELL = 2, SH_HOME = 3, SH_SUBS = 4, SH_DLS = 5 };
 enum {
@@ -193,7 +194,7 @@ static struct {
     void *tint_img; /* img_ah_tint: the album page's gradient, shown on the Show level while the page is tinted */
     void *sh_scrim, *sh_card, *sh_row[PG_SHEET_ROWS], *sh_tx[PG_SHEET_ROWS], *sh_hr[PG_SHEET_ROWS],
         *sh_vl
-            [2]; /* the sheets (widgets of the asset): scrim, card, and per row the button, its label, its hairline; the value labels of Playback Speed and Refresh Feed */
+            [3]; /* the sheets (widgets of the asset): scrim, card, and per row the button, its label, its hairline; the value labels of Playback Speed, Refresh Feed and Episode Order */
     int sheet, sh_ep; /* SH_NONE / SH_SHOW / SH_CELL / SH_HOME; the episode of a cell's sheet */
     char root[PC_FILE + 20];
     pc_show_t *shows;
@@ -554,7 +555,7 @@ static void pg_dld_text(const struct pg_dl *d, grid_tile_t *t) {
     if (d->kb) pg_cat(tail, sizeof tail, " \xc2\xb7 "), pg_cat(tail, sizeof tail, size);
     if (played) room -= PS_BADGE_CHECK_W;
     grid_set(t, d->title, "", 0);
-    n = pg_wide(tw, GRID_TEXT, tail);
+    pg_wide(tw, GRID_TEXT, tail);
     room -= pg_width(pg.st_sub, tw);
     k = 0;
     if (room >= 40) { /* the show's name, cut to what is left (the tail keeps its room) */
@@ -912,12 +913,17 @@ static void pg_sub_pill(pg_pill_t *p) {
     p->tx = (p->w - tw) / 2;
 }
 
+/* The newest episode of the show open: the first row, the last under Oldest First (the order puts the newest at one end). */
+static int pg_latest_ix(void) {
+    return pg.neps > 0 && !pg.preview && pc_order_get(pg.shows[pg.sel].hash) ? pg.neps - 1 : 0;
+}
+
 /* The Show header's pill: the Latest Episode pill of the newest episode, or the preview's Subscribe. */
 static void pg_latest(pg_pill_t *p) {
     if (pg.preview)
         pg_sub_pill(p);
     else
-        pg_latest_of(&pg.eps[0], p);
+        pg_latest_of(&pg.eps[pg_latest_ix()], p);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2680,13 +2686,21 @@ static void pg_open_show(int si, int off) {
 static void pg_det_refind(void);
 
 /* The Show level's episodes read again (a download finished, failed or was started, a file was removed: the list changed): the scroll position stays, the layouts are made again. */
+static void pg_eps_shown(void);
+
 static void pg_reload_eps(void) {
-    int m = 0, max;
+    int m = 0;
     pc_ep_t *all = pg_eps_of(pg.sel, &m);
     pg.gen = pn_gen(), pg.dgen = pn_dl_gen();
     if (!all) return;
     free(pg.eps);
     pg.eps = all, pg.neps = m;
+    pg_eps_shown();
+}
+
+/* The Show level after pg.eps changed (read again, or turned round by Episode Order): cells, header, size and scroll for the rows as they are now. */
+static void pg_eps_shown(void) {
+    int max;
     pg.press = pg.down = 0;
     pg_det_refind(); /* (the episode page stays on its episode, wherever the list put it) */
     pg_cells_drop();
@@ -3743,7 +3757,7 @@ static int pg_join(char *out, unsigned size, const char *dir, const char *file) 
  * and the speed set as an episode start does, List play; NULL (a toast said why) when that episode is not on the card. root is the Podcasts folder (pc_root). Used by the Podcasts page (pg_play) and the Pod. */
 void *pg_episode_queue(const char *root, const pc_show_t *s, const pc_ep_t *eps, int neps, int at, int *idx) {
     void *queue;
-    int i, ok = 0;
+    int i, ok = 0, start = 0; /* start: the place of episode `at` in the queue */
     char path[PC_FILE * 2 + 40];
     if (at < 0 || at >= neps || eps[at].state != PC_LOCAL ||
         !pg_join_in(root, path, sizeof path, s->dir, eps[at].file) || access(path, F_OK)) {
@@ -3756,11 +3770,9 @@ void *pg_episode_queue(const char *root, const pc_show_t *s, const pc_ep_t *eps,
     for (i = 0; i < neps; ++i) {
         unsigned rec[PG_REC_SIZE / 4];
         char p[PC_FILE * 2 + 40];
-        if (eps[i].state != PC_LOCAL || !pg_join_in(root, p, sizeof p, s->dir, eps[i].file)) {
-            if (i < at)
-                --at; /* not on the card (the Show page lists those, greyed), or a name that does not fit (the model refused such names; this is the belt): not in the queue */
-            continue;
-        }
+        if (eps[i].state != PC_LOCAL || !pg_join_in(root, p, sizeof p, s->dir, eps[i].file))
+            continue; /* not on the card (the Show page lists those, greyed), or a name that does not fit (the model refused such names; this is the belt): not in the queue */
+        if (i == at) start = ok;
         pg_record(rec, s, &eps[i], p);
         _deque_push_back(queue, rec);
         pg_record_free(rec);
@@ -3771,10 +3783,10 @@ void *pg_episode_queue(const char *root, const pc_show_t *s, const pc_ep_t *eps,
         pod_toast(TR("Storage unavailable"));
         return (void *)0;
     }
-    pc_restart(eps[at < neps ? at : 0].hash);
+    pc_restart(eps[at].hash);
     pc_speed_apply(s->hash);
     pod_set_in_order_for_queue(); /* the episode queue loads next: the flag only */
-    *idx = at;
+    *idx = start;
     return queue;
 }
 
@@ -4138,6 +4150,8 @@ static void pg_delete_played(void) {
     pod_toast(msg);
 }
 
+static const char *pg_order_name(int oldest) { return TR(oldest ? "Oldest First" : "Newest First"); }
+
 static const char *const pg_speed_name[PC_SPEEDS] = {"1\xc3\x97", "1.25\xc3\x97", "1.5\xc3\x97",
                                                      "2\xc3\x97"}; /* "1x" with the multiplication sign U+00D7 */
 
@@ -4146,8 +4160,9 @@ static const char *const pg_speed_name[PC_SPEEDS] = {"1\xc3\x97", "1.25\xc3\x97"
  * which each sheet shows the ones that apply, placed from the card's top, the card as high as its rows over the window's bottom edge. The show's "..." opens the show's: Playback Speed (a tap cycles
  * and the sheet stays), Refresh Feed, Select Episodes, Mark All as Played, Unsubscribe. A cell's "..." opens that episode's: Download or Remove Download, Mark as Played or Unplayed.
  */
-static const char *const pg_row_id[PG_SHEET_ROWS] = {"speed", "refresh", "select", "markall",   "unsub",  "dl",  "rm",
-                                                     "mark",  "unmark",  "import", "delplayed", "export", "save"};
+static const char *const pg_row_id[PG_SHEET_ROWS] = {"speed",     "refresh", "select", "markall", "unsub",
+                                                     "dl",        "rm",      "mark",   "unmark",  "import",
+                                                     "delplayed", "export",  "save",   "order"};
 
 static void pg_sheet_close(void) {
     if (!pg.sheet) return;
@@ -4176,7 +4191,8 @@ static void pg_sheet_value(int i, int v, const char *text) {
 
 /* Show the rows (ids, in order) and the card that holds them: PM_ROW_H each from the card's top, the first without its hairline, the glass picture of that height. */
 static void pg_sheet_rows(const int *rows, int n) {
-    static const char *const glass[] = {"", "pc_sheet1", "pc_sheet2", "pc_sheet3", "pc_sheet4", "pc_sheet5"};
+    static const char *const glass[] = {"",          "pc_sheet1", "pc_sheet2", "pc_sheet3",
+                                        "pc_sheet4", "pc_sheet5", "pc_sheet6"};
     int i, k, h = n * PM_ROW_H;
     for (i = 0; i < PG_SHEET_ROWS; ++i) {
         int at = -1;
@@ -4284,6 +4300,8 @@ static void pg_sheet_open(int kind, int ep) {
                              TR("Select Episodes")); /* (the row is shared with the Subscriptions page's) */
         rows[n++] = SR_SPEED;
         pg_sheet_value(SR_SPEED, 0, pg_speed_name[pc_speed_get(s->hash)]);
+        rows[n++] = SR_ORDER;
+        pg_sheet_value(SR_ORDER, 2, pg_order_name(pc_order_get(s->hash)));
         if (s->feed[0]) {
             rows[n++] = SR_REFRESH;
             text[0] = 0;
@@ -4318,6 +4336,26 @@ static void pg_sheet_open(int kind, int ep) {
         if (pg_ep_hash(e)) rows[n++] = pg_ep_state(e, &pos, &len) == PC_DONE ? SR_UNMARK : SR_MARK;
     }
     pg_sheet_rows(rows, n);
+}
+
+/* A tap on Episode Order: the other value, saved at once; the rows are turned round in place (the sheet stays). Oldest First is the exact reverse of Newest First over the same newest
+ * PC_MAX_EPS (pc_load_show), so this is the list a reload would give, and nothing can fail after the save: the saved order, the rows, the queue and Latest Episode (pg_latest_ix) always agree. A file
+ * that changed since the rows were read is picked up by the tick's reload as before (pg.gen is left alone). */
+static void pg_order_flip(void) {
+    const pc_show_t *s = &pg.shows[pg.sel];
+    int i, j;
+    if (!pc_order_set(s->hash, !pc_order_get(s->hash))) {
+        pod_toast(TR("Storage unavailable"));
+        return;
+    }
+    for (i = 0, j = pg.neps - 1; i < j; ++i, --j) {
+        pc_ep_t t;
+        memcpy(&t, &pg.eps[i], sizeof t);
+        memcpy(&pg.eps[i], &pg.eps[j], sizeof t);
+        memcpy(&pg.eps[j], &t, sizeof t);
+    }
+    pg_sheet_value(SR_ORDER, 2, pg_order_name(pc_order_get(s->hash)));
+    pg_eps_shown();
 }
 
 static void pg_speed_cycle(void) {
@@ -4465,6 +4503,10 @@ static int pg_on_sheet_row(void *ctx, void *e) {
         pg_speed_cycle();
         return RET_OK;
     }
+    if (id == SR_ORDER) { /* a tap picks the other value; the sheet stays */
+        pg_order_flip();
+        return RET_OK;
+    }
     pg_sheet_close();
     switch (id) {
     case SR_REFRESH:
@@ -4538,15 +4580,16 @@ static void pg_cell_tap(int a, int part) {
         pg_det_close();
         return;
     }
-    e = &pg.eps[part == PH_LATEST ? 0 : a];
+    if (part == PH_LATEST) a = pg_latest_ix();
+    e = &pg.eps[a];
     if (part == PH_DOTS)
         pg_sheet_open(SH_CELL, a);
     else if (part == PH_BODY)
         pg_det_open(a); /* (the cell's body opens the episode page, on the card or not) */
     else if (e->state == PC_LOCAL)
-        pg_play(part == PH_LATEST ? 0 : a);
+        pg_play(a);
     else
-        pg_dl_tap(part == PH_LATEST ? 0 : a);
+        pg_dl_tap(a);
 }
 
 /* A tap on a part of the Shows level: the refresh line runs Refresh All (the guards' words as toasts, the progress dialog; nothing while a refresh runs or waits), the Downloads row and the Subscriptions row open
@@ -4828,7 +4871,8 @@ static void pg_sheet_bind(void) {
     }
     pg.sh_vl[0] = widget_lookup(pg.win, "pg_sh_speed_vl", 1);
     pg.sh_vl[1] = widget_lookup(pg.win, "pg_sh_refresh_vl", 1);
-    if (!ok || !pg.sh_scrim || !pg.sh_card || !pg.sh_vl[0] || !pg.sh_vl[1]) pg.sh_card = (void *)0;
+    pg.sh_vl[2] = widget_lookup(pg.win, "pg_sh_order_vl", 1);
+    if (!ok || !pg.sh_scrim || !pg.sh_card || !pg.sh_vl[0] || !pg.sh_vl[1] || !pg.sh_vl[2]) pg.sh_card = (void *)0;
 }
 
 /* The Extras item Podcasts. 0 once the page is up, -1 if it could not open. */

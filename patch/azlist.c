@@ -7,6 +7,7 @@
 #include "stock.h"
 #include "scroll.h"
 #include "common.h"
+#include "home.h"
 #include "azlist.h"
 
 #define B(w, off) (*(unsigned char *)((char *)(w) + (off)))
@@ -60,11 +61,36 @@ void az_sections(az_t *az, const unsigned char *rank, unsigned stride) {
 }
 
 /* ---------------------------------------------------------------------------
+ * The two switches of Settings > Library, read when a page opens (set_read: one character). Index Rail and Section Headers are
+ * both on unless the file says "0". A toggle saves first and changes only when the save worked: the new state, or -1.
+ */
+int azrail_setting(void) { return set_read(AZRAIL_FILE, '1') != '0'; }
+int azhead_setting(void) { return set_read(AZHEAD_FILE, '1') != '0'; }
+
+int azrail_toggle(void) {
+    int next = !azrail_setting();
+    return home_write_atomic(AZRAIL_FILE, AZRAIL_TMP, next ? "1\n" : "0\n") != 0 ? -1 : next;
+}
+
+int azhead_toggle(void) {
+    int next = !azhead_setting();
+    return home_write_atomic(AZHEAD_FILE, AZHEAD_TMP, next ? "1\n" : "0\n") != 0 ? -1 : next;
+}
+
+int az_inset(const az_t *az) { return az->nsec > 0 && !az->norail ? SG_RAIL_INSET : 0; }
+int az_end(const az_t *az) { return LIST_HAIR_END - az_inset(az); }
+
+void az_prefs(az_t *az) {
+    az->hdr_h = azhead_setting() ? SG_HDR_H : 0;
+    az->norail = !azrail_setting();
+}
+
+/* ---------------------------------------------------------------------------
  * Geometry. The rows (and the headers, with sections) start at az->top; section s's header is at az_hdr_y(s), its rows follow.
  */
 int az_off(const az_t *az) { return az->sv ? I(az->sv, SC_YOFF) : 0; }
 
-int az_hdr_y(const az_t *az, int s) { return az->top + s * SG_HDR_H + (int)az->sec_start[s] * az->row; }
+int az_hdr_y(const az_t *az, int s) { return az->top + s * az->hdr_h + (int)az->sec_start[s] * az->row; }
 
 int az_sec_of(const az_t *az, int i) {
     int s = az->nsec - 1;
@@ -73,9 +99,9 @@ int az_sec_of(const az_t *az, int i) {
 }
 
 int az_row_y(const az_t *az, int i) {
-    return az->top + (az->nsec ? (az_sec_of(az, i) + 1) * SG_HDR_H : 0) + i * az->row;
+    return az->top + (az->nsec ? (az_sec_of(az, i) + 1) * az->hdr_h : 0) + i * az->row;
 }
-int az_rows_end(const az_t *az) { return az->top + az->nsec * SG_HDR_H + az->count * az->row; }
+int az_rows_end(const az_t *az) { return az->top + az->nsec * az->hdr_h + az->count * az->row; }
 
 int az_max_scroll(const az_t *az) {
     int m = az->content - (az->view_h > 0 ? az->view_h : GRID_VIEW_H);
@@ -91,8 +117,8 @@ int az_row_from(const az_t *az, int y) {
     else {
         s = az->nsec - 1;
         while (s > 0 && az_hdr_y(az, s) > y) --s;
-        i = y < az_hdr_y(az, s) + SG_HDR_H ? (int)az->sec_start[s]
-                                           : (int)az->sec_start[s] + (y - az_hdr_y(az, s) - SG_HDR_H) / az->row;
+        i = y < az_hdr_y(az, s) + az->hdr_h ? (int)az->sec_start[s]
+                                            : (int)az->sec_start[s] + (y - az_hdr_y(az, s) - az->hdr_h) / az->row;
     }
     return i > az->count - 1 ? az->count - 1 : i;
 }
@@ -135,9 +161,9 @@ void az_fill(void *canvas, int x, int y0, int y1, int w, unsigned c) {
 static void az_letter_text(const az_t *az, void *canvas, int s, int y) {
     unsigned w[2];
     int rect[4];
-    if (y < 0 || y + SG_HDR_H > GRID_VIEW_H) return;
+    if (y < 0 || y + az->hdr_h > GRID_VIEW_H) return;
     w[0] = az->sec_letter[s], w[1] = 0;
-    rect[0] = SG_HDR_X, rect[1] = y, rect[2] = 100, rect[3] = SG_HDR_H - 1;
+    rect[0] = SG_HDR_X, rect[1] = y, rect[2] = 100, rect[3] = az->hdr_h - 1;
     canvas_draw_text_in_rect(canvas, w, 1, rect);
 }
 
@@ -145,22 +171,22 @@ static void az_letter_text(const az_t *az, void *canvas, int s, int y) {
  * and the y of its band (<= 0). */
 static int az_pinned(const az_t *az, int *y) {
     int s = az_off(az), k = az->nsec - 1;
-    if (!az->nsec) return -1;
+    if (!az->nsec || !az->hdr_h) return -1;
     while (k >= 0 && az_hdr_y(az, k) > s) --k;
     if (k < 0) return -1;
-    *y = k + 1 < az->nsec && az_hdr_y(az, k + 1) - s < SG_HDR_H ? az_hdr_y(az, k + 1) - s - SG_HDR_H : 0;
+    *y = k + 1 < az->nsec && az_hdr_y(az, k + 1) - s < az->hdr_h ? az_hdr_y(az, k + 1) - s - az->hdr_h : 0;
     return k;
 }
 
 /* The letters of the headers, then the pinned band (the page's black over the rows scrolling under it: the headers in the flow have no band) and its letter. */
 void az_paint_heads(az_t *az, void *canvas) {
     int s, pin, py, off = az_off(az);
-    if (!az->nsec) return;
+    if (!az->nsec || !az->hdr_h) return; /* Section Headers off: nothing to draw, the rows have closed up */
     widget_prepare_text_style(az->st_hdr, canvas);
     for (s = 0; s < az->nsec; ++s) az_letter_text(az, canvas, s, az_hdr_y(az, s) - off);
     pin = az_pinned(az, &py); /* over everything: the pinned band and its letter */
     if (pin >= 0) {
-        az_fill(canvas, 0, py, py + SG_HDR_H, 320, SG_HDR_BG);
+        az_fill(canvas, 0, py, py + az->hdr_h, 320, SG_HDR_BG);
         az_letter_text(az, canvas, pin, py);
     }
 }
@@ -209,7 +235,7 @@ void az_rail_fit(az_t *az, int rail_h) {
                     (az->rail_origin ? az->rail_origin : SG_LIST_Y) + (rail_h - span) / 2 - SG_RAIL_PAD);
         widget_resize(az->rail, SG_RAIL_W, span + 2 * SG_RAIL_PAD);
     }
-    az_show(az->rail, az->nsec > 0 && az->count);
+    az_show(az->rail, az->nsec > 0 && az->count && !az->norail);
     az_redraw_rail(az);
 }
 
@@ -258,7 +284,7 @@ void az_rail_end(az_t *az) {
 /* DOWN grabs the touch (the moves and the release come here wherever they go), every position sets the letter under it (above the first and below the last: those). */
 void az_rail_event(az_t *az, void *e) {
     int type, pt[2], i, l, sec[SG_MAX_SEC];
-    if (!e || !az->nsec) return;
+    if (!e || !az->nsec || az->norail) return;
     type = I(e, 0);
     if (type == EVT_POINTER_UP || type == EVT_POINTER_ABORT) {
         az_rail_end(az);
@@ -298,7 +324,7 @@ void az_rail_paint(az_t *az, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     int j, k, l, y0 = SG_RAIL_PAD, step, dots, pass, rect[4], sec[SG_MAX_SEC];
     unsigned w[2];
-    if (!canvas || !az->nsec) return;
+    if (!canvas || !az->nsec || az->norail) return;
     l = az_rail_plan(az, sec);
     dots = l < az->nsec;
     step = dots ? 2 : 1; /* the items a letter takes with the dot after it */

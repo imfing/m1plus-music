@@ -1054,7 +1054,7 @@ def refresh_and_fallback_tests(ctx):
     expect(row.find(f'pod_switch{shelf_i}') is not None and any(c.get('tr_text') == 'Recent Albums' for c in row.walk()), 'its asset row is a switch row with the label')
     def settings_machine(content=None, daily=None):
         sm = Machine()
-        for n in ['btn_return', 'btn_backtoplayer'] + [f'pod_note{i}' for i in range(5)] + [f'pod_row{i}' for i in range(len(homeset.rows))] + [f'pod_switch{i}' for i in range(len(homeset.rows))]: sm.widget(n)
+        for n in ['btn_return', 'btn_backtoplayer'] + [f'pod_note{i}' for i in range(4)] + [f'pod_row{i}' for i in range(len(homeset.rows))] + [f'pod_switch{i}' for i in range(len(homeset.rows))]: sm.widget(n)
         if content is not None: sm.fs[SHELF_SET] = content
         if daily is not None: sm.fs['/mnt/data/m1plus/home-daily-mix'] = daily   # (patch/home.h DAILY_SET_FILE)
         sm.call(PSYMS['on_row'], a0=PSYMS[f'pod_rows_{pod_pages.SETTINGS_PAGE_INDEX}'] + 12 * homeset_i, count=3000000)
@@ -1077,7 +1077,7 @@ def refresh_and_fallback_tests(ctx):
     # Regenerate Daily Mix (patch/m1plus.c regen_show): hidden (card, note and row) and insensitive while no mix can be made; the Daily Mix switch updates it in place
     regen_i = next(i for i, r in enumerate(homeset.rows) if r.action == pod_pages.ACT_REGEN)
     daily_i = next(i for i, r in enumerate(homeset.rows) if r.action == pod_pages.ACT_DAILY)
-    regen_state = lambda sm: tuple(sm.props.get((sm.widgets[n], k)) for n, k in ((f'pod_row{regen_i}', 'visible'), (f'pod_row{regen_i}', 'sensitive'), ('pod_note4', 'visible'), ('pod_note4', 'sensitive')))
+    regen_state = lambda sm: tuple(sm.props.get((sm.widgets[n], k)) for n, k in ((f'pod_row{regen_i}', 'visible'), (f'pod_row{regen_i}', 'sensitive'), ('pod_note3', 'visible'), ('pod_note3', 'sensitive')))
     toasts = lambda sm: [c[1] for c in sm.calls if c[0] == 'toast']
     sm = settings_machine()
     sm.click(f'pod_row{regen_i}')

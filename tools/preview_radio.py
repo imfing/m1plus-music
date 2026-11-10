@@ -103,9 +103,9 @@ def countries_page(s):
         c = key(n)[0].upper()
         if c != last:
             PS.header(s, im, c, y); letters.append(c); y += O['SG_HDR_H']; last = c
-        d.rectangle((24, y + ROW - 1, O['SG_TEXT_END'] - 1, y + ROW - 1), fill=HAIR)
-        PF.chevron(im, 262, y + (ROW - 16) // 2)
-        s.text(im, 24, y + ROW / 2, s.clip(PS.tr(s, n) if False else n, 21, 252 - 24), 21)
+        d.rectangle((24, y + ROW - 1, O['LIST_HAIR_END'] - O['SG_RAIL_INSET'] - 1, y + ROW - 1), fill=HAIR)   # the rail is shown: patch/azlist.c az_inset
+        PF.chevron(im, O['LIST_CHEV_X'] - O['SG_RAIL_INSET'], y + (ROW - 16) // 2)
+        s.text(im, 24, y + ROW / 2, s.clip(PS.tr(s, n) if False else n, 21, O['LIST_TEXT_X'] + O['LIST_TEXT_W_CHEV'] - O['SG_RAIL_INSET'] - 24), 21)
         y += ROW
     PS.rail(s, im, letters)
     navbar(s, im, 'Countries')

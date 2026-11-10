@@ -92,6 +92,27 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   `/mnt/data/m1plus/coverflow-landscape` (`1` landscape, anything else or missing portrait; written atomically by the switch
   (`coverflow_landscape_toggle`), read when the covers screen is first built (`use_land`); shared by the main and artist pages). Without a depth frame (flat fallback) there is
   no landscape, whatever the setting says. A commit redraws the frame (the captions are in it).
+- **Volume buttons.** **Settings > Library > Cover Flow > Volume Buttons** is off by default
+  (`/mnt/data/m1plus/coverflow-volume-keys`: `1` on, anything else or missing off;
+  `coverflow_volkeys` / `coverflow_volkeys_toggle`, atomic write). On the main and artist shelves,
+  volume down steps one album right and volume up one left, including landscape. Quick presses
+  accumulate from the running snap's destination; the ends stop without wrapping. Captions,
+  textures and position memory follow the same commit as touch navigation.
+  The window binds `on_volkey` to `EVT_KEY_DOWN` / `EVT_KEY_UP` (`0x10f` / `0x113`), with no hook
+  or binary edit. **`0x110` is long press, not key down**: pinned stock evidence in `VOLKEYS_PINS`
+  (`tools/pod.py`) includes `widget_on_keydown`'s test at `0x670974`, the short-key injection at
+  `0x5ffaf8`, and the held-key timer at `0x6a497c`. The window's `RET_STOP` prevents the wm's
+  `on_wm_keyup_fun` (`0x4cd9ac`) from opening the volume dialog; its own window handler (`0x47e330`)
+  is the stock precedent. The code is at event `+0x18` (`0xdc` up, `0xdd` down);
+  `ROTATEMODE == 1` (`0xa05a9c`) swaps them as stock does.
+  Keys are taken only with the switch on, the backlight lit, the covers screen built and no
+  finger down. A taken down resets the power timers `(1, 1, 1)`; its release is swallowed and
+  clears `cf.vk_taken` (also cleared at destroy). Other conditions and keys pass to stock.
+  Pod Cover Flow and the Preparing screen keep stock volume behaviour. The one-second long
+  press adds no step; repeated downs step only if supplied by the device (unverified, CF-VOL).
+  Tests: `volkeys_tests` and `keyroute_tests` in `test/pod/coverflow.py` (literal device events,
+  stock key routing and synchronous emitter returns), Library rows in `test/pod/menu.py`,
+  note wrapping in `test/pod/i18n.py`. Hardware behaviour remains unverified.
 - **Captions.** `label_album` / `label_artist` are `hscroll_label`s configured as Now Playing's info
   lines (`loop`, `yoyo`, `lull` 3000 ms, centred, `ellipses`, 22 px white / 18 px `#AAAAAA`, in 16 px
   margins): a long title scrolls back and forth with a pause at each end, a short one is centred
@@ -103,8 +124,8 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   All albums button; the All albums card on the shelf stays). `btn_songs` (Lucide `list`, `pod_nav_songs`, a left cap) is in the asset at x `NAV_VIEW_X` 214, w 46, hidden and insensitive, and
   opens **our Songs page on all the artist's songs** (`songs_open_artist`, docs/modules/songs.md "The other lists"). **The covers and the list are two views of the artist, a toggle**: the list stays its own window over the covers (no widget of ours can hold that painted page, and there is no open or close animation on these pages, so there is no slide to suppress); on the list the capsule's left cap (x 168, the Albums page's `pod_nav_coverflow` glyph; Search is not shown there) closes the list and shows the covers again, and Back from either view leaves the artist (the list's Back closes itself and this page too: `coverflow_artist_page()`, `patch/songs.c` `sg_on_back`), to the scoped Albums page it was opened from (then the Artists list), or to Now Playing when it came from Look up artist. The glyph is the list button here (x 214) and the Cover Flow one there (x 168): the capsule differs per page. One list window at a time, so repeated toggling never stacks pages. `artist_nav` (from `to_covers`) shows it for every
   artist whose stock list had the All songs row (`has_songs()`: `cf.albums` keeps the full stock copy also when the card is dropped) and then sets `btn_backtoplayer`'s icons to the right cap
-  (`ah_nav_play`, `_down`; the asset keeps the disc `ah_nav_np`, which the main Cover Flow and a composer's page keep: `songs_open_artist` runs the artist queries, a composer's songs would be
-  `0xf005` / `0xff02` -> `0xff14`, not done). Not shown while preparing, nor for "No albums". On an artist page (`cf.scoped`) the title ends at 214 (`coverflow_artist` and `artist_nav`); the main
+  (`ah_nav_play`, `_down`; the asset keeps the disc `ah_nav_np`, which the main Cover Flow keeps). A composer's page has it too: `songs_open_artist(row, cf.scope)` runs the composer queries
+  (`0xf005` / `0xff02` -> `0xff14`). Not shown while preparing, nor for "No albums". On an artist page (`cf.scoped`) the title ends at 214 (`coverflow_artist` and `artist_nav`); the main
   page keeps its full width. `on_songs` is guarded by the covers screen and a non-empty shelf; if the page does not open it does what the card does (`cc_open_album` on the All songs row).
 - **Start index.** The stock `slide_menu` starts on item 1, not 0; the page always sets the start
   album (`cfpos.value`, or `slide_menu_set_value` in the flat fallback), so an artist's page opens on its first album, a
@@ -116,8 +137,8 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   the cover-task list from it, `batchadd_albumcover_task(0, 0)` releases the cover thread (see album-page.md, Opening and fallback), and `navigator_to_with_context("albuminfo_page", 0xf003 | row << 16)`
   opens the stock page (this fallback runs only when ours does not open). The queries repeat on every tap (the page may have been left through Now Playing, and
   anything may have reused the list or the browsing record). Back from the album page returns to the
-  covers. The artist page's All albums card is not an album: it opens our Songs page on all the artist's songs (`songs_open_artist`, as the Songs button does; a composer's card, or a Songs page that will not open, falls back to the stock page on the All songs row).
-- **Cache.** (The cache has one size, 168; the Pod's cover pane needs 264 and gets it without a second tier of files: from demo's own full-resolution file for the playing track and, for its random rotation, from one transient extraction into `/tmp/m1plus-pane.jpg` by this builder's worker (`cc_build_add_file`: no cache file, no marker), docs/modules/ipod.md "The cover pane".) The page keeps its own `/mnt/mmc/.m1plus/covers/r<key>-168.jpg` thumbnails, made from the album's first track (the album row is its first track by the query filter, payload.md hook 6; the leading `f` retired the files made from any track) (the size is in the
+  covers. The artist page's All albums card is not an album: it opens our Songs page on all the artist's songs (`songs_open_artist`, as the Songs button does, a composer's too; a Songs page that will not open falls back to the stock page on the All songs row).
+- **Cache.** (The cache has one size, 168; the Pod's cover pane needs 264 and gets it without a second tier of files: from demo's own full-resolution file for the playing track and, for its random rotation, from one transient extraction into `/tmp/m1plus-pane.jpg` by this builder's worker (`cc_build_add_file`: no cache file, no marker), docs/modules/ipod.md "The cover pane". `cc_build_add_aspect` is the same job for the timed cover page (docs/modules/bigcover.md): `pv_cover_aspect` keeps the shape of a picture whose longer side is exactly the request, where stock's fit (`cc_stock_fit`) stretches it to a square, and stock's resize is not the fallback; it also takes stock's cover source (2 embedded, 3 folder) and searches that one only, never the other as a substitute; the cache and the pane do not use it.) The page keeps its own `/mnt/mmc/.m1plus/covers/r<key>-168.jpg` thumbnails, made from the album's first track (the album row is its first track by the query filter, payload.md hook 6; the leading `f` retired the files made from any track) (the size is in the
   name; key = FNV-1a of artist then album, never 0; the key, path, decode and reduce helpers are in
   `patch/covercache.c`, which the Albums grid reads the same files through). The stock cache `/mnt/mmc/.downpic` is keyed by an
   MD5 the payload cannot reproduce and holds 90 px images, so Cover Flow only reads through the stock

@@ -466,7 +466,6 @@ static void pg_note(void) {
         pod_fmt(text, sizeof text,
                 TR(pg.skipped == 1 ? "%d line not supported was skipped." : "%d lines not supported were skipped."),
                 (int)pg.skipped);
-        label_set_line_wrap(pg.note_t, 1);
         widget_set_text_utf8(pg.note_t, text);
     }
     widget_set_visible(pg.note, pg.skipped != 0, 0);

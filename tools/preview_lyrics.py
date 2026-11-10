@@ -20,7 +20,7 @@ from awtk_text import Ttf, StbText
 from stb_raster import StbFont
 from pod_ui import OFFSETS as O
 
-W, VIEW_X, VIEW_Y = O['LY_W'], 28, 44
+W, ROW_W, VIEW_X, VIEW_Y = O['LY_W'], O['LY_ROW_W'], 28, 44
 VIEW_H, ANCHOR = O['LY_VIEW_H'], O['LY_ANCHOR']
 NEW_OPACITY = (255, 115, 82, 61, 46)            # patch/lyrics.c ly_opacity: distance 0, 1, 2, 3, 4+
 OLD_OPACITY = (255, 179, 128, 89)               # stage 2
@@ -36,7 +36,7 @@ CJK = ['夜晚的风轻轻吹过我的窗前', '我想要的只是和你在一�
 
 def latin_only(text): return all(mod_font.in_ranges(ord(c), mod_font.INTER_RANGES) for c in text)
 
-def wrap_text(text, st, width=W):
+def wrap_text(text, st, width=ROW_W):
     """The rows of a greedy word wrap: break after a space, between CJK characters, inside a word longer than a row."""
     adv = lambda c: (st.advance(c) or 4) + 1
     toks, word = [], ''
@@ -59,7 +59,7 @@ def wrap_text(text, st, width=W):
     rows.append(cur.rstrip())
     return rows
 
-def wrap_rows(text, st, width=W, cap=3): return min(len(wrap_text(text, st, width)), cap)
+def wrap_rows(text, st, width=ROW_W, cap=3): return min(len(wrap_text(text, st, width)), cap)
 
 def edge(y, rows, p):
     top, bot = y + rows * p['line_h'] - p['line_h'] // 2, VIEW_H - (y + p['line_h'] // 2)

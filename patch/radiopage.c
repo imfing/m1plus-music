@@ -52,8 +52,8 @@ extern int rn_open(void); /* patch/radionp.c: Radio's Now Playing page */
 #define RP_TEXT_END 296
 #define RP_CHEV_X 289
 #define RP_AZ_TEXT_X 24 /* the countries: the Genres page's numbers (patch/artists.c AR_*) */
-#define RP_AZ_TEXT_END 252
-#define RP_AZ_CHEV_X 262
+#define RP_AZ_TEXT_END (LIST_TEXT_X + LIST_TEXT_W_CHEV) /* the list-row spec, less az_inset while the rail is shown */
+#define RP_AZ_CHEV_X LIST_CHEV_X
 #define RP_AZ_TEXT_Y ((RP_ROW_ROOT - LIST_TITLE_H) / 2)
 #define RP_GLYPH 96 /* the radio glyph of a logo-less tile (pod_ic_rd_art) */
 #define RP_INK 147 /* its ink's brightest channel (#8E8E93 is 0x93) */
@@ -274,13 +274,14 @@ static void rp_paint_rows(void *canvas) {
             if (!(r == 0 && rp_gap())) /* a group of one row ends without a separator */
                 az_fill(canvas, RP_TEXT_X, y + h - 1, y + h, RP_W - 10 - RP_TEXT_X, LIST_HAIR);
         } else {
-            rp_blit(canvas, rp.chev, POD_CHEV_W, POD_CHEV_H, az ? RP_AZ_CHEV_X : RP_CHEV_X, y + (h - POD_CHEV_H) / 2);
+            rp_blit(canvas, rp.chev, POD_CHEV_W, POD_CHEV_H, az ? RP_AZ_CHEV_X - az_inset(&rp.al) : RP_CHEV_X,
+                    y + (h - POD_CHEV_H) / 2);
             az_fill(canvas, az ? RP_AZ_TEXT_X : RP_LIST_X, y + h - 1, y + h,
-                    (az ? SG_TEXT_END : RP_W - 10) - (az ? RP_AZ_TEXT_X : RP_LIST_X), LIST_HAIR);
+                    (az ? az_end(&rp.al) : RP_W - 10) - (az ? RP_AZ_TEXT_X : RP_LIST_X), LIST_HAIR);
         }
     }
     if (rp_rows_lvl() || az) {
-        int x0 = az ? RP_AZ_TEXT_X : RP_TEXT_X, end = az ? RP_AZ_TEXT_END : RP_TEXT_END;
+        int x0 = az ? RP_AZ_TEXT_X : RP_TEXT_X, end = az ? RP_AZ_TEXT_END - az_inset(&rp.al) : RP_TEXT_END;
         widget_prepare_text_style(rp.st_title, canvas);
         for (r = r0; r <= r1; ++r)
             grid_text(canvas, rp_tile(r), 0, x0, rp_row_y(r) - off + (az ? RP_AZ_TEXT_Y : (h - LIST_TITLE_H) / 2),
@@ -1107,6 +1108,7 @@ int radio_open(void) {
     rp.st_gtitle = widget_lookup(rp.win, "label_grid_title", 1);
     rp.st_gsub = widget_lookup(rp.win, "label_grid_sub", 1);
     rp.al.win = rp.win, rp.al.sv = rp.sv, rp.al.top = SG_TITLE_H, rp.al.row = RP_ROW_ROOT;
+    az_prefs(&rp.al);
     rp.al.st_hdr = widget_lookup(rp.win, "label_hdr", 1);
     rp.al.st_rail = widget_lookup(rp.win, "label_rail", 1);
     rp.al.st_rail_on = widget_lookup(rp.win, "label_rail_on", 1);

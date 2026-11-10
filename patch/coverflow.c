@@ -38,10 +38,11 @@
 #include "home.h"
 #endif
 #include "covercache.h"
+#include "nextalbum.h"
 #include "common.h"
 
-extern int
-songs_open_artist(void *artist); /* patch/songs.c: our Songs page on all the artist's songs; -1 when it did not open */
+/* patch/songs.c: our Songs page on all the artist's (or composer's: scope CLASS_COMPOSERS) songs; -1 when it did not open */
+extern int songs_open_artist(void *artist, unsigned scope);
 
 /* ===========================================================================
  * The depth renderer (q2-pod, after Rockbox PictureFlow). All integer: 16.16 turns and
@@ -309,6 +310,7 @@ static struct {
      * the press stopped a snap animation; the greatest excursion from the down point (either axis); the
      * offset the press found; the recent samples for the fling velocity (a ring, the newest at sample) */
     int built; /* the covers screen's widgets exist (once per page) */
+    int vk_taken; /* 1 from a volume key press this page took until its release */
     int dragging, active, interrupted, reach, down_x, down_y, origin, base_off;
     int sample, samples, sx[CF_SAMPLES], st[CF_SAMPLES];
     /* the snap animation: from and to offsets, its start (time_now_ms) and length, and its timer */
@@ -364,10 +366,10 @@ static void *album_at(unsigned i) { return i < album_count() ? cc_row(cf.albums,
 /* The All albums card: the "All songs" row the stock artist query appends (getAlbumByArtist). */
 static int is_card(void *r) { return cf.scoped && r && I(r, REC_ID) == ID_ALL_SONGS; }
 
-/* The artist has songs: the stock list ended with the All songs row (load_artist keeps cf.albums whole, also when the card is dropped from the shelf). An
- * artist's page only: songs_open_artist runs the artist queries (a composer's would be 0xf005 / 0xff02 -> 0xff14). */
+/* The artist (or composer) has songs: the stock list ended with the All songs row (load_artist keeps cf.albums whole, also when the card is dropped from the
+ * shelf); songs_open_artist runs the artist's or the composer's queries (0xf004 / 0xff01 -> 0xff11, 0xf005 / 0xff02 -> 0xff14). */
 static int has_songs(void) {
-    unsigned n = cf.scoped && cf.scope == CLASS_ARTISTS && cf.albums ? deque_size(cf.albums) : 0;
+    unsigned n = cf.scoped && cf.albums ? deque_size(cf.albums) : 0;
     return n && I(deque_at(cf.albums, n - 1), REC_ID) == ID_ALL_SONGS;
 }
 
@@ -990,7 +992,7 @@ static void layout(void) {
 }
 
 /* The artist page's Songs button (the capsule's left cap at NAV_VIEW_X, as the Artists page's switch): shown, Now Playing becomes the capsule's right cap
- * (the asset has the disc, which the main page and a composer's page keep); the title ends before the slot. */
+ * (the asset has the disc, which the main page keeps); the title ends before the slot. */
 static void artist_nav(void) {
     void *title = widget_lookup(cf.win, "label_title", 1), *np = widget_lookup(cf.win, "btn_backtoplayer", 1);
     if (!cf.scoped) return;
@@ -1073,10 +1075,13 @@ static void open_album(int index) {
     if (!r) return;
     snap_stop();
     cf.album = index;
-    if (is_card(r) && has_songs() && songs_open_artist(deque_at(cf.artist_row, 0)) != -1) return;
+    if (is_card(r) && has_songs() && songs_open_artist(deque_at(cf.artist_row, 0), cf.scope) != -1) return;
     if (!cf.scoped) cf.saved_album = cc_album_key(r);
+    na_note_albums(cf.albums, cf.order, album_count(), cf.scoped ? cf.scope : 0,
+                   cf.scoped ? cf.artist_row : (void *)0); /* the order shown, for Continue with Next Album */
     cc_open_album(cf.scoped ? cf.artist_row : (void *)0, cf.scope,
                   (int)(cf.order ? cf.order[index] : (unsigned)index)); /* the stock row */
+    na_note_drop();
 }
 
 /* The artist page's Songs button: our Songs page on all the artist's songs, so Back returns here. A page that did not open falls back to the stock page on the
@@ -1087,7 +1092,7 @@ static int on_songs(void *ctx, void *e) {
     if (cf.screen != CF_COVERS || !album_count() || !has_songs())
         return RET_OK; /* (no albums: the page shows no covers and no button) */
     snap_stop();
-    if (songs_open_artist(deque_at(cf.artist_row, 0)) == -1)
+    if (songs_open_artist(deque_at(cf.artist_row, 0), cf.scope) == -1)
         cc_open_album(cf.artist_row, cf.scope, (int)deque_size(cf.albums) - 1);
     return RET_OK;
 }
@@ -1352,7 +1357,7 @@ static int on_destroy(void *ctx, void *e) {
     stop_timer();
     snap_stop();
     if (cf.dragging) widget_ungrab(cf.covers, cf.input);
-    cf.dragging = 0;
+    cf.dragging = cf.vk_taken = 0;
     build_end();
     fx_close();
     if (cf.saved_album && !cf.scoped) position_save(cf.saved_album);
@@ -1370,11 +1375,52 @@ static int on_destroy(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The hardware volume buttons (Settings > Library > Cover Flow > Volume Buttons, VOLKEYS_FILE; docs/modules/coverflow.md "Volume buttons").
+ * Stock never changes the volume from the key handler: on_wm_keyup_fun (wm EVT_KEY_UP, 0x4cd9ac) only opens the volume dialog, and that
+ * dialog's own window handler (0x47e330) is what steps the volume and returns RET_STOP. The same shape here: a window-level handler on the
+ * page, so a taken key returns RET_STOP and the wm handler never runs. Taken only while the switch is on, the screen is lit, the covers screen
+ * is up and no finger is down; everything else is RET_OK and stock runs unchanged. The step is on KEY_DOWN (auto-repeat, if the kernel sends
+ * it, keeps stepping); the KEY_UP of a taken press is swallowed too, any other KEY_UP passes. ROTATEMODE 1 swaps the two keys as stock does
+ * (0x4cd9f8, 0x47e340). Volume down is the next album (to the right), volume up the previous one. */
+static int volkeys_on(void) { return set_read(VOLKEYS_FILE, 0) == '1'; }
+
+int coverflow_volkeys(void) { return volkeys_on(); }
+
+int coverflow_volkeys_toggle(void) {
+    int next = !volkeys_on();
+    return home_write_atomic(VOLKEYS_FILE, VOLKEYS_TMP, next ? "1\n" : "0\n") == 0 ? next : -1;
+}
+
+static int on_volkey(void *ctx, void *e) {
+    int type, key, h;
+    (void)ctx;
+    if (!e) return RET_OK;
+    type = pe(e, 0), key = pe(e, EV_KEY);
+    if (key != KEY_VOL_UP && key != KEY_VOL_DOWN) return RET_OK;
+    if (type == EVT_KEY_UP) {
+        if (!cf.vk_taken) return RET_OK;
+        cf.vk_taken = 0;
+        return RET_STOP;
+    }
+    if (type != EVT_KEY_DOWN) return RET_OK;
+    if (*(volatile int *)ROTATEMODE == 1) key = key == KEY_VOL_UP ? KEY_VOL_DOWN : KEY_VOL_UP;
+    h = stride();
+    if (!pod_screen_lit() || cf.screen != CF_COVERS || !shelf_up() || cf.dragging || h <= 0 || !volkeys_on())
+        return RET_OK;
+    /* from the destination of a running snap (so quick presses add up), else from the committed album; bound() stops at the ends */
+    snap((cf.snap_timer ? cf.snap_to / h : 0) + (key == KEY_VOL_DOWN ? -1 : 1));
+    cf.vk_taken = 1;
+    reset_poweroptions_timer(1, 1, 1); /* stock's key handler, which does this for the keys it handles, does not run */
+    return RET_STOP;
+}
+
 /* The page and its widgets, everything hidden that waits for a screen; -1 if it did not open. */
 static int open_page(void) {
     cf.win = window_open("m1plus_cover");
     if (!cf.win) return -1;
     widget_on(cf.win, EVT_DESTROY, on_destroy, (void *)0);
+    widget_on(cf.win, EVT_KEY_DOWN, on_volkey, (void *)0);
+    widget_on(cf.win, EVT_KEY_UP, on_volkey, (void *)0);
     pod_bind(cf.win, "btn_return", on_back, (void *)0);
     pod_bind(cf.win, "btn_backtoplayer", pod_on_player, (void *)0);
     cf.covers = widget_lookup(cf.win, "view_covers", 1);

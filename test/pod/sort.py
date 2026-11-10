@@ -8,8 +8,8 @@ LAST = '/mnt/mmc/.m1plus/coverflow-position'
 SEED = O['FNV_SEED']
 
 
-# (album, artist) in the order the stock Albums query lists them: by album title, ASCII case aside; the "Unknown
-# Album" row (id -1) last. It covers: the The-prefix in either case, "The" without a space, "A" which is not ignored,
+# (album, artist) in the order the stock Albums query lists them (by album title, ASCII case aside; the Title order
+# of ours differs: "Theory" before "The Wall" and "Wall"); the "Unknown Album" row (id -1) last. It covers: the The-prefix in either case, "The" without a space, "A" which is not ignored,
 # an empty artist, the same artist and title once "The " is dropped (a tie), and the Unknown Album row.
 LIB = [('A Night at the Opera', 'Queen'), ('Abbey Road', 'The Beatles'), ('Blue', 'Joni Mitchell'),
        ('Greatest Hits', 'Queen'), ('Help!', 'the beatles'), ('Kind of Blue', 'Miles Davis'),
@@ -17,6 +17,8 @@ LIB = [('A Night at the Opera', 'Queen'), ('Abbey Road', 'The Beatles'), ('Blue'
        ('The Wall', 'Pink Floyd'), ('Theory', 'Theo'), ('Wall', 'Pink Floyd'), ('Zeit', ''), ('Unknown Album', '')]
 LIB_ARTIST_ORDER = [12, 8, 1, 4, 6, 2, 5, 7, 9, 11, 0, 3, 10, 13]    # by hand: '' < beach boys < beatles (Abbey Road, Help!, Let It Be) < ...
 # ... < queen (A Night at the Opera, Greatest Hits) < theo; The Wall and Wall tie and keep the stock order; Unknown Album last
+
+TITLE_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 9, 11, 12, 13]   # by hand: ... Pet Sounds < Theory ("theory") < The Wall and Wall ("wall", a tie in stock order) < Zeit < Unknown Album
 
 
 def model(specs):
@@ -102,11 +104,11 @@ def run(ctx):
         m = lib_machine(data=data)
         m.call(cover_open, count=30000000)
         shown, rows = shelf(m, n)
-        expect(rows == list(range(n)) and shown == LIB, f'saved {data!r}: Album order is the stock order, row for row')
+        expect(rows == TITLE_ORDER and shown == [LIB[i] for i in TITLE_ORDER], f'saved {data!r}: Title order is our name keys ("The " dropped: Theory before The Wall and Wall) ({rows})')
 
     # ===================== 2b. reversed orders: the letter a (Title) / b (Artist) in albums-sort =====================
     last = [n - 1]    # the Unknown Album row stays last
-    rev_title = list(range(n - 2, -1, -1)) + last
+    rev_title = [12, 9, 11, 10, 8, 7, 6, 5, 4, 3, 2, 1, 0] + last   # (the tie, The Wall and Wall, keeps the stock order in Z-A too)
     rev_artist = sorted(range(n - 1), key=lambda i: (name_sort_key(LIB[i][1]), name_sort_key(LIB[i][0])), reverse=True) + last   # (ties keep the stock order: sorted is stable)
     for data, want, what in ((b'a\n', rev_title, 'Z-A by title'), (b'a', rev_title, 'Z-A by title, no newline'), (b'b\n', rev_artist, 'Z-A by artist')):
         m = lib_machine(data=data)
@@ -177,13 +179,13 @@ def run(ctx):
 
     # ===================== 4b. the name comparison: digit runs, CJK by pinyin, white space, stable ties =====================
     nat = [('Vol 10', 'Mix'), ('Vol 2', 'Mix'), ('B', 'Disc 10'), ('B', 'Disc 9'), ('Z', ' Zed'), ('Y', 'zebra'), ('周杰伦', 'Jay'),
-           ('Same', 'Twin'), ('Same', 'Twin'), ('_x', 'Sym'), ('7', 'Seven'), ('孙燕姿', 'Stefanie'), ('Sam', 'S'), ('The Abc', 'First')]
+           ('Same', 'Twin'), ('Same', 'Twin'), ('_?', 'Sym'), ('7', 'Seven'), ('孙燕姿', 'Stefanie'), ('Sam', 'S'), ('The Abc', 'First')]
     nat = [(album, artist) for artist, album in nat]
     m = lib_machine(nat); m.call(cover_open, count=30000000)
     shown, rows = shelf(m, len(nat))
     expect(rows == model(nat), f'digit runs by value, CJK by pinyin initials, white space skipped, ties stable ({[nat[i] for i in rows]})')
     artists_in_order = [nat[i][1] for i in rows]
-    expect(artists_in_order.index('Vol 2') < artists_in_order.index('Vol 10') and artists_in_order.index('7') < artists_in_order.index('_x') < artists_in_order.index('B'),
+    expect(artists_in_order.index('Vol 2') < artists_in_order.index('Vol 10') and artists_in_order.index('7') < artists_in_order.index('_?') < artists_in_order.index('B'),
            'Vol 2 before Vol 10; digits before symbols before letters')
     expect(artists_in_order.index('Sam') < artists_in_order.index('孙燕姿') < artists_in_order.index('Y') < artists_in_order.index('Z') < artists_in_order.index('周杰伦'),
            'a CJK artist sits among the Latin ones by its initials (孙燕姿 "syz" after Sam; 周杰伦 "zjl" after Z)')
@@ -292,14 +294,14 @@ def run(ctx):
         return m
     m = artist_page(0)
     shown, rows = shelf(m, 3)
-    expect([s[0] for s in shown] == ['Kind of Blue', 'Jazz Hits', 'Bitches Brew'] and rows == [0, 1, 2],
-           'the artist\'s shelf keeps the stock order of its albums (by title as the artist query groups them, not re-sorted by artist)')
+    expect([s[0] for s in shown] == ['Bitches Brew', 'Jazz Hits', 'Kind of Blue'] and rows == [0, 1, 2],
+           'the artist\'s shelf is in the Title order (our name keys), not re-sorted by artist')
     m = artist_page(0, lambda m: [m.record(album='Bitches Brew', artist='Miles Davis', path='/mnt/mmc/p/1.flac')])
-    expect(centred(m) == (2, ['Bitches Brew'], ['Miles Davis']), 'the playing album belongs to the artist: the artist page opens on it')
+    expect(centred(m) == (0, ['Bitches Brew'], ['Miles Davis']), 'the playing album belongs to the artist: the artist page opens on it')
     m = artist_page(0, lambda m: [m.record(album='Jazz Hits', artist='Various Artists', path='/mnt/mmc/p/1.flac')])
     expect(centred(m)[0] == 1, 'a track of the artist\'s album filed under another artist in the library (a compilation): found by album name')
     m = artist_page(0, lambda m: [m.record(album='Pastel Blues', artist='Nina Simone', path='/mnt/mmc/p/1.flac')])
-    expect(centred(m) == (0, ['Kind of Blue'], ['Miles Davis']), 'the playing album is another artist\'s: the artist page opens on its first album')
+    expect(centred(m) == (0, ['Bitches Brew'], ['Miles Davis']), 'the playing album is another artist\'s: the artist page opens on its first album')
     m = artist_page(0, lambda m: [m.record(album='Bitches Brew', artist='Miles Davis', path='/mnt/mmc/p/1.flac')], pos=-1)
     expect(centred(m)[0] == 0, 'nothing playing: the first album')
     m = artist_page(1, lambda m: [m.record(album='Bitches Brew', artist='Miles Davis', path='/mnt/mmc/p/1.flac')])

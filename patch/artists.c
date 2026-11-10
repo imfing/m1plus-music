@@ -25,6 +25,9 @@
  * composer's albums: loadAlbumList(0xf005), class 0xff02); a genre's tap lists the genre's songs on our Songs page (songs_open_genre). Where the window will not open
  * the tile's stock page opens. docs/modules/artists.md.
  *
+ * Artists and Album Artists rows carry the artist's photo (docs/modules/artists.md "Artist photos"): a 40 px circle at x 16, the name from x 68; the circle is decoded by the page's own timer, one a tick
+ * (ar_on_photo, patch/artistphoto.c ap_lookup / grid ring), never in a paint; a row without one shows the shared placeholder.
+ *
  * No stock function is hooked. The page is opened from the M1+ Music menu's Artists, Genres and Composers rows and
  * everything here runs from its own widgets; nothing of it outlives the window.
  */
@@ -38,6 +41,7 @@
 #include "i18n.h"
 #include "viewsort.h"
 #include "search.h"
+#include "artistphoto.h"
 
 extern int coverflow_artist(void *artists, unsigned index, unsigned scope); /* patch/coverflow.c */
 extern int albums_open_artist(void *artists, unsigned index, unsigned scope); /* patch/albums.c */
@@ -52,13 +56,20 @@ extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination th
     SG_TITLE_H /* the content y of the first header: right under the large title's row (Songs has the pills there too) */
 #define AR_BOTTOM 12 /* air under the last row */
 #define AR_TEXT_X 24
+#define AR_PHOTO AP_ROW_D /* the artist's circle (Artists and Album Artists only), 40 px at x 16, centred in the row */
+#define AR_PHOTO_X 16
+#define AR_NAME_X \
+    68 /* the name and the hairline of a row with a circle start here (AR_TEXT_X on Genres and Composers) */
+#define AR_PHOTO_MS 16 /* the photo loader's tick */
+#define AR_RETRY_MS 1000
 #define AR_TEXT_Y \
     ((AR_ROW - LIST_TITLE_H) / \
      2) /* the name's 24 px box (LIST_TITLE_H), centred in the row: a row cut by the window's edge has its name cut by the scroll_view's clip, as the Songs page's texts */
 #define AR_TEXT_H LIST_TITLE_H
 #define AR_TEXT_END \
-    252 /* the names are cut here: the chevron stands between this and the rail's touch column (x 284) */
-#define AR_CHEV_X 262
+    (LIST_TEXT_X + \
+     LIST_TEXT_W_CHEV) /* the names are cut here (278), the chevron at AR_CHEV_X: the list-row spec; both move left by az_inset while the rail is shown (x 252 and 262) */
+#define AR_CHEV_X LIST_CHEV_X
 #define AR_CHEV_W POD_CHEV_W /* the chevron's bitmap, made by pod_make_chevron (patch/common.c) */
 #define AR_CHEV_H POD_CHEV_H
 #define AR_W 320 /* the content's width: the list_view's (the scroll_view clips at 310) */
@@ -82,8 +93,16 @@ static struct {
     int press; /* the row under the finger, + 1 */
     int down, down_x, down_y; /* the row a press began on, + 1, and where */
     int title_on, noscroll;
+    int photo; /* Artists and Album Artists: rows with a circle (the ring decodes it, ar_on_photo) */
+    unsigned char *
+        pst; /* 2 bits per display position: AP_UNKNOWN / AP_PHOTO / AP_NONE / AP_LEAD (ap_lookup's answer once it is known) */
+    unsigned photo_timer; /* the loader's */
+    unsigned
+        epoch; /* ap_epoch() when the circles were last looked at: a re-check on an artist's page that changed a photo shows here when the page is in front again */
+    unsigned
+        retry_timer; /* while the Home pass makes photos: asks, every AR_RETRY_MS, whether it is over, then the rows without a file look again */
     az_t al;
-    grid_t g; /* the text ring (no covers) */
+    grid_t g; /* the text ring; with photo, the circles too (AR_PHOTO px, the corners cut in the alpha) */
 } ar __attribute__((section(".scratch")));
 
 /* Hidden and out of the hit test together (this AWTK's widget_find_target ignores visible). */
@@ -224,34 +243,47 @@ static void ar_mode_show(void) {
 /* ---------------------------------------------------------------------------
  * Paint: the rows, the headers and the pinned header in one EVT_AFTER_PAINT of the content view, in window coordinates (patch/songs.c sg_paint_rows)
  */
+/* The photo state of display position i (2 bits each). */
+static unsigned ar_st(unsigned i) { return ar.pst ? (unsigned)(ar.pst[i >> 2] >> (i & 3) * 2) & 3u : AP_UNKNOWN; }
+
+static void ar_st_set(unsigned i, unsigned v) {
+    if (ar.pst) ar.pst[i >> 2] = (unsigned char)((ar.pst[i >> 2] & ~(3u << (i & 3) * 2)) | v << (i & 3) * 2);
+}
+
 static grid_tile_t *ar_tile(int a) {
     int lo, hi, fresh;
     grid_tile_t *t;
     az_span(&ar.al, &lo, &hi);
     t = grid_tile(&ar.g, a, lo, hi, &fresh);
-    if (fresh) grid_set(t, ar_name(deque_at(ar.artists, ar_stock((unsigned)a))), "", 0);
+    if (fresh) {
+        void *rec = deque_at(ar.artists, ar_stock((unsigned)a));
+        grid_set(t, ar_name(rec), "", 0);
+        if (ar.photo && (ar_fixed(rec) || ar_st((unsigned)a) == AP_NONE))
+            t->art = 2; /* no photo: the placeholder, nothing to load */
+    }
     return t;
 }
 
 static void ar_paint_rows(void *canvas) {
-    int r0, r1, r, off = az_off(&ar.al);
+    int r0, r1, r, off = az_off(&ar.al), tx = ar.photo ? AR_NAME_X : AR_TEXT_X;
     az_span(&ar.al, &r0, &r1);
     for (r = r0; r <= r1; ++r) {
         int y = az_row_y(&ar.al, r) - off;
         if (ar.press == r + 1) az_fill(canvas, 0, y, y + AR_ROW - 1, AR_W, LIST_PRESS);
-        az_fill(canvas, AR_TEXT_X, y + AR_ROW - 1, y + AR_ROW, SG_TEXT_END - AR_TEXT_X, LIST_HAIR);
+        az_fill(canvas, tx, y + AR_ROW - 1, y + AR_ROW, az_end(&ar.al) - tx, LIST_HAIR);
+        if (ar.photo) grid_blit(canvas, &ar.g, ar_tile(r), AR_PHOTO_X, y + (AR_ROW - AR_PHOTO) / 2, GRID_VIEW_H);
         if (ar.chev) {
             int src[4], dst[4], top = y + (AR_ROW - AR_CHEV_H) / 2;
             if (top >= 0 && top + AR_CHEV_H <= GRID_VIEW_H) {
                 src[0] = src[1] = 0, src[2] = AR_CHEV_W, src[3] = AR_CHEV_H;
-                dst[0] = AR_CHEV_X, dst[1] = top, dst[2] = AR_CHEV_W, dst[3] = AR_CHEV_H;
+                dst[0] = AR_CHEV_X - az_inset(&ar.al), dst[1] = top, dst[2] = AR_CHEV_W, dst[3] = AR_CHEV_H;
                 canvas_draw_image(canvas, ar.chev, src, dst);
             }
         }
     }
     widget_prepare_text_style(ar.st_title, canvas);
     for (r = r0; r <= r1; ++r)
-        grid_text(canvas, ar_tile(r), 0, AR_TEXT_X, az_row_y(&ar.al, r) - off + AR_TEXT_Y, AR_TEXT_END - AR_TEXT_X,
+        grid_text(canvas, ar_tile(r), 0, tx, az_row_y(&ar.al, r) - off + AR_TEXT_Y, AR_TEXT_END - az_inset(&ar.al) - tx,
                   AR_TEXT_H, 0);
     az_paint_heads(&ar.al, canvas); /* the section letters, then over everything the pinned band and its letter */
 }
@@ -264,6 +296,101 @@ static int ar_on_paint(void *ctx, void *e) {
     I(canvas, CANVAS_OY) += off;
     ar_paint_rows(canvas);
     I(canvas, CANVAS_OY) -= off;
+    return RET_OK;
+}
+
+/* ---------------------------------------------------------------------------
+ * The photo loader: one circle per tick on the page's own timer, none while the list moves (the Albums page's loader; paint never opens a file)
+ */
+/* Row r still needs a look: its tile was not tried, or it has none yet and its state is not "no photo". */
+static int ar_wants(int r) {
+    grid_tile_t *t = grid_find(&ar.g, r);
+    if (t) return !t->art;
+    return ar_st((unsigned)r) != AP_NONE && !ar_fixed(deque_at(ar.artists, ar_stock((unsigned)r)));
+}
+
+/* The row to look at next, or -1: of the rows in view the one nearest the middle of the window. */
+static int ar_next_photo(void) {
+    int lo, hi, r, best = -1, bd = 0x7fffffff;
+    if (!ar.photo || !ar.g.tiles || !ar.count || !ar.artists) return -1;
+    az_span(&ar.al, &lo, &hi);
+    for (r = lo; r <= hi; ++r) {
+        int d;
+        if (!ar_wants(r)) continue;
+        d = ar_abs(az_row_y(&ar.al, r) - az_off(&ar.al) + AR_ROW / 2 - GRID_VIEW_H / 2);
+        if (d < bd) bd = d, best = r;
+    }
+    return best;
+}
+
+static int ar_on_retry(const void *unused);
+
+/* A row whose file is missing is looked for again once the Home pass that makes the photos is over (the Albums page's al_retry): while a set runs a slow timer waits for its end. */
+static void ar_retry_arm(void) {
+    if (!ar.retry_timer && ar.view && cc_build_active())
+        ar.retry_timer = timer_add(ar_on_retry, (void *)0, AR_RETRY_MS);
+}
+
+/* Row r's circle: the -44 file of the name's key (the lead artist's when the name has none), decoded; no file leaves the placeholder, and an empty marker (or a file that does not decode) is remembered as "no photo". */
+static void ar_photo_row(int r) {
+    grid_tile_t *t = ar_tile(r);
+    char url[80];
+    int st;
+    if (t->art) return;
+    st = ap_lookup(ar_name(deque_at(ar.artists, ar_stock((unsigned)r))), AP_LIST, url);
+    if (st == AP_PHOTO || st == AP_LEAD) {
+        grid_art_url(&ar.g, t, url);
+        if (t->art == 1) {
+            ar_st_set((unsigned)r, (unsigned)st);
+            return;
+        }
+        st = AP_NONE;
+    } else
+        t->art = 2;
+    if (st == AP_NONE) ar_st_set((unsigned)r, AP_NONE);
+    if (st == AP_UNKNOWN) ar_retry_arm();
+}
+
+static int ar_on_photo(const void *unused);
+
+static void ar_kick(void) {
+    if (ar.photo && !ar.photo_timer && ar.view && ar_next_photo() >= 0)
+        ar.photo_timer = timer_add(ar_on_photo, (void *)0, AR_PHOTO_MS);
+}
+
+static int ar_on_retry(const void *unused) {
+    int i;
+    (void)unused;
+    ar.retry_timer = 0;
+    if (!ar.view || !ar.g.tiles) return RET_OK;
+    if (cc_build_active()) { /* still making photos (or covers): ask again */
+        ar_retry_arm();
+        return RET_OK;
+    }
+    for (i = 0; i < ar.g.n; ++i) {
+        grid_tile_t *t = &ar.g.tiles[i];
+        if (t->album && t->art == 2 && ar_st((unsigned)(t->album - 1)) == AP_UNKNOWN) t->art = 0;
+    }
+    ar_kick();
+    return RET_OK;
+}
+
+static int ar_on_photo(const void *unused) {
+    int r;
+    (void)unused;
+    ar.photo_timer = 0;
+    if (!ar.view || !ar.g.tiles) return RET_OK;
+    if (grid_moving(
+            ar.sv)) { /* a decode is a few ms on the UI thread and the next touch would wait behind it: look again next tick */
+        ar_kick();
+        return RET_OK;
+    }
+    r = ar_next_photo();
+    if (r >= 0) {
+        ar_photo_row(r);
+        ar_redraw();
+    }
+    ar_kick();
     return RET_OK;
 }
 
@@ -329,7 +456,21 @@ static int ar_on_rail_paint(void *ctx, void *e) {
 static int ar_on_scroll(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (ar.view) ar_title_update();
+    if (ar.view) ar_title_update(), ar_kick();
+    return RET_OK;
+}
+
+/* The page is in front again: a re-check on an artist's page since the circles were last looked at made, replaced or removed a photo, so every circle is looked for again (the tiles dropped, the answers forgotten; one decode a tick as ever). */
+static int ar_on_fg(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (!ar.photo || !ar.view || ar.epoch == ap_epoch()) return RET_OK;
+    ar.epoch = ap_epoch();
+    if (ar.pst) memset(ar.pst, 0, (ar.count + 3) / 4);
+    grid_drop(&ar.g);
+    ar.g.placeholder = ap_placeholder(ar.win, AR_PHOTO);
+    ar_redraw();
+    ar_kick();
     return RET_OK;
 }
 
@@ -341,12 +482,15 @@ static int ar_on_bg(void *ctx, void *e) {
 static int ar_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    if (ar.photo_timer) timer_remove(ar.photo_timer);
+    if (ar.retry_timer) timer_remove(ar.retry_timer);
     if (ar.artists) deque_destroy(ar.artists);
     grid_free(&ar.g);
     az_free(&ar.al);
     if (ar.chev) bitmap_destroy(ar.chev);
     free(ar.order);
     free(ar.rank);
+    free(ar.pst);
     memset(&ar, 0, sizeof ar);
     return RET_OK;
 }
@@ -360,10 +504,12 @@ static void ar_load(void) {
     ar.artists = (void *)0;
     free(ar.order);
     free(ar.rank);
-    ar.order = (unsigned *)0, ar.rank = (unsigned char *)0;
+    free(ar.pst);
+    ar.order = (unsigned *)0, ar.rank = (unsigned char *)0, ar.pst = (unsigned char *)0;
     ar.count = 0, ar.press = ar.down = 0;
     ar.al.count = 0, ar.al.nsec = 0;
-    grid_drop(&ar.g);
+    grid_drop(&ar.g); /* (the circles, the placeholder too) */
+    if (ar.photo) ar.g.placeholder = ap_placeholder(ar.win, AR_PHOTO);
     widget_set_prop_int(ar.sv, "yoffset", 0);
     list = loadLocalClassList(ar.cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0;
     if (list && deque_size(list) && (ar.artists = _create_deque("stSongInfo"))) {
@@ -374,6 +520,8 @@ static void ar_load(void) {
         ar_sort(); /* Genres and Composers stay in stock's order (toolsQueryDbTable's in-memory title sort) unless Z-A */
     }
     ar.al.count = (int)ar.count;
+    if (ar.photo && ar.count)
+        ar.pst = calloc((ar.count + 3) / 4, 1); /* (no memory = every row unknown: the circles are looked for again) */
     if (ar.count) ar_sections();
     ar.al.content = ar_content();
     h = ar.count ? ar.al.content : GRID_VIEW_H;
@@ -385,6 +533,7 @@ static void ar_load(void) {
     az_rail_fit(&ar.al, GRID_VIEW_H);
     ar_title_update();
     ar_redraw();
+    ar_kick();
 }
 
 /* The page's saved order: artists-sort, genres-sort or composers-sort, one character: '0' Name A-Z (the default and any other content), 'a' Name Z-A. */
@@ -466,6 +615,7 @@ int artists_open(int home) {
     ar.fade = widget_lookup(ar.win, "img_nb_fade", 1);
     ar.st_title = widget_lookup(ar.win, "label_row_title", 1);
     ar.al.win = ar.win, ar.al.sv = ar.sv, ar.al.top = AR_TOP, ar.al.row = AR_ROW;
+    az_prefs(&ar.al);
     ar.al.st_hdr = widget_lookup(ar.win, "label_hdr", 1);
     ar.al.st_rail = widget_lookup(ar.win, "label_rail", 1);
     ar.al.st_rail_on = widget_lookup(ar.win, "label_rail_on", 1);
@@ -479,12 +629,17 @@ int artists_open(int home) {
         navigator_back(); /* an asset that is not ours */
         return h ? pod_home_open(h) : -1;
     }
-    if (!grid_init(&ar.g, ar.win, AR_TILES, 0, 0)) {
+    ar.photo =
+        ar.cls == CLASS_ARTISTS; /* Genres and Composers rows stay as they were: no circle, the name at AR_TEXT_X */
+    if (!grid_init(&ar.g, ar.win, AR_TILES, ar.photo ? AR_PHOTO : 0, ar.photo ? AR_PHOTO / 2 : 0)) {
         int h = ar.home;
         grid_free(&ar.g);
         navigator_back();
         return h ? pod_home_open(h) : -1;
     }
+    if (ar.photo)
+        grid_shape(&ar.g, AR_PHOTO, AR_PHOTO / 2,
+                   1); /* the corners cut in the alpha: the pressed row's fill shows behind the circle */
     if (vs_bind(&ar.vs, ar.win, ar_on_item, ar_on_scrim,
                 ar.cls == CLASS_ARTISTS
                     ? (1u << 0) | VS_WITH_VIEWS | VS_WITH_SEARCH
@@ -505,6 +660,8 @@ int artists_open(int home) {
             0); /* the large title's collapse needs the scroll events: without them the navbar keeps its title */
     ar.title_on = ar.noscroll;
     widget_on(ar.win, EVT_WINDOW_TO_BG, ar_on_bg, (void *)0);
+    ar.epoch = ap_epoch();
+    widget_on(ar.win, EVT_WINDOW_TO_FG, ar_on_fg, (void *)0);
     widget_on(ar.view, EVT_POINTER_DOWN, ar_on_down, (void *)0);
     widget_on(ar.view, EVT_POINTER_UP, ar_on_up, (void *)0);
     widget_on(ar.view, EVT_POINTER_ABORT, ar_on_abort, (void *)0);

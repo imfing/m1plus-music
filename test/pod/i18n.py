@@ -6,7 +6,7 @@ import build, awtk_strings, awtk_style, pcregion, pod_i18n, pod_keyboard
 from awtk_text import Ttf, StbText
 
 RAW = os.path.join('rootfs', 'release', 'assets', 'default', 'raw')
-SAME_AS_ENGLISH = {'Cover Flow', 'Playlists', 'Playlist', 'Genres', 'Gain', 'Extras', 'Albums', 'Artists', 'Local', 'Name', '%s, %s', 'Band %d'}   # translations that are the English word by design
+SAME_AS_ENGLISH = {'Cover Flow', 'Playlists', 'Playlist', 'Genres', 'Gain', 'Extras', 'Albums', 'Artists', 'Local', 'Name', '%s, %s', 'Band %d', 'Cassette', 'Vinyl'}   # translations that are the English word by design
 SAME_AS_ENGLISH |= {'AutoEq'}    # the brand name (the Presets page's section header)
 SAME_AS_ENGLISH |= {'%d minute', '%d minutes'}    # French writes minute(s) as English does
 SAME_AS_ENGLISH |= {'Podcasts', ', %d', 'Normal', 'Chrome', 'Metal', 'Graphite', '5 s', '10 s'}    # Podcasts in French and German
@@ -22,6 +22,7 @@ SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Wi-Fi', 'Wi-Fi MAC', 'Bluet
 SAME_AS_ENGLISH |= {'Enhanced Open', 'WEP', 'WPA/WPA2', 'WPA2/WPA3', 'WPA3', 'Enterprise'}    # the Wi-Fi page's security labels: the standards' names (Enterprise in German, Italian and Polish)
 SAME_AS_ENGLISH |= {'Password'}    # the password page's label: Password in Italian
 SAME_AS_ENGLISH |= {'Name'}    # the Other Network page's label: Name in German
+SAME_AS_ENGLISH |= {'Photos'}    # the Cache page's Artist Photos count: Photos in French
 SAME_AS_ENGLISH |= {'Codec', 'Bitrate', 'Source'}    # Station Info: Codec in French, German and Italian, Bitrate in German and Italian, Source in French
 
 SAME_AS_ENGLISH |= {'%d dB', 'Pop', 'Rock', 'Dance', 'Blues', 'Jazz'}    # the 10-Band EQ: the unit; the genre names that most languages write as English
@@ -61,7 +62,7 @@ def run(ctx):
 
     # 2. The built tables: the stock entries untouched, our keys added, in all 16, sorted for the binary search.
     for loc in ALL:
-        want = pod_i18n.add_to_tables({loc: stock[loc]})[loc]
+        want = pod_i18n.coex_tables(pod_i18n.add_to_tables({loc: stock[loc]}))[loc]
         expect(built[loc] == want, f'{loc}: the stock entries plus exactly our {len(pod_i18n.TEXT)} keys')
         have = dict(built[loc])
         keys = [k.encode() for k, _ in built[loc]]
@@ -72,10 +73,14 @@ def run(ctx):
     expect(all(en[k] == k for k in pod_i18n.TEXT), 'en_US: our keys are their own English text')
     for loc in LOC:
         have = dict(built[loc])
-        expect(all(have.get(k) for k in pod_i18n.STOCK) and all(dict(stock['en_US'])[k] == v for k, v in pod_i18n.STOCK.items()),
+        expect(all(have.get(k) for k in pod_i18n.STOCK) and all(en[k] == v for k, v in pod_i18n.STOCK.items()),
                f'{loc}: the stock keys we use are there and en_US reads as pod_i18n.STOCK says')
         same = {k for k in pod_i18n.TEXT if have[k] == k}
         expect(loc == 'en_US' or same <= SAME_AS_ENGLISH, f'{loc}: only the words that stay English by design are untranslated ({sorted(same - SAME_AS_ENGLISH)})')
+    expect(len(pod_i18n.COEX_TEXT) == 13 and all(dict(built[loc])[k] == pod_i18n.COEX_TEXT[loc] != dict(stock[loc])[k] for loc in LOC for k in pod_i18n.COEX_KEYS)
+           and all(dict(built['en_US'])[k] == 'Bluetooth audio may stutter while Wi-Fi is on.' for k in pod_i18n.COEX_KEYS)
+           and all('Wi-Fi' in t and 'Bluetooth' in t or loc in ('zh_CN', 'zh_HK') for loc, t in pod_i18n.COEX_TEXT.items()),
+           'msg_wifi_open and msg_bt_open read as the one Wi-Fi + Bluetooth warning in all 13 languages (replacing stock\'s question)')
     for stub, twin in pod_i18n.TWINS.items():
         expect(all(dict(built[stub])[k] == dict(built[twin])[k] for k in pod_i18n.TEXT), f'{stub} holds {twin}\'s language')
     for k, by in pod_i18n.TEXT.items():
@@ -262,9 +267,9 @@ def run(ctx):
         for key in ('Update Local Music first', 'Library too large', 'No albums', 'Not enough memory'):
             if width(tr_text(loc, key), 20) > cover.find('label_status').w: over.append((loc, key, 'status'))
         if width(tr_text(loc, 'Preparing covers...') + ' 4000/4000', 20) > cover.find('label_status').w: over.append((loc, 'progress'))
-        for key in ('Preparing covers', 'Rebuilding covers', 'Measuring tracks'):
+        for key in ('Preparing covers', 'Rebuilding covers', 'Measuring tracks', 'Preparing artist photos', 'Rebuilding artist photos'):
             if width(tr_text(loc, key) + ' 4000/4000', pod_ui.HC_PX) > A['HC_W'] - 2: over.append((loc, key, 'Home progress line'))   # the Home line (patch/homecover.c): one 15 px line in a 300 px label with its 2 px margin
-        for key in ('Checking library…', 'Rebuilding covers…'):
+        for key in ('Checking library…', 'Rebuilding covers…', 'Rebuilding artist photos…'):
             if width(tr_text(loc, key).replace('…', '...'), pod_ui.HC_PX) > A['HC_W'] - 2: over.append((loc, key, 'Home waiting line'))   # (the dots are three ASCII ones at most)   # the waiting pill (patch/homecover.c hc_wait_text): the text alone, no count
         if width(tr_text(loc, 'Cancel'), 20) > cover.find('btn_cancel').w - 10: over.append((loc, 'Cancel'))
         if width(tr_text(loc, 'All albums'), 22) > 288: over.append((loc, 'All albums'))
@@ -292,17 +297,16 @@ def run(ctx):
             cur += u
             while width(cur.rstrip(), px) > maxw: lines, cur = lines + 1, cur[len(cur) // 2:]     # a unit wider than a line
         return lines
-    for key, what in (('Rebuild all covers? This may take a few minutes.', 'Rebuild Covers'), ('Take a screenshot?', 'Screenshot'), ('Take a screenshot in:', 'Screenshot delay'),
+    for key, what in (('Rebuild all covers? This may take a few minutes.', 'Rebuild Covers'), ('Rebuild all artist photos? This may take a few minutes.', 'Rebuild Artist Photos'), ('Take a screenshot?', 'Screenshot'), ('Take a screenshot in:', 'Screenshot delay'),
                       ('Cancel the screenshot?', 'Cancel Screenshot'), ('Delete all cached covers? They will be made again on Home.', 'Clear Cover Cache'), ('Delete all measured track durations? They will be measured again on Home.', 'Clear Track Durations'), ('Reset all settings to their defaults?', 'Reset All Settings'), ('Delete this settings file?', 'Delete Settings File'), ('Delete all unsupported files?', 'Delete Unsupported Files'), ('Delete this unsupported file?', 'Delete Unsupported File'),('Delete folder and everything in it?', 'Delete folder'), ('Download %s (55 MB)? It replaces update.bin on the card.', 'Software Update'),
-                      ('msg_bt_open', 'stock: Bluetooth is off'), ('msg_wifi_open', 'stock: Wi-Fi is off')):
+                      ('msg_bt_open', 'Bluetooth switch-on warning'), ('msg_wifi_open', 'Wi-Fi switch-on warning')):
         lines = {loc: wrapped((dict(built[loc]).get(key, dict(built['en_US'])[key]) if key.startswith('msg_') else tr_text(loc, key)).replace('%s', '10.0.1'), wrap_px, wrap_w) for loc in LOC}
         expect(wrap_px == 20 and max(lines.values()) <= 3, f'the {what} confirm wraps to at most 3 lines of {wrap_w} px at {wrap_px} px in all languages ({lines})')
         expect(key.startswith('msg_') or all(len(pod_i18n.TEXT[key][loc].encode()) < 0x1ff for loc in LOC), 'and fits the dialog context\'s 0x200 byte text')
     # the Settings cards (tools/pod_settings.py): a value and the row's label share the room between the glyph column and the chevron (the payload gives the value the room its text needs, at most VALUE_MAX);
     # every value text of every language fits with its label, and the headers and notes fit their 272 px labels
     import pod_settings as ST
-    stock_values = {'wifi': ('On', 'Off'), 'bluetooth': ('On', 'Off'), 'playmode': ('playmode_listplay', 'playmode_repeattrack', 'playmode_shuffle', 'playmode_repeatall'),
-                    'eq': ('Off', 'eq_custom1', 'eq_custom2', 'eq_custom3', 'eq_pop', 'eq_rock', 'eq_dance', 'eq_blues', 'eq_metal', 'eq_vocal', 'eq_classical', 'eq_jazz')}
+    stock_values = {'wifi': ('On', 'Off'), 'bluetooth': ('On', 'Off'), 'eq': ('Off', 'eq_custom1', 'eq_custom2', 'eq_custom3', 'eq_pop', 'eq_rock', 'eq_dance', 'eq_blues', 'eq_metal', 'eq_vocal', 'eq_classical', 'eq_jazz')}
     cards_over, room = [], ST.chevron_left() - ST.VALUE_GAP - ST.TEXT_X
     for page in [p for p in pod_pages.PAGES if p.kind == 'cards']:
         tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', page.key + '.bin'), 'rb').read())
@@ -324,16 +328,38 @@ def run(ctx):
                     if need > room + ST.TEXT_X - ST.CM - ST.PAD: cards_over.append((page.key, r.label, '99999', loc, need, room))
                     continue
                 if pod_pages.row_kind(r) != 'value': continue
-                vkeys = stock_values[pod_pages.STOCK_PAGES[r.arg][1]] if r.action == pod_pages.ACT_STOCK else pod_pages.BG_VALUES if r.action == pod_pages.ACT_BG else pod_pages.ACCENT_VALUES if r.action == pod_pages.ACT_ACCENT else () if r.action == pod_pages.ACT_REGION else ('Normal', 'Chrome', 'Metal')
+                vkeys = stock_values[pod_pages.STOCK_PAGES[r.arg][1]] if r.action == pod_pages.ACT_STOCK else pod_pages.BG_VALUES if r.action == pod_pages.ACT_BG else pod_pages.ACCENT_VALUES if r.action == pod_pages.ACT_ACCENT else pod_pages.IDLE_VALUES if r.action == pod_pages.ACT_IDLE else ('Large Cover', 'Mini Player') if r.action == pod_pages.ACT_LOCKSTYLE else ('Off', 'Albums') if r.action == pod_pages.ACT_NEXTALBUM else () if r.action == pod_pages.ACT_REGION else ('Normal', 'Chrome', 'Metal')
                 vals = [(vk, tr_text(loc, vk)) for vk in vkeys] if r.action != pod_pages.ACT_REGION else [('Automatic', tr_text(loc, 'Automatic'))] + [(n, n) for n in pcregion.NAMES]   # (the Podcast Region's value: Automatic, or a storefront's English name)
                 for vk, vt in vals:
                     need = width(tr_text(loc, pod_i18n.key_for(r.label)), row_px) + ST.VALUE_LABEL_GAP + min(width(vt, ST.VALUE_PX) + 6, ST.VALUE_MAX)
                     if need > room + (ST.TEXT_X - ST.CM - ST.PAD if r.action == pod_pages.ACT_REGION else 0): cards_over.append((page.key, r.label, vk, loc, need, room))
             for node in tree.walk():
-                if node.name.startswith(('pod_sec', 'pod_note')) and node.name.endswith('_t'):
+                if node.name.startswith(('pod_sec', 'pod_note')) and node.name.endswith('_t') and node.type == 'hscroll_label':   # a one-line header or note: one line
                     px = int(node.get('style:normal:font_size'))
+                    if node.type == 'label':   # a wrapping note (Note.lines > 1): as many lines as its box holds
+                        allowed = (node.h - ST.NOTE_LABEL_H) // ST.WRAP_LINE + 1
+                        n = wrapped(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px, node.w - 4)
+                        if n > allowed: cards_over.append((page.key, node.name, loc, n, allowed))
+                        continue
                     if width(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px) > node.w - 4: cards_over.append((page.key, node.name, loc, px))
+    # every wrapping note (Note.lines > 1, a plain label) of every generated settings page wraps to at most `lines` lines of its label's width, in every language
+    wrap_seen = 0
+    for page in [p for p in pod_pages.PAGES if p.layout is not None]:
+        tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', page.key + '.bin'), 'rb').read())
+        for n, note in enumerate(x for x in page.layout if isinstance(x, pod_pages.Note)):
+            node = tree.find(f'pod_note{n}_t')
+            if note.lines < 2:
+                if node.type != 'hscroll_label': cards_over.append((page.key, node.name, 'one-line note is not an hscroll_label'))
+                continue
+            wrap_seen += 1
+            px = int(node.get('style:normal:font_size'))
+            for loc in LOC:
+                if node.type != 'label' or wrapped(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px, node.w - 4) > note.lines: cards_over.append((page.key, node.name, loc, px, 'wrap'))
+    expect(wrap_seen >= 4, f'the wrapping notes were found ({wrap_seen})')
     expect(not cards_over, f'the Settings value rows (label and value), headers and notes fit in all 13 languages ({cards_over[:40]})')
+    # The Custom Wallpaper page (a Release Notes page): the heading fits its 288 px line at 22 px in every language (the paragraphs wrap)
+    head_over = [(loc, tr_text(loc, 'Add Your Own Pictures')) for loc in LOC if width(tr_text(loc, 'Add Your Own Pictures'), 22) > 288]
+    expect(not head_over, f'the Custom Wallpaper heading fits one line in all 13 languages ({head_over})')
     expect(not over, f'messages, the cover page, the album buttons and count line fit in all languages ({over[:4]})')
 
     # 8. Glyphs: every character of every text we add, and of the stock texts we reuse, has ink in the shipped font.

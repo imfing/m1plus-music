@@ -8,7 +8,7 @@ nowplaying = sibling('nowplaying')
 WIN = nowplaying.WIN
 POOL, ANCHOR, LINE_H, GAP, VIEW_H, W = (O[k] for k in ('LY_POOL', 'LY_ANCHOR', 'LY_LINE_H', 'LY_GAP', 'LY_VIEW_H', 'LY_W'))
 PITCH = LINE_H + GAP
-SLACK, SLACK_CJK, SNAP, FRAME, SPRING, OFF_MAX = O['LY_WRAP_SLACK'], O['LY_WRAP_SLACK_CJK'], O['LY_SNAP_LINES'], O['LY_FRAME_MS'], O['LY_SPRING_MS'], O['LY_OFF_MAX']
+FIT, ROW, SNAP, FRAME, SPRING, OFF_MAX = O['LY_FIT_W'], O['LY_ROW_W'], O['LY_SNAP_LINES'], O['LY_FRAME_MS'], O['LY_SPRING_MS'], O['LY_OFF_MAX']
 FADE, BROWSE = O['LY_FADE'], O['LY_BROWSE_OP']
 DOT, DPITCH, DX, DPAD, DMIN, DMS, DDIM, DFADE, DBR, DBRMIN = (O[k] for k in ('LY_DOT', 'LY_DOT_PITCH', 'LY_DOT_X', 'LY_DOT_PAD', 'LY_DOT_MIN_S', 'LY_DOT_MS', 'LY_DOT_DIM', 'LY_DOT_FADE_MS', 'LY_DOT_BREATH_MS', 'LY_DOT_BREATH_MIN'))
 OPACITY = (255, 115, 82, 61, 46)   # 1.0, 0.45, 0.32, 0.24, 0.18 by distance from the current line (4 and further: the last)
@@ -134,12 +134,20 @@ class LyMachine(nowplaying.NowMachine):
         return self.call(PSYMS['ly_dframe'], count=2000000)
     def dtimers(self): return [t for t in self.timers if t[0] == PSYMS['ly_dframe']]
 
+    def label_text(self, h): return self.texts[h].encode('latin-1').decode('utf-8')
+
+    def source_of(self, t):
+        """The stock row text a label text is made from: the same without its breaks (a space or a newline), or a prefix of it (a line cut at three rows)."""
+        flat = lambda x: x.replace(' ', '').replace('\n', '')
+        rows = [self.texts[h].encode('latin-1').decode('utf-8') for h in self.children[self.src_w]]
+        return next((r for r in rows if r == t), next((r for r in rows if flat(r) == flat(t)), next((r for r in rows if flat(r).startswith(flat(t))), t)))
+
     def shown(self):
         """text -> (y, opacity, style, height) of every visible label."""
         out = {}
         for h in self.pool():
             if self.props.get((h, 'visible')):
-                out[self.texts[h].encode('latin-1').decode('utf-8')] = (struct.unpack('<i', struct.pack('<I', self.props.get((h, 'y'))))[0], self.props.get((h, 'opacity'), 255), self.props.get((h, 'style')), self.props.get((h, 'h')))
+                out[self.source_of(self.label_text(h))] = (struct.unpack('<i', struct.pack('<I', self.props.get((h, 'y'))))[0], self.props.get((h, 'opacity'), 255), self.props.get((h, 'style')), self.props.get((h, 'h')))
         return out
 
     def ly_timers(self): return [t for t in self.timers if t[0] == PSYMS['ly_frame']]
@@ -162,13 +170,47 @@ class LyMachine(nowplaying.NowMachine):
         return self.calls
 
 
-def rows_of(text, measure):
-    """The model of ly_rows: 1 + width / 264, a wrap slack over one row (the default font's is smaller), at most three."""
-    w = int(measure(text) + 0.999)
-    if w > W: w += SLACK if latin(text) else SLACK_CJK
-    r = 1 + w // W
-    if w > 0 and w % W == 0: r -= 1
-    return max(1, min(3, r))
+def break_rows(text, measure):
+    """The model of ly_break: the rows (strings) a line is broken into. The line measures at most FIT: one row. Else greedy at the spaces, rows at most ROW wide, a word wider than a
+    row by character, at most three rows (the rest is cut). Widths add up; `measure` is the width of a string."""
+    if measure(text) <= FIT: return [text]
+    rows, cur = [], None    # cur: the row being made, None when it has no word yet
+    for wd in text.split(' '):
+        cand = wd if cur is None else cur + ' ' + wd
+        if measure(cand) <= ROW: cur = cand; continue
+        if cur is not None:
+            rows.append(cur)
+            if len(rows) == 3: return rows
+            cur = None
+            if measure(wd) <= ROW: cur = wd; continue
+        cur = ''
+        for ch in wd:
+            if cur and measure(cur + ch) > ROW:
+                rows.append(cur)
+                if len(rows) == 3: return rows
+                cur = ''
+            cur += ch
+    rows.append(cur)
+    return rows
+
+
+def rows_of(text, measure): return len(break_rows(text, measure))
+
+
+def stock_rows(t, measure, content=FIT):
+    """The rows stock's label wrap draws for the text t (explicit newlines, then the helper at 0x62dbb0): a character whose row so far + itself + 1 px is over the content
+    width wraps (back to the row's last space, else at the character) unless it is the text's last character, which stays on the row."""
+    rows, cur, n = [], '', len(t)
+    for j, ch in enumerate(t):
+        if ch == '\n': rows.append(cur); cur = ''; continue
+        if measure(cur) + measure(ch) + 1 > content and cur != '':
+            if j == n - 1: cur += ch; continue
+            k = cur.rfind(' ')
+            if k >= 0: rows.append(cur[:k]); cur = cur[k + 1:] + ch
+            else: rows.append(cur); cur = ch
+        else: cur += ch
+    rows.append(cur)
+    return rows
 
 
 def expect_layout(lines, cur, rem, measure):
@@ -360,12 +402,12 @@ def asset_tests(ctx):
     fits = lambda px: ANCHOR + 3 * (px + mn.LYR_SPACER) + GAP + (px + mn.LYR_SPACER) <= VIEW_H - 8   # 8 px to spare under the next line
     expect(ANCHOR + 3 * LINE_H + GAP + LINE_H <= VIEW_H - 8 and O['LY_LINES_MAX'] == 3, f'a three-row current line ({ANCHOR}..{ANCHOR + 3 * LINE_H}) and the next line\'s row end at {ANCHOR + 3 * LINE_H + GAP + LINE_H} <= {VIEW_H - 8}')
     expect(fits(O['LY_FONT']) and not fits(O['LY_FONT'] + 1), f'{O["LY_FONT"]} px is the largest size (with the {mn.LYR_SPACER} px spacer) whose three-row line and next row keep 8 px in the view')
-    samples = {'Latin, one row': ('Be what you want to be', 1), 'Latin, 61 characters': ('I got a feeling that tonight is going to be the night that I', 3),
+    samples = {'Latin, one row': ('Be what you want', 1), 'Latin, 263 px': ('Be what you want to be', 2), 'Latin, 61 characters': ('I got a feeling that tonight is going to be the night that I', 3),
                'Chinese, 26 characters': ('我想要有一天能够和你一起走遍这个世界上所有美丽的地方看遍所', 3),
                'Japanese, 26 characters': ('あなたと一緒に歩いた道を今でも覚えているよ夢のように', 3), 'Latin with one CJK character': ('Hello 你好 there', 1)}
     for name, (s, want) in samples.items():
         rows = rows_of(s, meas)
-        expect(rows == want and (want == 1) == (meas(s) <= W), f'{name} ({face(s)}) at {O["LY_FONT"]} px: {meas(s)} px = {rows} rows (cap 3)')
+        expect(rows == want and (want == 1) == (meas(s) <= FIT), f'{name} ({face(s)}) at {O["LY_FONT"]} px: {meas(s)} px = {rows} rows (cap 3)')
     # contrast: the current line over every tone under the tint and scrim; the falling-off lines at their opacity (white at a lower opacity: neutral, no accent)
     grid = [(r, g, b) for r in range(0, 256, 51) for g in range(0, 256, 51) for b in range(0, 256, 51)] + [(255, 255, 255)]
     col = lambda s: tuple(int(s[k:k + 2], 16) for k in (1, 3, 5))
@@ -412,7 +454,7 @@ def asset_tests(ctx):
     expect(all(word(stock, a) == w for a, w, _ in pod.LYRICS_PINS) and all(word(built, a) == w for a, w, _ in pod.LYRICS_PINS), 'the stock words patch/lyrics.c relies on are pinned and untouched (get_playtime, the rows\' "lrc_time", the timer)')
     expect(pod.FUNCTIONS['get_playtime'][2] == 0x4e02e4, 'get_playtime is the stock position call the lyric timer compares "lrc_time" with')
     expect(not any(a for a in (MANIFEST.get('hook_lyrics'),)), 'no new hook: the manifest has none for the lyrics')
-    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_eq_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
+    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_idle', 'hook_tidalkb', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
 
 
 def start_tests(ctx):
@@ -647,15 +689,16 @@ def overflow_tests(ctx):
     for kind, text in (('ASCII', 'x' * 700), ('CJK', 'a' + '我' * 300), ('emoji', 'ab' + '😀' * 100), ('348 bytes (the user\'s album)', 'la ' * 116)):
         lines = [(0, 'first'), (1, text), (2, 'last')]
         m2 = LyMachine(lines, measure=lambda s: 10 * len(s)); sets = []
-        m2.init(); sets += [c[2] for c in m2.calls if c[0] == 'widget_set_text_utf8']
-        for t in (1, 2, 0, 1): m2.at(t); sets += [c[2] for c in m2.calls if c[0] == 'widget_set_text_utf8']
+        m2.init(); pool = m2.pool(); sets += [c[2] for c in m2.calls if c[0] == 'widget_set_text_utf8' and c[1] in pool]
+        for t in (1, 2, 0, 1): m2.at(t); sets += [c[2] for c in m2.calls if c[0] == 'widget_set_text_utf8' and c[1] in pool]
         try:
             decoded = [s.encode('latin-1').decode('utf-8') for s in sets]
         except UnicodeDecodeError:
             decoded = None
         longest = max(len(s) for s in sets)
-        expect(decoded is not None and longest <= O['LY_BUF'] - 1 and want(text, O['LY_BUF']) in decoded and all(text.startswith(d) or d in ('first', 'last', '') or d[0] == '-' for d in decoded),
-               f'{kind}: a line of {len(text.encode("utf-8"))} bytes is set on the labels cut to at most {O["LY_BUF"] - 1} bytes, on a character ({longest} bytes)')
+        flat = lambda x: x.replace(' ', '').replace('\n', '')
+        expect(decoded is not None and longest <= O['LY_BUF'] + 1 and any('\n' in d for d in decoded) and all(flat(want(text, O['LY_BUF'])).startswith(flat(d)) or d in ('first', 'last', '') or d[0] == '-' for d in decoded),
+               f'{kind}: a line of {len(text.encode("utf-8"))} bytes is set on the labels cut on a character, from the first {O["LY_BUF"] - 1} bytes and with its breaks at most {O["LY_BUF"] + 1} bytes ({longest} bytes)')
 
 
 def touch_tests(ctx):
@@ -777,13 +820,38 @@ def wrap_tests(ctx):
     fonts = {BOLD: Ttf(os.path.join(raw, 'fonts', 'lyrics.ttf')), CJKF: Ttf(os.path.join(raw, 'fonts', 'default.ttf'))}
     real = lambda s: StbText(fonts[face(s)], O['LY_FONT']).layout(s)[1] if s else 0   # in the face the payload picks
     # the row estimate: 10 px a character
-    for n, rows in ((1, 1), (26, 1), (27, 2), (45, 2), (50, 3), (60, 3), (200, 3)):
+    for n, rows in ((1, 1), (26, 1), (27, 2), (50, 2), (51, 3), (75, 3), (200, 3)):
         text = 'x' * n
         lines = [(0, 'a'), (1, text), (2, 'b')]
         m = LyMachine(lines); m.init(); m.at(1); m.frame(10000)
         s = m.shown()
         expect(s[text][3] == rows * LINE_H == expect_layout(lines, 1, 0, m.measure_fn)[text][3] and s['b'][0] == s[text][0] + rows * LINE_H + GAP,
                f'{n} chars = {n * 10} px: {rows} row(s), the next line {rows * LINE_H + GAP} px down ({s[text]})')
+    # the final-glyph clip (report: "time is a valueble thing") and every other way a row can overflow: the label text the page sets is drawn the way stock's wrap does it
+    # (stock_rows: explicit newlines, the overflow check, the last character stays) and has to fit the rows the page gave the line, each row the content width (W less 2 x 2 px)
+    sentence = 'Everybody knows that the time is a valuable thing so we all keep watching the clock '
+    cases = [('time is a valueble thing', None), ('Time is a valueble thing', ['Time is a valueble', 'thing']), ('Time is a valuable thing', ['Time is a valuable', 'thing']),
+             ('Unforgettable me Time is a valuable thing', None), ('time is a beautiful thing', None), ('Supercalifragilisticexpialidocious', None),
+             ('这是一个没有空格的很长的中文歌词用来测试换行的效果', None), (sentence * 3, None), ('word ' * 60, None), ('a' * 26, None)]
+    for text, rows_want in cases:
+        m = LyMachine([(0, 'a'), (1, text), (2, 'b')], measure=real); m.init(); m.at(1); m.frame(10000)
+        lab = next(h for h in m.pool() if h in m.texts and m.source_of(m.label_text(h)) == text)
+        got, alloc = stock_rows(m.label_text(lab), real), m.props[(lab, 'h')] // LINE_H
+        fits = real(text) <= FIT
+        expect(len(got) <= alloc == min(3, len(break_rows(text, real))) and all(real(r) <= FIT for r in got) and (rows_want is None or got == rows_want) and (alloc > 1 or fits),
+               f'{text[:28]!r} ({real(text)} px): stock draws {len(got)} row(s) of {[real(r) for r in got]} px in the {alloc} allocated, none beyond {FIT} px ({got})')
+        if text == 'time is a valueble thing': expect(real(text) <= FIT and alloc == 1, 'the 260 px form fits one row and is given as it is')
+    expect(real('time is a beautiful thing') > FIT and real('time is a beautiful thing') <= W, 'time is a beautiful thing: 264 px, inside the label but over the content width, takes two rows')
+    # a line that measures exactly the content width stays one row (its last character is stock's to keep), one pixel more breaks it
+    for n, rows in ((26, 1), (27, 2)):
+        t = 'x' * n
+        m = LyMachine([(0, t)], measure=lambda u: 10 * len(u)); m.init(); m.at(0)
+        expect(m.label_text(m.pool()[0]) == t.replace('x' * 25, 'x' * 25 + '\n') if rows == 2 else m.label_text(m.pool()[0]) == t, f'{n * 10} px: {rows} row(s), the label text {m.label_text(m.pool()[0])!r}')
+    # a full buffer (255 bytes) of words: three rows, cut there, every row inside the content width
+    full = ('word ' * 60)[:255]
+    m = LyMachine([(0, full)], measure=real); m.init(); m.at(0)
+    got = stock_rows(m.label_text(m.pool()[0]), real)
+    expect(len(got) == 3 and m.shown()[full][3] == 3 * LINE_H and all(real(r) <= FIT for r in got), 'a 255 byte line is cut at three rows, each inside the content width')
     # a measured line keeps its height: the probe measures once
     m = LyMachine(SONG); m.init()
     m.at(5); m.frame(10000); m.at(0); m.frame(10000)
@@ -834,8 +902,8 @@ def wrap_tests(ctx):
     expect(not any(c[0] == 'widget_measure_text' for c in m.calls), 'opened mid-song: the hook\'s tick measures nothing')
     m.at(70); m.frame(10000); s = m.shown()
     knee = wake[3][1]
-    expect(s == expect_layout(wake, 2, 0, real) and s[knee][3] == 2 * LINE_H and s[wake[1][1]][3] == 3 * LINE_H,
-           f'the next tick measures in the lyrics font: "{knee}" {real(knee)} px takes 2 rows, the \'66 line 3 ({ {k: v[3] // LINE_H for k, v in s.items()} })')
+    expect(s == expect_layout(wake, 2, 0, real) and s[knee][3] == 2 * LINE_H and s[wake[1][1]][3] == rows_of(wake[1][1], real) * LINE_H >= 2 * LINE_H,
+           f'the next tick measures in the lyrics font: "{knee}" {real(knee)} px takes 2 rows, the \'66 line {rows_of(wake[1][1], real)} ({ {k: v[3] // LINE_H for k, v in s.items()} })')
     # a face change while the window opens (stage 2: widget_use_style only marks the probe) is measured in the new face, resolved by the probe itself
     m = LyMachine([(0, 'Hello there'), (1, '你好，世界'), (2, 'Back to Latin')]); m.init()
     meas = [c[2] for c in m.at(0) if c[0] == 'widget_measure_text']
@@ -899,13 +967,12 @@ def face_tests(ctx):
     n = sum(c[0] == 'widget_use_style' for c in m.calls)
     m.at(10); m.frame(10000); m.at(5); m.frame(10000)
     expect(sum(c[0] == 'widget_use_style' for c in m.calls) - n <= len(lines), 'a style is set when a label takes a line of another face, not on every move')
-    # rows: the default font's wrap slack is smaller (16 characters of 31 px: 496 px)
+    # rows: a long word or a text with no spaces breaks by character, the same in either face (16 characters of 31 px: 496 px, 8 to a 259 px row)
     w31 = lambda u: 31 * len(u)
     got = []
     for t in ('字' * 16, 'x' * 16):
         mc = LyMachine([(0, t), (1, 'b')], measure=w31); mc.init(); mc.at(0); got.append(mc.shown()[t][3] // LINE_H)
-    expect(got == [2, 3] and rows_of('字' * 16, w31) == 2 and rows_of('x' * 16, w31) == 3,
-           f'the same 496 px take {got[0]} rows in the default font (+{SLACK_CJK} px of wrap slack) and {got[1]} in the bold one (+{SLACK})')
+    expect(got == [2, 2] and rows_of('字' * 16, w31) == 2 and rows_of('x' * 16, w31) == 2, f'the same 496 px take {got[0]} rows in the default font and {got[1]} in the bold one')
 
 INTRO = [(10, 'Intro line'), (14, 'Second line'), (18, 'Third line'), (24, 'Fourth line')]
 

@@ -1731,7 +1731,9 @@ static void ip_play(int at, int shuffle) {
     found = loadSongList(queue, cc_str(pick, REC_NAME), I(pick, REC_CUE_START), ip.cls);
     n = deque_size(queue);
     if (n) { /* the row's own index wins over a duplicate file name (the Songs page's rule) */
-        if ((unsigned)at < n && !strcmp(cc_str(deque_at(queue, (unsigned)at), REC_PATH), cc_str(pick, REC_PATH)))
+        if ((unsigned)at < n && !strcmp(cc_str(deque_at(queue, (unsigned)at), REC_PATH), cc_str(pick, REC_PATH)) &&
+            I(deque_at(queue, (unsigned)at), REC_CUE_START) ==
+                I(pick, REC_CUE_START)) /* (a CUE image's tracks share the path) */
             idx = (unsigned)at;
         else if (found >= 0 && (unsigned)found < n)
             idx = (unsigned)found;

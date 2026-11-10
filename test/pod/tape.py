@@ -124,6 +124,10 @@ class TM(Machine):
         ret = self.call(PSYMS['tape_open'], count=60000000)
         return ret & 0xffffffff
 
+    def open_idle(self):
+        self.calls = []
+        return self.call(PSYMS['tape_open_idle'], count=60000000) & 0xffffffff
+
     def first(self):
         """The 50 ms one-shot: the first look; the page timer after it."""
         self.calls = []; self.rects = []
@@ -785,6 +789,50 @@ def touch_tests(ctx):
     expect(not any(n in ('widget_set_visible', 'widget_move', 'widget_resize') for n in names(m.calls)), 'it moves nothing in the asset')
 
 
+def idle_touch_tests(ctx):
+    """A page opened by Now Playing's timer (tape_open_idle): a tap anywhere closes it (docs/modules/tape.md "Touch"); a page opened from the More sheet is unchanged."""
+    expect = ctx.expect
+    names = lambda c: [x[0] for x in c]
+    m = machine(); assert m.open_idle() == 0
+    m.timers = []; m.first()
+    for pt in ((240, 160), (100, 100), (450, 300), (60, 20), (50, 25), (24, 50)):
+        m.cmds = []; calls = m.gesture(pt, (pt[0] + 3, pt[1] - 2))
+        expect(m.cmds == [] and names(calls).count('navigator_back') == 1, f'auto-opened: a tap at landscape {pt} closes the page and plays / pauses nothing ({names(calls)})')
+    for pt in ((24, 25), (1, 1), (48, 48)):
+        m.cmds = []; calls = m.gesture(pt, pt)
+        expect(names(calls).count('navigator_back') == 1 and not m.cmds, f'auto-opened: the screw at {pt} still closes')
+    m.ptr('down', 295, 20, 4000)
+    held = m.landscape()
+    m.ptr('up', 200, 200, 4050)
+    expect('navigator_back' not in names(m.calls) and not m.cmds and held.tobytes() != m.landscape().tobytes(), 'auto-opened: the screw still shows pressed; lifted elsewhere closes nothing')
+    for a, b in (((300, 160), (200, 160)), ((240, 60), (240, 160)), ((200, 100), (270, 170)), ((24, 25), (200, 200))):
+        m.cmds = []; calls = m.gesture(a, b)
+        expect(not m.cmds and 'navigator_back' not in names(calls), f'auto-opened: a drag {a} -> {b} does nothing')
+    m.cmds = []; m.ptr('down', 100, 100, 5000); m.ptr('abort', 100, 100, 5010); m.ptr('up', 100, 100, 5020)
+    expect(not m.cmds and 'navigator_back' not in names(m.calls), 'auto-opened: an abort does nothing')
+    # the timer firing on a page that is already up changes nothing: a More-opened page keeps pausing, an auto-opened one keeps closing
+    m = machine(); assert m.open() == 0; m.timers = []; m.first()
+    expect(m.open_idle() == 0, 'the timer on a More-opened page: 0, left alone')
+    m.cmds = []; calls = m.gesture((240, 160), (243, 158))
+    expect(m.cmds == [('playpause',)] and 'navigator_back' not in names(calls), 'and its tap still plays / pauses')
+    m = machine(); assert m.open_idle() == 0; m.timers = []; m.first()
+    expect(m.open() == 0, 'More on an auto-opened page: 0, left alone')
+    m.cmds = []; calls = m.gesture((240, 160), (243, 158))
+    expect(m.cmds == [] and 'navigator_back' in names(calls), 'and its tap still closes')
+    # destroyed: the flag goes with the page; a later More open pauses on tap
+    fn, cx = m.bound[(WIN, EVT_DESTROY)]; m.call(fn, a0=cx, a1=0, count=3000000)
+    m.windows = {}; m.bound = {}
+    assert m.open() == 0; m.timers = []; m.first()
+    m.cmds = []; calls = m.gesture((240, 160), (243, 158))
+    expect(m.cmds == [('playpause',)] and 'navigator_back' not in names(calls), 'after the auto-opened page was destroyed a More-opened page plays / pauses on tap')
+    # a page that will not open: -1, no flag left for the next one
+    m = machine(); del m.widgets['tape_view']
+    expect(m.open_idle() == 0xffffffff, 'a page that will not open: -1')
+    m = machine(); assert m.open() == 0; m.timers = []; m.first()
+    m.cmds = []; calls = m.gesture((240, 160), (243, 158))
+    expect(m.cmds == [('playpause',)], 'a fresh More-opened page plays / pauses')
+
+
 def life_tests(ctx):
     expect = ctx.expect
     font = real_font()
@@ -922,7 +970,7 @@ def setting_tests(ctx):
     rows_s = PSYMS[f'pod_rows_{P.SETTINGS_PAGE_INDEX}']
     rows_n = PSYMS[f'pod_rows_{P.NPSET_PAGE_INDEX}']
     np_i = next(i for i, r in enumerate(P.SETTINGS_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.NPSET_PAGE_INDEX)
-    expect(P.SETTINGS_PAGE.rows[np_i].label == 'Now Playing' and C.title == 'Now Playing' and [(r.label, r.action, r.arg) for r in C.rows] == [('Theme', P.ACT_CTHEME, P.THEME_PAGE_INDEX), ('Record', P.ACT_VREC, P.RECORD_PAGE_INDEX), ('Base', P.ACT_VTHEME, P.VTHEME_PAGE_INDEX)]
+    expect(P.SETTINGS_PAGE.rows[np_i].label == 'Now Playing' and C.title == 'Now Playing' and [(r.label, r.action, r.arg) for r in C.rows][:3] == [('Theme', P.ACT_CTHEME, P.THEME_PAGE_INDEX), ('Record', P.ACT_VREC, P.RECORD_PAGE_INDEX), ('Base', P.ACT_VTHEME, P.VTHEME_PAGE_INDEX)]
            and P.ACT_CTHEME in P.VALUE_ACTIONS and P.CTHEME_VALUES == ('Normal', 'Chrome', 'Metal') and C.key == 'm1plus_npset' and any(isinstance(x, P.Hdr) and x.text == 'Cassette Mode' for x in C.layout) and any(isinstance(x, P.Hdr) and x.text == 'Vinyl Mode' for x in C.layout),
            'Settings has the Now Playing row; its page has a Cassette Mode header over the Theme value row, then a Vinyl Mode header over the Record row')
     expect([(r.label, r.action, r.arg) for r in T.rows] == [('Normal', P.ACT_THEMESET, 0), ('Chrome', P.ACT_THEMESET, 1), ('Metal', P.ACT_THEMESET, 2)] and T.title == 'Cassette Theme'
@@ -1051,6 +1099,6 @@ def run(ctx):
     for fn in SECTIONS: fn(ctx)
 
 
-SECTIONS = [number_tests, symmetry_tests, asset_tests, theme_tests, setting_tests, draw_tests, reel_tests, hub_tests, mark_tests, status_tests, live_tests, touch_tests, life_tests, paint_tests]
+SECTIONS = [number_tests, symmetry_tests, asset_tests, theme_tests, setting_tests, draw_tests, reel_tests, hub_tests, mark_tests, status_tests, live_tests, touch_tests, idle_touch_tests, life_tests, paint_tests]
 
 

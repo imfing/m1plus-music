@@ -21,6 +21,7 @@ def sibling(name):
 
 
 SG = sibling('songs')
+NA = sibling('nextalbum')
 
 WIN_H, HDR, ROW, SY0 = O['AH_WIN_H'], O['AH_HDR_H'], O['LIST_ROW_H'], 30   # SY0: the window's screen y (the status bar's 30 px; the list is the whole window)
 SC_YOFF = O['SC_YOFF']
@@ -45,6 +46,8 @@ class AM(SG.SongsMachine):
     class query that reads the browsing record (empty when another page changed it), is_playing, and a status bar among the window manager's children."""
     album_tracks = None   # album name -> its track records
     playing = None        # (file name, url, cue start) is_playing answers 1 for
+    na_at_open = None     # Continue with Next Album's state as Now Playing opened (the load happens there)
+    load_on_open = False  # run the payload's na_on_load for the queue load the open makes (mclLoadPlayList's hook)
     scoped = ARTIST       # the artist an artist's / composer's album page was reached through (loadAlbumList left it in the record)
 
     def tracks_of(self, album): return list((self.album_tracks or {}).get(album, []))
@@ -81,6 +84,13 @@ class AM(SG.SongsMachine):
             self.calls.append(('loadLocalClassList', a0))
             items = self.tracks_of(self.read_cstr(CI + O['CLASSINFO_ALBUM'])) if self.word(CI) == a0 else []
             self.setword(SHOWLIST, self.new_deque(items)); ret = len(items)
+        elif name == 'navigator_to_with_context' and self.read_cstr(a0) == 'playing_page':
+            # start_player runs inside playing_page's init, so inside this call, and loads the queue through mclLoadPlayList (hook 14: sh_load_playlist -> na_on_load first):
+            # the state na_on_load sees is the one at this moment, and the mock lets the payload's own na_on_load run for it (it returns to the caller as the navigator does)
+            super()._hook(u, address, size, _)
+            self.na_at_open = NA.state(self)
+            if self.load_on_open: u.reg_write(UC_MIPS_REG_PC, PSYMS['na_on_load'])
+            return
         else:
             return super()._hook(u, address, size, _)
         u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
@@ -748,7 +758,81 @@ def select_tests(ctx):
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests]   # tools/check.py runs each as its own task
+def source_tests(ctx):
+    """Continue with Next Album, phase 1 (patch/nextalbum.c): the order an opener noted is taken by album_open; Play, Shuffle and a track arm it around the queue load, which keeps it;
+    an album opened without a note, or with the setting off, has no order; a play that loads nothing leaves the old source."""
+    expect = ctx.expect
+    OTHERS = [(f'Artist {i}', f'Other {i}') for i in range(2)]
+
+    def noted(setting=True, order=None, note=True):
+        m = album_machine(); m.load_on_open = True
+        if setting: NA.on(m)
+        keys = [m.key] + [album_key(a, b) for a, b in OTHERS]
+        if note: NA.note(m, m.new_deque(m.class_lists[ALBUMS]), order=order)
+        return m, keys
+
+    m, keys = noted()
+    r, calls = open_album(m)
+    s = NA.state(m)
+    expect(r == 0 and s['pending'] is None and s['page'] and s['page']['keys'] == keys and s['page']['own'] == m.key and s['active'] is None and s['armed'] == 0,
+           'album_open takes the note: it is the page\'s order with the album\'s own key; nothing plays from it yet')
+    # the three ways to play arm the order for the load Now Playing makes, and the load keeps it
+    for what, act in (('Play', lambda m: click(m, 'btn_play')), ('Shuffle', lambda m: click(m, 'btn_shuffle')), ('a track row', lambda m: tap(m, 150, row_y(2) + 20))):
+        m, keys = noted(); open_album(m)
+        act(m)
+        s = NA.state(m)
+        expect(m.played is not None and m.na_at_open['armed'] == 1 and m.na_at_open['active'] and m.na_at_open['active']['keys'] == keys,
+               f'{what}: the order is armed and active while Now Playing opens (start_player\'s load runs inside the navigator call)')
+        expect(s['armed'] == 0 and s['active'] and s['active']['keys'] == keys and s['active']['cur'] == m.key and s['prev'] is None, f'{what}: the load kept it; nothing is left armed afterwards')
+        m.call(PSYMS['ab_on_destroy'], count=4000000)
+        expect(NA.state(m)['page'] is None and NA.state(m)['active'] and NA.state(m)['active']['ref'] == 1, f'{what}: the page closing keeps the playing source')
+    # the order is the one shown: a sorted and reversed view
+    m, keys = noted(order=[2, 0, 1]); open_album(m); click(m, 'btn_play')
+    expect(NA.state(m)['active']['keys'] == [keys[2], keys[0], keys[1]], 'a sorted view: the order as shown')
+    # an album opened without a note has no order, and arming it keeps nothing
+    m, keys = noted(note=False)
+    open_album(m)
+    expect(NA.state(m)['page'] is None, 'no note: the page has no order')
+    click(m, 'btn_play')
+    expect(m.played is not None and m.na_at_open['active'] is None and NA.state(m)['active'] is None, 'and Play leaves no source')
+    # a source from an earlier album is gone once an album with no order plays
+    m, keys = noted(); open_album(m); click(m, 'btn_play')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    open_album(m)
+    click(m, 'btn_play')
+    expect(NA.state(m)['active'] is None, 'playing an album that has no order drops the earlier source')
+    # a note for another album (cc_open_album took a different row) is not taken
+    m, keys = noted(order=[1, 2])
+    open_album(m)
+    expect(NA.state(m)['page'] is None, 'the opened album is not in the note: no order')
+    # the setting off records nothing
+    m, keys = noted(setting=False)
+    open_album(m); click(m, 'btn_play')
+    expect(NA.state(m)['page'] is None and NA.state(m)['active'] is None and NA.state(m)['pending'] is None, 'setting off: no order, no source')
+    # a play that loads nothing (a missing file) leaves the old source and arms nothing
+    m, keys = noted(); open_album(m); click(m, 'btn_play')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    old = NA.state(m)['active']['ptr']
+    m2 = m
+    m2.present.discard('/mnt/mmc/m/0.flac'); m2.played = None
+    NA.note(m2, m2.new_deque(m2.class_lists[ALBUMS]), order=[2, 1, 0])
+    open_album(m2)
+    click(m2, 'btn_play')
+    s = NA.state(m2)
+    expect(m2.played is None and s['active'] and s['active']['ptr'] == old and s['armed'] == 0 and s['prev'] is None,
+           'a track that is not on the card: nothing loads, the playing queue keeps its source')
+    # a stock list replaced under the page: Play only reads again
+    m, keys = noted(); open_album(m)
+    m.setword(SHOWLIST, m.new_deque(m.songs[:3]))
+    click(m, 'btn_play')
+    expect(NA.state(m)['armed'] == 0 and NA.state(m)['active'] is None, 'a list that was replaced: the page reads it again and plays nothing, nothing armed')
+    # another page loads a queue (Songs, a playlist, a folder, DLNA ...): mclLoadPlayList without an armed order drops the source
+    m, keys = noted(); open_album(m); click(m, 'btn_play')
+    m.call(PSYMS['na_on_load'], count=100000)
+    expect(NA.state(m)['active'] is None, 'any later load drops it')
+
+
+SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests, source_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

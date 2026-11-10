@@ -14,5 +14,8 @@ or patch word without checking the pinned M1 Plus binary.
 | PEQ: hciplayer's equalizer replaced, the APO parser, the engine | `tools/mod_player.py`, `patch/peq.c`, `patch/peq_player.c` ([peq](peq.md)) |
 | Host/MIPS testing | `test/coverflow.py`, `test/patch.py`, `test/pod/` |
 
+The [Charge Limit](charging.md) follows q2-pod's 80% stop / 75% resume idea on the M1 Plus's
+kernel charging switch; no q2-pod code or address is used.
+
 The README acknowledges q2-pod; file-specific notices identify borrowed material. The
 [payload](payload.md) and [safety](safety.md) documents define this project's allowed hooks.

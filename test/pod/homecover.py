@@ -15,6 +15,9 @@ START_MS, POLL_MS, RESUME_MS = O['RC_RESOLVE_MS'], 500, 1000   # (HC_RESUME_MS i
 def key_of(i): return album_key(f'Artist {i}', f'Album {i}')
 
 
+def artist_file(name): return '/mnt/mmc/.m1plus/artists/a%08x-44.jpg' % (fnv(O['FNV_SEED'], name.strip().lower()) or 1)   # (patch/artistphoto.c ap_key for a name that needs no folding)
+
+
 REQ = '/mnt/data/m1plus/covers-rebuild'
 STAMP, DB = '/mnt/mmc/.m1plus/cache-stamp', '/mnt/data/database.db'
 
@@ -22,9 +25,9 @@ STAMP, DB = '/mnt/mmc/.m1plus/cache-stamp', '/mnt/data/database.db'
 def hash_of(n): return sum(key_of(i) for i in range(n)) & 0xffffffff
 
 
-def stamp_text(n, covers=True, tracks=True, h=None):
+def stamp_text(n, covers=True, tracks=True, h=None, artists=True):
     h = hash_of(n) if h is None else h
-    return (f'covers {n} {h:08x}\n' if covers else '') + (f'tracks {n} {h:08x}\n' if tracks else '')
+    return (f'covers {n} {h:08x}\n' if covers else '') + (f'tracks {n} {h:08x}\n' if tracks else '') + (f'artists {n} {h:08x}\n' if artists else '')
 
 
 def home_machine(n=8, missing=(), empty=(), rebuild=False, stamp='stale', start=True, songs=False):
@@ -50,6 +53,9 @@ def home_machine(n=8, missing=(), empty=(), rebuild=False, stamp='stale', start=
         if i not in missing:
             p = art_file(key_of(i))
             m.present.add(p); m.files[p] = 0 if i in empty else 4096
+    for i in range(n):   # every artist has its result (an empty -44 file): the artist photo pass finds nothing to queue (test/pod/artistphoto.py covers it)
+        p = artist_file(f'Artist {i}')
+        m.present.add(p); m.files[p] = 0
     if start: m.call(PSYMS['homecover_start'], a0=m.window, count=2000000)
     return m
 
@@ -180,7 +186,7 @@ def tests(ctx):
         expect(len([c for c in new if c[0] == 'access' and '.m1plus/covers' in str(c[1])]) <= 128, 'at most 64 albums, two cache files each (picture, .bad), checked a step')
         if not [c for c in new if c[0] == 'timer_add' and c[1] == START]: break
         expect(not texts(m, new) and pill_up(m), 'no count while the scan runs (the waiting pill is up)')
-    expect(steps == 5 and texts(m, new) == ['Preparing covers 0/1'] and build_state(m)['total'] == 1, f'300 albums: five steps, then the line ({steps})')
+    expect(steps == 9 and texts(m, new) == ['Preparing covers 0/1'] and build_state(m)['total'] == 1, f'300 albums: five steps for the covers, the artist photo check goes on in steps of 64 albums (four more), then the line ({steps})')
     # a destroy in the middle of a scan drops the set
     m = home_machine(300, missing={250}); fired(m, 'hc_on_start', 400000000)
     hook(m, 'hc_on_destroy')
@@ -736,12 +742,12 @@ def files_tests(ctx):
     m.fs[D + 'm1plus-start'], m.fs[D + 'm1plus-bad'] = b'1\n', b''
     m.present.add(S.rstrip('/'))
     m.fs.update({S + 'albums-view': b'1', S + 'playlists-view': b'0\n', S + 'recently-added-view': b'1\n', S + 'home-menu': b'6502\n', S + 'pulldown-tiles': b'2013-4567\n', S + 'cassette-theme': b'12', S + 'search-history': b'a\nb\nc\n',
-                 S + 'covers-rebuild': b'1\n', S + 'battery-percentage': b'1', S + 'playback-eq': b'M1PEQ01\0'})
+                 S + 'covers-rebuild': b'1\n', S + 'battery-percentage': b'1', S + 'playback-eq': b'M1PEQ01\0', S + 'coverflow-volume-keys': b'1\n'})
     m.call(PSYMS['on_row'], a0=PSYMS[f'pod_rows_{P.DEVELOPER_PAGE_INDEX}'] + 12 * d_i, count=6000000)
     expect(('window_open', FP.key) in m.calls, 'the link row opens m1plus_files')
     want = {'m1plus-start': '1', 'm1plus-run': 'missing', 'm1plus-bad': 'present', 'm1plus-off': 'missing', P.FOLDER_LABEL: 'present', 'albums-view': '1', 'playlists-view': '0', 'recently-added-view': '1',
             'albums-sort': 'missing', 'cassette-theme': 'other', 'home-menu': '6502', 'pulldown-tiles': '2013-4567', 'battery-percentage': '1', 'search-history': '3', 'covers-rebuild': 'present',
-            'keyboard-pinyin': 'missing', 'playback-eq': 'present'}
+            'keyboard-pinyin': 'missing', 'playback-eq': 'present', 'coverflow-volume-keys': '1', 'coverflow-landscape': 'missing'}
     got = {r.label: next((c[2] for c in reversed(m.calls) if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets[f'pod_value{i}']), None) for i, r in enumerate(FP.rows)}
     expect('album-order' not in got, 'the retired Album Order file has no row')
     expect(all(got[k] == v for k, v in want.items()), f'the seeded values: {[(k, got[k], v) for k, v in want.items() if got[k] != v]}')
@@ -956,7 +962,7 @@ def check_tests(ctx):
     new = hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
     expect(not pill_up(m) and reads_nothing(new), 'and the new database state is remembered: the next foreground is quiet')
     m.db[DB] = [102, 0, 4096]
-    m.showlist.append(m.record(album='Album 6', artist='Artist 6', path='/mnt/mmc/m/6/1.flac', rid=7)); m.present.add('/mnt/mmc/m/6/1.flac')
+    m.showlist.append(m.record(album='Album 6', artist='Artist 6', path='/mnt/mmc/m/6/1.flac', rid=7)); m.present.add('/mnt/mmc/m/6/1.flac'); m.present.add(artist_file('Artist 6')); m.files[artist_file('Artist 6')] = 0
     new = hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
     expect(not pill_up(m), 'database changed again: still silent')
     new = scan(m)
@@ -1000,11 +1006,12 @@ def check_tests(ctx):
     m.setword(PSYMS['cb'] + 4 * 5, cap)
     new = fired(m, 'hc_on_poll', 400000000)
     expect('covers' not in m.fs.get(STAMP, b'').decode() and ('timer_add', START, 20) in new, 'a truncated pass is not stamped and chains a second pass')
+    expect('artists' not in m.fs.get(STAMP, b'').decode(), 'and has no artists line either (its artist photos wait for the last chunk)')
     scan(m, 200)
     expect(build_state(m)['total'] == 2 and m.call(PSYMS['cc_build_truncated']) == 0, 'the second pass queues the two that did not fit')
     finish_worker(m, [cap, cap + 1])
     fired(m, 'hc_on_poll', 400000000)
-    expect(m.fs[STAMP].decode().startswith(f'covers {cap + 2} '), 'the pass that ends untruncated writes the covers line')
+    expect(m.fs[STAMP].decode().startswith(f'covers {cap + 2} ') and f'artists {cap + 2} ' in m.fs[STAMP].decode(), 'the pass that ends untruncated writes the covers line and the artists line')
 
     # 7c. A failed copy is not an empty library: no line, the pill hides. Stock answers empty to a failed query too, so empty is made safe instead (7e).
     m = home_machine(3, stamp=None); m.deque_fail = True
@@ -1102,7 +1109,7 @@ def check_tests(ctx):
 
     # 7e. An empty album list may be a failed query (stock cannot tell): stamped as 0 albums (no real library matches it) and asked again, silently, at every foreground.
     m = home_machine(0, stamp=None); scan(m)
-    expect(m.fs[STAMP].decode() == 'covers 0 00000000\ntracks 0 00000000\n' and not pill_up(m), 'an empty library is stamped 0/0 and the pill hides')
+    expect(m.fs[STAMP].decode() == 'covers 0 00000000\ntracks 0 00000000\nartists 0 00000000\n' and not pill_up(m), 'an empty library is stamped 0/0 (all three lines) and the pill hides')
     for _ in range(2):
         hook(m, 'hc_on_background'); new = hook(m, 'hc_on_foreground')
         expect(not pill_up(m) and adds(new) == [('timer_add', START, START_MS)], 'the next foreground asks again, without the pill')
@@ -1141,9 +1148,9 @@ def check_tests(ctx):
     # 11. Clear Cover Cache forgets the covers line, Clear Track Durations the tracks line; the pill is waiting at the next Home open.
     m = home_machine(3, stamp=stamp_text(3), start=False)
     m.call(PSYMS['homecover_stamp_drop'], a0=1, count=2000000)
-    expect(m.fs[STAMP].decode() == stamp_text(3, covers=False), 'drop(1) keeps the tracks line only')
+    expect(m.fs[STAMP].decode() == stamp_text(3, covers=False), 'drop(1) keeps the tracks and artists lines')
     m.call(PSYMS['homecover_stamp_drop'], a0=2, count=2000000)
-    expect(STAMP not in m.fs, 'drop(2) leaves no line: the file goes')
+    expect(m.fs[STAMP].decode() == stamp_text(3, covers=False, tracks=False), 'drop(2) leaves the artists line (Clear Cover Cache and Clear Track Durations do not touch it)')
     m = home_machine(2, stamp=stamp_text(2), start=False)
     m.fs['/mnt/mmc/.m1plus/covers'] = b''
     m.call(PSYMS['homecover_clear'], count=2000000)

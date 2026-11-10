@@ -19,6 +19,7 @@
  *   covers    the Cover Flow cache file of the row's artist and album, else the file of the library album of that name (cc_cmap_*: a collab), one per tick on the page's timer, none while the list
  *             moves (the Songs page's loader); else the placeholder. The first miss builds the cover map (ONE getAllAlbum query, no file opened); an album's file is looked
  *             at once, when first asked for, and the answer kept (2 bits an album, 8 bytes an album kept, at most 4096 albums).
+ *             A podcast episode is never looked up as an album: its show folder's picture (pc_show_cover, the Podcasts page's choice), else the placeholder.
  * No hook of its own; everything runs from the page's widgets and timers.
  */
 #include "offsets.inc"
@@ -30,6 +31,7 @@
 #include "grid.h"
 #include "azlist.h"
 #include "i18n.h"
+#include "podcasts.h"
 
 #define ROW LIST_ROW_H
 #define QP_AHEAD 2 /* rows kept beyond the view in the scroll direction */
@@ -63,6 +65,9 @@ static struct {
     cc_cmap_t
         *map; /* the library's album name -> cover key map (qp_key), built by the first miss; freed with the page */
     int map_tried; /* the map was asked for (built or not): never built twice in the page's life */
+    unsigned pshow; /* the show (pc_show_of) whose picture purl is, 0 for none looked at yet */
+    int purl_ok; /* purl holds that show's picture */
+    char purl[408]; /* "file://" and the picture's path */
     grid_t hg; /* the header's cover: one tile, QP_COVER px with QP_COVER_R px corners cut in the alpha */
     grid_t g; /* the rows' covers and texts: the ring */
 } qp __attribute__((section(".scratch")));
@@ -176,6 +181,16 @@ static unsigned qp_key(void *rec) {
     return key ? key : own;
 }
 
+/* An episode's cover: its show folder's picture (pc_show_cover, the Podcasts page's), the folder read once per show while the page is open (a queue of one show reads it once).
+ * NULL for a track that is not an episode, or a show with no picture (the placeholder). */
+static const char *qp_ep_url(void *rec) {
+    const char *path = cc_str(rec, REC_PATH);
+    unsigned show = pc_show_of(path);
+    if (!show) return (const char *)0;
+    if (show != qp.pshow) qp.pshow = show, qp.purl_ok = pc_show_cover(path, qp.purl, sizeof qp.purl) != (const char *)0;
+    return qp.purl_ok ? qp.purl : (const char *)0;
+}
+
 /* The tile of row a (cover key and the two texts), made from the stock record (the caller has checked qp_valid). */
 static grid_tile_t *qp_tile(int a) {
     int lo, hi, fresh;
@@ -276,8 +291,11 @@ static int qp_on_load(const void *unused) {
     if (a >= 0) {
         grid_tile_t *t = qp_tile(a);
         int top = qp_row_y(a) - qp_off();
-        t->ckey = qp_key(deque_at(qp.list, (unsigned)(qp.base + a))); /* (qp_next_load checked qp_valid) */
-        grid_art(&qp.g, t);
+        void *rec = deque_at(qp.list, (unsigned)(qp.base + a)); /* (qp_next_load checked qp_valid) */
+        if (pc_is_path(cc_str(rec, REC_PATH)))
+            grid_art_url(&qp.g, t, qp_ep_url(rec)); /* an episode: no album to look up */
+        else
+            t->ckey = qp_key(rec), grid_art(&qp.g, t);
         if (top < QP_WIN_H && top + ROW > 0) qp_redraw();
     }
     qp_kick();
@@ -296,13 +314,18 @@ static int qp_on_scroll(void *ctx, void *e) {
 /* ---------------------------------------------------------------------------
  * The header: the playing track's cover, title and artist, and the song count
  */
-static void qp_cover(unsigned key) {
+/* The header's cover for track rec (NULL: none, the placeholder): an episode's show picture (keyed by the show), else the album's cache file. */
+static void qp_cover(void *rec) {
     grid_tile_t *t = qp.hg.tiles ? grid_find(&qp.hg, 0) : (grid_tile_t *)0;
+    unsigned show = rec ? pc_show_of(cc_str(rec, REC_PATH)) : 0, key = show ? show : rec ? qp_key(rec) : 0;
     if (!t || key == qp.hkey) return;
     qp.hkey = key;
     grid_free_art(t);
-    t->ckey = key;
-    grid_art(&qp.hg, t);
+    t->ckey = show ? 0 : key;
+    if (show)
+        grid_art_url(&qp.hg, t, qp_ep_url(rec));
+    else
+        grid_art(&qp.hg, t);
     if (!qp.hg.placeholder && t->art != 1) grid_placeholder(&qp.hg);
 }
 
@@ -310,7 +333,7 @@ static void qp_header(void) {
     void *t = qp.list && qp.row >= 0 ? deque_at(qp.list, (unsigned)qp.row) : cc_playing();
     widget_set_text_utf8(qp.htitle, t ? qp_text(t) : "");
     widget_set_text_utf8(qp.hartist, t ? cc_str(t, REC_ARTIST) : "");
-    qp_cover(t ? qp_key(t) : 0);
+    qp_cover(t);
 }
 
 /* ---------------------------------------------------------------------------

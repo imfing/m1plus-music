@@ -331,6 +331,53 @@ def run(ctx):
     m.call(m.thread[0], a0=m.thread[1], count=1 << 40)
     expect(dst not in m.fs and dst + '.tmp' not in m.fs and ('rename', dst + '.tmp', dst) not in m.calls, 'a pane job cancelled after the extraction publishes nothing')
 
+    # 8b. The timed cover page's request (cc_build_add_aspect, 320 px): the real worker on an original whose longer side is exactly 320 keeps its shape (stock's fit, which the 168 px cache and the pane keep,
+    #     stretches it to 320 x 320); a square one is a 1:1 copy; a larger one is the same fit as before; one under 320 makes no file; stock's resize is never the fallback.
+    def page(w, h, px=320, add='cc_build_add_aspect', embedded=True, src=None, emb_data=None, folder_data=None):
+        m = machine(); m.thread = None
+        if emb_data is not None: m.taglib_kind, m.taglib_data = 2, emb_data
+        elif embedded: m.taglib_kind, m.taglib_data = 2, picture(w, h)[0]
+        if folder_data is not None: m.put(f'{DIR}/cover.jpg', folder_data)
+        elif not embedded: m.put(f'{DIR}/cover.jpg', picture(w, h)[0])
+        assert m.call(PSYMS['cc_build_open'], a0=1, a1=0, count=1 << 40) == 1
+        if add == 'cc_build_add_aspect': assert m.call(PSYMS[add], a0=m.cstr(TRACK), a1=m.cstr(dst), a2=px, a3=src or (2 if embedded else 3), count=1 << 40) == 1
+        else: assert m.call(PSYMS[add], a0=m.cstr(TRACK), a1=m.cstr(dst), a2=px, count=1 << 40) == 1
+        assert m.call(PSYMS['cc_build_start'], count=1 << 40) == 1
+        m.call(m.thread[0], a0=m.thread[1], count=1 << 40); calls = m.calls; m.call(PSYMS['cc_build_stop'], count=1 << 40); m.calls = calls
+        return m
+    for w, h in ((320, 240), (240, 320), (320, 100)):
+        for emb in (True, False):
+            m = page(w, h, embedded=emb)
+            got = decoded(m.fs[dst]) if dst in m.fs else None
+            expect(got is not None and got.size == (w, h) and close_to(got, picture(w, h)[1]), f'page request, {w} x {h} {"embedded" if emb else "folder"} original: kept at {w} x {h}, not stretched ({got.size if got else None})')
+            expect(not stock_calls(m), 'and stock\'s resize is not asked')
+    m = page(320, 320)
+    got = decoded(m.fs[dst]) if dst in m.fs else None
+    expect(got is not None and got.size == (320, 320) and close_to(got, picture(320, 320)[1], 2.0), 'page request, a square 320 original: 320 x 320, a copy of the picture (JPEG round trip only)')
+    m = page(640, 480)
+    expect(dst in m.fs and decoded(m.fs[dst]).size == (320, 240), 'page request, 640 x 480: 320 x 240 as stock fits it')
+    m = page(300, 300)
+    expect(dst not in m.fs and not stock_calls(m), 'page request, an original under 320: no file and stock\'s resize is not asked')
+    # the request names stock's cover source (2 embedded, 3 folder) and only that source is used: the other is never a substitute
+    big = picture(600, 600)[0]
+    m = page(0, 0, emb_data=picture(200, 200)[0], folder_data=big, src=2)
+    expect(dst not in m.fs and not stock_calls(m) and not [c for c in m.calls if c[0] == 'opendir'], 'source 2: a 200 x 200 embedded picture with a different 600 x 600 folder cover: no file, the folder is never looked at')
+    m = page(0, 0, emb_data=b'not a picture at all', folder_data=big, src=2)
+    expect(dst not in m.fs and not stock_calls(m) and not [c for c in m.calls if c[0] == 'opendir'], 'source 2: an unsupported embedded picture with a valid folder cover: no file, the folder is never used')
+    m = page(0, 0, emb_data=picture(900, 900)[0], folder_data=picture(640, 480)[0], src=3)
+    expect(dst in m.fs and decoded(m.fs[dst]).size == (320, 240) and 'taglib_album_picture' not in [c[0] for c in m.calls], 'source 3: the folder cover is used (640 x 480 -> 320 x 240) even with a different embedded picture present, which is not read')
+    m = page(0, 0, emb_data=picture(900, 900)[0], folder_data=picture(200, 200)[0], src=3)
+    expect(dst not in m.fs and not stock_calls(m), 'source 3: a small folder cover makes no file; the embedded picture is not a substitute')
+    m = page(0, 0, emb_data=picture(900, 600)[0], src=2)
+    expect(dst in m.fs and decoded(m.fs[dst]).size == (320, 213), 'source 2: a big embedded picture is used as before')
+    m = machine(); assert m.call(PSYMS['cc_build_open'], a0=1, a1=0, count=1 << 40) == 1
+    expect([m.call(PSYMS['cc_build_add_aspect'], a0=m.cstr(TRACK), a1=m.cstr(dst), a2=320, a3=s_, count=1 << 40) for s_ in (0, 1, 5)] == [0, 0, 0], 'a source other than 2 or 3 adds no job')
+    m.call(PSYMS['cc_build_stop'], count=1 << 40)
+    m = page(264, 198, px=264, add='cc_build_add_file')
+    expect(dst in m.fs and decoded(m.fs[dst]).size == (264, 264) == fit(264, 198, 264), 'the pane\'s request (cc_build_add_file) keeps stock\'s square fit at exactly 264: unchanged')
+    m = page(320, 240, embedded=True, add='cc_build_add_file')
+    expect(dst in m.fs and decoded(m.fs[dst]).size == (320, 320), 'and cc_build_add_file at 320 still stretches 320 x 240 as stock does')
+
     # 9. A progressive JPEG over 4 MP (libjpeg keeps all its coefficients) is refused: no art, and stock is not asked, embedded or in the folder.
     from PIL import Image
     pb = io.BytesIO(); Image.new('RGB', (2300, 1900), (90, 60, 30)).save(pb, 'JPEG', progressive=True); prog = pb.getvalue()

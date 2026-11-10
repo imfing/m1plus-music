@@ -16,7 +16,7 @@ from awtk_ui import Widget
 
 EDGE, GAP = 10, 4                # left margin of the left group and right margin of the battery; spacing inside both groups
 SMALL_PX, CLOCK_PX = 16, 18      # volume number, clock
-PCT_PX = 13                      # the battery percentage label (patch/battery.c; hidden unless Settings > Home Screen > Battery Percentage is on): white, right-aligned in the right group
+PCT_PX = 13                      # the battery percentage label (patch/battery.c; hidden unless Settings > System > Battery > Battery Percentage is on): white, right-aligned in the right group
 LO_WIDGET, LO_IMAGE, LO_W = 'pod_lo', 'pod_bar_lo', 26   # the Line Out pill (patch/lineout.h LO_PILL; tools/mod_icons.py LO_BAR, 26 x 16): in view_bar_left right after label_volume, in both bar copies; the widget is label_volume's VOLUME_W wide with the image centred, so the icons after it do not move
 SYNC_WIDGET, SYNC_IMAGE, SYNC_W = 'pod_sync', 'pod_bar_sync', 18   # the sync icon (patch/lineout.h SYNC_IND; tools/mod_icons.py SYNC_BAR, 18 x 18): in view_bar_right right after img_btclass, in both bar copies, hidden and insensitive until patch/lineout.c shows it while a cover or duration build runs
 VOLUME_W = 30                 # the volume label's box ("100" at 16 px)

@@ -2,8 +2,8 @@
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  *
- * ui/m1plus_wifi.bin (tools/pod_ui.py build_wifi_page) has the Settings pages' grouped cards under our navbar: the Wi-Fi switch row (with the connected network's row under it in the same card), the MY NETWORKS
- * header and card (saved networks), the NETWORKS header (a small spinner after its text while a scan runs) and card (the other networks, then Other...). A network row holds the name, a lock (secured networks), a
+ * ui/m1plus_wifi.bin (tools/pod_ui.py build_wifi_page) has the Settings pages' grouped cards under our navbar: the Wi-Fi switch row (with the connected network's row under it in the same card), the My Networks
+ * header and card (saved networks), the Networks header (a small spinner after its text while a scan runs) and card (the other networks, then Other...). A network row holds the name, a lock (secured networks), a
  * Wi-Fi fan signal and an info glyph; the connected network has a check at the left, a spinner in its place while it joins. Every row is a pooled widget (WP_CUR / WP_MY / WP_OTH of them) in display order; the
  * payload shows the ones it needs, moves them (widget_move; virtual_h) and gives each its picture piece (single, top, mid, bottom of its card), so no widget is made at run time.
  *
@@ -33,7 +33,7 @@
 
 #define I(w, off) (*(int *)((char *)(w) + (off)))
 #define WP_CUR \
-    1 /* the asset's row pools (tools/pod_ui.py WF_CUR, WF_MY, WF_OTH): the connected network, MY NETWORKS, NETWORKS */
+    1 /* the asset's row pools (tools/pod_ui.py WF_CUR, WF_MY, WF_OTH): the connected network, My Networks, Networks */
 #define WP_MY 16
 #define WP_OTH WF_MAX
 #define WP_ROWS (WP_CUR + WP_MY + WP_OTH)
@@ -42,7 +42,7 @@
 #define WP_TOP 10
 #define WP_END 10
 #define WP_HDR_X 24 /* the header's label; its text starts 2 px in */
-#define WP_HDR_TW 76 /* the width of the NETWORKS header's text when it cannot be measured */
+#define WP_HDR_TW 76 /* the width of the Networks header's text when it cannot be measured */
 #define WP_INFO_X 264 /* a tap right of this on a network row is its info glyph's (the signal ends at 262) */
 #define WP_TICK_MS 250
 #define WP_POLL 4 /* ticks between two STATUS / LIST_NETWORKS */
@@ -1236,20 +1236,12 @@ static void ws_open(void) {
     widget_on(ws.sv, EVT_SCROLL_END, ws_on_scroll, (void *)0);
 }
 
-/* The switch row: stock's sequence. Turning Wi-Fi on while Bluetooth is on asks first (msg_wifi_open) and switches Bluetooth off the way stock does. */
+/* The switch row: stock's sequence. Turning Wi-Fi on while Bluetooth is on shows the coex warning (msg_wifi_open, docs/modules/overlays.md) and leaves Bluetooth on. */
 static int wp_on_switch(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (wp.modal) return RET_OK;
-    if (!wp_wifi_on() && *(volatile unsigned char *)BT_FLAG) {
-        int i;
-        if (!wp_yes(TR("Bluetooth is on. Turn it off before using Wi-Fi?"))) return RET_OK;
-        *(volatile unsigned char *)BT_EXIT_INIT = 1;
-        for (i = 20; i > 0 && *(volatile int *)BT_INITSTATUS; i--) usleep(200000);
-        if (*(volatile unsigned char *)BT_FLAG) switchBluetooth(1, 0);
-        *(volatile int *)BT_INITSTATUS = 0;
-        *(volatile unsigned char *)BT_EXIT_INIT = 0;
-    }
+    if (!wp_wifi_on() && *(volatile unsigned char *)BT_FLAG && !wp_yes(TR("msg_wifi_open"))) return RET_OK;
     wifi_switch(1);
     wp.on = wp_wifi_on();
     wp.alive = 0, wp.caps = 0, wp.nscan = 0, wp.nknown = 0, wp.n = 0, wp.nsec = 0;
@@ -1304,15 +1296,18 @@ static int wp_tick(const void *timer) {
             wp.idle_t = 0;
             wp_spinner();
         }
-    } else if (++wp.idle_t >= WP_SCAN_IDLE && wp.fg && wp.st.state != WF_ST_CONNECTING && wp.want_id < 0)
-        wp_scan();
+    } else {
+        if (wp.crow >= 0) wp_spinner(); /* no scan runs while connecting: the row's circle still turns */
+        if (++wp.idle_t >= WP_SCAN_IDLE && wp.fg && wp.st.state != WF_ST_CONNECTING && wp.want_id < 0) wp_scan();
+    }
     if (wp.tick % WP_POLL == 0) {
         int was = wp.alive;
         wp_poll();
         if (wp.alive && !was) { /* the supplicant came up: the first scan, and the cached list is read at once */
             wp_scan();
             wp_fetch();
-        }
+        } else if (wp.alive && wp.crow >= 0 && wp.scan_t < 0)
+            wp_fetch(); /* connecting, so no scan of ours: the supplicant's own scans fill its table, read for the row's signal */
     }
     return RET_REPEAT;
 }
@@ -1349,7 +1344,7 @@ static int wp_on_destroy(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* The NETWORKS header's spinner goes after the header's text (measured, so it follows the language; 76 px when it cannot be measured). */
+/* The Networks header's spinner goes after the header's text (measured, so it follows the language; 76 px when it cannot be measured). */
 static void wp_spin_place(void) {
     void *lab = widget_lookup(wp.win, "wf_hdr_net_t", 1);
     const unsigned *t = lab ? widget_get_text(lab) : (const unsigned *)0;
@@ -1360,11 +1355,11 @@ static void wp_spin_place(void) {
 
 /* The hook at the Wi-Fi row of the stock All System Settings hub (tools/pod.py WIFIHUB_SITE, docs/modules/payload.md hook 21): stock's row is `navigator_to("systemset/wifi_page")` and this call takes
  * its place with the same argument (the delay slot still loads it). Our page opens unless the kill switch exists (then the stock page and stock's supplicant, the only route for WEP) or the page will not open;
- * both leave stock's call. A tap on the row only: no state, no timer, not on the boot path. */
+ * both leave stock's page, opened with stock's navigator_to each time (never restacked: its init scans on every open, 0x4b115c, and a restack runs no init; its EVT_WINDOW_TO_FG handler 0x4b0a34 only rebuilds the list from the old results). Stock ignores the result. A tap on the row only: no state, no timer, not on the boot path. */
 int wifipage_open(void);
 int wifi_hub_open(const char *name) {
     if (access(KILL_SD, F_OK) != 0 && wifipage_open() == 0) return 0;
-    return navigator_to(name);
+    return navigator_to(name); /* a new stock page, its init scans (the result is unused by stock's row) */
 }
 
 /* Settings > Wi-Fi. 0 once the page is up (or already open); -1 when it could not open (nothing is left of it): the caller opens the stock page. */

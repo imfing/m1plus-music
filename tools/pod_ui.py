@@ -343,7 +343,7 @@ def large_title(name, text):
     return title
 
 
-def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview', 'albums_scrollview'), more=False, albums=False, more_left=False, plactions=False, title_name=None):
+def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview', 'albums_scrollview'), more=False, albums=False, more_left=False, plactions=False, title_name=None, az=False):
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
     styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
     nb = navbar(page.title, toggle=toggle, coverflow=coverflow, more=more, albums=albums, more_left=more_left, plactions=plactions)
@@ -364,7 +364,9 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
     if albums:   # an artist's page shows the pills under the title (patch/albums.c); the library's keeps them hidden
         o = OFFSETS
         grid.children += [hidden(sg_pill('btn_play', o['AL_PLAY_X'], o['SG_PILL_Y'], 'Play', 'sg_play', w=o['AL_PLAY_W'], down=SG_PILL_PRESS_RGB)),
-                          hidden(sg_pill('btn_shuffle', o['AL_SHUFFLE_X'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', w=o['AL_SHUFFLE_W'], down=SG_PILL_PRESS_RGB))]
+                          hidden(sg_pill('btn_shuffle', o['AL_SHUFFLE_X'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', w=o['AL_SHUFFLE_W'], down=SG_PILL_PRESS_RGB)),
+                          # the photo header's name (22 px white, centred, the album page's title label; docs/modules/albums.md "Scoped to an artist"): shown in place of al_title, the circle is drawn by the payload
+                          hidden(label('al_name', o['PH_NAME_X'], o['AL_NAME_Y'], o['PH_NAME_W'], o['PH_NAME_H'], '', 22, '#FFFFFF'))]
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/albums.c / playlists.c show it while yoffset > 0
@@ -375,6 +377,9 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, 'left'))
         styled(lab, ('normal',), 'text_align_v', 'middle')
         root.children.append(lab)
+    if az:   # the list mode's section letters, rail and bubble (patch/albums.c, the Songs page's furniture); the payload hides the rail while the grid shows or the Index Rail switch is off
+        root.children.extend(azlist_labels())
+        root.children.extend(azlist_rail())
     if albums:
         root.children.extend(view_sort_card())   # last: above everything
     return root
@@ -466,24 +471,24 @@ def build_podcasts_page(page):
 
 
 # The Show page's bottom sheets (the show's "..." and an episode's), in the style of Now Playing's More sheet (docs/modules/playmore.md): the page dimmed (the Playlists menu's scrim), the
-# 320 px glass from the bottom of the window (pc_sheet5 .. pc_sheet1, a picture for each number of rows: tools/mod_icons.py PC_SHEETS; the payload sets the image
+# 320 px glass from the bottom of the window (pc_sheet6 .. pc_sheet1, a picture for each number of rows: tools/mod_icons.py PC_SHEETS; the payload sets the image
 # and the card's height and place for the rows it shows), PM_ROW_H rows, each a button (transparent, 6 % white pressed) with its 20 px glyph at x PS_SHEET_ICON_X, the label from
 # PS_SHEET_TEXT_X and, for the two rows that have one, the grey value right aligned to PS_SHEET_VALUE_R; a 1 px hairline child on the top of every row but the first (the payload shows it).
-# One widget set serves both sheets: the thirteen rows are fixed (glyph and label each), the payload shows and places the ones the sheet needs. Everything starts hidden and insensitive.
+# One widget set serves both sheets: the fourteen rows are fixed (glyph and label each), the payload shows and places the ones the sheet needs. Everything starts hidden and insensitive.
 PS_SHEET_ROWS = (('speed', 'pc_ic_speed', 'Playback Speed', True, False), ('refresh', 'pc_ic_refresh', 'Refresh Feed', True, False), ('select', 'pc_ic_select', 'Select Episodes', False, False),
                  ('markall', 'pc_ic_check', 'Mark All as Played', False, False), ('unsub', 'pc_ic_unsub', 'Unsubscribe', False, True),
                  ('dl', 'pc_ic_down', 'Download', False, False), ('rm', 'pc_ic_trash', 'Remove Download', False, False),
                  ('mark', 'pc_ic_check', 'Mark as Played', False, False), ('unmark', 'pc_ic_undo', 'Mark as Unplayed', False, False),
                  ('import', 'pc_ic_import', 'Import from Card', False, False), ('delplayed', 'pc_ic_trash', 'Delete Played Episodes', False, False),
-                 ('export', 'pod_ic_export', 'Export OPML', False, False), ('save', 'pod_ic_save', 'Save Episode', False, False))   # id, glyph, label, has a value, red; import is the Shows level's sheet, select (relabelled Select, or Select Shows) and delplayed the Downloads page's, select and export the Subscriptions page's, save (relabelled Unsave Episode when it is saved) an episode's
+                 ('export', 'pod_ic_export', 'Export OPML', False, False), ('save', 'pod_ic_save', 'Save Episode', False, False), ('order', 'pod_ic_order', 'Episode Order', True, False))   # id, glyph, label, has a value, red; import is the Shows level's sheet, select (relabelled Select, or Select Shows) and delplayed the Downloads page's, select and export the Subscriptions page's, save (relabelled Unsave Episode when it is saved) an episode's
 PS_SHEET_ICON_X, PS_SHEET_TEXT_X, PS_SHEET_VALUE_R, PS_SHEET_VALUE_W, PS_SHEET_GAP = (OFFSETS[k] for k in ('PS_SHEET_ICON_X', 'PS_SHEET_TEXT_X', 'PS_SHEET_VALUE_R', 'PS_SHEET_VALUE_W', 'PS_SHEET_GAP'))   # patch/offsets.inc
 PS_SHEET_RED = '#FF6B6B'
 PS_SHEET_PX = 18   # the labels (Now Playing's More sheet: 18 px)
 
 
 def podcasts_sheet():
-    """(scrim, card) of the Show page's sheets: the card at its tallest (five rows, pc_sheet5), at the bottom of the window."""
-    return sheet_widgets('pg_sh', PS_SHEET_ROWS, 5)
+    """(scrim, card) of the Show page's sheets: the card at its tallest (six rows, pc_sheet6), at the bottom of the window."""
+    return sheet_widgets('pg_sh', PS_SHEET_ROWS, 6)
 
 
 def sheet_widgets(prefix, sheet_rows, tallest):
@@ -1808,6 +1813,7 @@ def build_update_page(page):
 # Release Notes (patch/relnotes.c, docs/modules/update.md "Release notes"): the stock navbar over a stock list (list_view > scroll_view + scroll bar) holding one content view the payload paints the heading and the wrapped
 # notes on, as the Find Cover & Lyrics lyrics detail does. Two hidden labels only carry the text styles (22 px white heading, 18 px light grey text). Neutral, no accent colour.
 RN_HEAD_PX, RN_LINE_PX, RN_LINE_RGB = 22, 18, '#E6E6E6'
+RN_LOCK_LINE_PX = 20   # the Custom Wallpaper instructions' text (pod_pages.LOCKINFO_PAGE, same asset otherwise); the painter's pitch for it is 27 px (patch/relnotes.c RN_PITCH_LOCK)
 
 
 def build_relnotes_page(page):
@@ -1823,10 +1829,41 @@ def build_relnotes_page(page):
     sv.children.append(view)
     root.children.append(lv)
     root.children.append(nav_fade())
-    for name, px, colour in (('label_head', RN_HEAD_PX, '#FFFFFF'), ('label_line', RN_LINE_PX, RN_LINE_RGB)):
+    for name, px, colour in (('label_head', RN_HEAD_PX, '#FFFFFF'), ('label_line', RN_LOCK_LINE_PX if page.key == pod_pages.LOCKINFO_PAGE.key else RN_LINE_PX, RN_LINE_RGB)):
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, 'left'))
         styled(lab, ('normal',), 'text_align_v', 'middle')
         root.children.append(lab)
+    return root
+
+
+# The Lock Screen's Wallpaper picker (patch/lockscreen.c lkwp_*, docs/modules/lockscreen.md "Wallpaper picker"): the wallpaper grid of stock's systemset/screensaver_page, which stock builds in code inside its view_covers
+# (0x4abe04: image_create at x 12 + 103 per column, y 0 then 143, 90 x 135, three to a row; cell builder 0x4abb3c: draw type 4 = scale_auto, clickable, name imgcover<i>, a 26 px child img_choice<i> at 4,4,
+# cell 0 also the 24 px screensaver_defaulticon at 0,111), copied under our navbar. The widget names are stock's. Every cell starts hidden and insensitive; the payload shows the ones it has a picture for.
+# Selected look: stock's picture_selected_style is a 2 px #FE7E40 border (the theme styles/screensaver_page.bin; unselected: none), here a 2 px border that is transparent until the payload sets border_color to the accent.
+LW_COLS, LW_ROWS, LW_N = 3, 2, 6
+LW_X0, LW_PITCH_X, LW_Y = 12, 103, (0, 143)
+LW_CELL_W, LW_CELL_H = 90, 135
+LW_MARK, LW_MARK_XY = 26, 4
+LW_DEFAULT_ICON, LW_DEFAULT_ICON_XY = 24, (0, 111)
+LW_VIEW_Y, LW_VIEW_H = NAVBAR_H, 400
+
+
+def build_lockwall_page(page):
+    root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
+    styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
+    root.children.append(navbar(page.title))
+    covers = Widget('view', 0, LW_VIEW_Y, SCREEN_W, LW_VIEW_H, [('name', 'view_covers')])
+    for i in range(LW_N):
+        cell = hidden(Widget('image', LW_X0 + LW_PITCH_X * (i % LW_COLS), LW_Y[i // LW_COLS], LW_CELL_W, LW_CELL_H,
+                             [('name', f'imgcover{i}'), ('draw_type', 'scale_auto'), ('clickable', 'true')]))
+        styled(cell, ('normal', 'disable', 'focused'), 'border_width', '2')
+        styled(cell, ('normal', 'disable', 'focused'), 'border_color', '#00000000')
+        cell.children.append(Widget('image', LW_MARK_XY, LW_MARK_XY, LW_MARK, LW_MARK, [('name', f'img_choice{i}'), ('image', 'screensaver_unselect'), ('draw_type', 'default'), ('sensitive', 'false')]))
+        if i == 0:
+            cell.children.append(Widget('image', LW_DEFAULT_ICON_XY[0], LW_DEFAULT_ICON_XY[1], LW_DEFAULT_ICON, LW_DEFAULT_ICON,
+                                        [('name', 'img_defaulticon'), ('image', 'screensaver_defaulticon'), ('draw_type', 'default'), ('sensitive', 'false')]))
+        covers.children.append(cell)
+    root.children.append(covers)
     return root
 
 
@@ -1919,7 +1956,7 @@ def cards_row(i, row, piece, last):
     from mod_icons import CARD_GLYPHS, card_name, CARD_CHEVRON, CARD_CHECK
     kind = pod_pages.row_kind(row)
     swatch = row.action == pod_pages.ACT_ACCENTSET   # the Accent picker's rows show the accent's round swatch where a glyph goes (never tinted: docs/modules/accent.md)
-    has_icon = swatch or (kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph, like the rows around them)
+    has_icon = swatch or (kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph)
     h = ST.row_h(row)
     item = Widget('list_item', 0, 0, ST.LIST_W, h, [('name', f'pod_row{i}'), ('style', 'list_item_style')] + ([('sensitive', 'false')] if kind in ('info', 'preamp') and row.action != pod_pages.ACT_SFDEL else []))
     normal, down = ST.piece_images(piece, h != ST.ROW_H)
@@ -2668,10 +2705,10 @@ def build_songinfo_page(page):
 # The Wi-Fi page (patch/wifipage.c, docs/modules/wifi.md): the Settings pages' grouped cards (tools/pod_settings.py numbers: 52 px rows, cards 10..310, #1C1C1C, 12 px corners, hairlines, the
 # stock switch) under our navbar, in the stock list. The payload shows and hides rows and sets each shown row's picture piece (single / top / mid / bottom) and text, so no widget is made at run
 # time. The children are in display order, so the stock list_view layouter (which stacks the visible children and ignores y) and the payload's own widget_move agree: a top spacer, the switch
-# row, the connected network's row (the first group's second row), the MY NETWORKS header and its rows, the NETWORKS header (a spinner after its text while scanning), its rows and Other..., a bottom spacer.
+# row, the connected network's row (the first group's second row), the My Networks header and its rows, the Networks header (a spinner after its text while scanning), its rows and Other..., a bottom spacer.
 # A network row is a stock list_item holding the check or spinner (left), the name, the lock, the Wi-Fi fan signal and the info glyph (right); every child is insensitive: the row takes the tap
 # (a tap right of WF_INFO_X is the info glyph's). Pool sizes: patch/wifictl.h WF_MAX scanned networks, patch/wifipage.c WP_MY saved ones.
-WF_CUR, WF_MY, WF_OTH = 1, 16, 32   # the row pools: the connected network, MY NETWORKS, NETWORKS (patch/wifipage.c WP_CUR, WP_MY, WP_OTH)
+WF_CUR, WF_MY, WF_OTH = 1, 16, 32   # the row pools: the connected network, My Networks, Networks (patch/wifipage.c WP_CUR, WP_MY, WP_OTH)
 WF_ROWS = WF_CUR + WF_MY + WF_OTH
 WF_CHK_X, WF_NAME_X, WF_NAME_W, WF_LOCK_X, WF_SIG_X, WF_INFO_X, WF_INFO_PX = 24, 54, 156, 216, 242, 274, 22   # row relative: the check column, the name's box (its ink starts at 56), the glyphs' left edges
 WF_SIG_W, WF_SIG_H, WF_LOCK_PX, WF_CHK_PX, WF_SPIN_PX = 20, 16, 16, 20, 14   # the signal fan (mod_icons.WIFI_SIG_W x H): 16 px tall like the lock
@@ -2751,9 +2788,9 @@ def build_wifi_page(page):
     sv.children.append(cards_spacer('pod_top', ST.CM))
     sv.children.append(sw)
     sv.children += [wf_net_row(k) for k in range(WF_CUR)]
-    sv.children.append(wf_header('wf_hdr_my', 'MY NETWORKS'))
+    sv.children.append(wf_header('wf_hdr_my', 'My Networks'))
     sv.children += [wf_net_row(k) for k in range(WF_CUR, WF_CUR + WF_MY)]
-    sv.children.append(wf_header('wf_hdr_net', 'NETWORKS', True))
+    sv.children.append(wf_header('wf_hdr_net', 'Networks', True))
     sv.children += [wf_net_row(k) for k in range(WF_CUR + WF_MY, WF_ROWS)]
     other = hidden(wf_row('wf_row_other', 'bot'))
     other.children = [wf_label('wf_other_label', WF_NAME_X, WF_NAME_W + 40, 'Other…')]
@@ -3000,7 +3037,7 @@ def build_page(page):
     if page.kind == 'covlist':
         return build_grid_page(page, toggle=None, coverflow=False, names=('covlist_listview', 'covlist_scrollview'))
     if page.kind == 'grid':
-        return build_grid_page(page, toggle=None, coverflow=False, albums=True)
+        return build_grid_page(page, toggle=None, coverflow=False, albums=True, az=True)   # the Albums page: its list mode has the A-Z furniture (patch/azlist.c)
     if page.kind == 'podcasts':
         return build_podcasts_page(page)
     if page.kind == 'peq':
@@ -3039,6 +3076,8 @@ def build_page(page):
         return build_update_page(page)
     if page.kind == 'relnotes':
         return build_relnotes_page(page)
+    if page.kind == 'lockwall':
+        return build_lockwall_page(page)
     if page.kind == 'cover':
         return build_cover_page(page)
     if page.kind == 'artists':
@@ -3134,6 +3173,46 @@ def add_battery_label(rootfs):
     from modlib import edit_ui
     edit_ui(os.path.join(rootfs, SYSTEM_BAR), edit_for(PCT_WIDGET))
     edit_ui(os.path.join(rootfs, 'release/assets/default/raw/ui/dialog/dropdown_dialog.bin'), edit_for(PCT_WIDGET_DD))
+
+
+TIDAL_SEARCH = f'{UI}/tidal/tidal_serach_page.bin'
+TK = cdefs.defines(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'patch', 'tidalkb.h'))
+TK_HINT_RGB = '#AAAAAA'   # the stock edit's tips_text_color
+
+
+def tidal_field():
+    """The keyboard's field inside the Tidal search bar (patch/tidalkb.c): kb_field with its hint, text, caret and clear button, transparent so that the stock bar shows, in the stock edit's
+    font size and colours. Sensitive: the clear button inside it needs it, and a view has no on_event of its own, so a tap on it still reaches the bar's list_item as a click."""
+    w, h = TK['TK_FIELD_W'], TK['TK_FIELD_H']
+    field = kb_view('kb_field', TK['TK_FIELD_X'], 0, w, h, '#00000000')
+    field.set('sensitive', 'true')
+    hint = label('kb_hint', TK['TK_TEXT_X'], 0, w - TK['TK_TEXT_X'], h, '', TK['TK_PX'], TK_HINT_RGB, 'left')
+    text = label('kb_text', TK['TK_TEXT_X'], 0, w - TK['TK_TEXT_X'], h, '', TK['TK_PX'], PK.KB_INK, 'left')
+    for l in (hint, text):
+        l.set('sensitive', 'false')
+        styled(l, ('normal',), 'text_align_v', 'middle')
+    caret = kb_view('kb_caret', TK['TK_TEXT_X'], TK['TK_CARET_Y'], PK.CARET_W, PK.CARET_H, PK.KB_INK)
+    clear = hidden(Widget('button', w - TK['TK_CLEAR_W'], 0, TK['TK_CLEAR_W'], h, [('name', 'kb_clear'), ('enable', 'true'), ('style', 'img_btn_style'),
+                   ('style:pressed:icon', 'qk_clear'), ('style:normal:icon', 'qk_clear'), ('style:over:icon', 'qk_clear')]))
+    field.children = [hint, text, caret, clear]
+    return field
+
+
+def add_tidal_keyboard(rootfs):
+    """Tidal > Search with our keyboard embedded (patch/tidalkb.c, docs/modules/tidalkb.md): the keyboard's field goes into the search bar (listitem_ssid) over the stock edit, and the pad, the
+    candidate strip and the pop-up (keyboard_pad_widgets) end the window, over the history and the results. The window fills the 450 px client area (0, 0, 0, 0), so the pad's bottom is the
+    screen's. The stock layout this relies on is asserted."""
+    def edit(root):
+        bar = root.find('listitem_ssid')
+        assert root.name == 'tidal_search_page' and (root.x, root.y, root.w, root.h) == (0, 0, 0, 0), 'unexpected Tidal search page layout'
+        assert bar is not None and (bar.x, bar.y, bar.w, bar.h) == (33, 6, 240, 38) and bar.type == 'list_item' and root.children.count(bar) == 1, 'unexpected Tidal search bar'
+        assert [(c.type, c.name, c.x, c.y, c.w, c.h) for c in bar.children] == [('edit', 'search_edit', 15, 0, 210, 38)], 'unexpected Tidal search bar children'
+        assert root.find('kb_pad') is None and root.find('kb_field') is None and all(root.find(n) for n in ('view', 'tab_control')), 'unexpected Tidal search page widgets'
+        assert TK['TK_FIELD_X'] + TK['TK_FIELD_W'] <= bar.w and TK['TK_FIELD_H'] == bar.h
+        bar.children.append(tidal_field())
+        root.children += keyboard_pad_widgets()
+    from modlib import edit_ui
+    edit_ui(os.path.join(rootfs, TIDAL_SEARCH), edit)
 
 
 def asset_rels(pages):

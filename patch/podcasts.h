@@ -54,7 +54,7 @@ int pc_root(char *out);
 int pc_scan_shows(pc_show_t *out, int max);
 /* Whether any show folder holds an episode file (the Pod's No Podcasts): stops at the first one, no metadata read. */
 int pc_any_episode(void);
-/* The episodes of a show, newest first (publication date, then file name, descending), PC_LOCAL / PC_PART / PC_REMOTE together; at most max. Returns the count. */
+/* The episodes of a show in the show's order (pc_order_get): newest first (publication date, then file name, digit runs by value, descending; a show of copied files only, no metadata entry, by file name alone), or the exact reverse, PC_LOCAL / PC_PART / PC_REMOTE together; at most max. Returns the count. */
 int pc_load_show(const pc_show_t *show, pc_ep_t *out, int max);
 /* One file of a show folder: its modification time and its size in KB; 1 when it exists. */
 int pc_stat(const char *root, const char *dir, const char *file, unsigned *mtime, unsigned *kb);
@@ -101,8 +101,13 @@ int pc_continue(const pc_show_t *shows, int nshows, pc_cont_t *out, int max);
 /* Per-show speed: playspeed_mode 0..3 (1x, 1.25x, 1.5x, 2x). pc_speed_set saves at once (0 when it could not be written). */
 int pc_speed_get(unsigned show);
 int pc_speed_set(unsigned show, int mode);
+/* Per-show episode order: 0 newest first (the default), 1 oldest first (.m1plus/podcasts/order). pc_order_set saves at once (0 when it could not be written). */
+int pc_order_get(unsigned show);
+int pc_order_set(unsigned show, int order);
 void pc_speed_apply(unsigned show); /* before an episode starts: the show's mode into playspeed_mode and the player */
 unsigned pc_show_of(const char *path); /* pc_hash of the show folder name inside a podcast path, 0 for another path */
+/* An episode's show-folder picture as "file://<path>" in url (size), NULL for another path or a show with none usable (the Queue page's episode covers). */
+const char *pc_show_cover(const char *path, char *url, unsigned size);
 
 /* The timer hook: the track the player is on (cc_playing(), NULL when none). Called by the places that already see it on a timer (recent_note, so the
  * Now Playing tick, the mini bar's and the Podcasts page's). Saves the place, marks played, jumps to a saved place after a start, and puts the speed back. */
