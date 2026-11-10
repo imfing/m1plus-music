@@ -39,7 +39,11 @@ void grid_drop(grid_t *g) {
 }
 
 void grid_free(grid_t *g) {
+    int i;
     grid_drop(g);
+    for (i = 0; i < 8; ++i)
+        if (g->spin[i]) bitmap_destroy(g->spin[i]);
+    memset(g->spin, 0, sizeof g->spin);
     if (g->chev) bitmap_destroy(g->chev);
     g->chev = (void *)0;
     free(g->tiles);
@@ -173,9 +177,11 @@ void grid_set(grid_tile_t *t, const char *album, const char *artist, unsigned ck
     grid_wide(t->artist, artist);
 }
 
+static const char *grid_url(grid_t *g, char *out, unsigned key) { return g->url ? g->url(out, key) : cc_url(out, key); }
+
 void grid_art(grid_t *g, grid_tile_t *t) {
     char url[80];
-    grid_art_url(g, t, cc_url(url, t->ckey));
+    grid_art_url(g, t, grid_url(g, url, t->ckey));
 }
 
 void grid_art_url(grid_t *g, grid_tile_t *t, const char *file) {
@@ -183,7 +189,7 @@ void grid_art_url(grid_t *g, grid_tile_t *t, const char *file) {
     void *b;
     t->art = 2;
     if (!file || !(b = grid_bitmap(g, &px))) return;
-    if (cc_decode(g->win, file, 1, (unsigned)g->side, 1, px)) {
+    if (cc_decode(g->win, file, 1, (unsigned)g->side, g->person ? 2 : 1, px)) {
         grid_round(g, px);
         t->bmp = b, t->art = 1;
     }
@@ -217,7 +223,7 @@ void grid_mosaic(grid_t *g, grid_tile_t *t, unsigned *tmp) {
         for (k = 0; k < side * side; ++k) px[k] = GRID_GREY;
     } else
         px = (unsigned *)bitmap_lock_buffer_for_write(t->bmp);
-    file = cc_url(url, t->qkey[i]);
+    file = grid_url(g, url, t->qkey[i]);
     if (!file || !cc_decode(g->win, file, 1, (unsigned)half, 1, tmp))
         for (r = 0; r < half * half; ++r) tmp[r] = GRID_GREY;
     for (q = 0; q < 4; ++q) {
@@ -245,6 +251,55 @@ int grid_cell_at(int x, int y, int origin_y, int count) {
     return a < count ? a : -1;
 }
 
+/* One frame of the cover spinner: the Wi-Fi page's grey arc (wf_spin<i>, or the 28 px wf_spinL<i>), flattened over black by cc_decode, so a channel is the grey
+ * times the coverage: the bitmap keeps the grey (0xAA) and takes the coverage as its alpha, as the Album page's playing wave does. */
+static void *grid_spin_frame(grid_t *g, const char *prefix, int px, int i) {
+    char name[16];
+    unsigned *d, k;
+    int ok;
+    void *b = bitmap_create_ex(px, px, px * 4, BITMAP_RGBA8888);
+    if (!b) return b;
+    d = (unsigned *)bitmap_lock_buffer_for_write(b);
+    if (!d || bitmap_get_line_length(b) != (unsigned)px * 4) {
+        if (d) bitmap_unlock_buffer(b);
+        bitmap_destroy(b);
+        return (void *)0;
+    }
+    snprintf(name, sizeof name, "%s%d", prefix, i);
+    ok = cc_decode(g->win, name, 1, (unsigned)px, 1, d);
+    for (k = 0; ok && k < (unsigned)(px * px); ++k) {
+        unsigned a = (d[k] & 0xff) * 255 / 0xaa;
+        d[k] = (a > 255 ? 255 : a) << 24 | 0xaaaaaau;
+    }
+    bitmap_unlock_buffer(b);
+    if (!ok) {
+        bitmap_destroy(b);
+        return (void *)0;
+    }
+    return b;
+}
+
+void grid_spin_open(grid_t *g, const char *prefix, int px) {
+    int i;
+    if (g->spin[0] || g->spin_px) return; /* made (or tried: a failed set is not retried) */
+    g->spin_px = px;
+    for (i = 0; i < 8; ++i)
+        if (!(g->spin[i] = grid_spin_frame(g, prefix, px, i))) {
+            for (i = 0; i < 8; ++i)
+                if (g->spin[i]) bitmap_destroy(g->spin[i]);
+            memset(g->spin, 0, sizeof g->spin);
+            return;
+        }
+}
+
+int grid_spin_turn(grid_t *g) {
+    int i, n = 0;
+    ++g->spin_n;
+    for (i = 0; g->spin[0] && g->tiles && i < g->n; ++i)
+        if (g->tiles[i].album && g->tiles[i].load && g->tiles[i].art != 1) ++n;
+    return n;
+}
+
 void grid_blit(void *canvas, grid_t *g, grid_tile_t *t, int x, int y, int view_h) {
     void *bmp = t->art == 1 ? t->bmp : g->placeholder;
     int top = y < 0 ? -y : 0, bottom = view_h > 0 && y + g->side > view_h ? view_h - y : g->side;
@@ -253,6 +308,16 @@ void grid_blit(void *canvas, grid_t *g, grid_tile_t *t, int x, int y, int view_h
     src[0] = 0, src[1] = top, src[2] = g->side, src[3] = bottom - top;
     dst[0] = x, dst[1] = y + top, dst[2] = g->side, dst[3] = bottom - top;
     canvas_draw_image(canvas, bmp, src, dst);
+    if (t->load && t->art != 1 &&
+        g->spin
+            [0]) { /* a source's cover on its way: the spinner on the disc, cut at the view's edges as the cover is */
+        int px = g->spin_px, sy = y + (g->side - px) / 2;
+        int st = sy < 0 ? -sy : 0, sb = view_h > 0 && sy + px > view_h ? view_h - sy : px;
+        if (sb <= st) return;
+        src[0] = 0, src[1] = st, src[2] = px, src[3] = sb - st;
+        dst[0] = x + (g->side - px) / 2, dst[1] = sy + st, dst[2] = px, dst[3] = sb - st;
+        canvas_draw_image(canvas, g->spin[g->spin_n & 7], src, dst);
+    }
 }
 
 void grid_text(void *canvas, grid_tile_t *t, int pass, int x, int y, int w, int h, int view_h) {

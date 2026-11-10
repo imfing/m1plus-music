@@ -76,7 +76,7 @@ ALBUMS_BUTTONS = (('btn_coverflow', 'pod_nav_coverflow', 168), ('btn_more', 'pod
 NAV_SETTINGS_ICON = 'pod_nav_settings'   # the Extras page's Settings button: the capsule's left cap on the 214 slot (tools/mod_icons.py)
 
 
-def navbar(title, toggle=None, coverflow=False, artist_songs=False, more=False, songs=False, settings=False, show_more=False, show_globe=False, albums=False, more_left=False, plactions=False):
+def navbar(title, toggle=None, coverflow=False, artist_songs=False, more=False, songs=False, settings=False, show_more=False, show_globe=False, albums=False, more_left=False, plactions=False, settings_icon=NAV_SETTINGS_ICON, search=False):
     nb = Widget('view', 0, 0, SCREEN_W, NAVBAR_H, [('name', 'navigationbar_view')])
     # a title runs under a toggle's button no further than the button's left edge
     right = NAV_CF_X if songs or plactions or coverflow or more or albums else NAV_VIEW_X if toggle or settings or show_more or more_left else NAV_TITLE_END
@@ -98,7 +98,7 @@ def navbar(title, toggle=None, coverflow=False, artist_songs=False, more=False, 
     if settings:   # the Extras page's Settings button (patch/m1plus.c opens the Settings page on its tap)
         nb.children.append(Widget('button', NAV_VIEW_X, 0, NAV_VIEW_W, NAVBAR_H, [
             ('name', 'btn_settings'), ('enable', 'true'), ('style', 'img_btn_style'),
-            ('style:pressed:icon', NAV_SETTINGS_ICON + '_down'), ('style:normal:icon', NAV_SETTINGS_ICON), ('style:over:icon', NAV_SETTINGS_ICON)]))
+            ('style:pressed:icon', settings_icon + '_down'), ('style:normal:icon', settings_icon), ('style:over:icon', settings_icon)]))
     if show_more:   # the Podcasts page's "..." (opens a bottom sheet): the capsule's left cap on the 214 slot, shown on the Show level and on the Shows level when Import is possible (patch/podcasts.c)
         nb.children.append(hidden(Widget('button', NAV_VIEW_X, 0, NAV_VIEW_W, NAVBAR_H, [
             ('name', 'btn_more'), ('enable', 'true'), ('style', 'img_btn_style'),
@@ -142,6 +142,10 @@ def navbar(title, toggle=None, coverflow=False, artist_songs=False, more=False, 
             ('name', 'btn_coverflow'), ('enable', 'true'), ('style', 'img_btn_style'),
             ('style:pressed:icon', NAV_CF_ICON + '_down'), ('style:normal:icon', NAV_CF_ICON), ('style:over:icon', NAV_CF_ICON)])))
     if songs:   # Search (patch/songs.c shows it on every list but a genre's and an artist's songs): the capsule's left cap on the Albums page's Cover Flow slot (NAV_CF_X), the same scoped search the card's row used to open
+        nb.children.append(hidden(Widget('button', NAV_CF_X, 0, NAV_CF_W, NAVBAR_H, [
+            ('name', 'btn_search'), ('enable', 'true'), ('style', 'img_btn_style'),
+            ('style:pressed:icon', 'pod_nav_search_down'), ('style:normal:icon', 'pod_nav_search'), ('style:over:icon', 'pod_nav_search')])))
+    if search:   # the Subsonic root's Search (patch/ndroot.c shows it with a server saved and a source that searches; the "..." is then its middle piece, pod_nav_moremid): the capsule's left cap on the Albums page's Cover Flow slot (NAV_CF_X), as the Songs page's
         nb.children.append(hidden(Widget('button', NAV_CF_X, 0, NAV_CF_W, NAVBAR_H, [
             ('name', 'btn_search'), ('enable', 'true'), ('style', 'img_btn_style'),
             ('style:pressed:icon', 'pod_nav_search_down'), ('style:normal:icon', 'pod_nav_search'), ('style:over:icon', 'pod_nav_search')])))
@@ -371,6 +375,8 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/albums.c / playlists.c show it while yoffset > 0
     root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    if albums or title_name:   # a source's list still loading: the one spinner, centred in the content area (patch/libsrc.c ls_spin)
+        root.children.append(hidden(wf_image((title_name or 'al_title')[:2] + '_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))
     # The two modes' text styles (patch/albums.c reads them with widget_prepare_text_style; never shown)
     for name, px, colour in (('label_row_title', LIST_TITLE_PX, '#FFFFFF'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA'),
                              ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA')):
@@ -1098,6 +1104,7 @@ def build_artists_page(page):
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/artists.c shows it while yoffset > 0 (at rest it would darken the large title)
     root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(hidden(wf_image('ar_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))   # a source's list still loading (patch/libsrc.c ls_spin)
     lab = hidden(label('label_row_title', 0, 0, 10, 10, '', LIST_TITLE_PX, '#FFFFFF', 'left'))   # the row text style (the stock srlabel_leftwhite21_style's 21 px white)
     styled(lab, ('normal',), 'text_align_v', 'middle')
     root.children.append(lab)
@@ -1154,6 +1161,7 @@ def build_search_page(page):
         ('name', 'btn_return'), ('enable', 'true'), ('style', 'img_btn_style'),
         ('style:over:icon', 'se_close'), ('style:normal:icon', 'se_close'), ('style:pressed:icon', 'se_close_down')]))
     root.children.append(hidden(label('label_status', 10, 150, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
+    root.children.append(hidden(wf_image('se_spin', (SCREEN_W - WF_SPIN_PX) // 2, 120, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))   # a source's loading spinner (patch/search.c shows and turns it)
     root.children.append(hidden(label('label_title', 0, 0, 200, 22, '', 16, '#FFFFFF', 'left')))
     root.children[-1].set(*pod_i18n.text_prop(page.title))
     for name, px, colour in (('label_row_title', LIST_TITLE_PX, PS.TITLE_RGB), ('label_row_sub', LIST_SUB_PX, PS.SUB_RGB), ('label_chip', PS.SE_CHIP_PX, PS.CHIP_INK), ('label_chip_on', PS.SE_CHIP_PX, PS.CHIP_ON_INK)):
@@ -1198,103 +1206,6 @@ def build_autoeq_page(page):
     return root
 
 
-def build_subsonic_page(page):
-    """English-only Navidrome labels with stock list/grid controls."""
-    root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
-    styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
-    root.children.append(navbar('Navidrome'))
-    btn = Widget('button', 8, NAVBAR_H + 4, 112, 44, [('name', 'sb_connect'), ('enable', 'true')])
-    btn.set('style', 'btn_tablerow_style')
-    styled(btn, STATES, 'text_color', '#FFFFFF')
-    styled(btn, STATES, 'font_size', '16')
-    server_label = label('sb_connect_label', 8, 0, 82, 44, '', 14, '#FFFFFF', 'left')
-    server_label.set('text', 'Server')
-    server_label.set('sensitive', 'false')
-    dot = Widget('view', 97, 17, 10, 10, [('name', 'sb_connected_dot'), ('sensitive', 'false')])
-    styled(dot, ('normal',), 'bg_color', '#8E8E93')
-    styled(dot, ('normal',), 'round_radius', '5')
-    btn.children.extend([server_label, dot])
-    root.children.append(btn)
-    for name, x, icon in (('sb_search', 210, 'pod_ic_search'), ('sb_sync', 266, 'pod_sb_sync')):
-        btn = Widget('button', x, NAVBAR_H + 4, 44, 44, [('name', name), ('enable', 'true'), ('style', 'img_btn_style')])
-        btn.children.append(Widget('image', 6, 6, 32, 32, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
-        root.children.append(btn)
-    tabs = (('sb_tracks', 12, 116, 'Songs', 'pod_ic_navidrome'),
-            ('sb_dsd', 138, 116, 'DSD Downloads', 'pod_sb_dsd'))
-    for name, x, width, text, icon in tabs:
-        btn = Widget('button', x, NAVBAR_H + 50, width, 44, [('name', name), ('enable', 'true')])
-        btn.set('style', 'btn_tablerow_style')
-        btn.children.append(Widget('image', 5, 10, 24, 24, [('name', f'{name}_icon'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
-        mark = Widget('view', 0, 41, width, 3, [('name', f'{name}_mark'), ('visible', 'false'), ('sensitive', 'false')])
-        styled(mark, ('normal',), 'bg_color', '#EEEEEC')
-        caption = label(f'{name}_label', 32, 0, width - 34, 44, '', 13, '#FFFFFF', 'left')
-        caption.set('text', text)
-        caption.set('style', 'btn_tablerow_style')
-        caption.set('sensitive', 'false')
-        btn.children.extend([caption, mark])
-        root.children.append(btn)
-    view_btn = Widget('button', 266, NAVBAR_H + 50, 42, 44, [('name', 'sb_view'), ('enable', 'true'), ('style', 'img_btn_style')])
-    view_btn.children.append(Widget('image', 8, 8, 26, 26, [('name', 'sb_view_icon'), ('image', 'pod_nav_grid'), ('draw_type', 'icon'), ('sensitive', 'false')]))
-    root.children.append(view_btn)
-    status = label('sb_status', 12, NAVBAR_H + 96, 296, 22, '', 14, '#AAAAAA', 'left')
-    status.set('text', 'Connect to browse your music')
-    root.children.append(status)
-    progress = Widget('view', 12, NAVBAR_H + 118, 296, 6,
-                      [('name', 'sb_download_progress'), ('visible', 'false'), ('sensitive', 'false')])
-    styled(progress, ('normal',), 'bg_color', '#333333')
-    fill = Widget('view', 0, 0, 1, 6,
-                  [('name', 'sb_download_fill'), ('visible', 'false'), ('sensitive', 'false')])
-    styled(fill, ('normal',), 'bg_color', '#EEEEEC')
-    progress.children.append(fill)
-    root.children.append(progress)
-    lv = stock_list([], True, top=NAVBAR_H + 124)
-    lv.h = 276
-    lv.set('name', 'sb_listview')
-    sv = lv.children[0]
-    sv.h = 276
-    lv.children[1].h = 276
-    sv.set('name', 'sb_scrollview')
-    grid = Widget('view', 0, 0, SCREEN_W, 6 * 210, [('name', 'sb_rows')])
-    styled(grid, ('normal',), 'bg_color', '#000000')
-    for i in range(6):
-        item = Widget('list_item', 0, i * 52, SCREEN_W, 52, [('name', f'sb_row{i}'), ('style', 'list_item_style'), ('enable', 'true')])
-        art = Widget('image', 4, 4, 44, 44, [('name', f'sb_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
-        title = Widget('hscroll_label', 58, 2, 152, 22, [('name', f'sb_title{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
-        styled(title, STATES, 'text_color', '#FFFFFF')
-        styled(title, ('normal',), 'font_size', str(LIST_TITLE_PX))
-        sub = Widget('hscroll_label', 58, 29, 152, 19, [('name', f'sb_sub{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
-        styled(sub, STATES, 'text_color', '#AAAAAA')
-        styled(sub, ('normal',), 'font_size', str(LIST_SUB_PX))
-        actions = []
-        for action, x, icon in (('download', OFFSETS['SB_LIST_ACTION_X'], 'pod_sb_download'),):
-            button = Widget('button', x, 4, OFFSETS['SB_LIST_ACTION_W'], 44, [('name', f'sb_row_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
-            button.children.append(Widget('image', 9, 10, 24, 24, [('name', f'sb_row_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
-            actions.append(button)
-        gitem = Widget('view', (i % 2) * 160, (i // 2) * 210, 160, 204, [('name', f'sb_grid_row{i}'), ('enable', 'true')])
-        g_art = Widget('image', 12, 4, 136, 136, [('name', f'sb_grid_art{i}'), ('draw_type', 'scale_auto'), ('sensitive', 'false')])
-        g_title = Widget('hscroll_label', 6, 142, 148, 19, [('name', f'sb_grid_title{i}'), ('text', ''), ('ellipses', 'true'), ('sensitive', 'false')])
-        styled(g_title, STATES, 'text_color', '#FFFFFF')
-        styled(g_title, ('normal',), 'font_size', '14')
-        g_sub = Widget('hscroll_label', 6, 161, 148, 17, [('name', f'sb_grid_sub{i}'), ('text', ''), ('ellipses', 'true'), ('sensitive', 'false')])
-        styled(g_sub, STATES, 'text_color', '#AAAAAA')
-        styled(g_sub, ('normal',), 'font_size', '12')
-        g_actions = []
-        for action, x, icon in (('download', 59, 'pod_sb_download'),):
-            button = Widget('button', x, 177, 42, 36, [('name', f'sb_grid_{action}{i}'), ('enable', 'true'), ('sensitive', 'false'), ('style', 'img_btn_style')])
-            button.children.append(Widget('image', 9, 6, 24, 24, [('name', f'sb_grid_{action}_icon{i}'), ('image', icon), ('draw_type', 'icon'), ('sensitive', 'false')]))
-            g_actions.append(button)
-        gitem.children = [g_art, g_title, g_sub, *g_actions]
-        item.children = [art, title, sub, *actions]
-        grid.children.append(item)
-        grid.children.append(gitem)
-    sv.children.append(grid)
-    root.children.append(lv)
-    root.children.extend(azlist_labels())
-    root.children.extend(azlist_rail())
-    root.children.append(hidden(label('label_title', 0, 0, 200, 22, '', 16, '#FFFFFF', 'left')))
-    return root
-
-
 def build_songs_page(page):
     o = OFFSETS
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
@@ -1324,13 +1235,15 @@ def build_songs_page(page):
     # the library's flat pills, and a playlist's header disc and pill (the album page's; hidden, patch/songs.c sg_pills shows one set)
     pills, ptext = play_header(o['PH_BTN_Y'])
     grid.children = [title, hname, sg_pill('btn_play', o['SG_PILL_X0'], o['SG_PILL_Y'], 'Play', 'sg_play', down=SG_PILL_PRESS_RGB),
-                     sg_pill('btn_shuffle', o['SG_PILL_X1'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', down=SG_PILL_PRESS_RGB), *pills, foot]
+                     sg_pill('btn_shuffle', o['SG_PILL_X1'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', down=SG_PILL_PRESS_RGB), *pills, foot,
+                     hidden(wf_image('sg_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default'))]   # a source's loading spinner (the payload places, shows and turns it)
     root.children.append(ptext)
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/songs.c shows it while yoffset > 0 (at rest it would darken the large title)
     root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
     for name, px, colour, align in (('label_row_title', LIST_TITLE_PX, '#FFFFFF', 'left'), ('label_row_sub', LIST_SUB_PX, '#AAAAAA', 'left'),
+                                    ('label_row_dim', LIST_TITLE_PX, '#7A7A7A', 'left'), ('label_row_subdim', LIST_SUB_PX, '#7A7A7A', 'left'),   # a source's rows that cannot play
                                     ('label_grid_title', GRID_ALBUM_PX, '#FFFFFF', 'left'), ('label_grid_sub', GRID_ARTIST_PX, '#AAAAAA', 'left')):   # the last two: Recently Added's album grid
         lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, align))   # text styles only (widget_prepare_text_style); never shown
         styled(lab, ('normal',), 'text_align_v', 'middle')
@@ -1351,8 +1264,8 @@ def build_songs_page(page):
 # The window's colour is the cover's tone (the payload sets it); the gradient image img_ah_tint, first in the window, darkens it from the top (the stock page's), and the list over it is
 # transparent. The glass controls are the window's last child, so they paint and take touches over the rows: Back, Select | Now Playing as one capsule (the genre songs list's), and
 # in select mode the all / none toggle, Add, Delete and Cancel in the places the stock builder gave them. Two hidden labels carry the rows' text styles (the number, the title; the playing row's number is the ah_wave image); label_title (hidden) is the page's title for the i18n and asset tests.
-AB_STYLES = (('label_row_num', 'right', '#AAAAAA'), ('label_row_title', 'left', '#FFFFFF'))   # the stock rows' 19 px number (the grey line's colour) and title (white)
-AB_ROW_PX = 19
+AB_STYLES = (('label_row_num', 'right', '#AAAAAA', 19), ('label_row_title', 'left', '#FFFFFF', 19),   # the stock rows' 19 px number (the grey line's colour) and title (white)
+             ('label_row_dim', 'left', '#7A7A7A', 19))   # a source's rows: the title of a row that cannot play (the dim grey, the lowest that keeps 4.5:1 on black)
 AB_META = (('ab_title', 'AH_TITLE_Y', 'AH_TITLE_H', 22, '#FFFFFF'), ('ab_artist', 'AH_ARTIST_Y', 'AH_ARTIST_H', 18, '#AAAAAA'), ('ab_meta', 'AH_META_Y', 'AH_META_H', 15, '#9C9C9C'))   # srlabel_ah{title,artist,meta}_style
 AB_FOOT_RGB = '#AAAAAA'   # the footer's grey: the artist line's (not the meta line's #9C9C9C)
 AB_PLAY_TEXT_W = OFFSETS['AB_PLAY_TEXT_W']   # the English "Play" at 18 px, where the payload cannot measure it; the payload centres the pair for the language
@@ -1374,6 +1287,7 @@ def album_navbar(page):
     return [title,
             ab_nav_button('btn_return', NAV_BACK_X, NAV_BACK_W, 'ah_nav_back', 'ah_nav_back_down'),
             ab_nav_button('btn_select', NAV_VIEW_X, NAV_VIEW_W, 'pod_nav_selectl', 'pod_nav_selectl_down'),
+            ab_nav_button('btn_more', NAV_VIEW_X, NAV_VIEW_W, 'pod_nav_more', 'pod_nav_more_down', hide=True),   # a source's page: the capsule's left cap where Select sits for the library (the "..." card below: Download Album; patch/albumpage.c)
             ab_nav_button('btn_backtoplayer', NAV_PLAY_X, NAV_PLAY_W, 'ah_nav_play', 'ah_nav_play_down'),
             ab_nav_button('btn_selall', o['AB_SELALL_X'], o['AB_SELALL_W'], 'ah_nav_unsel', 'ah_nav_unsel_down', hide=True),
             ab_nav_button('sg_add', o['AB_ADD_X'], o['AB_BTN_W'], 'ah_nav_add', 'ah_nav_add_down', hide=True),
@@ -1410,16 +1324,18 @@ def build_album_page(page):
     foot = hidden(label('ab_foot', o['AB_NUM_X'], 0, SCREEN_W - o['AB_NUM_X'] - o['AB_FOOT_R'], o['AB_FOOT_TEXT_H'], '', o['AB_FOOT_PX'], AB_FOOT_RGB, 'left'))   # the track count and the duration under the last row: the payload sets the text and the place, and shows it once the duration is known
     styled(foot, ('normal',), 'text_align_v', 'middle')
     kids.append(foot)
+    kids.append(hidden(wf_image('ab_spin', (SCREEN_W - WF_SPIN_PX) // 2, o['AH_BTN_Y'] + (o['AH_BTN_H'] - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))   # the loading spinner where the pills will be while a source's tracks are on their way (the payload shows it and turns the frames)
     grid.children = kids
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(play_text('ab_play_text'))   # the pill's text style and its translated text; the payload paints the text over the pill
     root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, '#FFFFFF')))
-    for name, align, colour in AB_STYLES:
-        lab = hidden(label(name, 0, 0, 10, 10, '', AB_ROW_PX, colour, align))   # text styles only (widget_prepare_text_style); never shown
+    for name, align, colour, px in AB_STYLES:
+        lab = hidden(label(name, 0, 0, 10, 10, '', px, colour, align))   # text styles only (widget_prepare_text_style); never shown
         styled(lab, ('normal',), 'text_align_v', 'middle')
         root.children.append(lab)
     root.children.extend(album_navbar(page))   # the glass controls paint and take touches over the list
+    root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=('Download Album', 'Select'), act_glyphs=('pod_ic_vsdownload', 'pod_ic_vsselect')))   # a source's "..." card (patch/albumpage.c offers the first row alone: Download Album); hidden on the library's page
     root.children.extend(row_menu())   # last: the track rows' "..." menu (patch/rowmenu.c) covers the navbar too
     return root
 
@@ -1951,12 +1867,12 @@ def build_extrascfg_page(page):
 # corners and fill baked in, a lit twin when pressed). A row is a stock list_item with a glyph image, the stock 21 px label, a hairline child from the label to the card's edge (not on a
 # card's last row) and the right accessory: the chevron image (pod_chev), a value label and chevron, the stock switch image or the picker's check (hidden until the payload shows it on
 # the chosen row). Headers and notes are insensitive views whose grey label starts where the row glyphs' ink does. The numbers are tools/pod_settings.py's.
-def cards_row(i, row, piece, last):
+def cards_row(i, row, piece, last, icon=True):
     import pod_settings as ST
     from mod_icons import CARD_GLYPHS, card_name, CARD_CHEVRON, CARD_CHECK
     kind = pod_pages.row_kind(row)
     swatch = row.action == pod_pages.ACT_ACCENTSET   # the Accent picker's rows show the accent's round swatch where a glyph goes (never tinted: docs/modules/accent.md)
-    has_icon = swatch or (kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph)
+    has_icon = swatch or (icon and kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph, like the rows around them)
     h = ST.row_h(row)
     item = Widget('list_item', 0, 0, ST.LIST_W, h, [('name', f'pod_row{i}'), ('style', 'list_item_style')] + ([('sensitive', 'false')] if kind in ('info', 'preamp') and row.action != pod_pages.ACT_SFDEL else []))
     normal, down = ST.piece_images(piece, h != ST.ROW_H)
@@ -3004,8 +2920,6 @@ def build_wifisec_page(page):
 
 
 def build_page(page):
-    if page.kind == 'subsonic':
-        return build_subsonic_page(page)
     if page.kind == 'wifiother':
         return build_wifiother_page(page)
     if page.kind == 'wifisec':
@@ -3058,6 +2972,12 @@ def build_page(page):
         return build_search_page(page)
     if page.kind == 'autoeq':
         return build_autoeq_page(page)
+    if page.kind == 'ndlogin':
+        import pod_ndserver; return pod_ndserver.build_login(page)
+    if page.kind == 'ndserver':
+        import pod_ndserver; return pod_ndserver.build(page)
+    if page.kind == 'ndroot':
+        import pod_nd; return pod_nd.build(page)
     if page.kind == 'album':
         return build_album_page(page)
     if page.kind == 'queue':

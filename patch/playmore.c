@@ -35,6 +35,7 @@
 #include "common.h"
 #include "covercache.h"
 #include "podcasts.h"
+#include "sbapi.h"
 
 #define PM_ROWS 14 /* listitem0..6, then pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art, pod_sleep */
 #define PM_MORE 7
@@ -74,6 +75,7 @@ static struct {
     void *row[PM_ROWS];
     int page; /* 0: the first page, 1: the More page */
     int ep; /* the playing track is a podcast episode: the first page is the episode's (set 2) */
+    int srv; /* the playing track is a server track (streamed or downloaded): Find Cover & Lyrics is not for it (its cover and lyrics have no local album or file to be saved under) */
 } pm __attribute__((section(".scratch")));
 
 static void pm_show(void *w, int on) {
@@ -114,7 +116,7 @@ static void pm_arrange(void) {
     for (i = 0; i < n; i++) widget_restack(pm.row[pm_page[set][i]], k++);
     if (pm.page ==
         1) { /* Find Cover & Lyrics needs the Wi-Fi: looked at each time page 2 shows (stock's get_wifisignal, as the Podcasts guard) */
-        int online = get_wifisignal() > 0;
+        int online = get_wifisignal() > 0 && !pm.srv;
         widget_set_opacity(pm.row[PM_ART], online ? 255 : PM_ART_DIM);
         widget_set_sensitive(pm.row[PM_ART], online);
     } else
@@ -188,7 +190,7 @@ extern int onlineart_open(void);
 
 static int pm_on_art(void *ctx, void *e) {
     (void)e;
-    if (!pm.dlg || ctx != pm.dlg || get_wifisignal() <= 0) return RET_OK;
+    if (!pm.dlg || ctx != pm.dlg || get_wifisignal() <= 0 || pm.srv) return RET_OK;
     if (onlineart_open() == 0) window_close(ctx);
     return RET_OK;
 }
@@ -403,6 +405,7 @@ static void pm_start(void *dlg) {
     pm.page = 0;
     track = cc_playing();
     pm.ep = track && pc_is_path(cc_str(track, REC_PATH));
+    pm.srv = track && sba_rec_track(*(int *)((char *)track + REC_ID))[0] != 0;
     pm_arrange();
     return;
 fail:

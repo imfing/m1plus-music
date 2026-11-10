@@ -1167,7 +1167,10 @@ int keyboard_open(const char *title, const char *placeholder, const char *initia
     kb.win = window_open("m1plus_keyboard");
     if (!kb.win) return -1;
     kb.done = on_done, kb.cancel = on_cancel, kb.flags = flags;
-    kb.max = flags & KB_LONG ? KB_MAX_LONG : KB_MAX; /* before kb_init, which cuts the initial text to it */
+    kb.max = flags & KB_PASSWORD ? KB_PASS_MAX
+             : flags & KB_LONG   ? KB_MAX_LONG
+                                 : KB_MAX; /* before kb_init, which cuts the initial text to it */
+    kb.mask = (flags & KB_PASSWORD) != 0; /* a password: one dot a character (the Server page's) */
     kb.tx = KB_TEXT_X, kb.tw = KB_TEXT_W, kb.cy = KB_CARET_Y;
     if (kb_init(placeholder, initial, 0) != 0) {
         navigator_back();

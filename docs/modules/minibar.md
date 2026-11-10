@@ -127,6 +127,7 @@ called when that found no navbar or list).
   `virtual_h - h`). A track is queued: the bar shows and the list is 366 px. **Only when the track changes** (a hash of path, title, file
   name and cue start) the labels (title, else the file name; artist) and the cover are redone. The play / pause button follows
   `mclGetPlayStatus() == 2` and is swapped only when that changes.
+- **Server track** (`sba_rec_track` knows the playing record; the lock screen's bar shares `mb_art_cover`): the cover is the server's file, the one Now Playing draws (`sba_rec_cover`), never the library's album cache file of the same artist and album. While it is being fetched the card shows the placeholder disc and `mb_art_settle` keeps asking (the `MB_SETTLE` count is held while the answer is "on its way"), redoing the cover when the file lands; a track the server has no picture for takes demo's `/tmp` file as Now Playing does (a download's embedded art), else the placeholder. Test: `test/pod/minibar.py`.
 - **Cover** (decoded on the timer, never in paint: paint only `canvas_draw_image`s the resident 36 x 36 bitmap): 1. the album's Cover Flow cache
   file (`cc_url`, the album key as the album page's tint uses it), 2. for a track without a cache file the `/tmp` picture demo wrote for the
   playing track (`np_cover_file` / `COVER_SRC`, as Now Playing reads it) - demo writes it a little after the track changes, so for `MB_SETTLE`

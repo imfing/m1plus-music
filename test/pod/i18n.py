@@ -13,11 +13,24 @@ SAME_AS_ENGLISH |= {'Podcasts', ', %d', 'Normal', 'Chrome', 'Metal', 'Graphite',
 SAME_AS_ENGLISH |= {'Downloads', '%d MB', '%d.%d GB', '%d GB'}    # German writes Downloads as English does
 SAME_AS_ENGLISH |= {'A–Z', 'Z–A'}    # the alphabet range in Latin-script and CJK tables (Thai and Cyrillic have their own)
 SAME_AS_ENGLISH |= {'Format', 'Type'}    # French, German and Polish write Format as English does; French writes Type the same
-SAME_AS_ENGLISH |= {'Genre', 'Screenshot', 'Collections', 'Cover'}    # French and German write Genre the same; German and Italian say Screenshot; French writes Collections the same; German says Cover
+SAME_AS_ENGLISH |= {'Genre', 'Screenshot', 'Collections', 'Cover', 'Streaming'}    # French and German write Genre the same; German and Italian say Screenshot; French writes Collections the same; German says Cover
 SAME_AS_ENGLISH |= {'Orange', 'Champagne', 'Neutral'}    # colour names: Orange in French and German, Champagne in French and Italian, Neutral in German
 SAME_AS_ENGLISH |= {'Radio', 'LIVE', 'Live', '%d stations'}    # Radio in French, German, Spanish, Italian and Polish; LIVE and Live in German and Italian; "stations" in French
 SAME_AS_ENGLISH |= {'Router'}    # Router in German, Spanish, Italian and Polish
 SAME_AS_ENGLISH |= {'Equalizer'}    # German writes Equalizer as English does
+SAME_AS_ENGLISH |= {'A request is still running', 'Configuration is too long', 'Connect to browse your music', 'Could not load Navidrome albums', 'Could not load Navidrome artists', 'Could not load album tracks', 'Could not open login field', 'Could not prepare stream queue', 'Download failed; check card space and server permission', 'Enter URL|username|password', 'Enter a valid HTTP or HTTPS server URL', 'Enter a valid username', 'Enter a server password', 'Library sync could not start', 'Subsonic', 'Navidrome Search', 'Original song downloaded to /mnt/mmc/Subsonic', 'Password cannot contain |', 'Search could not start', 'Search songs', 'Searching Navidrome…', 'Select a song first', 'Server', 'Server URL', 'Server URL must use HTTP or HTTPS', 'Server password', 'Server settings are too long', 'Syncing library to SD card…', 'Tracks', 'Untitled', 'Username', 'Wait for the current request to finish', 'Songs', 'DSD Downloads', 'Connect to Wi-Fi before using Navidrome.', 'Connect to Wi-Fi before adding a server.', 'Connect to Wi-Fi to check Navidrome.', 'Checking Navidrome server…', 'Connected to Navidrome', 'Connected · syncing songs and artwork…', 'Could not connect. Check Wi-Fi, URL and login.', 'Sync the library after connecting to the server.', 'No DSD tracks in the synced library', 'DSD downloads · original files only', 'DSD streaming is disabled; download the original file for local playback.', 'Downloading original DSD file to SD…', 'DSD download could not start', 'Artwork cache busy. Retry DSD download when it finishes.', 'Adding downloaded DSD to the SD library…', 'DSD downloaded and added to the SD library.', 'DSD downloaded, but the SD library refresh failed.', 'Downloading original file to SD card…', 'Download could not start', 'Synced %d songs. Artwork cached when available.', 'Could not check Navidrome server.'}  # Navidrome transport uses the English text where no stock translation exists
+SAME_AS_ENGLISH |= {'Could not read the synced song list', 'Could not delete the downloaded song', 'Could not play the downloaded song', 'Delete this downloaded song from the SD card?', 'Downloaded song deleted'}
+SAME_AS_ENGLISH |= {'Synced index could not be read from SD card.', 'SD card is unavailable. Insert it and retry.',
+                    'SD card space too low for the library index.', 'SD card write failed. Check card and free space.',
+                    'Wi-Fi or server connection failed during sync.', 'Could not prepare the library sync request.',
+                    'Server rejected the library sync request.', 'Server returned an HTTP error during sync.',
+                    'Server returned unreadable library data.', 'Server returned an empty library response.',
+                    'Not enough memory to sync the library.',
+                    'Library sync failed. Check server and SD card.'}
+SAME_AS_ENGLISH |= {'Sync Navidrome songs and artwork to the SD card now?', 'No regular songs in the synced library', 'Could not refresh this song page', 'Delete this downloaded DSD track from the SD card?', 'Could not delete the downloaded DSD file', 'Downloaded DSD track deleted', 'Could not play the downloaded DSD file'}
+SAME_AS_ENGLISH |= {'A download is already queued', 'Artwork cache paused for download.', 'Artwork scan stopped; check SD card and server.',
+                    'Download paused; tap Download to resume', 'Download queued; pausing artwork cache', 'Navidrome busy · download starting',
+                    'Navidrome busy · updating SD library', 'Over 100k tracks; old index kept', 'Server rejected login or access'}
 SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Wi-Fi', 'Wi-Fi MAC', 'Bluetooth', 'EQ', 'System', 'Display', 'Firmware', 'Model', 'Device', 'Status', 'Auto'}    # brand and technical words (Wi-Fi, Bluetooth, EQ); System in German and Polish, Display in Italian
 SAME_AS_ENGLISH |= {'Enhanced Open', 'WEP', 'WPA/WPA2', 'WPA2/WPA3', 'WPA3', 'Enterprise'}    # the Wi-Fi page's security labels: the standards' names (Enterprise in German, Italian and Polish)
 SAME_AS_ENGLISH |= {'Password'}    # the password page's label: Password in Italian
@@ -85,12 +98,12 @@ def run(ctx):
         expect(all(dict(built[stub])[k] == dict(built[twin])[k] for k in pod_i18n.TEXT), f'{stub} holds {twin}\'s language')
     for k, by in pod_i18n.TEXT.items():
         counts = {loc: by[loc].count('%d') for loc in LOC}
-        expect(set(counts.values()) == ({k.count('%d')} if k.startswith(('%d', 'Added %d')) or k.startswith('Cancelled, ') or k in pod_i18n.DATE_KEYS else {0}) and all('%' not in by[l].replace('%d', '').replace('%s', '') for l in LOC)
+        expect(set(counts.values()) == ({k.count('%d')} if k.startswith(('%d', 'Added %d', 'Downloading %d')) or k.startswith('Cancelled, ') or k in pod_i18n.DATE_KEYS else {0}) and all('%' not in by[l].replace('%d', '').replace('%s', '') for l in LOC)
                and all(by[l].count('%s') == k.count('%s') for l in LOC),
                f'{k!r}: %d only in the track counts, once each; %s only in the Daily Mix templates, as often as the key has it')
     expect(sorted(pod_i18n.TEXT) == pod_i18n.KEYS and all(set(by) == set(LOC) for by in pod_i18n.TEXT.values()), 'every key has all 13 languages')
 
-    # 3. Our assets: tr_text keys, no English left but the brand names.
+    # 3. Our assets: tr_text keys, no English left except Navidrome's explicitly English-only page and brand names.
     used = set()
     for page in pod_pages.PAGES:
         tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', page.key + '.bin'), 'rb').read())
@@ -100,7 +113,8 @@ def run(ctx):
             if k is not None:
                 used.add(k)
                 if k not in pod_i18n.TEXT and k not in pod_i18n.STOCK: bad.append((w.name, k))
-            if page is not pod_pages.SUBSONIC_PAGE and t not in (None, '') and t not in pod_i18n.BRANDS and t not in pod_keyboard.LABELS: bad.append((w.name, t))
+            if t not in (None, '') and t not in pod_i18n.BRANDS and t not in pod_keyboard.LABELS:
+                bad.append((w.name, t))
             expect(not (t and k), f'{page.key}:{w.name} does not carry both text and tr_text')
         expect(not bad, f'{page.key}: every text is a tr_text key of ours or the stock tables, or a brand name ({bad})')
         title = tree.find('label_title')
@@ -119,9 +133,8 @@ def run(ctx):
     literal = re.compile(r'"((?:[^"\\]|\\.)*)"')
     keys_in_c = set(); plain = []
     for f, src in sources.items():
-        if f == 'subsonic.c': continue   # standalone milestone uses English prompts, scoped to its own page
         for a in call_args(src, 'widget_set_text_utf8'):
-            for inner in call_args(a, 'TR'): a = a.replace(inner, '')       # a translated key inside is fine
+            for inner in call_args(a, 'TR'): a = a.replace(inner, '')
             for lit in literal.findall(a):
                 if lit not in ('', 'M1+ Music', 'iTunes', 'Deezer') and lit not in pod_keyboard.LABELS: plain.append((f, lit))
         for a in call_args(src, 'toast') + call_args(src, 'pod_toast'):
@@ -242,7 +255,7 @@ def run(ctx):
             for loc in LOC:
                 w = width(tr_text(loc, pod_i18n.key_for(title)), pod_ui.HDR_PX)
                 if w > cap.w - 4: hdr_over.append((page.key, title, loc, w, cap.w))
-    expect(not hdr_over, f'every Extras section header (Play, Library, Collections, Tools) fits its label in all 13 languages at {pod_ui.HDR_PX} px ({hdr_over[:4]})')
+    expect(not hdr_over, f'every Extras section header (Play, Library, Collections, Streaming, Tools) fits its label in all 13 languages at {pod_ui.HDR_PX} px ({hdr_over[:4]})')
     albums_tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', pod_pages.ALBUMS.key + '.bin'), 'rb').read())
     albums_lbl = albums_tree.find('label_title')
     # the Albums title runs from x 58 to the capsule's Cover Flow button (x 168): 110 px; the payload cuts it with an ellipsis where "Albums" outgrows it (az_fit, test/pod/albums.py)
@@ -303,6 +316,16 @@ def run(ctx):
         lines = {loc: wrapped((dict(built[loc]).get(key, dict(built['en_US'])[key]) if key.startswith('msg_') else tr_text(loc, key)).replace('%s', '10.0.1'), wrap_px, wrap_w) for loc in LOC}
         expect(wrap_px == 20 and max(lines.values()) <= 3, f'the {what} confirm wraps to at most 3 lines of {wrap_w} px at {wrap_px} px in all languages ({lines})')
         expect(key.startswith('msg_') or all(len(pod_i18n.TEXT[key][loc].encode()) < 0x1ff for loc in LOC), 'and fits the dialog context\'s 0x200 byte text')
+    # The DSD "Download to Play?" confirm (patch/sbsrc.c ls_dsd_confirm): the title on its own line, then the body with a title of up to 24 bytes (longer ones are cut and end in three dots) and a size; the label (80 px, 20 px lines)
+    # holds four lines, and the 0x200 byte text holds all of it
+    worst, typical = {}, {}
+    for loc in LOC:
+        head = wrapped(tr_text(loc, 'Download to Play?'), wrap_px, wrap_w)
+        text = tr_text(loc, 'DSD tracks play from the card. %s, %s MB.')
+        worst[loc] = head + wrapped(text.replace('%s', 'Lady Be Good, Take Two O...', 1).replace('%s', '1234'), wrap_px, wrap_w)
+        typical[loc] = head + wrapped(text.replace('%s', 'Lady Be Good', 1).replace('%s', '182'), wrap_px, wrap_w)
+        expect(len((tr_text(loc, 'Download to Play?') + chr(10) + text).encode()) + 40 < 0x1ff, f'{loc}: the DSD confirm text fits the dialog context\'s 0x200 bytes')
+    expect(max(typical.values()) <= 4 and max(worst.values()) <= 5, f'the DSD confirm wraps to at most 4 lines ({typical}) with a usual title, 5 ({worst}) with a 24 byte one, at {wrap_w} px and {wrap_px} px in all languages')
     # the Settings cards (tools/pod_settings.py): a value and the row's label share the room between the glyph column and the chevron (the payload gives the value the room its text needs, at most VALUE_MAX);
     # every value text of every language fits with its label, and the headers and notes fit their 272 px labels
     import pod_settings as ST

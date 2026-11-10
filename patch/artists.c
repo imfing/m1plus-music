@@ -26,7 +26,8 @@
  * the tile's stock page opens. docs/modules/artists.md.
  *
  * Artists and Album Artists rows carry the artist's photo (docs/modules/artists.md "Artist photos"): a 40 px circle at x 16, the name from x 68; the circle is decoded by the page's own timer, one a tick
- * (ar_on_photo, patch/artistphoto.c ap_lookup / grid ring), never in a paint; a row without one shows the shared placeholder.
+ * (ar_on_photo, patch/artistphoto.c ap_lookup / grid ring), never in a paint; a row without one shows the shared placeholder. A source's Artists rows are the same rows: the picture is the
+ * file the source keeps for the artist's coverArt id (src->cover; ar_src_row), the placeholder with a spinner while it is fetched, the placeholder alone when the server has none.
  *
  * No stock function is hooked. The page is opened from the M1+ Music menu's Artists, Genres and Composers rows and
  * everything here runs from its own widgets; nothing of it outlives the window.
@@ -42,9 +43,13 @@
 #include "viewsort.h"
 #include "search.h"
 #include "artistphoto.h"
+#include "libsrc.h"
+#include "artists.h"
 
 extern int coverflow_artist(void *artists, unsigned index, unsigned scope); /* patch/coverflow.c */
 extern int albums_open_artist(void *artists, unsigned index, unsigned scope); /* patch/albums.c */
+extern int albums_open_src(const lib_src_t *src,
+                           void *artist); /* patch/albums.c: the source's albums of one artist (the record is copied) */
 extern int songs_open_genre(const char *name, int unknown); /* patch/songs.c */
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
 
@@ -87,6 +92,8 @@ static struct {
     unsigned char *rank; /* the section rank of each display position */
     unsigned count;
     unsigned cls; /* the stock class listed: CLASS_ARTISTS, CLASS_GENRES or CLASS_COMPOSERS */
+    const lib_src_t *src; /* the library source the list comes from (artists_open_src); NULL = the stock library */
+    unsigned gen, rows, gen_timer; /* the source's gen and gen_rows at the last read, and the timer that watches it */
     int home; /* its Home tile (HOME_GENRE, HOME_COMPOSER; 0 for Artists): where a window that will not open falls back */
     const char *key; /* the title's key: Artists, Album Artists, Genres, Composers */
     void *chev; /* the chevron bitmap */
@@ -103,6 +110,9 @@ static struct {
         retry_timer; /* while the Home pass makes photos: asks, every AR_RETRY_MS, whether it is over, then the rows without a file look again */
     az_t al;
     grid_t g; /* the text ring; with photo, the circles too (AR_PHOTO px, the corners cut in the alpha) */
+    void *spin; /* a source's loading spinner (ar_spin, optional) */
+    ls_cpoll_t
+        cp; /* the shared cover poll (patch/libsrc.c): a source's picture on its way is asked for again, its spinner turned */
 } ar __attribute__((section(".scratch")));
 
 /* Hidden and out of the hit test together (this AWTK's widget_find_target ignores visible). */
@@ -127,7 +137,9 @@ static unsigned ar_stock(unsigned i) { return ar.order ? ar.order[i] : i; }
 static __attribute__((noinline)) int
 ar_open(unsigned i) { /* (a symbol of its own: the tests call it with a display position) */
     if (!ar.artists || i >= ar.count) return RET_OK;
-    if (ar.cls == CLASS_GENRES) {
+    if (ar.src) {
+        albums_open_src(ar.src, deque_at(ar.artists, ar_stock(i)));
+    } else if (ar.cls == CLASS_GENRES) {
         void *r = deque_at(ar.artists, ar_stock(i));
         songs_open_genre(ar_name(r), *(int *)((char *)r + REC_ID) == -1);
     } else if (albums_open_artist(ar.artists, ar_stock(i), ar.cls) == -1)
@@ -237,7 +249,7 @@ static void ar_mode_show(void) {
         ar_title_text(ar.cls == CLASS_GENRES ? "Genres" : "Composers");
         return;
     }
-    ar_title_text(*(volatile int *)ARTIST_TYPE == 1 ? "Album Artists" : "Artists");
+    ar_title_text(!ar.src && *(volatile int *)ARTIST_TYPE == 1 ? "Album Artists" : "Artists");
 }
 
 /* ---------------------------------------------------------------------------
@@ -304,7 +316,8 @@ static int ar_on_paint(void *ctx, void *e) {
  */
 /* Row r still needs a look: its tile was not tried, or it has none yet and its state is not "no photo". */
 static int ar_wants(int r) {
-    grid_tile_t *t = grid_find(&ar.g, r);
+    grid_tile_t *t;
+    t = grid_find(&ar.g, r);
     if (t) return !t->art;
     return ar_st((unsigned)r) != AP_NONE && !ar_fixed(deque_at(ar.artists, ar_stock((unsigned)r)));
 }
@@ -324,6 +337,7 @@ static int ar_next_photo(void) {
 }
 
 static int ar_on_retry(const void *unused);
+static int ar_src_row(int r, grid_tile_t *t);
 
 /* A row whose file is missing is looked for again once the Home pass that makes the photos is over (the Albums page's al_retry): while a set runs a slow timer waits for its end. */
 static void ar_retry_arm(void) {
@@ -337,6 +351,10 @@ static void ar_photo_row(int r) {
     char url[80];
     int st;
     if (t->art) return;
+    if (ar.src) {
+        if (ar_src_row(r, t) < 0) ar_st_set((unsigned)r, AP_NONE);
+        return;
+    }
     st = ap_lookup(ar_name(deque_at(ar.artists, ar_stock((unsigned)r))), AP_LIST, url);
     if (st == AP_PHOTO || st == AP_LEAD) {
         grid_art_url(&ar.g, t, url);
@@ -349,6 +367,54 @@ static void ar_photo_row(int r) {
         t->art = 2;
     if (st == AP_NONE) ar_st_set((unsigned)r, AP_NONE);
     if (st == AP_UNKNOWN) ar_retry_arm();
+}
+
+/* A source's pictures on the shared poll (patch/libsrc.c ls_cover_poll): a picture the source is fetching (cover() answered 0) is asked for again every LS_COVER_MS while the page is on top: its tile
+ * goes back to not tried, the loader asks again (a picture that is still on its way sets the poll again), and the tiles with load set show the spinner meanwhile, turned and redrawn by the same tick. */
+static void ar_kick(void);
+static void ar_cp_ask(void) {
+    int i;
+    if (!ar.view || !ar.src) return;
+    for (i = 0; ar.g.tiles && i < ar.g.n; ++i) {
+        grid_tile_t *t = &ar.g.tiles[i];
+        if (t->album && t->art == 2 && ar_st((unsigned)(t->album - 1)) == AP_UNKNOWN) t->art = 0;
+    }
+    ar_kick();
+}
+static int ar_cp_spin(void) {
+    int n = grid_spin_turn(&ar.g);
+    if (ar.view) ar_redraw();
+    return n;
+}
+static void ar_cp_giveup(void) {
+    int i;
+    for (i = 0; ar.g.tiles && i < ar.g.n; ++i) ar.g.tiles[i].load = 0; /* (the placeholder stays, no spinner) */
+    if (ar.view) ar_redraw();
+}
+
+/* Row r of a source: the picture file the source keeps for the artist's coverArt id, asked for when it is missing. 1 decoded into the circle, 0 asked (the poll looks again: the placeholder with the spinner),
+ * -1 none (no id, an empty marker, a file that does not decode: the placeholder alone). */
+static int ar_src_row(int r, grid_tile_t *t) {
+    char url[80];
+    int c;
+    memcpy(url, "file://", 8);
+    c = ar.src->cover(ar.src, deque_at(ar.artists, ar_stock((unsigned)r)), 0, url + 7, sizeof url - 7);
+    t->load = 0;
+    if (c == 1) {
+        grid_art_url(&ar.g, t, url);
+        if (t->art == 1) {
+            ar_st_set((unsigned)r, AP_PHOTO);
+            return 1;
+        }
+        return -1;
+    }
+    t->art = 2;
+    if (c == 0) {
+        t->load = 1;
+        grid_spin_open(&ar.g, "wf_spin", 14);
+        ls_cover_poll(&ar.cp, ar.win, ar_cp_ask, ar_cp_spin, ar_cp_giveup);
+    }
+    return c;
 }
 
 static int ar_on_photo(const void *unused);
@@ -464,7 +530,8 @@ static int ar_on_scroll(void *ctx, void *e) {
 static int ar_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (!ar.photo || !ar.view || ar.epoch == ap_epoch()) return RET_OK;
+    if (!ar.photo || ar.src || !ar.view || ar.epoch == ap_epoch())
+        return RET_OK; /* (a source has no photos to change) */
     ar.epoch = ap_epoch();
     if (ar.pst) memset(ar.pst, 0, (ar.count + 3) / 4);
     grid_drop(&ar.g);
@@ -484,6 +551,9 @@ static int ar_on_destroy(void *ctx, void *e) {
     (void)e;
     if (ar.photo_timer) timer_remove(ar.photo_timer);
     if (ar.retry_timer) timer_remove(ar.retry_timer);
+    if (ar.gen_timer) timer_remove(ar.gen_timer);
+    ls_spin_end(ar.spin);
+    ls_cover_end(&ar.cp);
     if (ar.artists) deque_destroy(ar.artists);
     grid_free(&ar.g);
     az_free(&ar.al);
@@ -496,10 +566,13 @@ static int ar_on_destroy(void *ctx, void *e) {
 }
 
 /* (Re)build the list from the stock query, with artist_type as it is: a copy of the stock rows, so Cover
- * Flow's own queries cannot pull it away. */
-static void ar_load(void) {
+ * Flow's own queries cannot pull it away. A source's list is the deque src->list made, owned by the page. keep: a re-read for a changed source keeps the scroll position. */
+static void *ar_pre __attribute__((
+    section(".scratch"))); /* a source's list already read by ar_on_gen, which ar_load takes instead of asking again */
+
+static void ar_load(int keep) {
     void *list;
-    int h;
+    int h, off = keep ? az_off(&ar.al) : 0, st = LS_ST_READY;
     if (ar.artists) deque_destroy(ar.artists);
     ar.artists = (void *)0;
     free(ar.order);
@@ -510,9 +583,24 @@ static void ar_load(void) {
     ar.al.count = 0, ar.al.nsec = 0;
     grid_drop(&ar.g); /* (the circles, the placeholder too) */
     if (ar.photo) ar.g.placeholder = ap_placeholder(ar.win, AR_PHOTO);
-    widget_set_prop_int(ar.sv, "yoffset", 0);
-    list = loadLocalClassList(ar.cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0;
-    if (list && deque_size(list) && (ar.artists = _create_deque("stSongInfo"))) {
+    if (!keep)
+        widget_set_prop_int(
+            ar.sv, "yoffset",
+            0); /* (a list read again keeps its place: it is put back below, or cut to the last there is) */
+    if (ar.src) {
+        ar.gen = ar.src->gen ? ar.src->gen(ar.src) : 0;
+        ar.rows = ar.src->gen ? ls_gen_rows(ar.src) : 0;
+        list = ar_pre ? ar_pre : ar.src->list(ar.src, LS_ARTISTS, (void *)0);
+        ar_pre = (void *)0;
+        if (list && deque_size(list))
+            ar.artists = list, ar.count = deque_size(list);
+        else if (list)
+            deque_destroy(list);
+        if (!ar.count && ar.src->state) st = ar.src->state(ar.src, LS_ARTISTS, (void *)0);
+        if (ar.count > MAX_ARTISTS) ar.count = MAX_ARTISTS;
+        if (ar.count) ar_sort();
+    } else if ((list = loadLocalClassList(ar.cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0) && deque_size(list) &&
+               (ar.artists = _create_deque("stSongInfo"))) {
         deque_init(ar.artists);
         deque_assign(ar.artists, list);
         ar.count = deque_size(ar.artists);
@@ -527,10 +615,18 @@ static void ar_load(void) {
     h = ar.count ? ar.al.content : GRID_VIEW_H;
     widget_resize(ar.view, AR_W, h);
     widget_set_prop_int(ar.sv, "virtual_h", h);
-    ar_show(ar.list, ar.count != 0);
-    ar_show(ar.status, ar.count == 0);
-    if (!ar.count) widget_set_tr_text(ar.status, "Update Local Music first");
+    ar_show(ar.list,
+            ar.count != 0 ||
+                ar.src != (const lib_src_t *)0); /* (a source's page keeps the large title when it has no rows) */
+    ar_show(ar.status, ar.count == 0 && !(st == LS_ST_LOADING && ar.spin));
+    if (!ar.count) widget_set_tr_text(ar.status, ar.src ? ls_empty_key(st, "No artists") : "Update Local Music first");
+    ls_spin(ar.spin, st == LS_ST_LOADING && ar.count == 0 && ar.spin != (void *)0);
+    if (!ar.count) widget_set_prop_int(ar.sv, "yoffset", 0);
     az_rail_fit(&ar.al, GRID_VIEW_H);
+    if (off > 0 && ar.count) {
+        int max = ar.al.content - GRID_VIEW_H;
+        widget_set_prop_int(ar.sv, "yoffset", off < max ? off : max > 0 ? max : 0);
+    }
     ar_title_update();
     ar_redraw();
     ar_kick();
@@ -543,16 +639,44 @@ static const char *ar_sort_file(int tmp) {
                                        : (tmp ? ARTISTS_SORT_TMP : ARTISTS_SORT_FILE);
 }
 
-static void ar_card(int on) { vs_menu(&ar.vs, on, 0, ar.rev, *(volatile int *)ARTIST_TYPE == 1); }
+static void ar_card(int on) { vs_menu(&ar.vs, on, 0, ar.rev, !ar.src && *(volatile int *)ARTIST_TYPE == 1); }
+
+/* A source's list changed (its gen moved): read it again, keeping the scroll position. A list that is the same rows swaps the records only (the circles and a fling stay). Not while the page is
+ * buried, a finger is down, the list moves or the card is open (the gen is looked at again next tick). Repeats while the page lives. */
+static int ar_on_gen(const void *unused) {
+    (void)unused;
+    if (ar.view && ar.src && ar.src->gen(ar.src) != ar.gen && !ar.down && !ar.press && !ar.vs.on &&
+        !grid_moving(ar.sv) && pod_is_top(ar.win)) {
+        unsigned g = ar.src->gen(ar.src);
+        void *list;
+        unsigned n;
+        if (ls_gen_rows(ar.src) == ar.rows) { /* only a download's progress moved: no artist changed */
+            ar.gen = g;
+            return RET_REPEAT;
+        }
+        list = ar.src->list(ar.src, LS_ARTISTS, (void *)0);
+        n = list ? deque_size(list) : 0;
+        if (n > MAX_ARTISTS) n = MAX_ARTISTS;
+        if (n && ar.count == n && ls_same_list(ar.artists, n, list, n)) {
+            deque_destroy(ar.artists);
+            ar.artists = list;
+            ar.gen = g, ar.rows = ls_gen_rows(ar.src); /* (else every later gen move would read the list again) */
+        } else {
+            ar_pre = list;
+            ar_load(1);
+        }
+    }
+    return RET_REPEAT;
+}
 
 /* The Show group's rows (Artists only): flip the stock setting the way the stock switch does, then list again; the row already ticked does nothing. */
 static void ar_set_type(int type) {
-    if (ar.cls != CLASS_ARTISTS || type == (*(volatile int *)ARTIST_TYPE == 1)) return;
+    if (ar.src || ar.cls != CLASS_ARTISTS || type == (*(volatile int *)ARTIST_TYPE == 1)) return;
     *(volatile int *)ARTIST_TYPE = type;
     write_int_config(type, "PLAYSET", "ARTISTTYPE");
     *(volatile unsigned char *)ARTIST_RELOAD = 1;
     ar_mode_show();
-    ar_load();
+    ar_load(0);
 }
 
 /* The card's rows: Search Artists opens the Search page scoped to artists (the library search where that will not open); Artists / Album Artists set the type; the Name row reverses the order
@@ -563,14 +687,17 @@ static int ar_on_item(void *ctx, void *e) {
     if (!ar.view) return RET_OK;
     ar_card(0);
     if (k == VS_SEARCH) {
-        if (search_open_in(SEARCH_ARTISTS) < 0) search_open();
+        if (ar.src)
+            search_open_src_in(ar.src, SEARCH_ARTISTS); /* the server's search */
+        else if (search_open_in(SEARCH_ARTISTS) < 0)
+            search_open();
     } else if (k == VS_SORTS || k == VS_SORTS + 1) {
         ar_set_type(k == VS_SORTS + 1);
     } else if (k == 0) {
         int rev = !ar.rev;
         if (home_write_atomic(ar_sort_file(0), ar_sort_file(1), rev ? "a\n" : "0\n") == 0) {
             ar.rev = rev;
-            ar_load();
+            ar_load(0);
         }
     }
     return RET_OK;
@@ -592,9 +719,10 @@ static int ar_on_more(void *ctx, void *e) {
 
 /* The M1+ Music menu's Artists row (home 0), or Genres (HOME_GENRE) or Composers (HOME_COMPOSER): the same page on another stock class. 0 once the page is up, -1 if
  * it could not open (Genres and Composers then open the tile's stock page, as the Songs lists do). */
-int artists_open(int home) {
+static int ar_open_page(int home, const lib_src_t *src) {
     if (ar.win) return -1;
     memset(&ar, 0, sizeof ar);
+    ar.src = src;
     ar.cls = home == HOME_GENRE ? CLASS_GENRES : home == HOME_COMPOSER ? CLASS_COMPOSERS : CLASS_ARTISTS;
     ar.home = ar.cls == CLASS_ARTISTS ? 0 : home;
     ar.win = window_open("m1plus_artists");
@@ -610,6 +738,7 @@ int artists_open(int home) {
     ar.sv = widget_lookup(ar.win, "artists_scrollview", 1);
     ar.view = widget_lookup(ar.win, "view_grid", 1);
     ar.status = widget_lookup(ar.win, "label_status", 1);
+    ar.spin = widget_lookup(ar.win, "ar_spin", 1); /* optional: a source's loading spinner */
     ar.title = widget_lookup(ar.win, "label_title", 1);
     ar.big = widget_lookup(ar.win, "ar_title", 1);
     ar.fade = widget_lookup(ar.win, "img_nb_fade", 1);
@@ -630,20 +759,27 @@ int artists_open(int home) {
         return h ? pod_home_open(h) : -1;
     }
     ar.photo =
-        ar.cls == CLASS_ARTISTS; /* Genres and Composers rows stay as they were: no circle, the name at AR_TEXT_X */
+        ar.cls ==
+        CLASS_ARTISTS; /* (a source's artists too: the server's pictures) Genres and Composers rows stay as they were: no circle, the name at AR_TEXT_X */
     if (!grid_init(&ar.g, ar.win, AR_TILES, ar.photo ? AR_PHOTO : 0, ar.photo ? AR_PHOTO / 2 : 0)) {
         int h = ar.home;
         grid_free(&ar.g);
         navigator_back();
         return h ? pod_home_open(h) : -1;
     }
-    if (ar.photo)
+    if (ar.photo) {
         grid_shape(&ar.g, AR_PHOTO, AR_PHOTO / 2,
                    1); /* the corners cut in the alpha: the pressed row's fill shows behind the circle */
-    if (vs_bind(&ar.vs, ar.win, ar_on_item, ar_on_scrim,
-                ar.cls == CLASS_ARTISTS
-                    ? (1u << 0) | VS_WITH_VIEWS | VS_WITH_SEARCH
-                    : (1u << 0))) { /* (Name alone on Genres and Composers; they have no Search scope or Show group) */
+        ar.g.person = 1; /* a portrait picture is cut from its top third, as the artist cache cuts it */
+    }
+    if (vs_bind(
+            &ar.vs, ar.win, ar_on_item, ar_on_scrim,
+            ar.cls == CLASS_ARTISTS && !ar.src
+                ? (1u << 0) | VS_WITH_VIEWS | VS_WITH_SEARCH
+                : (1u << 0) |
+                      (ar.cls == CLASS_ARTISTS && (ls_caps(ar.src) & LS_CAP_SEARCH)
+                           ? VS_WITH_SEARCH
+                           : 0))) { /* (Name alone on Genres and Composers; they have no Search scope or Show group) */
         int h = ar.home;
         grid_free(&ar.g);
         navigator_back(); /* an asset that is not ours */
@@ -672,6 +808,15 @@ int artists_open(int home) {
     widget_on(ar.al.rail, EVT_POINTER_ABORT, ar_on_rail, (void *)0);
     widget_on(ar.al.rail, EVT_AFTER_PAINT, ar_on_rail_paint, (void *)0);
     ar_mode_show();
-    ar_load();
+    ar_load(0);
+    if (ar.src && ar.src->gen) ar.gen_timer = timer_add(ar_on_gen, (void *)0, LS_GEN_MS);
     return 0;
+}
+
+int artists_open(int home) { return ar_open_page(home, (const lib_src_t *)0); }
+
+/* The same Artists page from a library source (src->list(LS_ARTISTS)): NULL or &lib_stock is artists_open(0). A non-stock page has Name order alone on its card (no Show group,
+ * no library Search), re-reads when src->gen moves, and an artist's tap calls albums_open_src. */
+int artists_open_src(const lib_src_t *src) {
+    return ar_open_page(0, src && src != &lib_stock ? src : (const lib_src_t *)0);
 }

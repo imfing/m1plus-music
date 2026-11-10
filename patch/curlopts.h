@@ -1,5 +1,5 @@
 /* libcurl 7.73 option and info numbers (curl/curl.h), the ones the payload uses: demo imports the easy interface, there is no header on the build host's side of the cross compile.
- * Used by patch/pcnet.c and patch/subsonic.c; test/pod/pcnet.py mocks these option and info numbers.
+ * Used by patch/pcnet.c and patch/sbnet.c; test/pod/pcnet.py mocks these option and info numbers.
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  */
@@ -9,7 +9,8 @@
 #define CURLOPT_HEADERDATA 10029
 #define CURLOPT_URL 10002
 #define CURLOPT_RANGE 10007
-#define CURLOPT_HTTPHEADER 10023
+#define CURLOPT_HTTPHEADER \
+    10023 /* a curl_slist *: extra request headers (sbnet's If-Range; the list is {char *data; next}) */
 #define CURLOPT_ERRORBUFFER 10010
 #define CURLOPT_WRITEFUNCTION 20011
 #define CURLOPT_HEADERFUNCTION 20079

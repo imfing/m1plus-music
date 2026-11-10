@@ -18,6 +18,9 @@
  *   rows      the stock row's number (position + 1) and title (the stock is_playing: a playing track's number is the wave marker), 64 px, from the stock list while painting.
  *   play      Play / Shuffle / a track: patch/songops.c, and Now Playing opens the way the stock album page's rows do (pod_open_player: with songerinfoflag set the
  *             pages above the Now Playing in the stack are popped first).
+ *   source    album_open_src(src, cls, row): the page of an album of a library source (patch/libsrc.h; docs/modules/subsonic.md): tracks from src->list(LS_SONGS, row) (our own deque,
+ *             freed with the page), cover from src->cover (polled, no cache worker), the footer's total from src->seconds, Play / Shuffle / a tap through so_play_src, the playing
+ *             marker by the record's "nd://" url, a re-read when src->gen moves. No select mode: the Select button is hidden and a "..." takes its place, opening the shared card with one row, Download Album (src->act(LS_ACT_DOWNLOAD_ALL) on the page's list). NULL or &lib_stock is album_open.
  * No hook; everything runs from the page's widgets and timers.
  */
 #include "offsets.inc"
@@ -34,6 +37,8 @@
 #include "songops.h"
 #include "rowmenu.h"
 #include "nextalbum.h"
+#include "libsrc.h"
+#include "viewsort.h"
 
 #define ROW LIST_ROW_H
 
@@ -43,7 +48,11 @@
 static struct {
     void *win, *view, *sv, *status;
     void *back, *np, *btn_select, *btn_selall, *btn_add, *btn_del, *btn_cancel, *btn_play, *btn_shuffle;
+    void *btn_more; /* a source's page: the "..." (Select's place on the library's), opening the card below */
+    vs_t vs; /* the shared "..." card with one row, Download Album (a source's page only) */
     void *st_num, *st_title; /* hidden labels whose styles are the number's and the title's */
+    void *
+        st_dim; /* a source's: the title of a row that cannot play (NULL: the asset has none, the row is drawn as the others) */
     void *
         foot; /* the footer under the last row (ab_foot, a label of the content view): "13 tracks, 49 minutes", hidden while the duration is unknown */
     void *hname, *hartist, *hmeta; /* the header's labels */
@@ -77,12 +86,25 @@ static struct {
     void *mark[2]; /* the select marks: unselect, selected */
     void *wave; /* the playing track's marker (ah_wave, AB_WAVE px), NULL when it did not decode: the number stays */
     rowmenu_t rm; /* the rows' "..." menu (patch/rowmenu.c) */
+    const lib_src_t *
+        src; /* the library source the page is of (patch/libsrc.h); NULL: the stock library, every line below that mentions it is skipped */
+    void *
+        srow_d; /* src: a one-record deque holding our copy of the album row (the scope of src->list); list is our own copy, freed with the page */
+    unsigned gen,
+        grows; /* src: src->gen and ls_gen_rows when the list was read; the timer reads them again: gen alone moving repaints the rows, grows moving reads the list */
+    unsigned gen_timer;
+    void *
+        spin; /* src: the loading spinner (ab_spin, optional: the status label says Loading... without it) in the track area */
+    int wait; /* src: the album's tracks are not cached yet (lib_src_t.state): the header and the spinner show, not the empty text */
     int down_more; /* the press began in a row's "..." zone */
+    ls_cpoll_t
+        cp; /* src: the shared cover poll (patch/libsrc.c ls_cover_poll): asks for the header cover again and turns its spinner */
     grid_t hg; /* the cover: one tile, AH_ART px with AH_CORNER px corners cut in the alpha */
     grid_t g; /* the tracks' texts: the ring (a tile holds a title cut to its width; no cover) */
 } ab __attribute__((section(".scratch")));
 
 static int ab_on_stale(const void *unused);
+static int ab_on_gen(const void *unused);
 
 static void ab_show(void *w, int on) {
     if (!w) return;
@@ -95,12 +117,27 @@ static void ab_redraw(void) { widget_invalidate_force(ab.sv, (void *)0); }
 
 /* The index is of the stock list `list` as long as that list is still in *pdeq_showlist, as big, and starts with the same record. */
 static int ab_valid(void) {
-    void *cur = *(void **)PDEQ_SHOWLIST;
+    void *cur;
+    if (ab.src) return ab.list != (void *)0; /* our own copy: nothing replaces it */
+    cur = *(void **)PDEQ_SHOWLIST;
     return ab.list && cur == ab.list && deque_size(cur) == ab.count && (!ab.count || deque_at(cur, 0) == ab.first);
 }
 
 /* The browsing record put back (another page's query may have changed it). */
-static void ab_classinfo(void) { memcpy((void *)CLASSINFO, ab.ci, CLASSINFO_SIZE); }
+static void ab_classinfo(void) {
+    if (!ab.src) memcpy((void *)CLASSINFO, ab.ci, CLASSINFO_SIZE);
+}
+
+/* The track plays now. A source whose queue records are not the page's (Navidrome's carry stream addresses, never the page's "nd://<id>") answers itself (lib_src_t.playing); NULL is the stock test. */
+static int ab_playing(void *rec) {
+    if (ab.src && ab.src->playing) return ab.src->playing(ab.src, rec);
+    if (ab.src)
+        return is_playing(
+            *(int *)G_CLASS_TYPE, 0, "",
+            cc_str(rec, REC_PATH)); /* a source that says nothing: by the record's own url (no file name, no CUE) */
+    return is_playing(*(int *)G_CLASS_TYPE, I(rec, REC_CUE_START), (const char *)P(rec, REC_NAME),
+                      (const char *)P(rec, REC_PATH));
+}
 
 /* ---------------------------------------------------------------------------
  * Geometry: the header is AH_HDR_H high (the cover at AH_ART_Y, the controls' band over its first rows), then one ROW per track
@@ -218,9 +255,14 @@ static void ab_paint_wave(void *canvas, int i, int y) {
 
 static void ab_paint_pill(void *canvas, int off);
 
+/* A source's row marks. The group (downloaded disc or download ring, DSD tag) sits at the right, ending at ab_text_end(); the title is cut for the room it takes (grid_tile_t.xw). Painted only
+ * for a non-stock source. */
+
 static void ab_paint(void *canvas) {
     int r0, r1, r, pass, off = ab_off();
     unsigned playing = 0; /* bit r - r0: the track plays (at most 32 rows are ever in view) */
+    unsigned dim = 0; /* bit r - r0: a source's row that cannot play now: its title in the dim style */
+    ls_row_t xr[32]; /* a source's row extras, read once per paint (src only) */
     grid_tile_t *h = ab.hg.tiles ? grid_find(&ab.hg, 0) : (grid_tile_t *)0;
     if (h) grid_blit(canvas, &ab.hg, h, AH_ART_X, AH_ART_Y - off, AH_WIN_H);
     ab_paint_pill(canvas, off);
@@ -229,9 +271,11 @@ static void ab_paint(void *canvas) {
     for (r = r0; r <= r1; ++r) {
         void *rec = deque_at(ab.list, (unsigned)r);
         int y = ab_row_y(r) - off;
-        if (is_playing(*(int *)G_CLASS_TYPE, I(rec, REC_CUE_START), (const char *)P(rec, REC_NAME),
-                       (const char *)P(rec, REC_PATH)))
-            playing |= 1u << (r - r0);
+        if (ab_playing(rec)) playing |= 1u << (r - r0);
+        if (ab.src) {
+            ab.src->row(ab.src, rec, &xr[r - r0]);
+            if (ab.st_dim && xr[r - r0].offline) dim |= 1u << (r - r0);
+        }
         if (ab.press == r + 1 && !ab.select) az_fill_h(canvas, 0, y, y + ROW, AB_ROW_W, AB_PRESS, AH_WIN_H);
         if (ab.select && ab.mark[0]) {
             void *m = ab.mark[ab_is_sel(r)];
@@ -245,18 +289,39 @@ static void ab_paint(void *canvas) {
         az_fill_h(canvas, 0, y + ROW - 1, y + ROW, AB_ROW_W, AB_HAIR, AH_WIN_H);
         if (ab_more()) rowmenu_paint(canvas, &ab.rm, RM_MORE_RIGHT, 0, y, ROW, AH_WIN_H);
     }
-    for (pass = 0; pass < 2;
-         ++pass) { /* numbers (the wave marker for the playing track), then titles: one text style at a time */
-        widget_prepare_text_style(pass == 0 ? ab.st_num : ab.st_title, canvas);
+    if (ab.src) { /* the marks */
         for (r = r0; r <= r1; ++r) {
-            int y = ab_row_y(r) - off;
+            int g = ls_marks_w(&xr[r - r0]), y = ab_row_y(r) - off;
+            if (g)
+                ls_marks_draw(canvas, ab.win, &xr[r - r0], ab_text_end() - g, y + AB_TEXT_Y + AB_TEXT_H / 2, AH_WIN_H);
+        }
+    }
+    for (
+        pass = 0; pass < 3;
+        ++pass) { /* numbers (the wave marker for the playing track), titles, the titles that cannot play (dim): one text style at a time */
+        if (pass >= 2 && !ab.src) break;
+        widget_prepare_text_style(pass == 0   ? ab.st_num
+                                  : pass == 1 ? ab.st_title
+                                              : (ab.st_dim ? ab.st_dim : ab.st_title),
+                                  canvas);
+        for (r = r0; r <= r1; ++r) {
+            int y = ab_row_y(r) - off, d = (dim >> (r - r0)) & 1, g = ab.src ? ls_marks_w(&xr[r - r0]) : 0;
             if (pass == 0) {
                 if (ab.wave && ((playing >> (r - r0)) & 1))
                     ab_paint_wave(canvas, r, y);
                 else
                     ab_number(canvas, r, y);
-            } else
-                grid_text(canvas, ab_tile(r), 0, ab_tx(r), y + AB_TEXT_Y, ab_text_end() - ab_tx(r), AB_TEXT_H, 0);
+            } else if (pass <= 2) {
+                grid_tile_t *t;
+                if (d != (pass == 2)) continue;
+                t = ab_tile(r);
+                g = g ? g + LS_MK_GAP : 0;
+                if (t->xw != g) { /* the room the marks take changed: the title is cut again from the record */
+                    t->xw = g;
+                    grid_set(t, ab_text(deque_at(ab.list, (unsigned)r)), "", 0), t->fit = 0;
+                }
+                grid_text(canvas, t, 0, ab_tx(r), y + AB_TEXT_Y, ab_text_end() - ab_tx(r) - g, AB_TEXT_H, 0);
+            }
         }
     }
 }
@@ -321,8 +386,9 @@ void ab_relight(void) {
     if (ab.win && ab.tinted) ab_tint_set(ab_tone_raw); /* (patch/palette.c pal_apply) */
 }
 
-/* The page's tone: the tone cache, else the average colour of the cover file (one 168 px decode, box-averaged to one pixel), which is remembered. */
-static void ab_tint_cover(void) {
+/* The page's tone: the tone cache, else the average colour of the cover file (one 168 px decode, box-averaged to one pixel), which is remembered. file: "file://<path>" (a source's own cover
+ * file), NULL: the Cover Flow cache file of the page's key. */
+static void ab_tint_cover(const char *file) {
     unsigned tone, px;
     char url[80];
     if (ab.tinted || !ab.cover_key) return;
@@ -330,7 +396,8 @@ static void ab_tint_cover(void) {
         ab_tint_set(tone);
         return;
     }
-    if (cc_url(url, ab.cover_key) && cc_decode(ab.win, url, 1, 1, 1, &px)) {
+    if (!file) file = cc_url(url, ab.cover_key);
+    if (file && cc_decode(ab.win, file, 1, 1, 1, &px)) {
         tone = pod_tone(px & 255, px >> 8 & 255, px >> 16 & 255);
         pod_tone_put(ab.cover_key, tone);
         ab_tint_set(tone);
@@ -344,6 +411,8 @@ static void ab_build_end(void) {
     if (ab.build_timer) timer_remove(ab.build_timer);
     if (ab.dur_timer) timer_remove(ab.dur_timer);
     ab.build_timer = ab.dur_timer = 0;
+    if (ab.hg.tiles)
+        ab.hg.tiles[0].load = 0; /* (a source's cover is no longer polled: no spinner; the tick ends the timer) */
     if (ab.own || ab.lown) cc_build_stop();
     ab.own = ab.lown = 0;
 }
@@ -354,11 +423,11 @@ static int ab_cover_now(void) {
     char path[80], url[80];
     long size;
     if (!t || !ab.cover_key) return 0;
-    ab_tint_cover(); /* the tone cache may know the album without the file */
+    ab_tint_cover((const char *)0); /* the tone cache may know the album without the file */
     if (cc_url(url, ab.cover_key)) {
         t->ckey = ab.cover_key;
         grid_art(&ab.hg, t);
-        ab_tint_cover();
+        ab_tint_cover((const char *)0);
         return t->art == 1 ? 1 : 0;
     }
     size = cc_file_size(cc_path(path, sizeof path, ab.cover_key, ""));
@@ -366,7 +435,35 @@ static int ab_cover_now(void) {
 }
 
 static int ab_on_cover(const void *unused);
+static void ab_cp_arm(void);
 static void ab_durations(void);
+
+/* The header cover's spinner while a source's cover is asked for and polled (the shared poll, patch/libsrc.c ls_cover_poll): the 28 px frames (wf_spinL0..7) on the placeholder disc, turned and
+ * redrawn by the poll's tick; it goes when the cover arrives, the source has none, or the poll gives up. */
+static void ab_loading(grid_tile_t *t, int on) {
+    t->load = on;
+    if (on) grid_spin_open(&ab.hg, "wf_spinL", 28);
+}
+static int ab_cp_spin(void) {
+    int n = grid_spin_turn(&ab.hg);
+    if (ab.view) ab_redraw();
+    return n;
+}
+
+/* A source's cover (src->cover, which asks for a file that is missing): the header's picture from the file it names (its own, not the Cover Flow cache key's), the same results as ab_cover_now:
+ * 1 a picture (decoded, the tint follows), 0 none (the placeholder), -1 asked (polled every AB_COVER_MS). No cache worker. */
+static int ab_cover_src(void) {
+    grid_tile_t *t = ab.hg.tiles ? grid_find(&ab.hg, 0) : (grid_tile_t *)0;
+    char url[80];
+    int r;
+    if (!t) return 0;
+    memcpy(url, "file://", 8);
+    r = ab.src->cover(ab.src, deque_at(ab.srow_d, 0), ab.cover_key, url + 7, sizeof url - 7);
+    if (r <= 0) return r ? 0 : -1;
+    ab_tint_cover(url);
+    grid_art_url(&ab.hg, t, url);
+    return t->art == 1 ? 1 : 0;
+}
 
 /* The worker makes the album's file (CC_MISSING: one job, polled every AB_COVER_MS); nothing to build, no card, no space or another page's set held: the placeholder stays. */
 static void ab_cover_build(void) {
@@ -385,8 +482,15 @@ static void ab_cover(void) {
     grid_tile_t *t = ab.hg.tiles ? grid_find(&ab.hg, 0) : (grid_tile_t *)0;
     int have;
     if (!t || t->art == 1) return;
-    have = ab_cover_now();
-    if (have < 0) ab_cover_build();
+    have = ab.src ? ab_cover_src() : ab_cover_now();
+    if (have < 0) {
+        if (!ab.src)
+            ab_cover_build();
+        else if (!ab.cp.on) {
+            ab_loading(t, 1);
+            ab_cp_arm();
+        }
+    }
     if (!ab.hg.placeholder && t->art != 1) grid_placeholder(&ab.hg);
 }
 
@@ -406,6 +510,25 @@ static int ab_on_cover(const void *unused) {
     if (!ab.build_timer) ab_build_end();
     return RET_OK;
 }
+
+/* A source's cover was asked for: the file (or the empty marker) is there now, or the poll goes on. */
+static void ab_cp_ask(void) {
+    if (!ab.view || !ab.src) return;
+    if (ab_cover_src() >= 0) {
+        if (ab.hg.tiles) ab_loading(grid_find(&ab.hg, 0), 0);
+        if (!ab.hg.placeholder && ab.hg.tiles && grid_find(&ab.hg, 0)->art != 1) grid_placeholder(&ab.hg);
+        ab_redraw();
+    } else
+        ab_cp_arm();
+}
+/* The poll gave up: one last look (a file that landed since), then the placeholder, no spinner. */
+static void ab_cp_giveup(void) {
+    if (!ab.view || !ab.src) return;
+    ab_cover_src();
+    if (ab.hg.tiles) ab_loading(grid_find(&ab.hg, 0), 0);
+    ab_redraw();
+}
+static void ab_cp_arm(void) { ls_cover_poll(&ab.cp, ab.win, ab_cp_ask, ab_cp_spin, ab_cp_giveup); }
 
 /* ---------------------------------------------------------------------------
  * The album's length (docs/modules/album-page.md "Album length"): every track's seconds from the durations table (patch/durations.c); the missing ones are measured by the
@@ -438,6 +561,18 @@ static void ab_foot(void) {
 static void ab_durations(void) {
     unsigned i, size, total = 0, miss = 0, bad = 0;
     int v;
+    if (ab.src) { /* the source knows each track's length: the total when every one does (no table, no worker) */
+        if (!ab.count || !ab.list || ab.dur) return;
+        for (i = 0; i < ab.count; ++i) {
+            v = (int)ab.src->seconds(ab.src, deque_at(ab.list, i));
+            if (v <= 0) return;
+            total += (unsigned)v;
+        }
+        ab.dur = total;
+        ab_foot();
+        ab_redraw();
+        return;
+    }
     if (!ab.count || !ab.list || ab.own || ab.lown || ab.dur_timer || ab.dur || !pod_card_mounted())
         return; /* (no card, or USB mode: no table, nothing measured) */
     if (!ab.lheld) {
@@ -522,14 +657,25 @@ static void ab_meta(char *out, unsigned size) {
 
 static void ab_texts(void) {
     char line[96];
-    widget_set_text_utf8(ab.hname, (const char *)ab.ci + CLASSINFO_ALBUM);
-    widget_set_text_utf8(ab.hartist, ab_artist());
-    ab_meta(line, sizeof line);
+    if (ab.src) { /* the album row's own texts (the title is REC_ALBUM, else REC_TITLE) */
+        void *row = deque_at(ab.srow_d, 0);
+        widget_set_text_utf8(ab.hname, *cc_str(row, REC_ALBUM) ? cc_str(row, REC_ALBUM) : cc_str(row, REC_TITLE));
+        widget_set_text_utf8(ab.hartist, cc_str(row, REC_ARTIST));
+    } else {
+        widget_set_text_utf8(ab.hname, (const char *)ab.ci + CLASSINFO_ALBUM);
+        widget_set_text_utf8(ab.hartist, ab_artist());
+    }
+    if (ab.wait)
+        line[0] = 0; /* (the count is not known yet: not "0 tracks") */
+    else
+        ab_meta(line, sizeof line);
     widget_set_text_utf8(ab.hmeta, line);
 }
 
 /* The Play pill's text over its picture (cut at the window's edges by the scroll_view's clip, as the picture); the pair is centred by pod_pill_place (patch/common.c). */
-static void ab_paint_pill(void *canvas, int off) { pod_pill_paint(&ab.pill, canvas, AH_BTN_Y - off); }
+static void ab_paint_pill(void *canvas, int off) {
+    if (!ab.wait) pod_pill_paint(&ab.pill, canvas, AH_BTN_Y - off);
+}
 
 /* ---------------------------------------------------------------------------
  * Reading the stock list
@@ -540,33 +686,83 @@ static void ab_size(void) {
     widget_set_prop_int(ab.sv, "virtual_h", h);
 }
 
+/* While the tracks are on their way (src, LS_ST_LOADING) the page shows only what the tapped row told: the cover, the title and the artist, and the one spinner where the pills will be.
+ * The Shuffle disc, the Play pill (the buttons, the glyph and the painted text) come with the tracks; the header does not move. */
+static void ab_pills(int on) {
+    if (!ab.src) return;
+    ab_show(ab.btn_play, on);
+    ab_show(ab.btn_shuffle, on);
+    widget_set_visible(ab.pill.glyph, on, 0); /* (an insensitive image: taps reach btn_play) */
+    if (ab.btn_more) { /* no tracks yet (loading, or none): the "..." keeps its place in the capsule but is dead, its one row (Download Album) has nothing to work on */
+        widget_set_sensitive(ab.btn_more, on);
+        if (!on && ab.vs.on) vs_menu(&ab.vs, 0, 0, 0, 0);
+    }
+}
+
 /* The album's tracks again (the stock query of the class, the browsing record put back first) and the page rebuilt from them. */
+static void ab_select_off(void);
 static void ab_load(int keep) {
-    int at = keep ? ab_off() : 0;
+    int at = keep ? ab_off() : 0, st = LS_ST_READY;
     void *list = (void *)0;
     grid_drop(&ab.g);
+    if (ab.src && ab.list) deque_destroy(ab.list); /* (our copy; the tiles above held texts, not records) */
     free(ab.sel);
     ab_build_end(); /* a set of an earlier read: the tracks may have changed */
     rowmenu_close(&ab.rm); /* (a menu's row is an index of the list that is read again) */
     ab.sel = (unsigned char *)0, ab.list = ab.first = (void *)0, ab.count = ab.nsel = 0, ab.press = ab.down = 0;
-    ab.dur = 0, ab.ltried = 0;
-    ab_classinfo();
-    if (loadLocalClassList(ab.cls) > 0) list = *(void **)PDEQ_SHOWLIST;
+    ab.dur = 0, ab.ltried = 0, ab.wait = 0;
+    if (ab.src) {
+        ab.gen = ab.src->gen(ab.src); /* (before the read: a change during it is seen at the next tick) */
+        ab.grows = ls_gen_rows(ab.src);
+        list = ab.src->list(ab.src, LS_SONGS, deque_at(ab.srow_d, 0));
+    } else {
+        ab_classinfo();
+        if (loadLocalClassList(ab.cls) > 0) list = *(void **)PDEQ_SHOWLIST;
+    }
     if (list) ab.count = deque_size(list);
     if (ab.count) {
         ab.sel = calloc((ab.count + 7) / 8, 1);
         if (!ab.sel) ab.count = 0;
     }
-    if (ab.count) ab.list = list, ab.first = deque_at(list, 0);
-    ab_show(ab.view, ab.count != 0);
-    ab_show(ab.status, ab.count == 0);
-    if (!ab.count) widget_set_tr_text(ab.status, list ? "Not enough memory" : "No songs");
+    if (ab.count)
+        ab.list = list, ab.first = deque_at(list, 0);
+    else if (ab.src && list)
+        deque_destroy(list);
+    if (ab.src && !ab.count && !list && ab.src->state) st = ab.src->state(ab.src, LS_SONGS, deque_at(ab.srow_d, 0));
+    ab.wait = st == LS_ST_LOADING;
+    ab_show(ab.view,
+            ab.count != 0 || ab.wait); /* (a source's album still loading: the header, with the spinner under it) */
+    ab_show(ab.status, ab.count == 0 && !(ab.wait && ab.spin));
+    if (!ab.count) widget_set_tr_text(ab.status, list ? "Not enough memory" : ls_empty_key(st, "No songs"));
+    ls_spin(ab.spin, ab.wait && ab.spin);
+    ab_pills(ab.count != 0);
     ab_foot(); /* (sizes the content: the footer's lines are part of it) */
     widget_set_prop_int(ab.sv, "yoffset", at < 0 ? 0 : at > ab_max_scroll() ? ab_max_scroll() : at);
     ab_texts();
-    if (ab.count) ab_cover();
+    if (ab.count || ab.wait) ab_cover();
     ab_durations();
     ab_redraw();
+}
+
+/* A source's data moved (src->gen): the tracks are read again, the scroll position kept; select mode is left first (its marks are of the old list). */
+static int ab_on_gen(const void *unused) {
+    (void)unused;
+    ab.gen_timer = 0;
+    if (!ab.view || !ab.src) return RET_OK;
+    if (ab.src->gen(ab.src) != ab.gen && !ab.down && !grid_moving(ab.sv) && pod_is_top(ab.win)) {
+        if (ls_gen_rows(ab.src) ==
+            ab.grows) { /* only a download's progress moved: the rows are the same, the visible ones are painted again */
+            ab.gen = ab.src->gen(ab.src);
+            ab_redraw();
+        } else if (ab.rm.open)
+            ab_redraw(); /* (the row menu stays: progress only redraws the rows' ring, the list is read once the menu has closed) */
+        else {
+            if (ab.select) ab_select_off();
+            ab_load(1);
+        }
+    }
+    ab.gen_timer = timer_add(ab_on_gen, (void *)0, LS_GEN_MS);
+    return RET_OK;
 }
 
 /* Another query replaced the stock list under a page that is on top (a paint found it): read it again. A page behind another reads it when it comes back. */
@@ -581,14 +777,18 @@ static int ab_on_stale(const void *unused) {
  * Playing (patch/songops.c): the stock album page's Play all and track handlers; Now Playing opens the way the stock row handler opens it
  */
 static void ab_play_at(int at, int how) {
+    int r;
     if (!ab_valid()) {
         ab_load(1);
         return;
     }
     ab_classinfo(); /* loadSongList runs the class query again and keeps classinfo for the memory playback */
     na_arm(); /* the album order this page was opened from (patch/nextalbum.c) is the source of the queue the load below makes */
-    so_play(ab.cls, ab.list, at, how, pod_open_player);
+    r = so_play_src(ab.src, ab.cls, ab.list, at, how, pod_open_player);
     na_disarm();
+    if (r ==
+        -2) /* a DSD track that is not downloaded: the confirm, and the download if asked (the page's timer shows its progress) */
+        ls_dsd_confirm(ab.src, ab.list, at);
 }
 
 static int ab_on_play(void *ctx, void *e) {
@@ -623,7 +823,8 @@ static void ab_select(int on) {
     if (ab.sel) memset(ab.sel, 0, (ab.count + 7) / 8);
     ab.press = ab.down = 0;
     ab_show(ab.back, !on);
-    ab_show(ab.btn_select, !on);
+    ab_show(ab.btn_select,
+            !on && !ab.src); /* (Add and Delete work on the stock selection: a source's page has no select mode yet) */
     ab_show(ab.np, !on);
     ab_show(ab.btn_selall, on);
     ab_show(ab.btn_add, on);
@@ -645,6 +846,8 @@ static void ab_toggle(int i) {
     ab_selall_icon();
     ab_redraw();
 }
+
+static void ab_select_off(void) { ab_select(0); }
 
 static int ab_on_select(void *ctx, void *e) {
     (void)ctx;
@@ -731,7 +934,8 @@ static int ab_in_zone(void *e) {
 /* Add to Playlist for one track (the menu's third row): the page's picker with a selection of that track alone. */
 static void ab_add_one(int row) {
     int r;
-    if (!ab.sel || row < 0 || row >= (int)ab.count) return;
+    if (ab.src || !ab.sel || row < 0 || row >= (int)ab.count)
+        return; /* (a source's third row is Download: the sheet never calls this) */
     ab.sel[row >> 3] |= (unsigned char)(1 << (row & 7));
     r = so_add(ab.cls, ab.count, ab.sel, 1, ab_valid(), ab.title_save, &ab.picker);
     memset(ab.sel, 0, (ab.count + 7) / 8); /* (the picker and the stock vector have their own copies) */
@@ -743,7 +947,7 @@ static void ab_open_menu(int a) {
         ab_load(1);
         return;
     }
-    rowmenu_open(&ab.rm, a, deque_at(ab.list, (unsigned)a), ab_add_one);
+    rowmenu_open_src(&ab.rm, a, deque_at(ab.list, (unsigned)a), ab_add_one, ab.src);
 }
 
 static int ab_on_down(void *ctx, void *e) {
@@ -787,6 +991,30 @@ static int ab_on_abort(void *ctx, void *e) {
 /* ---------------------------------------------------------------------------
  * The window
  */
+/* A source's "...": the card opens and closes. */
+static int ab_on_more(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    vs_menu(&ab.vs, !ab.vs.on, 0, 0, 0);
+    return RET_OK;
+}
+
+static int ab_on_scrim(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    vs_menu(&ab.vs, 0, 0, 0, 0);
+    return RET_OK;
+}
+
+/* The card's one row, Download Album: the source queues the page's tracks and toasts the outcome (LS_ACT_DOWNLOAD_ALL). */
+static int ab_on_card(void *ctx, void *e) {
+    (void)e;
+    if ((int)(long)ctx != VS_SEARCH) return RET_OK;
+    vs_menu(&ab.vs, 0, 0, 0, 0);
+    if (ab.src && ab.list) ab.src->act(ab.src, ab.list, LS_ACT_DOWNLOAD_ALL);
+    return RET_OK;
+}
+
 static int ab_on_back(void *ctx, void *e) {
     (void)ctx;
     (void)e;
@@ -823,6 +1051,9 @@ static int ab_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (ab.stale_timer) timer_remove(ab.stale_timer);
+    if (ab.gen_timer) timer_remove(ab.gen_timer);
+    ls_cover_end(&ab.cp);
+    ls_spin_end(ab.spin);
     ab_build_end();
     if (ab.lheld) dur_release();
     na_page_close();
@@ -834,24 +1065,40 @@ static int ab_on_destroy(void *ctx, void *e) {
     if (ab.wave) bitmap_destroy(ab.wave);
     free(ab.sel);
     rowmenu_free(&ab.rm);
+    if (ab.src && ab.list) deque_destroy(ab.list);
+    if (ab.src && ab.srow_d) deque_destroy(ab.srow_d);
     memset(&ab, 0, sizeof ab);
     return RET_OK;
 }
 
 /* Open the page on the album `row` of the list the caller has loaded (cc_open_album). 0 once the page is up; -1 when it was not tried (the caller opens the stock page); -2 when
  * it did not open and nothing is left of it (the caller opens the stock page): the tracks' query replaced the stock list, so the caller loads its album list again first. */
-int album_open(unsigned cls, void *row) {
+static int ab_open(const lib_src_t *src, unsigned cls, void *row) {
     unsigned key;
     int fresh;
-    if (ab.win || !row || I(row, REC_ID) == ID_ALL_SONGS) return -1;
+    void *copy = (void *)0;
+    if (ab.win || !row || (!src && I(row, REC_ID) == ID_ALL_SONGS))
+        return -1; /* (a source's synthetic ids reach -2 too) */
     key = cc_album_key(row);
-    loadAlbumdetailList((int)cls, row);
+    if (src) { /* the page keeps its own copy of the row: it is the scope of every read of the tracks */
+        copy = _create_deque("stSongInfo");
+        if (!copy) return -1;
+        deque_init(copy);
+        _deque_push_back(copy, row); /* a copy, as the stock queries push rows */
+    } else
+        loadAlbumdetailList((int)cls, row);
     memset(&ab, 0, sizeof ab);
     ab.cover_key = key;
-    ab.cls = *(int *)CLASSINFO; /* what loadAlbumdetailList left: 0xff10 / 0xff11 / 0xff14 */
-    memcpy(ab.ci, (void *)CLASSINFO, CLASSINFO_SIZE);
+    if (src) {
+        ab.src = src, ab.srow_d = copy;
+        ab.cls = CLASS_ALBUM_TRACKS; /* (what Now Playing is opened with; a source ignores it) */
+    } else {
+        ab.cls = *(int *)CLASSINFO; /* what loadAlbumdetailList left: 0xff10 / 0xff11 / 0xff14 */
+        memcpy(ab.ci, (void *)CLASSINFO, CLASSINFO_SIZE);
+    }
     ab.win = window_open(AB_ASSET);
     if (!ab.win) {
+        if (copy) deque_destroy(copy);
         memset(&ab, 0, sizeof ab);
         return -2;
     }
@@ -864,6 +1111,7 @@ int album_open(unsigned cls, void *row) {
     ab.btn_add = pod_bind(ab.win, "sg_add", ab_on_add, (void *)0);
     ab.btn_del = pod_bind(ab.win, "sg_del", ab_on_delete, (void *)0);
     ab.btn_cancel = pod_bind(ab.win, "btn_cancel", ab_on_cancel, (void *)0);
+    ab.btn_more = src ? pod_bind(ab.win, "btn_more", ab_on_more, (void *)0) : (void *)0;
     ab.btn_play = pod_bind(ab.win, "btn_play", ab_on_play, (void *)0);
     ab.btn_shuffle = pod_bind(ab.win, "btn_shuffle", ab_on_shuffle, (void *)0);
     ab.view = widget_lookup(ab.win, "view_grid", 1);
@@ -871,16 +1119,22 @@ int album_open(unsigned cls, void *row) {
     ab.status = widget_lookup(ab.win, "label_status", 1);
     ab.st_num = widget_lookup(ab.win, "label_row_num", 1);
     ab.st_title = widget_lookup(ab.win, "label_row_title", 1);
+    ab.st_dim = widget_lookup(ab.win, "label_row_dim", 1);
     ab.hname = widget_lookup(ab.win, "ab_title", 1);
     ab.hartist = widget_lookup(ab.win, "ab_artist", 1);
     ab.hmeta = widget_lookup(ab.win, "ab_meta", 1);
     ab.foot = widget_lookup(ab.win, "ab_foot", 1);
+    ab.spin = widget_lookup(ab.win, "ab_spin", 1); /* (optional) */
     ab.pill.glyph = widget_lookup(ab.win, "ab_glyph", 1);
     ab.pill.ptext = widget_lookup(ab.win, "ab_play_text", 1);
     if (!ab.back || !ab.np || !ab.btn_select || !ab.btn_selall || !ab.btn_add || !ab.btn_del || !ab.btn_cancel ||
         !ab.btn_play || !ab.btn_shuffle || !ab.view || !ab.sv || !ab.status || !ab.st_num || !ab.st_title ||
         !ab.hname || !ab.hartist || !ab.hmeta || !ab.foot || !ab.pill.glyph || !ab.pill.ptext) {
         navigator_back(); /* an asset that is not ours */
+        return -2;
+    }
+    if (src && (!ab.btn_more || vs_bind(&ab.vs, ab.win, ab_on_card, ab_on_scrim, VS_WITH_SEARCH))) {
+        navigator_back();
         return -2;
     }
     ab.fg = 1;
@@ -898,6 +1152,10 @@ int album_open(unsigned cls, void *row) {
     widget_on(ab.view, EVT_POINTER_ABORT, ab_on_abort, (void *)0);
     widget_on(ab.view, EVT_AFTER_PAINT, ab_on_paint, (void *)0);
     pod_pill_place(&ab.pill, AH_BTN_Y);
+    if (src) { /* (no select mode on a source's page yet: the "..." takes Select's place) */
+        ab_show(ab.btn_select, 0);
+        ab_show(ab.btn_more, 1);
+    }
     if (!grid_init(&ab.hg, ab.win, 1, AH_ART, AH_CORNER) || !grid_init(&ab.g, ab.win, GRID_TILES, LIST_ART, 0)) {
         grid_free(&ab.hg);
         grid_free(&ab.g);
@@ -908,7 +1166,19 @@ int album_open(unsigned cls, void *row) {
     }
     grid_shape(&ab.hg, AH_ART, AH_CORNER, 1); /* the corners are cut in the alpha: the tint shows behind them */
     grid_tile(&ab.hg, 0, 0, 0, &fresh);
-    *(int *)G_CLASS_TYPE = ab.cls; /* as albuminfo_page_init leaves it */
+    if (!src) *(int *)G_CLASS_TYPE = ab.cls; /* as albuminfo_page_init leaves it */
     ab_load(0);
+    if (src) ab.gen_timer = timer_add(ab_on_gen, (void *)0, LS_GEN_MS);
     return 0;
 }
+
+/* The same page on the album `row` of a library source (patch/libsrc.h): its tracks from src->list(LS_SONGS, row), the cover from src->cover, the length from src->seconds, a tap or
+ * Play / Shuffle through so_play_src, a re-read when src->gen moves. src NULL or &lib_stock is album_open(cls, row) (cls is the stock class of the row's list; a source ignores it).
+ * The row is copied; the caller keeps its own. Returns as album_open (-1: not tried, -2: did not open). The rows' download state and the "..." sheet are src->row and src->act (ab_paint / ab_open_menu). */
+int album_open_src(const lib_src_t *src, unsigned cls, void *row) {
+    return ab_open(src == &lib_stock ? (const lib_src_t *)0 : src, cls, row);
+}
+
+int album_open(unsigned cls, void *row) {
+    return album_open_src((const lib_src_t *)0, cls, row);
+} /* (this also keeps album_open_src linked until a page calls it) */

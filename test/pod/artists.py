@@ -1433,6 +1433,203 @@ def name_order_tests(ctx):
     got = shown(m)
     expect(got[-1] == 'Unknown Artist' and got.index('Zed') < got.index('Miles') < got.index('Abba') < got.index('7 Seas') and len(letters(m)) <= 27, f'Z-A mirrors the order; letters {letters(m)} ({got})')
 
+SRC_PIC = '/mnt/mmc/.m1plus/subsonic/covers/%s-168.jpg'   # (the fake source's picture file of an artist, by name)
+
+
+def src_imports():
+    from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3, UC_MIPS_REG_V0, UC_MIPS_REG_PC, UC_MIPS_REG_RA
+    globals().update(UC_MIPS_REG_A0=UC_MIPS_REG_A0, UC_MIPS_REG_A1=UC_MIPS_REG_A1, UC_MIPS_REG_A2=UC_MIPS_REG_A2, UC_MIPS_REG_A3=UC_MIPS_REG_A3, UC_MIPS_REG_V0=UC_MIPS_REG_V0, UC_MIPS_REG_PC=UC_MIPS_REG_PC, UC_MIPS_REG_RA=UC_MIPS_REG_RA)
+
+
+def fake_ar_source(m, names, caps=0):
+    """A lib_src_t made in the machine's memory (docs/modules/subsonic.md "The seam"), its list, rec_id and gen trapped to Python: list(LS_ARTISTS) gives a fresh deque of the names
+    (synthetic ids -2, -3, ...; a name None = no list), gen returns m.fake_ar_gen, and albums_open_src is trapped too (fake_ar_albums). Returns the struct's address."""
+    m.fake_ar_gen, m.fake_ar_names, m.fake_ar_hook_ret = 1, list(names), 0
+    m.top_main = m.window   # pod_is_top: the page is in front
+    addrs = {}
+    m.fake_ar_state = 0   # what src->state answers (LS_ST_*)
+    m.fake_ar_pic = {}   # name -> src->cover's answer for that artist: 1 the file is there (SRC_PIC % name), 0 asked (on its way), -1 none (the default)
+    for n in ('fake_ar_list', 'fake_ar_rec_id', 'fake_ar_gen', 'fake_ar_albums', 'fake_ar_state', 'fake_ar_cover'):
+        addrs[n] = m.alloc(16); m.handlers[addrs[n]] = n
+    src = m.alloc(0x40); m.u.mem_write(src, bytes(0x40)); name = m.alloc(16); m.u.mem_write(name, b'fake_ar\0')
+    m.setword(src + 0x30, caps)   # lib_src_t.caps
+    m.setword(src, name); m.setword(src + 4, addrs['fake_ar_list']); m.setword(src + 8, addrs['fake_ar_rec_id'])
+    m.setword(src + 0x20, addrs['fake_ar_gen'])
+    m.setword(src + 56, addrs['fake_ar_state'])   # lib_src_t.state
+    for off in (0xc, 0x14, 0x18, 0x1c): m.setword(src + off, 0)
+    m.setword(src + 0x10, addrs['fake_ar_cover'])
+    m.handlers[PSYMS['albums_open_src']] = 'fake_ar_albums'
+    m.handlers[PSYMS['search_open_src_in']] = 'fake_ar_search'
+    orig = m._hook
+
+    def hook_(u, address, size, _):
+        nm = m.handlers.get(address, '')
+        if not nm.startswith('fake_ar_'): return orig(u, address, size, _)
+        a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
+        ret = 0
+        if nm == 'fake_ar_cover':   # (s, rec, key, path, cap)
+            who = m.read_cstr(m.word(a1 + O['REC_TITLE']))
+            m.calls.append(('fake_ar_cover', who, a2))
+            ret = m.fake_ar_pic.get(who, -1)
+            if ret == 1: m.u.mem_write(a3, (SRC_PIC % who).encode() + b'\0')
+        elif nm == 'fake_ar_list':
+            m.calls.append(('fake_ar_list', a1, a2))
+            if m.fake_ar_names is not None and a1 == 1 and not a2:
+                recs = [artist_rec(m, n, -2 - i) for i, n in enumerate(m.fake_ar_names)]
+                ret = m.new_deque(recs) if recs else 0
+        elif nm == 'fake_ar_gen':
+            ret = m.fake_ar_gen
+        elif nm == 'fake_ar_state':
+            m.calls.append(('fake_ar_state', a1, a2)); ret = m.fake_ar_state
+        elif nm == 'fake_ar_search':
+            m.calls.append(('fake_ar_search', a0, a1))   # (src, scope)
+        elif nm == 'fake_ar_albums':
+            m.calls.append(('fake_ar_albums', a0, m.read_cstr(m.word(a1 + O['REC_TITLE']))))   # (src, the artist's record)
+            ret = m.fake_ar_hook_ret
+        u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff)
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+    m._hook = hook_
+    return src
+
+
+def source_tests(ctx):
+    """ND-07: artists_open_src. NULL and &lib_stock are today's page; a fake source's artists are listed sorted with their sections, a tap calls albums_open_src with that source's record,
+    a changed gen reads the list again, an empty list says so."""
+    expect = ctx.expect
+    src_imports()
+    open_src, D = PSYMS['artists_open_src'], '/mnt/data/m1plus/'
+    stock = ['Miles Davis', 'Nina Simone', 'Unknown Artist']
+    # 1. NULL and &lib_stock: the stock query, no source call, the same rows and calls as artists_open
+    ref = artists_machine(stock); ref.call(PSYMS['artists_open'], count=20000000); ref_calls = list(ref.calls); ref_rows = shown(ref)
+    for a0, what in ((0, 'NULL'), (PSYMS['lib_stock'], '&lib_stock')):
+        m = artists_machine(stock)
+        expect(m.call(open_src, a0=a0, count=20000000) == 0, f'artists_open_src({what}) returns 0')
+        opened = list(m.calls)
+        expect(opened == ref_calls and shown(m) == ref_rows == stock, f'artists_open_src({what}) is artists_open(0): the same calls and rows')
+        expect(('loadLocalClassList', O['CLASS_ARTISTS']) in opened and not any(c[0] == 'timer_add' and c[1] == PSYMS['ar_on_gen'] for c in opened), f'{what}: the stock query, no gen timer')
+        artists_tap(m, 0, starts=[s for s, _ in Model(stock).secs])
+        expect(any(c[0] == 'loadAlbumList' and c[3] == 'Miles Davis' for c in m.calls), f'{what}: a tap opens the artist as today')
+    # 2. a fake source: its list (LS_ARTISTS, no scope) instead of the stock query, sorted by the name rules, with sections and the rail
+    names = ['zeta', 'The Alpha', 'Beta', '10cc', 'Nina']
+    want = ['10cc', 'The Alpha', 'Beta', 'Nina', 'zeta']
+    m = artists_machine(stock); src = fake_ar_source(m, names)
+    expect(m.call(open_src, a0=src, count=20000000) == 0, 'artists_open_src(fake) returns 0')
+    opened = list(m.calls)
+    expect(('fake_ar_list', 1, 0) in opened and not any(c[0] == 'loadLocalClassList' for c in opened), 'the list is src->list(LS_ARTISTS, NULL), not the stock query')
+    expect(shown(m) == want, f'the fake source\'s artists, name order ({shown(m)})')
+    mod = Model(want)
+    expect([l for _, l in sorted(headers(m).items())] == [l for _, l in mod.secs] == ['#', 'A', 'B', 'N', 'Z'], 'sections # A B N Z')
+    expect(m.props.get((m.rail, 'visible')) != 0 and m.props.get((m.sv, 'virtual_h')) == mod.content(), 'the rail is there and the content is as tall as the sections and rows make it')
+    expect(any(c[0] == 'timer_add' and c[1] == PSYMS['ar_on_gen'] and c[2] == 500 for c in opened), 'a timer watches gen')
+    expect(('widget_set_text_utf8', m.widgets['ar_title'], 'Artists') in opened, 'the large title is Artists (never Album Artists: a source has no such switch)')
+    # 2b. the rows are the library's (docs/modules/artists.md "Artist photos"): a 40 px circle at x 16 in every row, centred, the shared placeholder (a source has no photo file and no online lookup),
+    #     the names and hairlines from x 68, the chevrons unchanged; the source is asked for each visible row's picture (none here: -1), no photo file is looked up
+    ms = artists_machine(stock); srcs = fake_ar_source(ms, names); ms.load_image = 0
+    ms.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+    ms.call(open_src, a0=srcs, count=20000000)
+    kicked = list(ms.calls)
+    nvis = 4   # (the rows the first screen shows)
+    blits, texts, styles, fills = ar_paint(ms, 0)
+    ph = circles(ms, blits)
+    ys = [mod.row_y(i) + (ROW - PHOTO) // 2 for i in range(nvis)]
+    expect([y for y, _ in ph] == ys and len({b for _, b in ph}) == 1, f'a source\'s rows: a 40 px circle at x 16 in each, all the one placeholder bitmap ({ph})')
+    p = ph[0][1]
+    expect(bmp_px(ms, p, 20, 6) == 0xff333333 and bmp_px(ms, p, 0, 0) >> 24 == 0 and bmp_px(ms, p, 20, 20) & 0xffffff == 0x8c8c8c, 'the placeholder: the #333333 circle (corners clear) with the #8C8C8C glyph, as the library\'s rows without a photo')
+    rows = [(t, r) for (t, r), st in zip(texts, styles) if st == 'label_row_title']
+    expect(rows == [(n, (NAME_X, mod.row_y(i) + TEXT_Y, TEXT_END - NAME_X, TEXT_H)) for i, n in enumerate(want[:nvis])], f'the names start at x {NAME_X}, past the circle ({rows})')
+    expect([(f[1], f[3]) for f in fills if f[0] == O['LIST_HAIR']] == [(NAME_X, O['LIST_HAIR_END'] - INSET - NAME_X)] * nvis, 'the hairlines run from x 68, as the library\'s')
+    expect([b[2][0] for b in blits if tuple(b[2][2:]) == (CHEV_W, CHEV_H)] == [CHEV_X] * nvis, 'the chevrons stay at x 262')
+    seen = list(kicked) + list(ms.calls)
+    seen += photo_tick(ms)
+    expect(not [c for c in seen if (c[0] == 'widget_load_image' and str(c[1]).startswith('file://')) or (c[0] in ('fopen', 'access', 'stat') and AP_DIR in str(c[1]))]
+           and not [c for c in seen if c[0] == 'timer_add' and c[1] in (PSYMS['ar_on_retry'], PSYMS['ls_cover_tick'])]
+           and sorted({c[1] for c in seen if c[0] == 'fake_ar_cover'}) == sorted(want[:nvis]), 'the visible rows asked the source for a picture, which has none: no picture file is opened, no library photo file looked at, no retry or cover poll is armed')
+    ms.fake_ar_names = names + ['Aretha']; ms.fake_ar_gen = 2; ms.call(PSYMS['ar_on_gen'], count=20000000)
+    blits, texts, styles, fills = ar_paint(ms, 0)
+    expect(len(circles(ms, blits)) >= nvis - 1 and len({b for _, b in circles(ms, blits)}) == 1 and shown(ms)[2] == 'Aretha', 'a re-read for a moved gen: the circles are the placeholder again')
+    # 3. a tap on a row: albums_open_src gets the source and the artist's record (the row's place in the source's list)
+    m.calls = []
+    artists_tap(m, 2, starts=[s for s, _ in mod.secs])
+    hk = [c for c in m.calls if c[0] == 'fake_ar_albums']
+    expect(hk and hk[0][1] == src and hk[0][2] == 'Beta', f'a tap on row 2 calls albums_open_src with the source and Beta ({hk})')
+    expect(not any(c[0] in ('loadAlbumList', 'window_open') for c in m.calls), 'no stock album query or window of its own')
+    # 4. gen: unchanged, the timer does nothing; moved, the list is read again (new rows, same scroll top)
+    m.calls = []; m.call(PSYMS['ar_on_gen'], count=20000000)
+    expect(not any(c[0] == 'fake_ar_list' for c in m.calls), 'gen unchanged: no re-read')
+    m.fake_ar_names = names + ['Aretha']; m.fake_ar_gen = 2; m.calls = []
+    m.call(PSYMS['ar_on_gen'], count=20000000)
+    expect(('fake_ar_list', 1, 0) in m.calls and shown(m) == ['10cc', 'The Alpha', 'Aretha', 'Beta', 'Nina', 'zeta'], f'gen moved: the list is read again ({shown(m)})')
+    # 5. Z-A from the saved file; the card has the Name row alone
+    m = artists_machine(stock); src = fake_ar_source(m, names); m.fs[D + 'artists-sort'] = b'a\n'
+    m.call(open_src, a0=src, count=20000000)
+    expect(shown(m) == want[::-1], f'artists-sort a: Z-A ({shown(m)})')
+    # 6. an empty list (the source has none): READY says so ("No artists"), the large title stays, the rail is hidden, no spinner
+    m = artists_machine(stock); src = fake_ar_source(m, [])
+    expect(m.call(open_src, a0=src, count=20000000) == 0 and vis(m, 'label_status') == (1, 1) and ('widget_set_tr_text', m.widgets['label_status'], 'No artists') in m.calls,
+           'an empty source: the empty line is shown ("No artists", not the stock local-library hint)')
+    expect(('fake_ar_state', 1, 0) in m.calls and vis(m, 'ar_spin')[0] == 0 and vis(m, 'artists_listview')[0] == 1, 'it asked src->state(LS_ARTISTS, NULL); no spinner; the content view (the large title) stays')
+    # 6b. loading: the one spinner, no status line, no rows; the rows arrive: the spinner goes. Failed / offline: the reason.
+    m = artists_machine(stock); src = fake_ar_source(m, []); m.fake_ar_state = 1
+    m.call(open_src, a0=src, count=20000000)
+    expect(vis(m, 'ar_spin')[0] == 1 and vis(m, 'label_status')[0] == 0 and ('timer_add', PSYMS['ls_spin_tick'], 250) in m.calls and vis(m, 'artists_listview')[0] == 1 and vis(m, 'sg_rail')[0] == 0,
+           'loading: one spinner on its timer, no status line, the title block shows, no rail')
+    m.fake_ar_names, m.fake_ar_state, m.fake_ar_gen = names, 0, 2
+    m.call(PSYMS['ar_on_gen'], count=20000000)
+    expect(vis(m, 'ar_spin')[0] == 0 and vis(m, 'label_status')[0] == 0 and shown(m) == want, f'the artists arrive: the spinner goes, the rows show ({shown(m)})')
+    for st, text in ((2, "Can't connect to the server"), (3, 'Connect to Wi-Fi first')):
+        m = artists_machine(stock); src = fake_ar_source(m, []); m.fake_ar_state = st
+        m.call(open_src, a0=src, count=20000000)
+        expect(vis(m, 'ar_spin')[0] == 0 and vis(m, 'label_status')[0] == 1 and ('widget_set_tr_text', m.widgets['label_status'], text) in m.calls, f'state {st}: {text!r}, no spinner')
+    # 6c. a source's list that has rows is not asked for its state (cached rows show at once, even while a refresh runs)
+    m = artists_machine(stock); src = fake_ar_source(m, names); m.fake_ar_state = 1
+    m.call(open_src, a0=src, count=20000000)
+    expect(not any(c[0] == 'fake_ar_state' for c in m.calls) and vis(m, 'ar_spin')[0] == 0 and shown(m) == want, 'cached rows: shown, no spinner, state not asked')
+    # 6e. the gen guards: a moved gen is not read while the page is buried, the list moves, a finger is down or the card is open (it is looked at again next tick); a moved gen with the same rows keeps the tiles
+    #     (no grid drop, no re-read of the layout), and a gen that moved with other rows reads them
+    m = artists_machine(stock); src = fake_ar_source(m, names)
+    m.call(open_src, a0=src, count=20000000)
+    m.fake_ar_names = names + ['Aretha']; m.fake_ar_gen = 2
+    def tick(why, reads):
+        m.calls = []
+        r = m.call(PSYMS['ar_on_gen'], a0=0x5a5a5a50, count=20000000)
+        got = sum(1 for c in m.calls if c[0] == 'fake_ar_list')
+        expect(r == 8 and got == reads, f'{why}: {"read" if reads else "not read"}, the timer repeats ({got}, {r})')
+    m.top_main = 0; tick('buried', 0); m.top_main = m.window
+    m.u.mem_write(m.sv + O['SC_PRESSED'], b'\x01'); m.u.mem_write(m.sv + O['SC_DRAGGED'], b'\x01'); tick('the list moving', 0)
+    m.u.mem_write(m.sv + O['SC_PRESSED'], b'\x00'); m.u.mem_write(m.sv + O['SC_DRAGGED'], b'\x00')
+    m.touch('down', 100, 80 + artists_row_y(1, [s for s, _ in Model(sorted(names, key=str.lower)).secs]), 1000, fn='ar_on_down', count=30000000); tick('a finger down', 0)
+    m.touch('up', 100, 20, 1080, fn='ar_on_abort', count=30000000)
+    tick('in front and still', 1)
+    expect(shown(m)[2] == 'Aretha', f'the list read once the guards were off ({shown(m)})')
+    m.fake_ar_gen = 3; m.calls = []
+    m.call(PSYMS['ar_on_gen'], a0=0, count=20000000)
+    names_ = [c[0] for c in m.calls]
+    expect(any(c[0] == 'fake_ar_list' for c in m.calls) and 'bitmap_destroy' not in names_ and 'widget_resize' not in names_ and shown(m)[2] == 'Aretha',
+           f'a gen that moved with the same rows: the list is read, the tiles and layout stay ({sorted(set(names_))})')
+    m.calls = []; m.call(PSYMS['ar_on_gen'], a0=0, count=20000000)
+    expect(not any(c[0] == 'fake_ar_list' for c in m.calls), 'the unchanged list took the new gen: no more reads')
+    # 6d. a re-read for a moved gen keeps the scroll offset: the list is not first put back to the top
+    many = [f'Artist {chr(65 + i % 26)}{i:03d}' for i in range(80)]
+    m = artists_machine(stock); src = fake_ar_source(m, many)
+    m.call(open_src, a0=src, count=20000000)
+    m.setword(m.sv + SC_YOFF, 300)
+    m.fake_ar_names = many + ['Zz extra']; m.fake_ar_gen = 2; m.calls = []
+    m.call(PSYMS['ar_on_gen'], count=20000000)
+    expect(('widget_set_prop_int', m.sv, 'yoffset', 0) not in m.calls and ('widget_set_prop_int', m.sv, 'yoffset', 300) in m.calls, 'a gen move keeps the scroll offset (no reset to the top)')
+    # a source with the Search control (lib_nd): the card has Search Artists, which opens the source's search scoped to artists; without it the card has the Name row alone
+    m = artists_machine(stock); src = fake_ar_source(m, names)
+    m.call(open_src, a0=src, count=20000000); card_texts(m); m.click('btn_more')
+    expect([vis(m, f'vs_item{i}') for i in (0, 4, 5, 6)] == [(1, 1), (0, 0), (0, 0), (0, 0)], 'a source without LS_CAP_SEARCH: the card has the Name row alone')
+    m = artists_machine(stock); src = fake_ar_source(m, names, caps=2)
+    m.call(open_src, a0=src, count=20000000); card_texts(m); m.click('btn_more')
+    expect([vis(m, f'vs_item{i}') for i in (0, 4, 5, 6)] == [(1, 1), (0, 0), (0, 0), (1, 1)], 'a source with LS_CAP_SEARCH: Search Artists and Name, no Show group')
+    m.calls = []
+    m.click('vs_item6', count=40000000)
+    expect(('fake_ar_search', src, 1) in m.calls and not any(c[0] == 'window_open' and c[1] == 'm1plus_search' for c in m.calls), f'Search Artists opens search_open_src_in(source, SEARCH_ARTISTS) ({[c for c in m.calls if c[0] == "fake_ar_search"]})')
+    # a source page destroyed: the timer is removed
+    m.calls = []; m.call(PSYMS['ar_on_destroy'], count=2000000)
+    expect(any(c[0] == 'timer_remove' for c in m.calls), 'closing removes the gen timer')
+
 
 def scoped_nextalbum_tests(ctx):
     """Continue with Next Album, phase 1 (patch/nextalbum.c): an album tapped on an artist's page notes that artist's albums in the order shown, the scope and a copy of the artist row;
@@ -1512,6 +1709,107 @@ def artists_machine(*args, photos=True, **kw):
     m = _artists_machine(*args, **kw)
     if photos: seed_photos(m)
     return m
+
+
+def source_photo_tests(ctx):
+    """A source's Artists rows carry the server's picture (docs/modules/artists.md "Artist photos", docs/modules/subsonic.md): src->cover on the artist's record answers 1 (the file: decoded into the 40 px circle by the
+    same loader as a library photo, a portrait cut from its top third), 0 (asked: the placeholder with the 14 px cover spinner, the shared cover poll asks again) or -1 (none: the placeholder alone, remembered)."""
+    expect = ctx.expect
+    src_imports()
+    open_src = PSYMS['artists_open_src']
+    names = ['Abba', 'Beta', 'Cher', 'Dido']
+    m = artists_machine(['Miles Davis'])
+    src = fake_ar_source(m, names)
+    m.load_image = 0
+    m.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+    for i in range(8): m.images[f'wf_spin{i}'] = (14, 14, bytes((0x55, 0x55, 0x55, 255)) * 196)
+    red = bytes((200, 30, 30, 255)) * (168 * 168)
+    # Dido's file is a portrait 84 x 140: blue, with rows 18..27 yellow (the top third of the extra 56 rows starts at 18; a centred cut starts at 28)
+    port = b''.join(bytes((250, 250, 30, 255)) * 84 if 18 <= y < 28 else bytes((30, 30, 220, 255)) * 84 for y in range(140))
+    m.images['file://' + SRC_PIC % 'Abba'] = (168, 168, red)
+    m.images['file://' + SRC_PIC % 'Dido'] = (84, 140, port)
+    m.fake_ar_pic = {'Abba': 1, 'Beta': 0, 'Cher': -1, 'Dido': 1}
+    m.call(open_src, a0=src, count=20000000)
+    opened = list(m.calls)
+    mod = Model(names)
+    ys = [mod.row_y(i) + (ROW - PHOTO) // 2 for i in range(len(names))]
+    touched = lambda calls: [c for c in calls if c[0] == 'widget_load_image' and str(c[1]).startswith('file://')]
+    blits, _, _, _ = ar_paint(m, 0)
+    ph = circles(m, blits)
+    expect([y for y, _ in ph] == ys and len({b for _, b in ph}) == 1 and not touched(m.calls) and not touched(opened), 'before the loader: the placeholder in every circle, paint and open decode nothing')
+    seen = photo_tick(m)
+    asked = [c[1] for c in seen if c[0] == 'fake_ar_cover']
+    expect(sorted(asked) == sorted(names) and all(c[2] == 0 for c in seen if c[0] == 'fake_ar_cover'), f'the loader asked the source once for each row\'s picture, key 0 ({asked})')
+    expect(sorted(c[1] for c in touched(seen)) == sorted('file://' + SRC_PIC % n for n in ('Abba', 'Dido')), f'only the two files that are there are decoded ({[c[1] for c in touched(seen)]})')
+    blits, _, _, _ = ar_paint(m, 0)
+    got = dict(circles(m, blits))
+    ph0 = ph[0][1]
+    expect([y for y in ys if got[y] != ph0] == [ys[0], ys[3]] and got[ys[1]] == ph0 and got[ys[2]] == ph0, 'Abba and Dido have their picture in the circle; Beta (on its way) and Cher (none) keep the one placeholder')
+    v = bmp_px(m, got[ys[0]], 20, 20)
+    expect(v >> 24 == 255 and abs((v & 255) - 200) <= 3 and bmp_px(m, got[ys[0]], 0, 0) >> 24 == 0 and bmp_px(m, got[ys[0]], 20, 0) >> 24 > 200, 'Abba: the red picture, cut to the circle (corners clear)')
+    top, mid = bmp_px(m, got[ys[3]], 20, 2), bmp_px(m, got[ys[3]], 20, 20)
+    expect((top & 255) > 220 and (top >> 8 & 255) > 220 and (top >> 16 & 255) < 60 and (mid >> 16 & 255) > 200 and (mid & 255) < 60,
+           f'Dido\'s portrait file is cut from its top third (yellow at the top of the circle, blue under it), as the artist cache cuts it ({top:#x}, {mid:#x})')
+    spin = [b for b in blits if tuple(b[2][2:]) == (14, 14) and m.bitmaps[b[0]][1:] == (14, 14)]
+    expect(len(spin) == 1 and tuple(spin[0][2][:2]) == (PHOTO_X + (PHOTO - 14) // 2, ys[1] + (PHOTO - 14) // 2), f'one spinner, centred on Beta\'s placeholder circle: the picture on its way ({[b[2] for b in spin]})')
+    expect(('timer_add', PSYMS['ls_cover_tick'], 250) in seen and not any(c[0] == 'timer_add' and c[1] == PSYMS['ar_on_retry'] for c in seen), 'the pending picture armed the shared 250 ms cover poll (not the library photo retry)')
+    # the poll: a tick asks the pending rows again (Beta only: Cher's "none" is remembered); still on its way: the spinner turns, the poll goes on
+    m.calls = []
+    r = m.call(PSYMS['ls_cover_tick'], a0=0x5a5a5a50, count=40000000)
+    seen = photo_tick(m)
+    expect(r == 8 and [c[1] for c in seen if c[0] == 'fake_ar_cover'] == ['Beta'], f'a tick: the pending row is asked again, none of the others ({[c[1] for c in seen if c[0] == "fake_ar_cover"]})')
+    blits, _, _, _ = ar_paint(m, 0)
+    expect(len([b for b in blits if m.bitmaps[b[0]][1:] == (14, 14)]) == 1, 'still on its way: the spinner stays')
+    # the picture arrives: the next tick finds it and decodes it into the circle; the spinner goes
+    m.fake_ar_pic['Beta'] = 1
+    m.images['file://' + SRC_PIC % 'Beta'] = (168, 112, bytes((30, 200, 30, 255)) * (168 * 112))   # (a landscape file: the centred square)
+    m.calls = []
+    m.call(PSYMS['ls_cover_tick'], count=40000000)
+    seen = photo_tick(m)
+    blits, _, _, _ = ar_paint(m, 0)
+    got = dict(circles(m, blits))
+    v = bmp_px(m, got[ys[1]], 20, 20)
+    expect(got[ys[1]] != ph0 and (v >> 8 & 255) > 180 and not [b for b in blits if m.bitmaps[b[0]][1:] == (14, 14)], 'Beta\'s picture arrived while the page was up: it is in the circle, no spinner')
+    rets = [m.call(PSYMS['ls_cover_tick'], count=40000000) for _ in range(4)]
+    expect(rets[-1] != 8, f'nothing on its way: the poll ends after two quiet ticks ({rets})')
+    # a row that scrolls away and back: Abba's picture is decoded again from its file (a stat, a decode), Cher is not asked again
+    m2 = artists_machine(['Miles Davis'])
+    many = [f'A{i:02d}' for i in range(1, 41)]
+    src2 = fake_ar_source(m2, many)
+    m2.load_image = 0
+    m2.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+    m2.images['file://' + SRC_PIC % 'A03'] = (168, 168, red)
+    m2.fake_ar_pic = {'A03': 1}
+    m2.call(open_src, a0=src2, count=20000000)
+    log = []
+    log += photo_tick(m2)
+    scroll_to(m2, 1200); log += photo_tick(m2)
+    scroll_to(m2, 0); log += photo_tick(m2)
+    cnt = lambda who: sum(1 for c in log if c[:2] == ('fake_ar_cover', who))
+    expect(cnt('A03') == 2 and cnt('A02') == 1, f'scrolled away and back: a row with a picture is asked again for its file, a row the source has none for is not (A03 {cnt("A03")}, A02 {cnt("A02")})')
+    expect(len([c for c in log if c[0] == 'widget_load_image' and c[1] == 'file://' + SRC_PIC % 'A03']) == 2, 'and its picture decoded again')
+    # a picture that does not decode is "none"; a moving list decodes nothing
+    m3 = artists_machine(['Miles Davis'])
+    src3 = fake_ar_source(m3, names)
+    m3.load_image = 0
+    m3.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+    m3.fake_ar_pic = {'Abba': 1}
+    m3.images['file://' + SRC_PIC % 'Abba'] = (168, 168, red)
+    m3.call(open_src, a0=src3, count=20000000)
+    m3.u.mem_write(m3.sv + O['SC_PRESSED'], b'\x01'); m3.u.mem_write(m3.sv + O['SC_DRAGGED'], b'\x01')
+    m3.calls = []
+    m3.call(PSYMS['ar_on_photo'], a0=0, count=40000000)
+    expect(not touched(m3.calls) and not [c for c in m3.calls if c[0] == 'fake_ar_cover'] and any(c[0] == 'timer_add' for c in m3.calls), 'while the list moves nothing is asked or decoded: the timer polls')
+    m3.u.mem_write(m3.sv + O['SC_PRESSED'], b'\x00'); m3.u.mem_write(m3.sv + O['SC_DRAGGED'], b'\x00')
+    del m3.images['file://' + SRC_PIC % 'Abba']
+    m3.load_image = 1   # (the stock loader fails)
+    seen = photo_tick(m3)
+    blits, _, _, _ = ar_paint(m3, 0)
+    expect(len({b for _, b in circles(m3, blits)}) == 1 and len(touched(seen)) >= 1, 'a file that does not decode leaves the placeholder')
+    # closing the page ends the poll's use of it
+    m.calls = []
+    m.call(PSYMS['ar_on_destroy'], count=4000000)
+    expect(not any(c[0] == 'timer_add' for c in m.calls), 'closing the page arms nothing')
 
 
 def photo_machine(artists, photos=(), markers=(), colours=None, **kw):
@@ -1936,7 +2234,7 @@ def scoped_plain_tests(ctx):
     expect(not [c for c in new if c[0] == 'timer_add' and c[1] == PSYMS['ar_on_retry']], 'and the row\'s marker is known now (no more waiting)')
 
 
-SECTIONS = [artists_tests, scoped_albums_tests, scoped_nextalbum_tests, scoped_pills_tests, scoped_sort_tests, genre_composer_tests, index_tests, sort_tests, name_order_tests, photo_rows_tests, scoped_head_tests, scoped_plain_tests]
+SECTIONS = [artists_tests, scoped_albums_tests, scoped_nextalbum_tests, scoped_pills_tests, scoped_sort_tests, genre_composer_tests, index_tests, sort_tests, name_order_tests, source_tests, source_photo_tests, photo_rows_tests, scoped_head_tests, scoped_plain_tests]
 
 
 def run(ctx):

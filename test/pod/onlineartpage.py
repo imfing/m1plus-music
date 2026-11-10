@@ -63,7 +63,15 @@ class AM(PCN.NM):
         self.canvas = self.alloc(0x80)
         self.fills = []
         self.pt = (30, 261, 1)   # get_playtimeandlength: position, length (s), ok
+        self.sbtrack = {}        # server track REC_ID -> track id (sba_rec_track, patch/sbapi.c: tested in sbapi.py); a record in it is a server track
+        self.handlers[PSYMS['sba_rec_track']] = 'sba_rec_track'
         self.playing()
+
+    def _hook(self, u, address, size, _):
+        if self.handlers.get(address) == 'sba_rec_track':
+            rid = u.reg_read(UC_MIPS_REG_A0); rid = rid - (1 << 32) if rid >= 1 << 31 else rid   # noqa: F821
+            u.reg_write(UC_MIPS_REG_V0, self.cstr(self.sbtrack.get(rid, ''))); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+        return super()._hook(u, address, size, _)
 
     def playing(self, artist='Radiohead', album='OK Computer', title='Karma Police', path=TRACK, albums=('OK Computer', 'Kid A')):
         self.play([self.record(album=album, artist=artist, path=path, title=title, name=os.path.basename(path))], 0)
@@ -282,6 +290,14 @@ def open_tests(ctx):
     expect(at['Covers'][0] == PS.SE_CHIP_X and at['Lyrics'][0] == PS.SE_CHIP_X + (8 * 6 + 2 * PS.SE_CHIP_PAD) + PS.SE_CHIP_GAP and all(r[1] == PS.SE_CHIP_Y and r[3] == PS.SE_CHIP_H for _, r in texts), 'at the Search page\'s places')
     m.work()
     expect(m.call(PSYMS['onlineart_open'], count=1000000) == 0 and not [c for c in m.calls if c[0] == 'window_open'], 'a second open while the page is up does nothing (0)')
+    # a server track (streamed: the path is the address with the login; downloaded: a file of the Subsonic folder): the lookup has nowhere to put a cover (the album key is the library's own) or a .lrc, so the page does not open
+    for path in ('http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt', '/mnt/mmc/Subsonic/Karma Police.flac'):
+        ms = AM(OA.Site())
+        ms.sbtrack[-5] = 't5'; ms.play([ms.record(album='OK Computer', artist='Radiohead', path=path, title='Karma Police', rid=-5)], 0)
+        r = ms.open()
+        expect(r == 0xffffffff and not [c for c in ms.calls if c[0] in ('window_open', 'pthread_create', 'timer_add')] and not ms.fs.keys() & {OA.ART_DIR},
+               f'a {"streamed" if path.startswith("http") else "downloaded"} server track: Find Cover & Lyrics does not open, nothing is looked up ({r:#x})')
+
     urls = site.urls()
     expect(urls[0] == OA.ITUNES + 'Radiohead%20OK%20Computer' and urls[2 + NCOV] == OA.LRCLIB + 'get?track_name=Karma%20Police&artist_name=Radiohead&album_name=OK%20Computer&duration=261',
            f'the worker was given the playing track: artist, album, title and its length (261 s): {urls[0][-30:]}')

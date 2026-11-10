@@ -31,11 +31,16 @@
 #include "search.h"
 #include "home.h"
 #include "i18n.h"
+#include "libsrc.h"
+#include "sbsrc.h"
+#include "songops.h"
+#include "albums.h"
 
 extern int coverflow_artist(void *artists, unsigned index, unsigned scope); /* patch/coverflow.c */
 extern int albums_open_artist(void *artists, unsigned index,
                               unsigned scope); /* patch/albums.c: -1 when the window will not open */
 extern int songs_open_playlist(int id, const char *name); /* patch/songs.c: -1 when it did not open */
+extern int album_open_src(const lib_src_t *src, unsigned cls, void *row); /* patch/albumpage.c */
 extern void pod_toast(const char *text); /* patch/shuffle.c: the stock message box */
 
 #define I(w, off) (*(int *)((char *)(w) + (off)))
@@ -99,6 +104,14 @@ static struct {
     int hitx; /* set by se_item_of: the touch is in the x zone */
     void *cross;
     grid_tile_t rt[SE_REC_MAX + 1]; /* the texts of the rows, then the header */
+    const lib_src_t
+        *src; /* a non-stock library source (search_open_src), or 0: the library is searched in memory as always */
+    int srch,
+        rc; /* the source's search is out (its results are not in yet); what sba_search answered for the last query */
+    unsigned sgen; /* sba_gen + sba_cover_gen when the results or covers were last looked at */
+    ls_cpoll_t
+        cp; /* a source's cover was asked for and is not there yet: the shared cover poll (patch/libsrc.c ls_cover_poll) */
+    void *spin; /* a source's page: the loading spinner (se_spin) */
 } se __attribute__((section(".scratch")));
 
 static void se_show(void *w, int on) {
@@ -461,10 +474,12 @@ static unsigned se_key(void *rec, int kind, unsigned *key, unsigned *pn, int py)
 /* ---------------------------------------------------------------------------
  * The library: read once, searched in memory
  */
+static void se_kick(void);
+
 static void se_free_data(void) {
     int k;
     for (k = 0; k < SE_KINDS; ++k) {
-        if (se.lists[k] && k != SE_SONG) deque_destroy(se.lists[k]); /* the song list is the stock's own */
+        if (se.lists[k] && (k != SE_SONG || se.src)) deque_destroy(se.lists[k]); /* the song list is the stock's own */
         free(se.cand[k]);
         free(se.sc[k]);
         se.lists[k] = (void *)0, se.cand[k] = (unsigned *)0, se.sc[k] = (unsigned char *)0;
@@ -476,7 +491,7 @@ static void se_free_data(void) {
 /* The stock song list the rows index is still the one in *pdeq_showlist (another page's query replaces it). */
 static int se_valid(void) {
     void *l = se.lists[SE_SONG];
-    return !l || (*(void **)PDEQ_SHOWLIST == l && deque_size(l) == se.n[SE_SONG]);
+    return se.src || !l || (*(void **)PDEQ_SHOWLIST == l && deque_size(l) == se.n[SE_SONG]);
 }
 
 /* The four stock queries, the songs last so that *pdeq_showlist is the library when it is done, and g_class_type is 0xf001 (as allmusic_page_init leaves it): a stock page under this one
@@ -486,6 +501,12 @@ static void se_load(void) {
     void *list;
     int k;
     se_free_data();
+    if (se.src) { /* the cached results of the last search; the server did the matching */
+        se.lists[SE_ARTIST] = se.src->list(se.src, LS_SEARCH_ARTISTS, (void *)0);
+        se.lists[SE_ALBUM] = se.src->list(se.src, LS_SEARCH_ALBUMS, (void *)0);
+        se.lists[SE_SONG] = se.src->list(se.src, LS_SEARCH_SONGS, (void *)0);
+        goto sized;
+    }
     if (!se.py &&
         pinyin_hold() == 0) { /* the engine's dictionary for the initials; without it the search just has none */
         if (!(se.hz = calloc(SE_HZN, 1))) pinyin_release();
@@ -501,6 +522,7 @@ static void se_load(void) {
     if (loadLocalClassList(CLASS_ALL_SONGS) > 0 && (list = *(void **)PDEQ_SHOWLIST) != (void *)0 && deque_size(list))
         se.lists[SE_SONG] = list;
     *(int *)G_CLASS_TYPE = CLASS_ALL_SONGS;
+sized:
     for (k = 0; k < SE_KINDS; ++k) {
         if (!se.lists[k]) continue;
         se.n[k] = deque_size(se.lists[k]);
@@ -528,6 +550,11 @@ static void se_search(void) {
         if (!list || !se.cand[k] || !se.nterms ||
             (se.hi - se.lo == 1 && k != se_chip_kind[se.lo])) { /* a scoped page matches its own type only */
             se.nc[k] = 0;
+            continue;
+        }
+        if (se.src) { /* every result is a match, in the server's order, all of one quality */
+            for (i = 0; i < se.n[k]; ++i) se.cand[k][i] = i, se.sc[k][i] = 1;
+            se.nc[k] = se.n[k];
             continue;
         }
         m = ext ? se.nc[k] : se.n[k];
@@ -571,6 +598,20 @@ static void se_grids_reset(void) {
     grid_drop(&se.gb);
     grid_placeholder(&se.ga);
     grid_placeholder(&se.gb);
+}
+
+static void se_kick(void);
+/* A source's cover that answered 0 (asked for): the shared poll looks at the source's counters; when a cover arrived (sba_cover_gen) every grid starts again and asks for its covers, else the wait goes on. */
+static void se_cp_ask(void) {
+    if (!se.win || !se.src) return;
+    if (se.srch || sba_gen() + sba_cover_gen() == se.sgen) {
+        ls_cover_poll(&se.cp, se.win, se_cp_ask, (int (*)(void))0, (void (*)(void))0);
+        return;
+    }
+    se.sgen = sba_gen() + sba_cover_gen();
+    se_grids_reset();
+    se_redraw();
+    se_kick();
 }
 
 static void se_build(void) {
@@ -617,6 +658,12 @@ static void se_rec_prep(void) { /* the rows' texts (cut to their width when firs
     grid_set(&se.rt[SE_REC_MAX], "", TR("Recently Searched"), 0);
 }
 
+/* The history file: the settings folder's for the library, the server's own in the Navidrome cache (SBA_DIR; it goes with the cache and is not mixed with the library's) for a source. */
+static const char *se_rec_file(int tmp) {
+    if (se.src) return tmp ? SBA_DIR "/search-history.tmp" : SBA_DIR "/search-history";
+    return tmp ? SEARCH_RECENT_TMP : SEARCH_RECENT_FILE;
+}
+
 static void se_rec_save(void) {
     char buf[SE_REC_MAX * SE_QMAX + 1];
     unsigned k = 0, n;
@@ -629,7 +676,7 @@ static void se_rec_save(void) {
         buf[k++] = '\n';
     }
     buf[k] = 0;
-    home_write_atomic(SEARCH_RECENT_FILE, SEARCH_RECENT_TMP, buf);
+    home_write_atomic(se_rec_file(0), se_rec_file(1), buf);
 }
 
 /* The file into se.rec; anything malformed (too long, a line too long, empty or control characters, a repeat, too many lines) is no history at all. */
@@ -637,7 +684,7 @@ static void se_rec_load(void) {
     char buf[SE_REC_MAX * SE_QMAX + 2];
     int fd, n, p = 0;
     se.nrec = 0;
-    fd = open(SEARCH_RECENT_FILE, 0, 0);
+    fd = open(se_rec_file(0), 0, 0);
     if (fd >= 0) {
         n = read(fd, buf, sizeof buf);
         close(fd);
@@ -690,6 +737,9 @@ static void se_rec_remove(int at) {
     se_rec_prep();
 }
 
+/* A source's loading spinner: under the chips while its search is out and nothing is listed; the frames turn on the shared ls_spin timer (patch/libsrc.c). */
+static void se_spinner(void) { ls_spin(se.spin, se.spin && se.src && se.srch && se.nrows == 0); }
+
 /* The content: the rows, then the air under them, or the keyboard's height while it is up (the list scrolls clear of it); the list or "No Results" shows.
  * With no query and a history the content is the recent searches instead (se.rm). */
 static void se_layout(void) {
@@ -701,12 +751,36 @@ static void se_layout(void) {
     widget_set_prop_int(se.sv, "virtual_h", h);
     if (off > h - SE_LIST_H) widget_set_prop_int(se.sv, "yoffset", h - SE_LIST_H);
     se_show(se.list, se.nrows != 0 || se.rm);
-    se_show(se.status, se.nrows == 0 && se.nterms != 0);
-    if (se.nrows == 0 && se.nterms != 0) widget_set_tr_text(se.status, "No Results");
+    se_show(se.status, se.nrows == 0 && se.nterms != 0 && !se.srch);
+    if (se.nrows == 0 && se.nterms != 0) {
+        if (se.src && se.rc != SBA_OK && se.rc != SBA_CANCELLED)
+            widget_set_text_utf8(
+                se.status, se.rc == SBA_NOTFOUND
+                               ? TR("Can't connect to the server")
+                               : sbs_request_message(se.rc, 0)); /* why the server was not asked or did not answer */
+        else
+            widget_set_tr_text(se.status, "No Results");
+    }
+    se_spinner();
 }
 
 /* The typed text is applied: the library is read if it has not been (or another query replaced the song list), the query is searched, the rows of the chip built. */
 static void se_apply(void) {
+    if (se.src) {
+        se_set_query(se.typed);
+        se_free_data();
+        se.rc = se.nterms ? sba_search(se.query) : SBA_OK;
+        se.srch = se.nterms && se.rc == SBA_OK; /* the results are loaded when the request is done (se_tick) */
+        se.sgen = sba_gen() + sba_cover_gen();
+        ls_cover_end(&se.cp);
+        widget_set_prop_int(se.sv, "yoffset", 0);
+        se.nrows = 0;
+        se_grids_reset();
+        se_layout();
+        se_redraw();
+        if (se.srch) se_kick();
+        return;
+    }
     if (!se.loaded || !se_valid()) se_load();
     se_set_query(se.typed);
     se_search();
@@ -773,7 +847,6 @@ static grid_tile_t *se_tile(int r) {
     return t;
 }
 
-static void se_kick(void);
 static grid_tile_t *se_cover_next(grid_t **gp);
 
 static void se_paint_rows(void *canvas) {
@@ -982,8 +1055,24 @@ static void se_set_press(int p) {
 }
 
 /* A song: the library in its stock order (the Songs page's class) as the queue, Now Playing at the song (patch/songs.c sg_play_at: the stock Songs row's handler). */
+static void se_open_player(void *queue, int idx, int cls) {
+    struct {
+        void *dq;
+        int idx, cls, mode;
+    } context;
+    context.dq = queue, context.idx = idx, context.cls = cls, context.mode = PLAY_MODE;
+    navigator_to_with_context("playing_page", &context);
+}
+
 static void se_play(int at) {
     void *pick, *queue, *first;
+    if (se.src) { /* the results list is the queue, the source plays it */
+        if (so_play_src(se.src, CLASS_ALL_SONGS, se.lists[SE_SONG], (int)se.rows[at].idx, SO_KEEP, se_open_player) ==
+            -2)
+            ls_dsd_confirm(se.src, se.lists[SE_SONG],
+                           (int)se.rows[at].idx); /* a DSD track that is not downloaded: the confirm */
+        return;
+    }
     unsigned n, idx = 0;
     int found;
     struct {
@@ -1039,6 +1128,14 @@ static __attribute__((noinline)) void se_open_row(int i) {
     void *rec;
     if (i < 0 || i >= se.nrows) return;
     se_rec_add(se.query);
+    if (se.src && se.rows[i].kind == SE_ARTIST) {
+        albums_open_src(se.src, deque_at(se.lists[SE_ARTIST], se.rows[i].idx));
+        return;
+    }
+    if (se.src && se.rows[i].kind == SE_ALBUM) {
+        album_open_src(se.src, 0, deque_at(se.lists[SE_ALBUM], se.rows[i].idx));
+        return;
+    }
     switch (se.rows[i].kind) {
     case SE_ARTIST:
         if (albums_open_artist(se.lists[SE_ARTIST], se.rows[i].idx, CLASS_ARTISTS) == -1)
@@ -1139,7 +1236,7 @@ static void
 se_on_text(const char *text) { /* the field's text may have changed: apply it SE_DEBOUNCE ticks after the last change */
     if (!se.win || !strcmp(text, se.typed)) return;
     snprintf(se.typed, sizeof se.typed, "%s", text);
-    se.wait = SE_DEBOUNCE;
+    se.wait = se.src ? SE_DEBOUNCE_SRC : SE_DEBOUNCE;
     se_kick();
 }
 
@@ -1169,6 +1266,18 @@ static void se_art(grid_t *g, grid_tile_t *t, int r) {
     const se_row_t *w = &se.rows[r];
     void *rec = deque_at(se.lists[w->kind], w->idx);
     char url[80];
+    if (se.src) { /* the source's cover file (1 there, 0 asked, -1 none) */
+        int r;
+        memcpy(url, "file://", 8);
+        r = se.src->cover(se.src, rec, 0, url + 7, sizeof url - 7);
+        if (r > 0)
+            grid_art_url(g, t, url);
+        else {
+            t->art = 2;
+            if (r == 0) ls_cover_poll(&se.cp, se.win, se_cp_ask, (int (*)(void))0, (void (*)(void))0);
+        }
+        return;
+    }
     switch (w->kind) {
     case SE_ARTIST:
         t->ckey = se_artist_cover(cc_str(rec, REC_TITLE));
@@ -1206,7 +1315,25 @@ static int se_tick(const void *timer) {
         se_apply();
         return RET_REPEAT;
     }
-    if (se.wait > 0 || se_cover_step()) return RET_REPEAT;
+    if (se.src && se.srch && sba_gen() + sba_cover_gen() != se.sgen) { /* the results are in */
+        int st;
+        se.sgen = sba_gen() + sba_cover_gen();
+        st = se.srch ? sba_state(SBA_K_SEARCH, "", &se.rc) : SBA_ST_LOAD;
+        if (se.srch && st != SBA_ST_LOAD && st != SBA_ST_NONE && !sba_search_is(se.query))
+            st = SBA_ST_LOAD; /* an older query's answer while this one is out: not shown, not an end */
+        if (se.srch && st != SBA_ST_LOAD) {
+            se.srch = 0;
+            if (st != SBA_ST_OK)
+                se_free_data();
+            else
+                se_load();
+            se_search();
+            se_build();
+            se_layout();
+        }
+        se_redraw();
+    }
+    if (se.wait > 0 || se.srch || se_cover_step()) return RET_REPEAT;
     se.timer = 0;
     return RET_OK;
 }
@@ -1230,6 +1357,8 @@ static int se_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     keyboard_detach();
+    ls_spin_end(se.spin);
+    ls_cover_end(&se.cp);
     if (se.py) pinyin_release(); /* the engine's megabyte goes back with the page */
     free(se.hz);
     if (se.timer) timer_remove(se.timer);
@@ -1246,9 +1375,10 @@ static int se_on_destroy(void *ctx, void *e) {
 /* The Songs page's Search and the Menu's Search item: the Search page over the page in front, the keyboard up and the results empty. 0 once it is up; -1: not opened (a Search page
  * exists already, or the window or its widgets are not there): the caller opens the stock search page. scope is SEARCH_ALL or one type: that page shows its one chip (selected, the others
  * not drawn or tappable) and matches only that type. */
-int search_open_in(int scope) {
+static int se_open(int scope, const lib_src_t *src) {
     if (se.win || scope < SEARCH_ALL || scope >= SE_CHIPS) return -1;
     memset(&se, 0, sizeof se);
+    se.src = src;
     se.lo = scope == SEARCH_ALL ? 0 : scope, se.hi = scope == SEARCH_ALL ? SE_CHIPS : scope + 1;
     se.win = window_open("m1plus_search");
     if (!se.win) {
@@ -1264,6 +1394,7 @@ int search_open_in(int scope) {
     se.chips = widget_lookup(se.win, "se_chips", 1);
     se.chl = widget_lookup(se.win, "se_chip_hl", 1);
     se.field = widget_lookup(se.win, "kb_field", 1);
+    se.spin = widget_lookup(se.win, "se_spin", 1); /* optional */
     se.st_title = widget_lookup(se.win, "label_row_title", 1);
     se.st_sub = widget_lookup(se.win, "label_row_sub", 1);
     se.st_chip = widget_lookup(se.win, "label_chip", 1);
@@ -1308,5 +1439,13 @@ int search_open_in(int scope) {
     return 0;
 }
 
+int search_open_in(int scope) { return se_open(scope, (const lib_src_t *)0); }
+
 /* The unscoped page: every chip, Top Results selected. */
 int search_open(void) { return search_open_in(SEARCH_ALL); }
+
+int search_open_src_in(const lib_src_t *src, int scope) {
+    return se_open(scope, src == &lib_stock ? (const lib_src_t *)0 : src);
+}
+
+int search_open_src(const lib_src_t *src) { return search_open_src_in(src, SEARCH_ALL); }

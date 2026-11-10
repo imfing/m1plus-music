@@ -23,6 +23,7 @@
 #include "stock.h"
 #include "home.h"
 #include "covercache.h"
+#include "libsrc.h"
 #include "ipod_theme.h"
 #include "ipod_render.h"
 #undef widget_prepare_text_style
@@ -572,25 +573,39 @@ __attribute__((noinline)) void ip_reflect(const unsigned *src, unsigned *dst) {
     }
 }
 
+/* A server track's cover (ls_rec_cover: the file Now Playing shows, asked for when missing); *server 1 when the track is one, -1 when it is not or there is no track. */
+static int ip_server_cover(void *t, char *url, unsigned cap, int *server) {
+    *server = 0;
+    return t ? ls_rec_cover(t, url, cap, server) : -1;
+}
+
+/* The Now Playing cover: a server track's own file (never the library's album of the same name; the placeholder until it lands, the settle ticks look again), else the album's cached cover, else the /tmp one. */
 static void ip_cover(void *t, int first) {
-    char url[80], tmp[40];
+    char url[80], tmp[40], srv[120];
     const char *file = (const char *)0, *path;
     unsigned album = t && *cc_str(t, REC_ALBUM) ? cc_album_key(t) : 0, *px, i;
-    int busy = 0;
+    int busy = 0, server, sc = ip_server_cover(t, srv, sizeof srv, &server);
     if (!ip.art) ip.art = bitmap_create_ex(IP_ART, IP_ART, IP_ART * 4, BITMAP_RGBA8888);
     if (!ip.art) return;
     px = (unsigned *)bitmap_lock_buffer_for_write(ip.art);
     if (!px) return;
     if (first) ip.settle = 4;
     ip.fkey = 0;
-    file = album ? cc_url(url, album) : (const char *)0;
-    if (file) {
-        if (first) ip.settle = 0;
-    } else if (t && (path = np_cover_file(&busy)) != (const char *)0 && !busy) {
-        ip.fkey = np_file_key(path);
-        if (ip.fkey) {
-            snprintf(tmp, sizeof tmp, "file://%s", path);
-            file = tmp;
+    if (sc == 1 && (ip.fkey = np_file_key(srv + 7)) != 0) {
+        file = srv;
+        if (first) ip.settle = 0; /* the server's file is the track's own, and does not change */
+    } else if (sc == 0) {
+        ip.settle = 4; /* on its way: the placeholder, and the settle ticks look again */
+    } else {
+        file = !server && album ? cc_url(url, album) : (const char *)0;
+        if (file) {
+            if (first) ip.settle = 0;
+        } else if (t && (path = np_cover_file(&busy)) != (const char *)0 && !busy) {
+            ip.fkey = np_file_key(path);
+            if (ip.fkey) {
+                snprintf(tmp, sizeof tmp, "file://%s", path);
+                file = tmp;
+            }
         }
     }
     if (!file || !cc_decode(ip.win, file, 1, IP_ART, 1, px)) { /* the placeholder, else flat grey */
@@ -800,7 +815,9 @@ static int ip_pane_pick(unsigned *keys, char (*trks)[96]) {
 static unsigned ip_pane_want(void) {
     char url[80];
     void *t = cc_playing();
-    unsigned k = t && *cc_str(t, REC_ALBUM) ? cc_album_key(t) : 0;
+    unsigned k = t && *cc_str(t, REC_ALBUM) && !ls_rec_server(t)
+                     ? cc_album_key(t)
+                     : 0; /* (a server track never takes the library's album of its name: the rotation shows) */
     if (k != ip.pane.pk) ip.pane.pk = k, ip.pane.pk_art = k && cc_url(url, k);
     if (!ip.pane.picked)
         ip.pane.rot_n = ip_pane_pick(ip.pane.rot, ip.pane.rot_trk), ip.pane.rot_i = 0, ip.pane.picked = 1;
@@ -1130,13 +1147,22 @@ static int ip_look(void) {
         ip_cover(t, 1);
         changed = 1;
     } else if (ip.settle > 0 && t) { /* demo writes the /tmp cover a little after the track changes */
-        int busy = 0;
-        const char *path = np_cover_file(&busy);
+        int busy = 0, server, sc;
+        char srv[120];
+        const char *path;
         unsigned k;
-        if (!busy) {
-            ip.settle--;
-            k = path ? np_file_key(path) : 0;
+        sc = ip_server_cover(t, srv, sizeof srv, &server);
+        if (sc == 1) { /* the server's cover landed: shown once */
+            ip.settle = 0;
+            k = np_file_key(srv + 7);
             if (k && k != ip.fkey) ip_cover(t, 0), changed = 1;
+        } else if (sc != 0) { /* (0: on its way, nothing is counted off) */
+            path = np_cover_file(&busy);
+            if (!busy) {
+                ip.settle--;
+                k = path ? np_file_key(path) : 0;
+                if (k && k != ip.fkey) ip_cover(t, 0), changed = 1;
+            }
         }
     }
     for (i = 0; i < 5; ++i)

@@ -10,6 +10,7 @@
 #include "i18n.h"
 #include "podcasts.h"
 #include "songops.h"
+#include "libsrc.h"
 #include "picker.h"
 
 extern void pod_toast(const char *text); /* patch/shuffle.c: the stock message box */
@@ -122,15 +123,15 @@ void pod_open_player(void *queue, int idx,
 /* Song `at` (-1: a random one) of the list and the list as the queue, in Now Playing: the stock Songs row's handler (@0x5275a4: loadSongList of the shown list, then
  * Now Playing at the row), as Shuffle Songs does it (patch/shuffle.c). The caller has put the browsing record back (loadSongList runs the class query again and keeps
  * classinfo for the memory playback). */
-void so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev, so_reorder_fn reorder) {
+int so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev, so_reorder_fn reorder) {
     void *pick, *queue, *first;
     unsigned n, idx = 0, count = deque_size(list);
     int found;
     if (at < 0 && count) at = (int)pod_rand(count);
-    if (at < 0 || at >= (int)count) return;
+    if (at < 0 || at >= (int)count) return -1;
     pick = deque_at(list, (unsigned)at);
     queue = _create_deque("stSongInfo");
-    if (!queue) return;
+    if (!queue) return -1;
     deque_init(queue);
     found = loadSongList(queue, cc_str(pick, REC_NAME), I(pick, REC_CUE_START), cls);
     n = deque_size(queue);
@@ -165,14 +166,14 @@ void so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev
         n = queue ? deque_size(queue) : 0;
         if (!queue) {
             pod_toast(TR("Update Local Music first"));
-            return;
+            return -1;
         }
     }
     first = n ? deque_at(queue, idx) : (void *)0;
     if (!first || access(cc_str(first, REC_PATH), F_OK)) {
         deque_destroy(queue);
         pod_toast(TR(n ? "Storage unavailable" : "Update Local Music first"));
-        return;
+        return -1;
     }
     if (how == SO_IN_ORDER)
         pod_set_in_order_for_queue(); /* Play: the list in order, even after a Shuffle; a row tap keeps the mode, as stock */
@@ -181,11 +182,18 @@ void so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev
     *(int *)G_CLASS_TYPE = cls; /* as allmusic_page_init leaves it */
     open(queue, (int)idx, cls);
     deque_destroy(queue);
+    return 0;
 }
 
-void so_play_dir(int cls, void *list, int at, int how, so_open_fn open, int rev) {
-    so_play_with(cls, list, at, how, open, rev, (so_reorder_fn)0);
+int so_play_dir(int cls, void *list, int at, int how, so_open_fn open, int rev) {
+    return so_play_with(cls, list, at, how, open, rev, (so_reorder_fn)0);
 }
-void so_play(int cls, void *list, int at, int how, so_open_fn open) {
-    so_play_with(cls, list, at, how, open, 0, (so_reorder_fn)0);
+int so_play(int cls, void *list, int at, int how, so_open_fn open) {
+    return so_play_with(cls, list, at, how, open, 0, (so_reorder_fn)0);
+}
+
+/* A page's play through its source (patch/libsrc.h): NULL or lib_stock is so_play exactly (cls is the stock class of the list), any other source builds and starts its own queue. */
+int so_play_src(const lib_src_t *src, int cls, void *list, int at, int how, so_open_fn open) {
+    if (!src || src == &lib_stock) return so_play(cls, list, at, how, open);
+    return src->play(src, list, at, how, open, cls);
 }

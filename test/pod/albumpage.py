@@ -32,8 +32,9 @@ UI = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_album.bi
 ALBUM, ARTIST = 'Kind of Blue', 'Miles Davis'
 RED = (190, 50, 55)
 NAMES = ['So What', 'Freddie Freeloader', 'Blue in Green', 'All Blues', 'Flamenco Sketches', 'Flamenco Sketches (Alt)', 'So What (Alt)', 'Blue in Green (Alt)']
-WIDGETS = ('view_grid', 'btn_return', 'btn_backtoplayer', 'btn_select', 'btn_selall', 'sg_add', 'sg_del', 'btn_cancel', 'btn_play', 'btn_shuffle', 'label_status', 'label_row_num', 'label_row_title',
-           'ab_title', 'ab_artist', 'ab_meta', 'ab_foot', 'ab_glyph', 'ab_play_text', 'label_title', 'img_ah_tint')
+WIDGETS = ('view_grid', 'btn_return', 'btn_backtoplayer', 'btn_select', 'btn_selall', 'sg_add', 'sg_del', 'btn_cancel', 'btn_play', 'btn_shuffle', 'label_status', 'label_row_num', 'label_row_title', 'label_row_dim', 'label_row_val',
+           'ab_title', 'ab_artist', 'ab_meta', 'ab_foot', 'ab_spin', 'ab_glyph', 'ab_play_text', 'label_title', 'img_ah_tint',
+           'btn_more', 'vs_scrim', 'vs_card', 'vs_hair') + tuple(f'vs_item{i}' for i in range(8)) + tuple(f'vs_label{i}' for i in range(8)) + tuple(f'vs_tick{i}' for i in range(6)) + tuple(f'vs_sub{i}' for i in range(4)) + tuple(f'vs_glyph{i}' for i in range(4, 8))
 NAV_BTNS = ('btn_return', 'btn_backtoplayer', 'btn_select', 'btn_selall', 'sg_add', 'sg_del', 'btn_cancel')
 BAR_BLACK = O['NP_BAR_STOCK']
 
@@ -209,7 +210,7 @@ def asset_tests(ctx):
     kids = [c.name for c in root.children]
     expect(root.name == 'm1plus_album_page' == pod_pages.ALBUM_PAGE.name and pod_pages.ALBUM_PAGE in pod_pages.PAGES and pod_pages.ALBUM_PAGE.key == 'm1plus_album' == O.get('AB_ASSET', 'm1plus_album'),
            'the page is m1plus_album (window m1plus_album_page)')
-    expect(kids[0] == 'img_ah_tint' and kids[-3] == 'btn_cancel' and kids[-10] == 'label_title' and kids[-2:] == ['rm_scrim', 'rm_card'] and 'songs_listview' in kids, f'the gradient is the window\'s first child, the glass controls and the rows menu its last: {kids}')
+    expect(kids[0] == 'img_ah_tint' and kids[-5] == 'btn_cancel' and kids[-13] == 'label_title' and kids[-4:] == ['vs_scrim', 'vs_card', 'rm_scrim', 'rm_card'] and 'songs_listview' in kids, f'the gradient is the window\'s first child, the glass controls and the rows menu its last: {kids}')
     tint = f('img_ah_tint')
     expect((tint.x, tint.y, tint.w, tint.h) == (0, 0, 320, 450) and tint.get('image') == 'ah_tint' and tint.get('clickable') == 'false' and tint.get('sensitive') == 'false'
            and tint.get('visible') != 'false', 'img_ah_tint: ah_tint over the whole 320 x 450 window, insensitive (over a black page it changes nothing)')
@@ -758,7 +759,405 @@ def select_tests(ctx):
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 
+class FakeAP(AM):
+    """AM plus a fake non-stock library source (names fake_ap_*): its lib_src_t lives in emulator memory, its members are trapped addresses answered here. Tracks are records
+    with synthetic ids and "nd://" paths; every call is recorded in m.calls."""
+    gen = 1
+    gen_rows = None     # what src->gen_rows answers (None: the same as gen)
+    cover_ret = 1
+    seconds_of = None   # record address -> seconds
+    row_of = None       # record address -> (dl, pct, dsd, fav, offline): the ls_row_t src->row fills (absent: all 0)
+    playing_rec = None  # the record address src->playing says is playing (None: nothing)
+    play_ret = 0        # what src->play answers (-2: a DSD track that is not downloaded)
+    act_ret = -1        # what src->act answers
+    queue_none = False  # src->queue_row answers NULL
+    acts = None         # [(record address, what)] src->act was called with
+    queued = None       # [record address] src->queue_row was asked for
+
+    def fake_src(self, n=5, album='Fake Album', artist='Fake Artist', cover_ret=1, secs=(60, 120, 180, 240, 300), with_playing=False):
+        self.cover_ret = cover_ret
+        self.fake_tracks = []
+        self.seconds_of = {}
+        for i in range(n):
+            r = self.record(album=album, artist=artist, path=f'nd://t{i}', title=f'Remote {i}', name='', rid=-3 - i)
+            self.setword(r + O['REC_YEAR'], 2001)
+            self.fake_tracks.append(r); self.seconds_of[r] = secs[i % len(secs)]
+        self.fake_row = self.record(album=album, artist=artist, path='nd://al1', title=album, name='', rid=-50)
+        self.fake_key = album_key(artist, album)
+        self.fake_cover = '/mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg' % self.fake_key   # the source's own file, named by the source (never the Cover Flow cache file of the key, which stays absent)
+        old = art_file(self.fake_key)
+        if old in self.present:   # (album_machine made the picture at the Cover Flow path: move it to the source's)
+            self.present.discard(old); self.present.add(self.fake_cover); self.files[self.fake_cover] = self.files.pop(old, 4096)
+            if 'file://' + old in self.images: self.images['file://' + self.fake_cover] = self.images.pop('file://' + old)
+        addrs = {}
+        for nm in ('list', 'rec_id', 'play', 'cover', 'seconds', 'row', 'act', 'gen', 'playing', 'queue_row', 'state', 'gen_rows'):
+            addrs[nm] = self.alloc(16); self.handlers[addrs[nm]] = 'fake_ap_' + nm
+        self.src = self.alloc(64)
+        self.setword(self.src, self.cstr('fake'))
+        for i, nm in enumerate(('list', 'rec_id', 'play', 'cover', 'seconds', 'row', 'act', 'gen')): self.setword(self.src + 4 * (i + 1), addrs[nm])
+        self.row_of = {}
+        if with_playing: self.setword(self.src + 40, addrs['playing'])   # lib_src_t.playing, after complete (offset 36)
+        self.setword(self.src + 44, addrs['queue_row'])   # lib_src_t.queue_row
+        self.setword(self.src + 60, addrs['gen_rows'])   # lib_src_t.gen_rows (offset 60, after state; src is 64 bytes)
+        self.setword(self.src + 56, addrs['state'])   # lib_src_t.state (offset 56, after count), the last member
+        self.state_ret = 0   # LS_ST_READY
+        self.acts, self.queued, self.acts_dd = [], [], []   # acts_dd: the deques destroyed before each act (a record the act reads must still be alive)
+        return self
+
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address, '')
+        if not name.startswith('fake_ap_'): return super()._hook(u, address, size, _)
+        a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
+        sp = u.reg_read(UC_MIPS_REG_SP)
+        ret = 0
+        if name == 'fake_ap_list':
+            self.calls.append((name, a1, a2))
+            ret = self.new_deque(self.fake_tracks) if a1 == 2 and self.fake_tracks else 0
+        elif name == 'fake_ap_rec_id':
+            ret = self.cstr(self.read_cstr(self.word(a1 + O['REC_PATH']))[5:])
+        elif name == 'fake_ap_play':
+            self.calls.append((name, a1, a2 & 0xffffffff, a3, self.word(sp + 16), self.word(sp + 20)))
+            self.played_src = ([self.read_cstr(self.word(r + O['REC_PATH'])) for r in self.deques[a1]], a2 & 0xffffffff, a3)
+            ret = self.play_ret
+        elif name == 'fake_ap_cover':
+            self.calls.append((name, a1, a2, self.cover_ret)); ret = self.cover_ret & 0xffffffff
+            if self.cover_ret == 1: self.u.mem_write(a3, self.fake_cover.encode() + b'\0')   # (the file the source names, not the page's key's)
+        elif name == 'fake_ap_seconds':
+            ret = self.seconds_of.get(a1, 0)
+        elif name == 'fake_ap_gen':
+            ret = self.gen
+        elif name == 'fake_ap_gen_rows':
+            ret = self.gen if self.gen_rows is None else self.gen_rows
+        elif name == 'fake_ap_act':
+            self.acts_dd.append(sum(c[0] == 'deque_destroy' for c in self.calls)); self.calls.append((name, a2)); self.acts.append((a1, a2)); ret = self.act_ret
+        elif name == 'fake_ap_queue_row':
+            self.queued.append(a1); self.calls.append((name,))
+            ret = 0
+            if not self.queue_none:   # the queue record: the stream address in REC_PATH, the id the map would give
+                title = self.read_cstr(self.word(a1 + O['REC_TITLE']))
+                ret = self.new_deque([self.record(album='Fake Album', artist='Fake Artist', path=f'http://nd.example/stream?id={title}', title=title, name=f'{title}.flac', rid=-1000 - len(self.queued))])
+        elif name == 'fake_ap_row':
+            self.u.mem_write(a2, struct.pack('<5i', *self.row_of.get(a1, (0, 0, 0, 0, 0))))
+        elif name == 'fake_ap_state':
+            self.calls.append((name, a1, a2)); ret = self.state_ret
+        elif name == 'fake_ap_playing':
+            ret = int(a1 == self.playing_rec)
+        u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+
+
+def fake_machine(**kw):
+    ret, wp = kw.pop('cover_ret', 1), kw.pop('with_playing', False)
+    m = album_machine(album='Fake Album', artist='Fake Artist', **kw)   # (the cover cache file is the fake album's)
+    m.__class__ = FakeAP
+    m.top_main = m.window   # pod_is_top: the page is in front (the shared cover poll only runs then)
+    return m.fake_src(cover_ret=ret, with_playing=wp)
+
+
 def source_tests(ctx):
+    """7. album_open_src: NULL and &lib_stock are album_open; a fake source's tracks, cover, footer, play and gen."""
+    expect = ctx.expect
+    LS_SONGS = 2
+    # stock unchanged
+    for which in (0, PSYMS['lib_stock']):
+        m = album_machine()
+        r = m.call(PSYMS['album_open_src'], a0=which, a1=ALBUMS, a2=m.row, count=900000000)
+        calls = list(m.calls)
+        expect(not any(v[1:] == (28, 28) for v in m.bitmaps.values()) and ('timer_add', PSYMS['ls_cover_tick'], 250) not in calls, f'src {which:#x}: no cover spinner on the stock page')
+        expect(r == 0 and ('window_open', 'm1plus_album') in calls and ('loadAlbumdetailList', ALBUMS, m.row) in calls and m.word(G_CLASS) == LIB
+               and utf(m.wtext[m.widgets['ab_title']]) == ALBUM and vis(m, 'btn_select') == (1, 1),
+               f'album_open_src({"NULL" if not which else "&lib_stock"}) is album_open: the stock query, the stock class, the select button ({r}, {calls[:10]})')
+        m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # a fake source
+    m = fake_machine(n=5)
+    m.setword(G_CLASS, 0x1234)
+    r = m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    calls = list(m.calls)
+    expect(r == 0 and ('window_open', 'm1plus_album') in calls and [c[1] for c in calls if c[0] == 'fake_ap_list'] == [LS_SONGS],
+           f'the fake source opens the page and is asked for LS_SONGS: {r} {calls[:12]}')
+    expect(not any(c[0] in ('loadAlbumdetailList', 'loadLocalClassList') for c in calls) and m.word(G_CLASS) == 0x1234, 'no stock query runs and the stock class is left alone')
+    scope = [c for c in calls if c[0] == 'fake_ap_list'][0][2]
+    expect(('_deque_push_back', m.deques and [c for c in calls if c[0] == '_deque_push_back'][0][1], m.fake_row) in calls and m.read_cstr(m.word(scope + O['REC_PATH'])) == 'nd://al1',
+           'the scope is the album row, pushed into the page\'s own one-record deque')
+    expect(utf(m.wtext[m.widgets['ab_title']]) == 'Fake Album' and utf(m.wtext[m.widgets['ab_artist']]) == 'Fake Artist' and utf(m.wtext[m.widgets['ab_meta']]) == '2001 \xb7 5 tracks',
+           f'the header texts come from the row and the tracks: {m.wtext[m.widgets["ab_title"]]!r} {m.wtext[m.widgets["ab_meta"]]!r}')
+    expect(vis(m, 'btn_select') == (0, 0) and vis(m, 'btn_return') == (1, 1) and vis(m, 'btn_backtoplayer') == (1, 1), 'the Select button is hidden (no select mode on a source page yet)')
+    expect(vis(m, 'btn_more') == (1, 1) and m.props.get((m.widgets['btn_backtoplayer'], 'style:normal:icon')) is None, 'a source page: the "..." shows in Select\'s place and Now Playing stays the capsule\'s right cap')
+    expect(utf(m.wtext[m.widgets['ab_foot']]) == '5 tracks, 15 minutes' and vis(m, 'ab_foot')[0] == 1, f'the footer is the sum of src->seconds: {m.wtext[m.widgets["ab_foot"]]!r}')
+    expect(not any(c[0] in ('cc_build_open',) for c in calls) and not any(c[0].startswith('dur_') for c in calls), 'no cover or length worker, no durations table')
+    blits, texts, fills = paint(m)
+    flat = ' '.join(str(t) for t in texts)
+    expect('Remote 0' in flat and 'Remote 1' in flat, f'the rows paint the fake tracks: {flat[:200]}')
+    expect(len(blits) >= 1, 'the header cover (the cache file the source says is there) is blitted')
+    expect(m.win_colors(), 'the window is tinted from the cover')
+    # the playing marker: by the "nd://" url, a stock file name never matches
+    m.playing = ('', 'nd://t0', 0)
+    scroll_to(m, 0)
+    blits, texts, fills = paint(m)
+    wv = [b for b in blits if b[2][2] == O['AB_WAVE'] and b[2][3] == O['AB_WAVE']]
+    num = [t for (t, r), s_ in texts if s_ == 'label_row_num']
+    expect(len(wv) == 1 and wv[0][2][1] == row_y(0) + O['AB_TEXT_Y'] + (O['AB_TEXT_H'] - O['AB_WAVE']) // 2 and '1' not in num and '2' in num,
+           f'the track whose url plays (row 0) has the wave in place of its number: {num} {[b[2] for b in wv]}')
+    m.playing = ('0.flac', '/mnt/mmc/m/0.flac', 0)
+    wv = [b for b in paint(m)[0] if b[2][2] == O['AB_WAVE'] and b[2][3] == O['AB_WAVE']]
+    expect(not wv, 'a stock path that plays marks nothing on a source page')
+    # play
+    m.played_src = None
+    calls = tap(m, 150, row_y(3) + 20)
+    pl = [c for c in calls if c[0] == 'fake_ap_play']
+    expect(pl and pl[0][2] == 3 and pl[0][3] == 0 and m.played_src[0] == [f'nd://t{i}' for i in range(5)] and not any(c[0] in ('loadSongList', 'start_player') for c in calls),
+           f'a row tap plays through src->play at its index, how LS_PLAY_KEEP: {pl}')
+    calls = click(m, 'btn_play')
+    pl = [c for c in calls if c[0] == 'fake_ap_play']
+    expect(pl and pl[0][2] == 0 and pl[0][3] == 1, f'Play: index 0, in order: {pl}')
+    calls = click(m, 'btn_shuffle')
+    pl = [c for c in calls if c[0] == 'fake_ap_play']
+    expect(pl and pl[0][2] == 0xffffffff and pl[0][3] == 2, f'Shuffle: index -1, shuffle: {pl}')
+    # gen moves: the tracks are read again
+    m.fake_tracks = m.fake_tracks[:3]
+    m.gen = 2
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    calls = list(m.calls)
+    expect(any(c[0] == 'fake_ap_list' for c in calls) and utf(m.wtext[m.widgets['ab_meta']]) == '2001 \xb7 3 tracks' and utf(m.wtext[m.widgets['ab_foot']]) == '3 tracks, 6 minutes',
+           f'a gen change reads the tracks again: {calls[:8]} {m.wtext[m.widgets["ab_meta"]]!r}')
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(not any(c[0] == 'fake_ap_list' for c in m.calls), 'the same gen reads nothing')
+    # gen alone moves (a download's progress): the rows are painted again, the list is not read
+    m.gen_rows = 2; m.gen = 4
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(not any(c[0] == 'fake_ap_list' for c in m.calls), 'a move of gen alone reads no list')
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(not any(c[0] == 'fake_ap_list' for c in m.calls), 'the new gen was recorded: the next tick does nothing')
+    # gen_rows moves: the list is read; held back by a finger until it is up
+    m.gen_rows = 3; m.gen = 5
+    touch(m, 'down', 150, row_y(0) + 20, 'ab_on_down')
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(not any(c[0] == 'fake_ap_list' for c in m.calls), 'a finger is down: the list is not read')
+    touch(m, 'up', 150, row_y(0) + 20, 'ab_on_up', 1080)
+    m.calls = []
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(any(c[0] == 'fake_ap_list' for c in m.calls), 'a move of gen_rows reads the list at the first tick after the release')
+    m.gen_rows = None
+    # an unknown length: no footer
+    m.seconds_of[m.fake_tracks[1]] = 0
+    m.gen = 6
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(vis(m, 'ab_foot')[0] == 0, 'a track whose length the source does not know: no footer')
+    nd = len([c for c in m.calls if c[0] == 'deque_destroy'])
+    m.calls = []
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    expect(len([c for c in m.calls if c[0] == 'deque_destroy']) == 2, f'destroy frees the page\'s track list and its copy of the row ({nd} before)')
+    # a cover that is asked for: polled, then shown
+    def spin_images(m):
+        for i in range(8): m.images[f'wf_spinL{i}'] = (28, 28, bytes((0x55, 0x55, 0x55, 255)) * (28 * 28))   # (the 28 px frames as cc_decode flattens them over black)
+
+    def spinners(m): return [b for b in paint(m)[0] if m.bitmaps[b[0]][1:] == (28, 28)]
+    m = fake_machine(n=3, cover=None, cover_ret=0)
+    spin_images(m)
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    calls = list(m.calls)
+    sp = spinners(m)
+    expect(len(sp) == 1 and sp[0][2] == (O['AH_ART_X'] + (O['AH_ART'] - 28) // 2, O['AH_ART_Y'] + (O['AH_ART'] - 28) // 2, 28, 28) and ('timer_add', PSYMS['ls_cover_tick'], 250) in calls,
+           f'a cover asked for: the 28 px spinner centred on the header cover, turned by the shared 250 ms cover poll: {[b[2] for b in sp]}')
+    expect(m.call(PSYMS['ls_cover_tick'], a0=0x5a5a5a50, count=80000000) == 8 and spinners(m)[0][0] != sp[0][0], 'a tick repeats and turns the frame (its argument is stock\'s timer_info_t: not read)')
+    expect(any(c[0] == 'fake_ap_cover' for c in calls) and ('timer_add', PSYMS['ls_cover_tick'], 250) in calls and not any(c[0] == 'cc_build_open' for c in calls),
+           f'no file: src->cover is asked and polled, the cache worker is not used: {calls[-6:]}')
+    m.present.add(m.fake_cover); m.files[m.fake_cover] = 4096; m.cover_ret = 1   # (the source answers 1 and names the file now)
+    m.images['file://' + m.fake_cover] = (168, 168, bytes(RED + (255,)) * (168 * 168))
+    m.call(PSYMS['ls_cover_tick'], count=80000000)
+    blits, _, _ = paint(m)
+    expect(len(blits) >= 1 and m.win_colors(), 'the file arrived: the cover is shown and the window tinted')
+    expect(not spinners(m) and [m.call(PSYMS['ls_cover_tick'], count=80000000) for _ in range(3)][-1] != 8, 'and the spinner is gone, the shared poll ends')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # no cover at all (-1): the placeholder, no timer
+    m = fake_machine(n=3, cover=None, cover_ret=-1)
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    expect(not any(c[0] == 'timer_add' and c[1] == PSYMS['ls_cover_tick'] for c in m.calls), 'src->cover -1: the placeholder, nothing polled')
+    expect(not spinners(m), 'and no spinner')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the poll gives up (libsrc LS_COVER_POLLS, the one rule): the placeholder stays, the spinner goes
+    m = fake_machine(n=3, cover=None, cover_ret=0)
+    spin_images(m)
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    for _ in range(1199): m.call(PSYMS['ls_cover_tick'], count=80000000)
+    expect(len(spinners(m)) == 1, 'still polled: still the spinner')
+    m.call(PSYMS['ls_cover_tick'], count=80000000); m.call(PSYMS['ls_cover_tick'], count=80000000)
+    expect(not spinners(m) and m.call(PSYMS['ls_cover_tick'], count=80000000) != 8, 'the last poll found nothing: no spinner, the poll ends')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # a page that is not on top asks nothing and turns nothing
+    m = fake_machine(n=3, cover=None, cover_ret=0)
+    spin_images(m)
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    m.top_main = 0; m.calls = []
+    expect(m.call(PSYMS['ls_cover_tick'], count=80000000) == 8 and not [c for c in m.calls if c[0] == 'fake_ap_cover'], 'not the top window: the poll waits, the source is not asked')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # an empty source list
+    m = fake_machine(n=3)
+    m.fake_tracks = []
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    expect(vis(m, 'label_status')[0] == 1 and vis(m, 'view_grid')[0] == 0, 'a source without tracks: the "No songs" status')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+
+
+def loading_tests(ctx):
+    """A source's album opened before its tracks are cached: the normal layout (header texts, cover) with the spinner in the track area, never the empty text; the rows fill in when
+    they arrive; an answer of zero tracks (or a failed request) is the empty state."""
+    expect = ctx.expect
+    LS_SONGS = 2
+
+    def status(m): return m.wtext.get(m.widgets['label_status'], '')
+
+    m = fake_machine(n=5)
+    m.fake_tracks, m.state_ret = [], 1   # LS_ST_LOADING
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    calls = list(m.calls)
+    expect(any(c[:2] == ('fake_ap_state', LS_SONGS) for c in calls), f'the page asks src->state(LS_SONGS, the album row): {calls[:10]}')
+    expect(vis(m, 'view_grid') == (1, 1) and vis(m, 'label_status')[0] == 0 and vis(m, 'ab_spin')[0] == 1, 'loading: the content view (header) shows, the spinner is up, no status line')
+    expect(all(vis(m, n)[0] == 0 for n in ('btn_play', 'btn_shuffle', 'ab_glyph')) and vis(m, 'btn_play')[1] == 0 and vis(m, 'btn_shuffle')[1] == 0,
+           'loading: the Shuffle disc and the Play pill (buttons and glyph) are hidden and insensitive')
+
+    expect(utf(m.wtext[m.widgets['ab_title']]) == 'Fake Album' and utf(m.wtext[m.widgets['ab_artist']]) == 'Fake Artist' and utf(m.wtext[m.widgets['ab_meta']]) == '',
+           f'the header has the tapped row\'s title and artist and no "0 tracks": {m.wtext[m.widgets["ab_title"]]!r} {m.wtext[m.widgets["ab_meta"]]!r}')
+    expect('No songs' not in status(m) and any(c[0] == 'fake_ap_cover' for c in calls), f'the empty text is not set, the cover is asked for ({status(m)!r})')
+    expect(('timer_add', PSYMS['ls_spin_tick'], 250) in calls, 'the spinner turns on a timer')
+    blits, texts, _ = paint(m)
+    expect(len(blits) >= 1, 'the header paints (the cover or its disc) with no rows')
+    expect(not texts, f'no pill text is painted while loading ({texts})')
+    frames = []
+    for _ in range(2):
+        m.call(PSYMS['ls_spin_tick'], a0=0x5a5a5a50, count=4000000)
+        frames += [c[2] for c in m.calls if c[0] == 'image_base_set_image']
+    expect(frames == ['wf_spin1', 'wf_spin2'], f'each tick sets the next frame, whatever stock passes as the argument (its timer_info_t): {frames}')
+    # the tracks arrive: the rows fill in, the spinner is gone, the header keeps its cover
+    m.fake_tracks = [m.record(album='Fake Album', artist='Fake Artist', path=f'nd://t{i}', title=f'Remote {i}', name='', rid=-3 - i) for i in range(3)]
+    m.state_ret, m.gen = 0, 2
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(vis(m, 'view_grid') == (1, 1) and vis(m, 'label_status')[0] == 0, 'the tracks arrive: the content view stays, no status line')
+    expect(vis(m, 'ab_spin')[0] == 0 and 'tracks' in utf(m.wtext[m.widgets['ab_meta']]), f'the meta line has the count now ({m.wtext[m.widgets["ab_meta"]]!r})')
+    expect(all(vis(m, n) == (1, 1) for n in ('btn_play', 'btn_shuffle')) and vis(m, 'ab_glyph')[0] == 1, 'the tracks arrive: the Shuffle disc and the Play pill show, live')
+    expect(any(t for t, _ in paint(m)[1]), 'the pill text is painted again')
+    m.call(PSYMS['ls_spin_tick'], a0=0x5a5a5a50, count=4000000)
+    expect(not any(c[0] in ('image_base_set_image', 'timer_add') for c in m.calls), 'the spinner timer ends with the wait')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # the server answered with no tracks: the empty state, no spinner
+    m = fake_machine(n=5)
+    m.fake_tracks, m.state_ret = [], 0
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    expect(vis(m, 'view_grid')[0] == 0 and vis(m, 'label_status')[0] == 1 and status(m) == 'No songs' and vis(m, 'ab_spin')[0] == 0, 'an empty answer: "No songs", no spinner')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    # a failed request: the reason, no header, no pills, no spinner
+    for st, want in ((2, "Can't connect to the server"), (3, 'Connect to Wi-Fi first')):
+        m = fake_machine(n=5)
+        m.fake_tracks, m.state_ret = [], st   # LS_ST_FAILED / LS_ST_OFFLINE
+        m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+        expect(vis(m, 'label_status')[0] == 1 and status(m) == want and vis(m, 'ab_spin')[0] == 0 and vis(m, 'view_grid')[0] == 0 and vis(m, 'btn_play')[0] == 0, f'state {st}: {want!r}, no spinner, no header, no pills ({status(m)!r})')
+        m.call(PSYMS['ab_on_destroy'], count=4000000)
+
+
+def marks_tests(ctx):
+    """8. A source's row marks (docs/modules/subsonic.md ND-13): the downloaded disc, the download ring (no "Downloading" text), the DSD tag, the dim offline title, and the playing marker asked of src->playing."""
+    from PIL import Image
+    expect = ctx.expect
+    LS_DONE, LS_WAIT, LS_ACTIVE = 3, 1, 2
+    im = Image.open(os.path.join(ROOT, 'assets', 'icons', 'png', 'pc_atlas.png')).convert('RGBA')
+    m = fake_machine().fake_src(n=6, with_playing=True)   # six tracks, the source answers src->playing
+    m.images['pc_atlas'] = (im.width, im.height, im.tobytes())
+    t = m.fake_tracks
+    m.row_of = {t[0]: (LS_DONE, 0, 0, 0, 0), t[1]: (LS_ACTIVE, 42, 0, 0, 0), t[2]: (LS_ACTIVE, -1, 0, 0, 0), t[3]: (0, 0, 1, 0, 1), t[4]: (LS_DONE, 0, 1, 0, 0), t[5]: (LS_WAIT, 0, 0, 0, 0)}
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    scroll_to(m, HDR)
+    blits, texts, fills = paint(m)
+    disc, dsd, ring = (O['PA_BADGE_PX'], O['PA_DSD_H']), (O['PA_DSD_W'], O['PA_DSD_H']), (O['PA_DL_PX'],) * 2
+
+    discs = {b[2][1] // ROW: b[2] for b in blits if tuple(b[2][2:]) == disc}
+    dsds = {b[2][1] // ROW: b[2] for b in blits if tuple(b[2][2:]) == dsd}
+    ARROW, STOP, NSTEP = O['PA_DL_ARROW'], O['PA_DL_STOP'], O['PA_DL_N']
+    cell = lambda b: b[1][0] // O['PA_DL_PX'] + (b[1][1] - O['PA_DSD_H']) // O['PA_DL_PX'] * O['PA_DL_COLS']   # the atlas cell a ring blit copies
+    ringblits = [b for b in blits if tuple(b[2][2:]) == ring]
+    rings = {b[2][1] // ROW: b for b in ringblits if cell(b) < NSTEP}
+    marks = {b[2][1] // ROW: cell(b) for b in ringblits if cell(b) >= NSTEP}
+    titles = {r[1] // ROW: (s, st) for (s, r), st in texts if st in ('label_row_title', 'label_row_dim') and r[0] > 30}
+    expect(sorted(discs) == [0, 4], f'the downloaded disc (PA_BADGE_PX square) is on the two downloaded rows only: {sorted(discs)}')
+    expect(sorted(dsds) == [3, 4], f'the DSD tag (PA_DSD_W x PA_DSD_H) is on the two DSD rows only: {sorted(dsds)}')
+    expect(sorted(rings) == [1, 2, 5], f'the download ring is on the downloading and the queued rows only: {sorted(rings)}')
+    ks = {r: cell(rings[r]) for r in rings}
+    expect(ks == {1: 5, 2: 0, 5: 0} and all(rings[r][1][2:] == ring for r in rings), f'42 % draws the 5 / 12 step (nearest), an unknown progress and a queued track the empty ring: {ks}')
+    expect(marks == {1: STOP, 2: STOP, 5: ARROW}, f'a running download draws the stop square over its step (42 % and unknown), a queued track the arrow on the empty ring: {marks}')
+    expect(not [1 for _, st in texts if st == 'label_row_val'] and not any('Downloading' in s or 'Waiting' in s for (s, r), st in texts), 'no state text on the page')
+    expect(rings[1][2][0] + rings[1][2][2] == rings[2][2][0] + rings[2][2][2] and rings[1][2][1] % ROW + 7 == O['AB_TEXT_Y'] + O['AB_TEXT_H'] // 2, f'the ring ends where the group ends, centred on the title line: {rings[1][2]}')
+    for pct, want in ((0, 0), (80, 10), (100, 11)):   # the ring follows the progress on the next paint
+        m.row_of[t[1]] = (LS_ACTIVE, pct, 0, 0, 0)
+        b1 = [b for b in paint(m)[0] if tuple(b[2][2:]) == ring and b[2][1] // ROW == 1]
+        k1 = [cell(b) for b in b1 if cell(b) < NSTEP]
+        expect(k1 == [want] and [cell(b) for b in b1 if cell(b) >= NSTEP] == [STOP], f'{pct} % draws step {want} with the stop square: {k1}')
+    m.row_of[t[1]] = (LS_ACTIVE, 42, 0, 0, 0)
+    # the title stops before the marks; the marks sit left of the "..." zone
+    end = rings[1][2][0] + rings[1][2][2]
+    d0, d4, s4, s3 = discs[0], discs[4], dsds[4], dsds[3]
+    expect(s3[0] + s3[2] == end and s4[0] + s4[2] == end and d4[0] + d4[2] + 6 == s4[0] and d0[0] + d0[2] == end,
+           f'the group ends at the text end ({end}): DSD last, the disc LS_MK_GAP before it: {d0} {d4} {s4} {s3}')
+    mid = lambda b: b[1] % ROW + b[3] // 2
+    expect(mid(d0) == O['AB_TEXT_Y'] + O['AB_TEXT_H'] // 2 == mid(s4), f'both marks are centred on the title line: {mid(d0)} {mid(s4)}')
+    expect(all(titles[r][0] for r in range(5)), f'titles painted: {titles}')
+    expect([titles[r][1] for r in range(5)] == ['label_row_title'] * 3 + ['label_row_dim', 'label_row_title'], f'only the offline row (3) is in the dim style: {[titles[r][1] for r in range(5)]}')
+    # stock page: no marks, no extra styles
+    m2 = album_machine(n=4)
+    m2.images['pc_atlas'] = (im.width, im.height, im.tobytes())
+    open_album(m2)
+    scroll_to(m2, HDR)
+    b2, t2, _ = paint(m2)
+    expect(not [b for b in b2 if tuple(b[2][2:]) in (disc, dsd)] and not [1 for _, st in t2 if st in ('label_row_val', 'label_row_dim')] and not any(c[0] == 'widget_load_image' and c[1] == 'pc_atlas' for c in m2.calls),
+           'a stock page draws no marks and never loads the atlas')
+    # the playing marker comes from src->playing
+    m.playing_rec = t[2]
+    m.playing = ('', 'nd://t0', 0)   # (the url test would pick row 0: it must not be asked)
+    blits, texts, fills = paint(m)
+    wv = [b for b in blits if b[2][2] == O['AB_WAVE'] and b[2][3] == O['AB_WAVE']]
+    expect(len(wv) == 1 and wv[0][2][1] // ROW == 2, f'src->playing picks the row with the wave: {[b[2] for b in wv]}')
+    m.playing_rec = None
+    expect(not [b for b in paint(m)[0] if b[2][2] == O['AB_WAVE'] and b[2][3] == O['AB_WAVE']], 'src->playing 0 for every row: no wave')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+
+
+def dsd_tests(ctx):
+    """9. The DSD confirm (ND-14): a source's play answering -2 (a DSD track that is not downloaded) shows "Download to Play?" from a row tap, Play and Shuffle; Download asks src->act(LS_ACT_DOWNLOAD)
+    on the row, Cancel asks nothing; another answer shows no dialog."""
+    expect = ctx.expect
+    TEXT = 'Download to Play?\nDSD tracks play from the card. Remote {n}, ? MB.'
+    def asked(m): return [c for c in m.calls if c[0] == 'confirm']
+    def open_src(**kw):
+        m = fake_machine(n=5, **kw)
+        m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+        m.top_main = 0   # (no top window: the confirm dialog's scrim needs a mapped one)
+        return m
+    for what, act in (('a row tap', lambda m: tap(m, 150, row_y(3) + 20)), ('Play', lambda m: click(m, 'btn_play')), ('Shuffle', lambda m: click(m, 'btn_shuffle'))):
+        n = 3 if what == 'a row tap' else 0   # (a Shuffle start is the row the source answered -2 for: the source here never says, so the first)
+        m = open_src(); m.play_ret = -2; m.confirm_yes = False
+        calls = act(m)
+        ask = asked(m)
+        expect(len(ask) == 1 and ask[0][1] == TEXT.format(n=n) and ask[0][2] == O['CONFIRM_KIND_WRAP'] and not m.acts, f'{what}: -2 asks "Download to Play?" with the track and size, Cancel asks nothing ({[a[1:] for a in ask]})')
+        expect(any(c[0] == 'timer_add' for c in calls), f'{what}: the dialog\'s buttons are relabelled Cancel / Download by a timer')
+        m = open_src(); m.play_ret = -2; m.confirm_yes = True; m.act_ret = 0
+        act(m)
+        expect(m.acts == [(m.fake_tracks[n], 1)], f'{what}: Download asks src->act(LS_ACT_DOWNLOAD) for that row ({m.acts})')
+        m = open_src(); m.play_ret = 0; m.confirm_yes = True
+        act(m)
+        expect(not asked(m) and not m.acts, f'{what}: a source that played shows no dialog')
+        m = open_src(); m.play_ret = -1; m.confirm_yes = True
+        act(m)
+        expect(not asked(m) and not m.acts, f'{what}: -1 (nothing started, the source said why) shows no dialog')
+    m = open_src(); m.play_ret = -2; m.confirm_yes = True; m.act_ret = 0
+    m.setword(m.fake_tracks[3] + O['REC_TITLE'], m.cstr('A very long track title that goes on and on, \u00e9 \u00e9 \u00e9 \u00e9'))
+    tap(m, 150, row_y(3) + 20)
+    ask = asked(m)
+    expect(len(ask) == 1 and len(ask[0][1].encode('latin-1')) < 0x1ff and '...' in ask[0][1], f'a long title is cut with an ellipsis so the text fits the dialog: {ask[0][1] if ask else None!r}')
+
+
+def nextalbum_tests(ctx):
     """Continue with Next Album, phase 1 (patch/nextalbum.c): the order an opener noted is taken by album_open; Play, Shuffle and a track arm it around the queue load, which keeps it;
     an album opened without a note, or with the setting off, has no order; a play that loads nothing leaves the old source."""
     expect = ctx.expect
@@ -832,7 +1231,47 @@ def source_tests(ctx):
     expect(NA.state(m)['active'] is None, 'any later load drops it')
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests, source_tests]   # tools/check.py runs each as its own task
+def more_tests(ctx):
+    """12. The source page's "..." (Download Album): hidden on the library's page, its card opens, closes on the scrim and its one row asks src->act(LS_ACT_DOWNLOAD_ALL) once with the page's list."""
+    expect = ctx.expect
+    LS_ACT_DOWNLOAD_ALL = 6
+    f = ui().find
+    expect(f('btn_more') is not None and f('btn_more').get('visible') == 'false' and (f('btn_more').x, f('btn_more').w) == (f('btn_select').x, f('btn_select').w)
+           and f('btn_more').get('style:normal:icon') == 'pod_nav_more' and f('btn_more').get('style:pressed:icon') == 'pod_nav_more_down', 'the asset has a hidden "..." on Select\'s slot')
+    expect(f('vs_card').get('visible') == 'false' and f('vs_label6').get('tr_text') == 'Download Album' and f('vs_glyph6').get('image') == 'pod_ic_vsdownload' and f('vs_item8') is None,
+           'the card is hidden and its first action row is Download Album with the download glyph')
+    m = album_machine()   # the stock page: Select as before, no "..."
+    m.call(PSYMS['album_open_src'], a0=0, a1=ALBUMS, a2=m.row, count=900000000)
+    expect(vis(m, 'btn_select') == (1, 1) and not any(c in m.calls for c in (('widget_lookup', 'btn_more'), ('widget_lookup', 'vs_scrim'))),
+           'the stock page: Select shows, the "..." stays hidden and unbound, the card is not bound')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    m = fake_machine(n=4)
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    expect(vis(m, 'btn_more') == (1, 1) and vis(m, 'btn_select')[0] == 0 and vis(m, 'vs_card')[0] == 0, 'a source page: the "..." shows, Select does not, the card is closed')
+    click(m, 'btn_more')
+    expect(vis(m, 'vs_card')[0] == 1 and vis(m, 'vs_scrim')[0] == 1 and vis(m, 'vs_item6')[0] == 1 and vis(m, 'vs_item7')[0] == 0 and vis(m, 'vs_item0')[0] == 0, 'the "..." opens the card with the one row')
+    click(m, 'vs_scrim')
+    expect(vis(m, 'vs_card')[0] == 0 and not m.acts, 'the scrim closes it and asks nothing')
+    click(m, 'btn_more'); click(m, 'btn_more')
+    expect(vis(m, 'vs_card')[0] == 0, 'the "..." closes the open card')
+    click(m, 'btn_more')
+    m.act_ret = 0
+    click(m, 'vs_item6')
+    expect(len(m.acts) == 1 and m.acts[0][1] == LS_ACT_DOWNLOAD_ALL and m.acts[0][0] in m.deques and m.deques[m.acts[0][0]] == m.fake_tracks and vis(m, 'vs_card')[0] == 0,
+           f'Download Album calls src->act(LS_ACT_DOWNLOAD_ALL) once with the page\'s list and closes the card ({m.acts})')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+    m = fake_machine(n=4)   # the tracks have not arrived yet
+    m.fake_tracks, m.state_ret = [], 1   # LS_ST_LOADING
+    m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
+    expect(vis(m, 'btn_more') == (1, 0) and vis(m, 'vs_card')[0] == 0, f'the album is loading: the "..." keeps its place but is dead ({vis(m, "btn_more")})')
+    m.fake_tracks = [m.record(album='Fake Album', artist='Fake Artist', path=f'nd://t{i}', title=f'Remote {i}', name='', rid=-3 - i) for i in range(3)]
+    m.state_ret, m.gen = 0, 2
+    m.call(PSYMS['ab_on_gen'], count=80000000)
+    expect(vis(m, 'btn_more') == (1, 1), 'the tracks arrive: the "..." is live')
+    m.call(PSYMS['ab_on_destroy'], count=4000000)
+
+
+SECTIONS = [asset_tests, open_tests, header_tests, cover_tests, rows_tests, play_tests, select_tests, source_tests, loading_tests, marks_tests, dsd_tests, nextalbum_tests, more_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

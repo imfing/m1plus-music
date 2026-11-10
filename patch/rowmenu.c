@@ -57,6 +57,7 @@ void rowmenu_close(rowmenu_t *rm) {
     rm->rows = (void *)0;
     rm_show(rm->scrim, 0);
     rm_show(rm->card, 0);
+    rm->src = (const lib_src_t *)0;
 }
 
 /* The toast of each refusal (UPNEXT_*, docs/modules/queue.md); keys in tools/pod_i18n.py. */
@@ -80,10 +81,21 @@ static int rm_on_scrim(void *ctx, void *e) {
 /* Favorite / Undo Favorite: stock's own star calls (manage_myfav 0x4ef884: checkFavExist, then deleteMusicFromFav or addMyFav, on the record; Now Playing's star and the Playlists page's Favorites
  * list read the same myfav table) on the row's copy. The answer is read again: a call that changed nothing is "Adding Failed". */
 static void rm_favorite(rowmenu_t *rm) {
-    void *rec = rm->rows ? deque_at(rm->rows, 0) : (void *)0;
+    void *rows = rm->rows, *rec = rows ? deque_at(rows, 0) : (void *)0;
     int was, now;
     if (!rec) {
         rowmenu_close(rm);
+        return;
+    }
+    if (rm->src) { /* a source's track: its own star (the label the menu opened with says which way it goes), the row re-paints from the source's gen */
+        const lib_src_t *src = rm->src;
+        was = rm->fav;
+        rm->rows =
+            (void
+                 *)0; /* the record lives until the act has read it (rowmenu_close would destroy it), like the download action */
+        rowmenu_close(rm);
+        ls_favorite(src, rec, was);
+        deque_destroy(rows);
         return;
     }
     was = checkFavExist(rec) != 0;
@@ -94,6 +106,47 @@ static void rm_favorite(rowmenu_t *rm) {
     now = checkFavExist(rec) != 0;
     rowmenu_close(rm);
     pod_toast(TR(now == was ? "msg_addfailed" : now ? "Added to Favorites" : "Removed from Favorites"));
+}
+
+/* The third row of a source's sheet: Download, Cancel Download, Remove Download through the source (the row's state changes with its gen). */
+static void rm_download(rowmenu_t *rm) {
+    void *rows = rm->rows, *rec = rows ? deque_at(rows, 0) : (void *)0;
+    const lib_src_t *src = rm->src;
+    int what = rm->dl;
+    rm->rows = (void *)0;
+    rowmenu_close(rm);
+    if (rec && src && src->act) src->act(src, rec, what);
+    if (rows) deque_destroy(rows);
+}
+
+/* Play Next / Play After for a source's row: its queue record (a stream address or the local file) through upnext_add; an undownloaded DSD row asks to be downloaded instead. */
+static void rm_queue_src(rowmenu_t *rm, int after) {
+    void *rows = rm->rows, *rec = rows ? deque_at(rows, 0) : (void *)0, *q;
+    const lib_src_t *src = rm->src;
+    ls_row_t x;
+    int r;
+    rm->rows = (void *)0;
+    rowmenu_close(rm);
+    if (!rec || !src || !src->queue_row) {
+        if (rows) deque_destroy(rows);
+        return;
+    }
+    memset(&x, 0, sizeof x);
+    if (src->row) src->row(src, rec, &x);
+    if (x.dsd && x.dl != LS_DL_DONE) { /* DSD plays from the card only */
+        ls_dsd_confirm(src, rows, 0);
+        deque_destroy(rows);
+        return;
+    }
+    q = src->queue_row(src, rec); /* (it shows why when it cannot) */
+    deque_destroy(rows);
+    if (!q) return;
+    r = upnext_add(q, after);
+    deque_destroy(q);
+    if (r == UPNEXT_ADDED)
+        pod_toast(TR(after ? "Added to Queue" : "Playing Next"));
+    else if (r < 0)
+        pod_toast(TR(rm_refusal(r)));
 }
 
 /* Get Info: the page opens on the row's copy (it copies what it shows), then the copy goes. */
@@ -110,7 +163,11 @@ static int rm_on_item(void *ctx, void *e) {
     rowmenu_t *rm = s->rm;
     (void)e;
     if (!rm->open) return RET_OK;
-    if (s->k == 3) {
+    if (rm->src && s->k == 2) {
+        rm_download(rm);
+    } else if (rm->src && s->k < 2) {
+        rm_queue_src(rm, s->k);
+    } else if (s->k == 3) {
         rm_favorite(rm);
     } else if (s->k == 4) {
         rm_info(rm);
@@ -149,6 +206,8 @@ int rowmenu_bind(rowmenu_t *rm, void *win) {
     }
     rm->fav_label = widget_lookup(win, "rm_label3", 1);
     rm->fav_icon = widget_lookup(win, "rm_icon3", 1);
+    rm->dl_label = widget_lookup(win, "rm_label2", 1);
+    rm->dl_icon = widget_lookup(win, "rm_icon2", 1);
     rm_show(rm->scrim, 0);
     rm_show(rm->card, 0);
     if (!ok) return 0;
@@ -174,7 +233,28 @@ void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int 
 }
 
 int rowmenu_open(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add) {
+    return rowmenu_open_src(rm, row, rec, add, (const lib_src_t *)0);
+}
+
+/* The third row's words and glyph: Add to Playlist for the stock library; for a source Download, Cancel Download (waiting or running) or Remove Download (on the card). */
+static void rm_third(rowmenu_t *rm, const ls_row_t *x) {
+    const char *text = "Add to Playlist", *icon = "rm_ic_add";
+    if (rm->src) {
+        if (x->dl == LS_DL_DONE)
+            text = "Remove Download", icon = "rm_ic_rmdl", rm->dl = LS_ACT_DELETE_DL;
+        else if (x->dl == LS_DL_WAIT || x->dl == LS_DL_ACTIVE)
+            text = "Cancel Download", icon = "rm_ic_cxdl", rm->dl = LS_ACT_CANCEL_DL;
+        else
+            text = "Download", icon = "rm_ic_dl", rm->dl = LS_ACT_DOWNLOAD;
+    }
+    if (rm->dl_label) widget_set_tr_text(rm->dl_label, text);
+    if (rm->dl_icon) widget_set_prop_str(rm->dl_icon, "image", icon);
+}
+
+int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, const lib_src_t *src) {
     void *d;
+    ls_row_t x;
+    if (src == &lib_stock) src = (const lib_src_t *)0;
     if (!rm->on || rm->open || !rec) return 0;
     d = _create_deque("stSongInfo");
     if (!d) return 0;
@@ -185,7 +265,11 @@ int rowmenu_open(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add) {
         deque_destroy(d);
         return 0;
     }
-    rm->fav = checkFavExist(rec) != 0; /* (the sheet shows the state of this row now) */
+    memset(&x, 0, sizeof x);
+    if (src && src->row) src->row(src, rec, &x);
+    rm->src = src;
+    rm->fav = src ? x.fav != 0 : checkFavExist(rec) != 0; /* (the sheet shows the state of this row now) */
+    rm_third(rm, &x);
     if (rm->fav_label) widget_set_tr_text(rm->fav_label, rm->fav ? "Undo Favorite" : "Favorite");
     if (rm->fav_icon) widget_set_prop_str(rm->fav_icon, "image", rm->fav ? "rm_ic_unfav" : "rm_ic_fav");
     rm->rows = d, rm->row = row, rm->add = add, rm->open = 1;

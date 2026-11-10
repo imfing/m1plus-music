@@ -44,6 +44,8 @@ typedef struct {
         [4]; /* a mosaic tile (grid_mosaic): the distinct cover keys, nq of them (0..4), qi of them already placed in bmp */
     int nq, qi;
     int mid; /* list mode: the title alone in the row, centred vertically (the picker's New playlist row) */
+    int xw; /* a source's row: the width its marks / state value take from the text (the text was cut for it; patch/albumpage.c, patch/songs.c cut it again when it changes) */
+    int load; /* a source's cover on its way (the page sets it; with art not 1 the grid draws the spinner on the disc) */
     int nochev; /* list mode with chevrons: this row opens nothing (a dimmed Not available result): no chevron, the text runs to LIST_TEXT_W */
 } grid_tile_t;
 
@@ -62,6 +64,11 @@ typedef struct {
     const void *
         az; /* the Albums list's az_t (patch/azlist.h): grid_list_paint takes a row's y from az_row_y (the section headers between the rows); NULL: row r at r * LIST_ROW_H */
     unsigned clock;
+    void *spin[8]; /* the cover spinner's frames (grid_spin_open), spin_px square; spin_n the current one */
+    int spin_px, spin_n;
+    int person; /* 1: the pictures are artists' (the Artists page): a portrait file is cut as pv_square cuts it, from the top third (cc_decode box 2) */
+    /* the file of a cover key as "file://<path>" into out (80 bytes), NULL when there is none; NULL here: the Cover Flow cache file (cc_url). A source's page sets it. */
+    const char *(*url)(char *out, unsigned key);
 } grid_t;
 
 /* n tiles on the heap; 0 when there is no memory (the grid is then unusable: grid_free it). side and round as above. */
@@ -72,6 +79,12 @@ void grid_free(grid_t *g);
 void grid_drop(grid_t *g); /* every tile and the placeholder dropped (the cover size changes) */
 void grid_placeholder(grid_t *g); /* the placeholder bitmap: the theme's disc reduced like a cover, else flat grey */
 void grid_free_art(grid_tile_t *t);
+
+/* The cover spinner a source's page draws on a tile whose cover is on its way (grid_tile_t.load, art not 1): the 8 frames "<prefix>0".."<prefix>7" (wf_spin, 14 px; wf_spinL, 28 px)
+ * made into grey bitmaps with alpha, once (a failed set is not retried); grid_free frees them. grid_spin_turn advances the frame and returns how many tiles are loading (the
+ * page's 250 ms timer redraws and repeats while it is not 0). Without grid_spin_open nothing is drawn. */
+void grid_spin_open(grid_t *g, const char *prefix, int px);
+int grid_spin_turn(grid_t *g);
 
 grid_tile_t *grid_find(grid_t *g, int album);
 /* The scroll_view sv is moving: a finger is dragging it (pressed and past the drag threshold) or its scroll animator (the fling) is running.

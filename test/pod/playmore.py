@@ -55,6 +55,8 @@ class PM(pulldown.SM):
         self.handlers[PSYMS['podcasts_go']] = 'podcasts_go'
         self.art_ret = 0                # what onlineart_open returns (patch/onlineart.c, trapped here: test/pod/onlineartpage.py runs it)
         self.handlers[PSYMS['onlineart_open']] = 'onlineart_open'
+        self.sbtrack = {}               # server track REC_ID -> track id (sba_rec_track, patch/sbapi.c: tested in sbapi.py); a record in it is a server track (streamed or downloaded)
+        self.handlers[PSYMS['sba_rec_track']] = 'sba_rec_track'
         self.cf_ret = 0                 # what coverflow_artist returns (patch/coverflow.c, trapped here: test/pod/coverflow.py and artists.py run it)
         self.handlers[PSYMS['coverflow_artist']] = 'coverflow_artist'
         self.am_ret = 0                 # what albums_open_artist returns (patch/albums.c, trapped here: test/pod/artists.py runs it); -1 = the window will not open
@@ -168,6 +170,9 @@ class PM(pulldown.SM):
             self.calls.append(('podcasts_go',)); u.reg_write(UC_MIPS_REG_V0, self.ep_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'vinyl_open':
             self.calls.append(('vinyl_open',)); u.reg_write(UC_MIPS_REG_V0, self.vinyl_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0
+            u.reg_write(UC_MIPS_REG_V0, self.cstr(self.sbtrack.get(rid, ''))); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'onlineart_open':
             self.calls.append(('onlineart_open',)); u.reg_write(UC_MIPS_REG_V0, self.art_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name == 'widget_set_tr_text' and self.read_cstr(a1) in self.tr_fail:
@@ -674,6 +679,16 @@ def run(ctx):
     m = PM(); m.open(); m.calls = []
     stale = m.alloc(0x80); m.call(PSYMS['pm_on_art'], a0=stale, a1=0, count=100000)
     expect('onlineart_open' not in [c[0] for c in m.calls], 'a Find Cover & Lyrics click handler left behind for another dialog does nothing')
+    # a server track (streamed or downloaded) has no local album or file to save a cover or lyrics under: the row is dimmed and insensitive on page 2 whatever the Wi-Fi, and a click that still runs opens nothing
+    for path in ('http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt', '/mnt/mmc/Subsonic/Song.flac'):
+        m = PM(); m.sbtrack[-5] = 't5'; m.play([m.record(path=path, rid=-5)], 0); m.open(); m.calls = []; m.click_more()
+        dim = [c for c in m.calls if c[0] == 'widget_set_opacity' and c[1] == m.rows[ART]]
+        expect(dim == [('widget_set_opacity', m.rows[ART], 100)] and m.shown() == PAGE2 and not m.live(ART) and (m.flags(m.rows[ART]) & F_VISIBLE) and 'pod_art' not in m.tap_row(ART),
+               f'a server track ({"stream" if path.startswith("http") else "download"}), Wi-Fi on: Find Cover & Lyrics is dimmed and insensitive ({dim})')
+        m.calls = []; m.call(PSYMS['pm_on_art'], a0=m.dialog, a1=0, count=100000)
+        expect('onlineart_open' not in [c[0] for c in m.calls] and ('window_close', m.dialog) not in m.calls, 'and its click handler, should it run, opens nothing')
+    m = PM(); m.play([m.record(path='/mnt/mmc/Music/a.flac', rid=7)], 0); m.open(); m.click_more()
+    expect(m.live(ART), 'a local track (not in the queue map): the row is live as before')
 
     # Sleep Timer (pm_on_sleep, page 2, under Playback speed): the stock Power page by a plain navigator_to, the page first, the sheet closed once it is up
     m = PM(); m.open()

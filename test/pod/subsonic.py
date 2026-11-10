@@ -1,261 +1,250 @@
-"""Navidrome/Subsonic JSON parsing and metadata transfer (patch/subsonic.c)."""
-import json, struct, subprocess, tempfile
-from pathlib import Path
+"""Navidrome/Subsonic network helpers (patch/sbnet.c) and the response parsers (patch/sbparse.c)."""
+import json, struct
 from harness import *  # noqa: F401,F403
-import awtk_ui, pod_pages, pod_ui, mod_icons
-import palette as palette_mod
 
 REGION, SIZE = 0x30000000, 0x40000
-SB_ID, SB_TEXT = 96, 192
-SB_META, SB_SUFFIX = 96, 12
-SB_FIELDS = SB_ID + SB_TEXT * 3 + SB_META * 4 + SB_SUFFIX
-SONG_SIZE = SB_FIELDS + 8 * 4
-
-
-def download_validation_tests(ctx):
-    """Run the actual response parser/validators on a host, including bad ranges."""
-    source = Path(ROOT, 'patch', 'subsonic.c').read_text()
-    start = source.index('typedef struct {\n    char data[SB_RESPONSE_MAX]')
-    sink = source[start:source.index('} sb_sink_t;', start) + len('} sb_sink_t;')]
-    start = source.index('typedef struct {\n    char magic[8], server[256]')
-    resume = source[start:source.index('} sb_resume_meta_t;', start) + len('} sb_resume_meta_t;')]
-
-    def func(name):
-        start = source.index(name)
-        start = source.rfind('\n', 0, start) + 1
-        while '{' not in source[start:source.index('\n', start)]:
-            start = source.index(name, source.index('\n', start))
-            start = source.rfind('\n', 0, start) + 1
-        end_line = source.index('\n', start)
-        if '}' in source[start:end_line]:
-            return source[start:end_line]
-        return source[start:source.index('\n}', start) + 2]
-
-    helpers = '\n'.join(func(name) for name in (
-        'static unsigned sb_len(', 'static int sb_ascii_lower(', 'static int sb_prefix(',
-        'static int sb_strong_etag(', 'static int sb_header_value(', 'static int sb_text_type(',
-        'static int sb_download_headers_valid(', 'static unsigned sb_header(',
-        'static int sb_audio_response_valid(', 'static int sb_bytes_equal(', 'static int sb_fixed_equal(',
-        'static int sb_terminated(', 'static int sb_resume_matches('))
-    program = r'''
-static void line(sb_sink_t *s, const char *text) { sb_header((void *)text, 1, strlen(text), s); }
-static void response(sb_sink_t *s, const char *status, const char *range, const char *etag) {
-    line(s, status); if (range) line(s, range); if (etag) line(s, etag);
-    line(s, "Content-Type: audio/flac\r\n"); line(s, "\r\n");
-}
-int main(void) {
-    sb_sink_t s = {0};
-    sb_resume_meta_t meta = {0};
-    memcpy(meta.magic, "SBRES1\0\0", 8); strcpy(meta.server, "http://one"); strcpy(meta.user, "a");
-    strcpy(meta.id, "track"); strcpy(meta.etag, "\"first\"");
-    if (!sb_resume_matches(&meta, "http://one", "a", "track")) return 12;
-    if (sb_resume_matches(&meta, "http://two", "a", "track") ||
-        sb_resume_matches(&meta, "http://one", "b", "track") ||
-        sb_resume_matches(&meta, "http://one", "a", "different")) return 13;
-    s.resume_offset = 1000; strcpy(s.resume_etag, "\"first\"");
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 1000-9999/10000\r\n", "ETag: \"first\"\r\n");
-    if (!s.headers_ok) return 1;
-    s.http_status = 206; s.content_length = s.written = 9000; s.prefix_used = 4; memcpy(s.prefix, "fLaC", 4);
-    if (!sb_audio_response_valid(&s, 206, 1000)) return 2;
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 1000-1999/10000\r\n", "ETag: \"first\"\r\n");
-    s.written = s.content_length = 1000;
-    if (s.headers_ok || sb_audio_response_valid(&s, 206, 1000)) return 3;
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 999-9999/10000\r\n", "ETag: \"first\"\r\n");
-    if (s.headers_ok) return 4;
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 1000-9999/10000\r\n", "ETag: \"changed\"\r\n");
-    if (s.headers_ok) return 5;
-    response(&s, "HTTP/1.1 200 OK\r\n", 0, "ETag: \"first\"\r\n");
-    if (s.headers_ok) return 6;
-    response(&s, "HTTP/1.1 416 Range Not Satisfiable\r\n", 0, "ETag: \"first\"\r\n");
-    if (s.headers_ok) return 7;
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 1000-9999/*\r\n", "ETag: \"first\"\r\n");
-    if (s.headers_ok) return 8;
-    response(&s, "HTTP/1.1 206 Partial Content\r\n", "Content-Range: bytes 1000-9999/10000\r\n", "ETag: W/\"first\"\r\n");
-    if (s.headers_ok) return 9;
-    s.resume_offset = 0;
-    response(&s, "HTTP/1.1 200 OK\r\n", 0, 0);
-    if (!s.headers_ok) return 10;
-    s.http_status = 200; s.written = 100; s.content_length = 200;
-    if (sb_audio_response_valid(&s, 200, 0)) return 11;
-    return 0;
-}
-'''
-    with tempfile.TemporaryDirectory() as folder:
-        cfile, binary = Path(folder, 'response.c'), Path(folder, 'response')
-        cfile.write_text('#include <limits.h>\n#include <string.h>\n#define SB_RESPONSE_MAX (512 * 1024)\n#define SB_ID 96\n'
-                         + sink + '\n' + resume + '\n' + helpers + program)
-        built = subprocess.run(['cc', '-std=c99', '-Werror', str(cfile), '-o', str(binary)], capture_output=True, text=True)
-        if built.returncode:
-            ctx.expect(False, f'compile real download validators: {built.stderr}')
-            return
-        result = subprocess.run([str(binary)], capture_output=True, text=True)
-        ctx.expect(result.returncode == 0, f'download response and resume safety cases (case {result.returncode})')
 
 
 def parser_tests(ctx):
     expect = ctx.expect
     m = Machine()
     m.u.mem_map(REGION, SIZE)
-    body = json.dumps({"subsonic-response": {"status": "ok", "version": "1.16.1",
-                      "searchResult3": {"song": [{"id": "abc-1", "title": "Café", "artist": "A Artist",
-                                                       "album": "An Album", "suffix": "flac", "duration": 245,
-                                                       "track": 7, "discNumber": 2}]}}}, ensure_ascii=False).encode()
-    src, dst = REGION + 128, REGION + 4096
-    m.u.mem_write(src, body)
-    n = m.call(PSYMS['sb_songs'], a0=src, a1=len(body), a2=dst, a3=1)
-    raw = bytes(m.u.mem_read(dst, SONG_SIZE))
-    field = lambda off, cap: raw[off:off + cap].split(b'\0')[0].decode()
-    expect(n == 1 and field(0, SB_ID) == 'abc-1' and field(SB_ID, SB_TEXT) == 'Café'
-           and field(SB_ID + SB_TEXT, SB_TEXT) == 'A Artist'
-           and field(SB_ID + SB_TEXT * 2, SB_TEXT) == 'An Album', 'Subsonic song title, artist, and album parse as UTF-8')
-    expect(m.call(PSYMS['sb_song_record_valid'], a0=dst) == 1, 'valid mapped song metadata is accepted')
-    m.u.mem_write(dst + SB_ID, b'x' * SB_TEXT)
-    expect(m.call(PSYMS['sb_song_record_valid'], a0=dst) == 0, 'unterminated mapped song metadata is rejected')
-    for first, offset, count, total, want in ((58, 0, 64, 100, 0), (59, 0, 64, 100, 1),
-                                              (61, 0, 64, 100, 1), (61, 61, 39, 100, 0),
-                                              (99, 61, 39, 100, 0), (0, 61, 39, 100, 1)):
-        got = m.call(PSYMS['sb_window_needs_load'], a0=first, a1=offset, a2=count, a3=total)
-        expect(got == want, f'visible song window {first}, cached from {offset} with {count} records')
-    off = SB_FIELDS
-    expect(struct.unpack_from('<III', raw, off) == (245, 7, 2), 'duration, track and disc numbers parse')
-    long_body = json.dumps({"subsonic-response": {"status": "ok", "searchResult3": {"song": [
-        {"id": "long-1", "title": "音" * 100, "artist": "A", "album": "B"}]}}}, ensure_ascii=False).encode()
-    m.u.mem_write(src, long_body)
-    n = m.call(PSYMS['sb_songs'], a0=src, a1=len(long_body), a2=dst, a3=1)
-    raw = bytes(m.u.mem_read(dst, SONG_SIZE))
-    title = raw[SB_ID:SB_ID + SB_TEXT].split(b'\0')[0].decode('utf-8')
-    expect(n == 1 and 0 < len(title.encode('utf-8')) < SB_TEXT,
-           'long UTF-8 metadata is safely truncated without rejecting the whole library page')
-    album_song = b'{"subsonic-response":{"status":"ok","album":{"song":[{"id":"dsd-1","title":"DSD Song","suffix":"dsf"}]}}}'
-    m.u.mem_write(src, album_song)
-    n = m.call(PSYMS['sb_songs'], a0=src, a1=len(album_song), a2=dst, a3=1)
-    song = REGION + 4096
-    raw = bytearray(m.u.mem_read(song, SONG_SIZE))
-    raw[SB_ID + SB_TEXT * 3 + SB_ID:SB_ID + SB_TEXT * 3 + SB_ID + 4] = b'dsf\0'
-    m.u.mem_write(song, bytes(raw))
-    name = REGION + 32768
-    m.u.mem_write(name, bytes(256))
-    length = m.call(PSYMS['sb_track_filename'], a0=name, a1=256, a2=song)
-    filename = bytes(m.u.mem_read(name, length + 1)).split(b'\0')[0].decode()
-    expect(n == 1 and filename == 'DSD Song.dsf', 'album songs parse, and queue filenames retain the original DSF suffix')
+    src = REGION + 128
+    # patch/sbnet.c: the token hash, URL escaping and the JSON walker are exported
+    buf = REGION + 40000
+    m.u.mem_write(buf, b'abc\0' + bytes(60))
+    m.call(PSYMS['sbn_md5'], a0=buf, a1=3, a2=buf + 64)
+    expect(bytes(m.u.mem_read(buf + 64, 16)).hex() == '900150983cd24fb0d6963f7d28e17f72',
+           'sbnet MD5 matches the RFC 1321 test vector')
+    m.u.mem_write(buf, 'a b/é~\0'.encode())
+    n = m.call(PSYMS['sbn_urlenc'], a0=buf + 128, a1=64, a2=0, a3=buf)
+    expect(bytes(m.u.mem_read(buf + 128, n)).decode() == 'a%20b%2F%C3%A9~' and
+           m.call(PSYMS['sbn_urlenc'], a0=buf + 128, a1=4, a2=0, a3=buf) == 0,
+           'sbnet URL escaping keeps unreserved characters and fails when the output is too small')
+    doc = b'{"subsonic-response":{"status":"ok","n":{"title":"T\\u00e9","count":42,"tail":[{"x":"}"}]}}}'
+    m.u.mem_write(src, doc)
+    expect(m.call(PSYMS['sbn_response_ok'], a0=src, a1=len(doc)) == 1
+           and m.call(PSYMS['sbn_response_ok'], a0=src, a1=len(doc) - 1) == 0,
+           'sbnet accepts a complete ok response and rejects a truncated one')
 
-    query = REGION + 32768
-    m.u.mem_write(query, bytes(128))
-    n = m.call(PSYMS['sb_sync_query'], a0=query, a1=128, a2=128)
-    text = bytes(m.u.mem_read(query, n + 1)).split(b'\0')[0].decode()
-    expect(n > 0 and text == '&query=&songCount=64&albumCount=0&artistCount=0&songOffset=128',
-           'full-library sync pages use the Subsonic songOffset parameter')
-    src = open(os.path.join(ROOT, 'patch', 'subsonic.c'), encoding='utf-8').read()
-    expect('variant == 1' in src and 'variant == 2' in src and 'query=%%2A' in src
-           and 'SB_SYNC_ERR_EMPTY' in src,
-           'sync retries compatible empty-query forms and distinguishes a blank server response')
-    sync = src[src.index('static int sb_sync_library'):src.index('static unsigned sb_art_hash')]
-    expect('#define SB_SYNC_RESERVE_KB 2048u' in src and 'free_kb < 32768' not in sync
-           and 'SB_SYNC_RESERVE_KB + page_kb' in sync and 'SB_SYNC_RESERVE_KB + copy_kb' in sync
-           and 'unlink(SB_INDEX_TMP)' in sync and 'rename(SB_INDEX_TMP, SB_INDEX_FILE)' in sync,
-           'library sync reserves modest free space, checks index growth, and preserves the previous index on failure')
+# patch/sbparse.c: the struct layouts of patch/sbapi.h (o32, little endian): text arrays then 32-bit counters, then the flag byte, padded to 4
+ID, TXT = 64, 192
+TRACK = (ID + TXT * 3 + ID + ID + 12 + 9 * 4 + 1 + 3)
+ALBUM = (ID + TXT + TXT + ID + ID + 4 * 4 + 1 + 3)
+ARTIST = (ID + TXT + ID + 4 + 1 + 3)
+PLAYLIST = (ID + TXT + ID + 2 * 4)
+ERR_OK, ERR_AUTH, ERR_NOTFOUND, ERR_PARSE = 0, 7, 8, 10   # the SBA_* enum order of sbapi.h: OK NOCONF NOWIFI NOCLOCK NOCERT CERT NET AUTH NOTFOUND HTTP PARSE
 
 
-def ui_tests(ctx):
-    root = pod_ui.build_subsonic_page(pod_pages.SUBSONIC_PAGE)
-    roundtrip = awtk_ui.parse(awtk_ui.serialize(root))
-    nodes = []
-
-    def visit(node):
-        nodes.append(node)
-        for child in node.children:
-            visit(child)
-
-    visit(roundtrip)
-    by_name = {node.get('name'): node for node in nodes if node.get('name')}
-    required = ('sb_connect', 'sb_connect_label', 'sb_connected_dot', 'sb_sync', 'sb_sync_icon', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view',
-                'sb_tracks_mark', 'sb_dsd_mark',
-                'sb_grid_row0', 'sb_grid_art0', 'sb_row_download0', 'sb_row_download_icon0')
-    ctx.expect(all(name in by_name for name in required) and 'sb_row_play0' not in by_name and 'sb_grid_play0' not in by_name
-               and 'sb_play' not in by_name and 'sb_download' not in by_name
-               and 'sb_prev' not in by_name and 'sb_next' not in by_name,
-               'Navidrome page has list/grid browsing with download-only actions and row-tap playback')
-    ctx.expect(by_name['sb_connect_label'].get('text') == 'Server'
-               and by_name['sb_tracks_label'].get('text') == 'Songs'
-               and by_name['sb_dsd_label'].get('text') == 'DSD Downloads'
-               and by_name['sb_status'].get('text') == 'Connect to browse your music'
-               and all(by_name[name].get('tr_text') is None for name in
-                       ('sb_connect_label', 'sb_tracks_label', 'sb_dsd_label', 'sb_status')),
-               'Navidrome page labels remain English regardless of the device locale')
-    ctx.expect(all(by_name[name].h >= 44 for name in ('sb_connect', 'sb_sync', 'sb_search', 'sb_tracks', 'sb_dsd', 'sb_view', 'sb_row_download0')),
-               'Navidrome touch controls meet the 44 px target height')
-    ctx.expect(by_name['sb_row_download0'].x + by_name['sb_row_download0'].w <= 320
-               and by_name['sb_grid_download0'].x == 59,
-               'download actions fit at the right edge in list view and are centered in grid view')
-    ctx.expect(all(f'{name}_icon' in by_name for name in ('sb_tracks', 'sb_dsd')),
-               'Songs and DSD Downloads have clear section icons')
-    ctx.expect(by_name['sb_tracks_icon'].get('image') == 'pod_ic_navidrome'
-               and by_name['sb_dsd_icon'].get('image') == 'pod_sb_dsd',
-               'Navidrome uses a record mark and DSD keeps its badge in the tabs')
-    from PIL import Image
-    logo = Image.open(os.path.join(mod_icons.PNG, mod_icons.SUBSONIC_ART[0] + '.png'))
-    dsd = Image.open(os.path.join(mod_icons.PNG, mod_icons.SUBSONIC_ART[1] + '.png'))
-    ctx.expect(logo.size == dsd.size == (mod_icons.SUBSONIC_ART_PX, mod_icons.SUBSONIC_ART_PX),
-               'Navidrome and DSD row/grid placeholders use full-resolution 136 px source icons')
-    ctx.expect(all(palette_mod.accent_kind(name) == 'glyph' for name in mod_icons.SUBSONIC_ART),
-               'both high-resolution placeholders follow the selected device accent')
-    rows = [node for node in nodes if node.get('name', '').startswith('sb_row') and node.get('name')[6:].isdigit()]
-    ctx.expect(len(rows) == 6 and all(row.w == 320 and row.h == 52 for row in rows), 'six spacious virtual rows cover the viewport and scroll overscan')
-    ctx.expect(by_name['sb_scrollview'].h == 276 and by_name['sb_rows'].h == 1260,
-               'the stock scroll view exposes the virtualized full-library list without paging controls')
-    ctx.expect(by_name['sb_connect'].get('style') == 'btn_tablerow_style'
-               and all(by_name[name].get('style') == 'btn_tablerow_style' for name in ('sb_tracks', 'sb_dsd')),
-               'server and library controls use the stock themed button style')
-    ctx.expect('sb_connection' not in by_name,
-               'the header has no saved-state label crowding Server and the search/sync icons')
+def resp(body, status='ok'):
+    return json.dumps({"subsonic-response": dict({"status": status, "version": "1.16.1", "type": "navidrome",
+                                                  "serverVersion": "0.53.3", "openSubsonic": True}, **body)}, ensure_ascii=False).encode()
 
 
-def login_tests(ctx):
-    src = open(os.path.join(ROOT, 'patch', 'subsonic.c'), encoding='utf-8').read()
-    ctx.expect('sb_setup_defer_prompt(SB_SETUP_USER);' in src and 'sb_setup_defer_prompt(SB_SETUP_PASSWORD);' in src
-               and 'if (++sbp.setup_tries < 40) return RET_REPEAT;' in src,
-               'URL, username and password prompts chain after each prior keyboard closes')
-    ctx.expect('if (!text[0])' in src and 'pod_toast(SB_ENGLISH("Enter a server password"))' in src,
-               'login rejects an empty password instead of saving credentials that cannot sync')
-    ctx.expect('head.count + head.dsd_count > SB_SYNC_LIMIT' in src and 'sb_fixed_equal(head.server' in src
-               and 'head.count + head.dsd_count' in src and 'SB_INDEX_MAGIC "SBIDX3' in src
-               and 'sbp.count = 0;\n            close(fd);\n            return -1;' in src,
-               'SD metadata indexes are bounded, identity-checked, and rejected if truncated')
-    ctx.expect('if (sb_is_dsd(song->suffix)) continue;' in src and 'if (sb_is_dsd(sbp.songs[at].suffix))' in src
-               and 'sb_index_read_range(first, (unsigned)n, queue_songs)' in src and 'play_at = 0' in src
-               and 'start_playqueue(play_at);' in src,
-               'DSF/DFF stay out of stream queues, which continue across synced index windows from the selected track')
-    ctx.expect('get_wifisignal() <= 0' in src and 'sb_set_connected(1);' in src and '"#34C759"' in src,
-               'Wi-Fi is checked before connection and successful server checks show green status')
-    ctx.expect('sbp.dsd_view = 0;' in src and 'widget_set_prop_str(sbp.view_icon, "image", icon);' in src,
-               'search and view-mode changes cannot carry the DSD-only behavior into regular songs')
-    ctx.expect('if (!sb_is_dsd(sbp.songs[i].suffix))' in src and 'rc = regular;' in src,
-               'server-side search results keep DSD tracks in their dedicated downloads section')
-    ctx.expect('sb_set_active_tab(dsd_view);' in src and 'style:normal:bg_color' in src and 'pod_sb_download' in src
-               and 'static int sb_select_click(void *ctx, void *e)' in src,
-               'the selected library tab is highlighted and its DSD glyph follows the accent')
-    ctx.expect('sb_set_connected(1);' in src and 'sb_connected_dot' in src and '"#34C759"' in src
-               and 'SB_ENGLISH(sbp.connected ? "Connected" : "Server")' in src,
-               'the Server control shows a green connection dot and Connected label after a successful check')
-    ctx.expect('pod_confirm(SB_ENGLISH("Sync Navidrome songs and artwork to the SD card now?"))' in src,
-               'manual library sync asks before starting')
-    ctx.expect('offset > count || (count && offset == count)' in src and 'if (n > 0)' in src
-               and 'No regular songs in the synced library' in src,
-               'switching to an empty Songs section clears the previous DSD rows instead of leaving stale tracks')
-    ctx.expect('if (!sbp.index_valid)' in src and 'sbp.index_valid = 0;' in src
-               and 'sb_input_locked() || sbp.switching_view' in src,
-               'page reopen preserves a valid index and ignores re-entrant scroll events while switching views')
-    ctx.expect('sb_play_local_file' in src and 'sb_delete_offline' in src and 'pod_ic_rd_remove' in src
-               and 'Delete this downloaded DSD track from the SD card?' in src,
-               'downloaded DSD rows change to local Play and confirmed Delete actions')
-    ctx.expect('getCoverArt' in src and 'sb_sync_art(sink)' in src and 'sb_cover_file' not in src,
-               'artwork sync caches bounded cover images inside the standalone page')
+def cstr(raw, off, cap): return raw[off:off + cap].split(b'\0')[0].decode('utf-8')
+
+
+class Parser:
+    OUT, ERR, BUF = REGION + 0x100000, REGION + 0x3f000, REGION + 0x100
+
+    def __init__(self):
+        self.m = Machine()
+        self.m.u.mem_map(REGION, 0x400000)
+
+    def run(self, fn, body, size, mx=100):
+        m = self.m
+        m.u.mem_write(self.OUT, bytes(size * min(mx, 8) + 64))
+        m.u.mem_write(self.BUF, body)
+        m.setword(self.ERR, 0xdead)
+        m.setword(STACK + 16, self.ERR)
+        n = m.call(PSYMS[fn], a0=self.BUF, a1=len(body), a2=self.OUT, a3=mx)
+        n = n - (1 << 32) if n >= 1 << 31 else n
+        err = struct.unpack('<I', bytes(m.u.mem_read(self.ERR, 4)))[0]
+        return n, err, bytes(m.u.mem_read(self.OUT, size * max(n, 0)))
+
+    def ping(self, body):
+        m = self.m
+        m.u.mem_write(self.BUF, body)
+        m.setword(self.ERR, 0xdead)
+        n = m.call(PSYMS['sba_parse_ping'], a0=self.BUF, a1=len(body), a2=self.ERR)
+        return (n - (1 << 32) if n >= 1 << 31 else n), struct.unpack('<I', bytes(m.u.mem_read(self.ERR, 4)))[0]
+
+    def tracks(self, body, mx=100): return self.run('sba_parse_tracks', body, TRACK, mx)
+
+    def albums(self, body, mx=100): return self.run('sba_parse_albums', body, ALBUM, mx)
+
+    def artists(self, body, mx=100): return self.run('sba_parse_artists', body, ARTIST, mx)
+
+    def playlists(self, body, mx=100): return self.run('sba_parse_playlists', body, PLAYLIST, mx)
+
+
+def track_at(raw, i):
+    r = raw[i * TRACK:(i + 1) * TRACK]
+    o = ID + TXT * 3 + ID + ID + 12
+    nums = struct.unpack_from('<9I', r, o)
+    return dict(id=cstr(r, 0, ID), title=cstr(r, ID, TXT), artist=cstr(r, ID + TXT, TXT), album=cstr(r, ID + TXT * 2, TXT),
+                album_id=cstr(r, ID + TXT * 3, ID), cover=cstr(r, ID + TXT * 3 + ID, ID), suffix=cstr(r, ID + TXT * 3 + ID * 2, 12),
+                seconds=nums[0], track=nums[1], disc=nums[2], year=nums[3], size=nums[4], bitrate=nums[5], rate=nums[6], depth=nums[7],
+                created=nums[8], starred=r[o + 36])
+
+
+def parse(ctx):
+    """patch/sbparse.c: the sba_parse_* parsers over realistic Subsonic / OpenSubsonic / Navidrome answers."""
+    expect = ctx.expect
+    P = Parser()
+    song = {"id": "so-1", "parent": "al-1", "isDir": False, "title": "Café – Ünïcode 音楽", "album": "Album One", "artist": "The Artist",
+            "track": 3, "year": 2019, "genre": "Jazz", "coverArt": "mf-so-1_65f0", "size": 31457280, "contentType": "audio/flac", "suffix": "flac",
+            "duration": 245, "bitRate": 912, "bitDepth": 24, "samplingRate": 96000, "path": "The Artist/Album One/03 Cafe.flac", "discNumber": 2,
+            "created": "2024-05-01T10:00:00Z", "albumId": "al-1", "artistId": "ar-1", "type": "music", "starred": "2024-06-01T00:00:00Z"}
+    album = {"id": "al-1", "name": "Album One", "artist": "The Artist", "artistId": "ar-1", "coverArt": "al-1_65f0", "songCount": 2, "duration": 500,
+             "year": 2019, "genre": "Jazz", "created": "2024-05-01T10:00:00Z", "song": [song, {"id": "so-2", "title": "Bare", "track": 4}]}
+    # getAlbum: fields, and what a song leaves out comes from the album
+    n, err, raw = P.tracks(resp({"album": album}))
+    t = [track_at(raw, i) for i in range(max(n, 0))]
+    expect(n == 2 and err == ERR_OK, f'getAlbum parses two songs: {n} {err}')
+    s = t[0]
+    expect(s['id'] == 'so-1' and s['title'] == 'Café – Ünïcode 音楽' and s['artist'] == 'The Artist' and s['album'] == 'Album One'
+           and s['album_id'] == 'al-1' and s['cover'] == 'mf-so-1_65f0' and s['suffix'] == 'flac', f'song text fields: {s}')
+    expect((s['seconds'], s['track'], s['disc'], s['year'], s['size'], s['bitrate'], s['rate'], s['depth']) == (245, 3, 2, 2019, 31457280, 912, 96000, 24)
+           and s['starred'] == 1, f'song numbers and the starred flag: {s}')
+    expect(t[0]['created'] == 1714557600, 'created parses an ISO time to epoch seconds (2024-05-01T10:00:00Z)')
+    s = t[1]
+    expect(s['id'] == 'so-2' and s['title'] == 'Bare' and s['album'] == 'Album One' and s['album_id'] == 'al-1' and s['cover'] == 'al-1_65f0'
+           and s['year'] == 2019 and s['artist'] == 'The Artist' and s['starred'] == 0 and s['suffix'] == '' and s['seconds'] == 0,
+           f'a song without album fields inherits the album id, cover, year, album and artist: {s}')
+    # getPlaylist (entry[]), getStarred2 and search3 song[]
+    pl = {"id": "pl-1", "name": "Mix", "songCount": 1, "entry": [dict(song, id="e-1", albumId="al-9")]}
+    n, err, raw = P.tracks(resp({"playlist": pl}))
+    expect(n == 1 and track_at(raw, 0)['id'] == 'e-1' and track_at(raw, 0)['album_id'] == 'al-9', 'getPlaylist entries parse and keep their own album id')
+    st = {"starred2": {"song": [dict(song, id="s-1"), dict(song, id="s-2")], "album": [album], "artist": [{"id": "ar-1", "name": "X"}]}}
+    n, err, raw = P.tracks(resp(st))
+    expect(n == 2 and track_at(raw, 1)['id'] == 's-2', 'getStarred2 song[] parses (albums and artists beside it are left alone)')
+    n, err, raw = P.tracks(resp({"searchResult3": {"song": [dict(song, id="q-1")]}}))
+    expect(n == 1 and track_at(raw, 0)['id'] == 'q-1', 'search3 song[] parses')
+    # malformed scalars and mismatched brackets end the walk (the instruction budget of Machine.call catches a hang)
+    for bad in (b'{"subsonic-response":{"status":"ok","searchResult3":{"song":[}{]}}}', b'{"subsonic-response":{"status":"ok","searchResult3":{"song":[}',
+                b'{"subsonic-response":{"status":"ok","searchResult3":{"song":[{"id":"a"},}]}}}', b'{"subsonic-response":{"status":"ok","searchResult3":{"song":{"a":}}}}',
+                b'{"subsonic-response":{"status":"ok","searchResult3":{"song":[{"id":"a"]}}}'):
+        n, err, raw = P.tracks(bad)
+        expect(n <= 1 and (n >= 0 or err != ERR_OK), f'malformed JSON {bad[-30:]!r} returns without hanging: {n} {err}')
+    n, err, raw = P.tracks(resp({"searchResult3": {}}))
+    expect(n == 0 and err == ERR_OK, 'an empty search3 is zero rows, not an error')
+    n, err, raw = P.tracks(resp({"album": album}), mx=1)
+    expect(n == 1, 'the row cap is honoured')
+    # DSD detection inputs: suffix, contentType and path fallbacks
+    rows = [{"id": "d1", "title": "A", "suffix": "DSF"}, {"id": "d2", "title": "B", "contentType": "audio/x-dff"},
+            {"id": "d3", "title": "C", "path": "x/y.v2/Song.DFF"}, {"id": "d4", "title": "D", "contentType": "audio/mpeg"},
+            {"id": "d5", "title": "E", "contentType": "audio/x-dsf"}, {"id": "d6", "title": "F", "path": "dir.d/noext"}]
+    n, err, raw = P.tracks(resp({"searchResult3": {"song": rows}}))
+    sf = [track_at(raw, i)['suffix'] for i in range(n)]
+    expect(sf == ['dsf', 'dff', 'dff', 'mp3', 'dsf', ''], f'suffix: own (lower case), then contentType, then the path extension: {sf}')
+    # ids: a row without an id, an id that is too long, a numeric id
+    rows = [{"title": "no id"}, {"id": "x" * 80, "title": "long"}, {"id": 42, "title": "numeric"}, {"id": "ok", "title": "ok"}]
+    n, err, raw = P.tracks(resp({"searchResult3": {"song": rows}}))
+    expect(n == 2 and track_at(raw, 0)['id'] == '42' and track_at(raw, 1)['id'] == 'ok', 'rows without a usable id are skipped, a numeric id is written out')
+    # overlong text is cut at a UTF-8 boundary; a key inside a title does not confuse the walker
+    rows = [{"id": "l1", "title": "音" * 100, "artist": 'say "song": [ {"id":"evil"} ]', "album": "é" * 200}]
+    n, err, raw = P.tracks(resp({"searchResult3": {"song": rows}}))
+    t0 = track_at(raw, 0) if n == 1 else {}
+    expect(n == 1 and len(t0['title'].encode()) == 189 and len(t0['album'].encode()) == 190 and t0['artist'].startswith('say "song"'),
+           f'long text is cut on a character boundary and structural lookup ignores keys inside strings: {n}')
+    # string numbers, floats, nulls
+    rows = [{"id": "n1", "title": "T", "duration": "187", "track": 5.0, "year": None, "size": "x", "starred": None, "bitDepth": 16.5}]
+    n, err, raw = P.tracks(resp({"searchResult3": {"song": rows}}))
+    t0 = track_at(raw, 0)
+    expect((t0['seconds'], t0['track'], t0['year'], t0['size'], t0['starred'], t0['depth']) == (187, 5, 0, 0, 0, 16),
+           f'numbers sent as strings or floats parse, null and junk are 0: {t0}')
+
+    # getAlbumList2, getArtist, search3 and getStarred2 albums
+    al = [{"id": "a1", "name": "Alpha", "title": "Alpha", "artist": "AA", "artistId": "r1", "coverArt": "al-a1", "songCount": 10, "duration": 2400,
+           "year": 1999, "created": "2020-01-02T03:04:05.678Z", "starred": "2021-01-01T00:00:00Z", "isDir": True, "isVideo": False},
+          {"id": "a2", "name": "Beta 音", "songCount": 1}, {"name": "no id"}]
+    n, err, raw = P.albums(resp({"albumList2": {"album": al}}))
+    rows = [raw[i * ALBUM:(i + 1) * ALBUM] for i in range(max(n, 0))]
+    num = lambda r: struct.unpack_from('<4I', r, ID + TXT * 2 + ID * 2)
+    expect(n == 2 and cstr(rows[0], 0, ID) == 'a1' and cstr(rows[0], ID, TXT) == 'Alpha' and cstr(rows[0], ID + TXT, TXT) == 'AA'
+           and cstr(rows[0], ID + TXT * 2, ID) == 'r1' and cstr(rows[0], ID + TXT * 2 + ID, ID) == 'al-a1'
+           and num(rows[0]) == (1999, 10, 2400, 1577934245) and rows[0][ID + TXT * 2 + ID * 2 + 16] == 1,
+           'getAlbumList2 album fields, counters, created time and starred flag')
+    expect(cstr(rows[1], ID, TXT) == 'Beta 音' and num(rows[1])[1] == 1, 'a sparse album keeps what it has; the id-less one is skipped')
+    n, err, raw = P.albums(resp({"albumList2": {}}))
+    expect(n == 0 and err == ERR_OK, 'an empty getAlbumList2 page is zero rows')
+    ar = {"id": "r1", "name": "AA", "albumCount": 2, "album": [{"id": "a1", "name": "Alpha"}, {"id": "a2", "name": "Beta", "artist": "Guest", "artistId": "r9"}]}
+    n, err, raw = P.albums(resp({"artist": ar}))
+    rows = [raw[i * ALBUM:(i + 1) * ALBUM] for i in range(max(n, 0))]
+    expect(n == 2 and cstr(rows[0], ID + TXT, TXT) == 'AA' and cstr(rows[0], ID + TXT * 2, ID) == 'r1' and cstr(rows[1], ID + TXT, TXT) == 'Guest'
+           and cstr(rows[1], ID + TXT * 2, ID) == 'r9', "getArtist's albums inherit the artist's name and id when they omit them")
+    n, err, raw = P.albums(resp(st))
+    expect(n == 1 and cstr(raw, 0, ID) == 'al-1', 'getStarred2 album[] parses')
+    n, err, raw = P.albums(resp({"searchResult3": {"album": al, "song": [song]}}))
+    expect(n == 2, 'search3 album[] parses')
+
+    # getArtists: index[] -> artist[] flattened
+    idx = {"artists": {"ignoredArticles": "The El La", "lastModified": 1700000000000, "index": [
+        {"name": "A", "artist": [{"id": "r1", "name": "AA", "albumCount": 3, "coverArt": "ar-r1", "artistImageUrl": "http://x/y.jpg", "starred": "2020-01-01T00:00:00Z"},
+                                 {"id": "r2", "name": "Ab"}]},
+        {"name": "B", "artist": []}, {"name": "C"}, {"name": "Z", "artist": [{"id": "r3", "name": "Zoë"}, {"name": "no id"}]}]}}
+    n, err, raw = P.artists(resp(idx))
+    rows = [raw[i * ARTIST:(i + 1) * ARTIST] for i in range(max(n, 0))]
+    expect(n == 3 and [cstr(r, 0, ID) for r in rows] == ['r1', 'r2', 'r3'] and cstr(rows[0], ID, TXT) == 'AA' and cstr(rows[0], ID + TXT, ID) == 'ar-r1'
+           and struct.unpack_from('<I', rows[0], ID + TXT + ID)[0] == 3 and rows[0][ID + TXT + ID + 4] == 1 and cstr(rows[2], ID, TXT) == 'Zoë',
+           'getArtists flattens the index letters in the server order')
+    n, err, raw = P.artists(resp(idx), mx=2)
+    expect(n == 2, 'getArtists honours the row cap across letters')
+    n, err, raw = P.artists(resp({"artists": {"index": []}}))
+    expect(n == 0 and err == ERR_OK, 'getArtists with no letters is zero rows')
+    n, err, raw = P.artists(resp(st))
+    expect(n == 1 and cstr(raw, 0, ID) == 'ar-1', 'getStarred2 artist[] parses')
+    n, err, raw = P.artists(resp({"searchResult3": {"artist": [{"id": "r5", "name": "Q"}]}}))
+    expect(n == 1 and cstr(raw, ID, TXT) == 'Q', 'search3 artist[] parses')
+
+    # getPlaylists
+    pls = {"playlists": {"playlist": [{"id": "p1", "name": "Road 🚗", "comment": "c", "owner": "xin", "public": False, "songCount": 12, "duration": 3000,
+                                         "created": "2024-01-01T00:00:00Z", "changed": "2024-01-02T00:00:00Z", "coverArt": "pl-p1"}, {"id": "p2", "name": "Empty"}]}}
+    n, err, raw = P.playlists(resp(pls))
+    rows = [raw[i * PLAYLIST:(i + 1) * PLAYLIST] for i in range(max(n, 0))]
+    expect(n == 2 and cstr(rows[0], ID, TXT) == 'Road 🚗' and cstr(rows[0], ID + TXT, ID) == 'pl-p1'
+           and struct.unpack_from('<2I', rows[0], ID + TXT + ID) == (12, 3000) and cstr(rows[1], 0, ID) == 'p2', 'getPlaylists parses names, covers, counts')
+    n, err, raw = P.playlists(resp({"playlists": {}}))
+    expect(n == 0 and err == ERR_OK, 'a server with no playlists answers an empty object: zero rows')
+
+    # errors, truncation and non-Subsonic bodies
+    fail = lambda code, msg: resp({"error": {"code": code, "message": msg}}, status='failed')
+    for code, want, label in ((40, ERR_AUTH, 'wrong password'), (41, ERR_AUTH, 'token authentication refused'), (70, ERR_NOTFOUND, 'not found'),
+                              (10, ERR_PARSE, 'a missing parameter'), (0, ERR_PARSE, 'a generic error')):
+        for fn in (P.tracks, P.albums, P.artists, P.playlists):
+            n, err, _ = fn(fail(code, label))
+            if not (n == -1 and err == want):
+                expect(False, f'error {code} ({label}) through {fn.__name__}: {n} {err}')
+                break
+        else:
+            expect(True, f'error {code} ({label}) is -1 with the matching SBA_ code')
+    whole = resp({"album": album})
+    for cut in (len(whole) - 1, len(whole) // 2, 40, 1):
+        n, err, _ = P.tracks(whole[:cut])
+        if not (n == -1 and err == ERR_PARSE):
+            expect(False, f'a response cut at {cut} of {len(whole)} is refused: {n} {err}')
+            break
+    else:
+        expect(True, 'a truncated response is refused whole (-1, SBA_PARSE), never half read')
+    for body in (b'<html><body>502 Bad Gateway</body></html>', b'', b'{"foo":1}', b'[]', b'{"subsonic-response":[]}'):
+        n, err, _ = P.albums(body)
+        if not (n == -1 and err == ERR_PARSE):
+            expect(False, f'a non-Subsonic body {body[:20]!r} is SBA_PARSE: {n} {err}')
+            break
+    else:
+        expect(True, 'a web page, an empty body and foreign JSON are SBA_PARSE')
+    n, err, _ = P.tracks(resp({"album": {"id": "a", "song": [{"id": "1"}], "song2": 1}}).replace(b'"song2"', b'"song"'))
+    expect(n == -1 and err == ERR_PARSE, 'a duplicate song key is malformed, not guessed')
+    expect(P.ping(resp({})) == (0, ERR_OK) and P.ping(fail(40, 'bad')) == (-1, ERR_AUTH) and P.ping(fail(70, 'x')) == (-1, ERR_NOTFOUND)
+           and P.ping(b'oops') == (-1, ERR_PARSE), 'ping: ok is 0, errors map to SBA_AUTH / SBA_NOTFOUND / SBA_PARSE')
+    big = resp({"searchResult3": {"song": [dict(song, id=f"id{i}") for i in range(300)]}})
+    n, err, raw = P.tracks(big, mx=500)
+    expect(n == 300 and track_at(raw, 299)['id'] == 'id299', f'a page of 300 songs ({len(big)} bytes) parses in full')
+
+
+SECTIONS = [parser_tests, parse]   # tools/check.py runs each as its own task
 
 
 def run(ctx):
-    ctx.expect(not any(name.startswith(('sb_library_', 'rgb_')) for name in PSYMS),
-               'the standalone payload exposes neither a library overlay nor RGB integration')
-    parser_tests(ctx)
-    ui_tests(ctx)
-    login_tests(ctx)
-    download_validation_tests(ctx)
+    for section in SECTIONS: section(ctx)

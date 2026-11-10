@@ -451,6 +451,9 @@ def file_and_layout_tests(ctx):
     expect([e[3] for e in pod_recent.parse(m.fs[RECENT])] == ['C'], 'the next album change writes the card\'s list with the new album')
     # the list lives on the card: every write is under CARD_DIR, nothing without a card, a swapped card's list is the new card's
     expect(RECENT.startswith(CARD) and RECENT_TMP.startswith(CARD) and ('mkdir', CARD) in m.calls, 'the file and its temp file are in the card folder, made first')
+    m = plain_machine()
+    r = m.call(PSYMS['recent_note'], a0=m.record(album='A', artist='B', path='http://nd.example:4533/rest/stream.view?u=x&t=y&s=z', title='t', name='n'), count=3000000)
+    expect(r == 0 and RECENT not in m.fs, 'a streamed server track is never recorded (its path holds the credentials)')
     m = plain_machine(); m.card_mounted = False
     r = m.call(PSYMS['recent_note'], a0=m.record(album='A', artist='B', path='/p', title='t', name='n'), count=3000000)
     expect(r == 0 and not [c for c in m.calls if c[0] in ('open', 'write', 'rename', 'mkdir', 'fsync', 'unlink')] and not m.fs and CARD not in m.dirs, 'no card: nothing is recorded, opened or written')

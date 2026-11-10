@@ -34,6 +34,12 @@ class NowMachine(Machine):
         self.bar_styles = []      # (bar, "normal:bg_color", uint32)
         self.bar_style_ret = 0
         self.on_fail = set()      # event types whose widget_on returns 0 (refused)
+        self.sbcov = {}           # server track REC_ID -> its cached cover file (None: not cached yet); sba_now_cover (patch/sbapi.c, tested in sbapi.py) answers from it
+        self.handlers[PSYMS['sba_now_cover']] = 'sba_now_cover'
+        self.sbtrack, self.sbsize, self.sburl = {}, {}, ''   # sba_rec_track / sba_rec_size / sba_url (patch/sbapi.c): queue record -> track id, -> server bytes, the saved address
+        for n in ('sba_rec_track', 'sba_rec_size', 'sba_url'): self.handlers[PSYMS[n]] = n
+        self.sbfav, self.sbgen = {}, 0   # server track REC_ID -> starred (lib_nd.row on a queue record, patch/sbsrc.c, tested in sbsrc.py); sba_gen
+        for n in ('nd_row', 'ls_favorite', 'sba_gen'): self.handlers[PSYMS[n]] = n
 
     def with_bar(self, top=WIN):
         """The window manager with a navbar and a status bar among its children; `top` is its top normal window."""
@@ -70,6 +76,23 @@ class NowMachine(Machine):
             if ret == 0: (self.bar_styles if a0 == self.bar else self.styles).append((a0, self.read_cstr(a1), v))
         elif name == 'widget_on' and a1 in self.on_fail:
             self.calls.append(('widget_on', a0, a1, a2, a3)); ret = 0
+        elif name == 'sba_now_cover':
+            rid = self.word(a0 + O['REC_ID']) if a0 else 0; rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            self.calls.append(('sba_now_cover', rid)); p = self.sbcov.get(rid); ret = self.cstr(p) if p else 0
+        elif name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+        elif name == 'sba_rec_size':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.sbsize.get(rid, 0)
+        elif name == 'sba_url':
+            ret = self.cstr(self.sburl)
+        elif name == 'sba_gen':
+            ret = self.sbgen
+        elif name == 'nd_row':   # lib_nd.row(src, rec, out): ls_row_t {dl, pct, dsd, fav, offline}
+            rid = self.word(a1 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            self.calls.append(('nd_row', rid)); self.u.mem_write(a2, struct.pack('<5i', 0, 0, 0, self.sbfav.get(rid, 0), 0)); ret = 0
+        elif name == 'ls_favorite':   # (src, rec, was): the star toggled on the server, 0 done
+            rid = self.word(a1 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            self.calls.append(('ls_favorite', a0 == PSYMS['lib_nd'], rid, a2)); self.sbfav[rid] = 0 if self.sbfav.get(rid) else 1; ret = 0
         elif name == 'mclGetPlayStatus':   # the player is stopped: the episode timer (pc_note) saves nothing
             ret = 0
         elif name == 'value_set_uint32':
@@ -992,3 +1015,137 @@ def run(ctx):
     mm.play([], -1); mm.setword(fav + O['WIDGET_STYLE'], mm.cstr('btn_imgsave_style')); mm.calls = []; mm.tick()
     expect([c for c in mm.calls if c[0] == 'widget_use_style'] == [('widget_use_style', fav, 'btn_imgfav_style')], 'nothing playing counts as music: the bookmark goes back to the star')
     expect(f('btn_playmode').get('style') == 'btn_imgrandom_style', 'btn_playmode keeps its stock style (the app swaps it)')
+
+    # a server track's star is the server's favourite: the button shows nd_row's flag, a click goes to ls_favorite (lib_nd, the row sheet's Favorite) and RET_STOP keeps stock's handler away
+    # (it would write the stream record, whose address carries the login, into the local myfav table); a downloaded server track too; a local track is stock's
+    def sv_machine(path, style, rid=-5, starred=0):
+        mm = NowMachine(); mm.page(); mm.src(0); fav = mm.widget('btn_fav')
+        mm.setword(fav + O['WIDGET_STYLE'], mm.cstr(style)); mm.props[(fav, 'style')] = style
+        mm.sbtrack[rid] = 't5'; mm.sbfav[rid] = starred
+        mm.play([mm.record(path=path, rid=rid)], 0); mm.init()
+        return mm, fav
+    stream, local_dl = 'http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt', '/mnt/mmc/Subsonic/Song 5.flac'
+    for path in (stream, local_dl):
+        kind = 'streamed' if path == stream else 'downloaded'
+        mm, fav = sv_machine(path, 'btn_imgunfav_style', starred=1)
+        expect([c for c in mm.calls if c[0] == 'widget_use_style'] == [('widget_use_style', fav, 'btn_imgfav_style')] and mm.props[(fav, 'style:pressed:icon')] == 'np_unfav_down',
+               f'a {kind} server track starred on the server: the button shows the filled star though stock\'s myfav has none ({[c for c in mm.calls if c[0] == "widget_use_style"]})')
+        mm.setword(fav + O['WIDGET_STYLE'], mm.cstr('btn_imgfav_style')); mm.calls = []; mm.tick()
+        expect(not [c for c in mm.calls if c[0] in ('widget_use_style', 'nd_row')], 'and a tick with the same track and cache asks nothing again')
+        mm.sbfav[-5] = 0; mm.sbgen += 1; mm.calls = []; mm.tick()
+        expect([c for c in mm.calls if c[0] == 'widget_use_style'] == [('widget_use_style', fav, 'btn_imgunfav_style')], 'the cache moved (sba_gen): the outline star is back (an un-star elsewhere, or a refused star)')
+        mm.setword(fav + O['WIDGET_STYLE'], mm.cstr('btn_imgunfav_style')); mm.calls = []
+        r = mm.call(PSYMS['np_on_fav'], a0=0, a1=0)
+        expect(r == O['RET_STOP'] and [c for c in mm.calls if c[0] == 'ls_favorite'] == [('ls_favorite', True, -5, 0)], f'a click: ls_favorite(lib_nd, the record, was 0) and RET_STOP, so stock\'s star never sees the record ({r}, {mm.calls})')
+        expect(mm.sbfav[-5] == 1 and [c for c in mm.calls if c[0] == 'widget_use_style'] == [('widget_use_style', fav, 'btn_imgfav_style')], 'the star is filled at once, with no wait for a tick')
+        mm.calls = []
+        r = mm.call(PSYMS['np_on_fav'], a0=0, a1=0)
+        expect(r == O['RET_STOP'] and [c for c in mm.calls if c[0] == 'ls_favorite'] == [('ls_favorite', True, -5, 1)] and mm.sbfav[-5] == 0, 'the next click un-stars (was 1)')
+    mm, fav = sv_machine('/mnt/mmc/Music/a.flac', 'btn_imgunfav_style', rid=7)
+    mm.sbtrack.clear(); mm.calls = []
+    r = mm.call(PSYMS['np_on_fav'], a0=0, a1=0)
+    expect(r == O['RET_OK'] and not [c for c in mm.calls if c[0] in ('ls_favorite', 'nd_row')], 'a local track: the click is stock\'s (RET_OK), the source is never asked')
+
+    # ------------------------------------------------------------------ a server track's cover is the big art (stock draws /tmp/coverpic.jpg, never written for a stream)
+    SB = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    def sb_machine():
+        m = NowMachine(); m.page(); m.src(0)
+        m.play([m.record(album='Srv', artist='A', path='nd://t1', rid=-5)], 0); m.sbcov = {-5: None}
+        m.init()
+        m.ev = m.alloc(0x40); m.u.mem_write(m.ev, bytes(0x40)); m.setword(m.ev + O['EVENT_PAINT_CANVAS'], 0x7000a000)
+        return m
+    def art_paint(m):
+        m.blits = []; m.call(PSYMS['np_on_art_paint'], a0=0, a1=m.ev, count=2000000)
+        return [b for b in m.blits if b[1] == (0, 0, 264, 264)]
+    m = sb_machine()
+    expect(not [c for c in m.calls if c[0] == 'bitmap_create_ex'] and not art_paint(m), 'a server track whose cover is not cached yet: nothing of ours is drawn (stock\'s picture)')
+    m.jpeg(SB, size=(4, 4)); m.sbcov[-5] = SB; m.calls = []; m.tick()
+    expect(('bitmap_create_ex', 264, 264) in m.calls and ('widget_load_image', 'file://' + SB) in m.calls and ('widget_invalidate_force', m.widgets['img_playcover']) in m.calls,
+           'the cover lands: it is decoded into a 264 px bitmap and the art is redrawn')
+    expect(len(art_paint(m)) == 1, 'and drawn over the art widget')
+    m.calls = []; m.tick()
+    expect(not [c for c in m.calls if c[0] in ('widget_load_image', 'bitmap_create_ex')], 'an unchanged cover is not decoded again')
+    m.play([m.record(album='Local', artist='A', path='/mnt/mmc/a/1.flac', rid=1)], 0); m.calls = []
+    expect(not art_paint(m), 'a local track replaces it: the stale picture is not drawn even before the tick')
+    m.tick()
+    expect(('widget_invalidate_force', m.widgets['img_playcover']) in m.calls and not art_paint(m), 'a local track: the art is stock\'s again')
+    m.play([m.record(album='Srv', artist='A', path='nd://t1', rid=-5)], 0); m.tick()
+    expect(len(art_paint(m)) == 1, 'back on the server track: its cover is drawn again')
+    m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0)
+    expect(any(c[0] == 'bitmap_destroy' for c in m.calls), 'the page\'s end frees the bitmap')
+
+    # a track change keeps the previous server cover up (no stock placeholder in between) and decodes the new one at once
+    SB2 = '/mnt/mmc/.m1plus/subsonic/covers/4567ef01-168.jpg'
+    def once_timers(m): return [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['np_art_once']]
+    recs = lambda m: [m.record(album='Srv', artist='A', path=f'nd://t{i}', rid=-5 - i) for i in range(4)] + [m.record(album='Local', artist='A', path='/mnt/mmc/a/1.flac', rid=1)]
+    m = NowMachine(); m.page(); m.src(0); m.jpeg(SB, size=(4, 4)); m.jpeg(SB2, size=(4, 4), data=b'other-cover' * 40)
+    m.sbcov = {-5: SB, -6: None, -7: None, -8: SB2}
+    q = recs(m); m.play(q, 0); m.init()
+    m.ev = m.alloc(0x40); m.u.mem_write(m.ev, bytes(0x40)); m.setword(m.ev + O['EVENT_PAINT_CANVAS'], 0x7000a000)
+    expect(len(art_paint(m)) == 1 and not once_timers(m), 'the first track: drawn, no one-shot')
+    m.play(q, 1); m.calls = []
+    expect(len(art_paint(m)) == 1, 'the next track has no cover yet: the previous cover is still drawn, not stock\'s picture')
+    expect(once_timers(m) == [('timer_add', PSYMS['np_art_once'], 30)] and m.timer_arg[PSYMS['np_art_once']] == 0, 'and the paint asks for one 30 ms one-shot (ctx 0)')
+    m.play(q, 3); m.sbcov[-8] = SB2; m.calls = []
+    expect(len(art_paint(m)) == 1, 'a track with a different cover: the previous one until it is decoded')
+    m.call(PSYMS['np_art_once'], a0=0)
+    expect(('widget_load_image', 'file://' + SB2) in m.calls and ('widget_invalidate_force', m.widgets['img_playcover']) in m.calls and len(art_paint(m)) == 1,
+           'the one-shot decodes the new cover with no tick and redraws the art')
+    m.calls = []; art_paint(m)
+    expect(not once_timers(m), 'decoded: the paint asks for nothing more')
+    m.play(q, 4); m.calls = []
+    expect(not art_paint(m) and not once_timers(m), 'a local track: ours is not drawn at once, and no one-shot')
+    m.tick()
+    expect(('widget_invalidate_force', m.widgets['img_playcover']) in m.calls and not art_paint(m), 'a local track: the tick drops ours')
+    # no cover for the new server track at all (or it never arrives): the previous cover waits NP_SB_WAIT ticks, then stock's picture
+    m.play(q, 0); m.tick(); expect(len(art_paint(m)) == 1, 'back on a cached track')
+    m.play(q, 1)
+    for i in range(10): m.tick()
+    expect(len(art_paint(m)) == 1, 'ten ticks without a cover: still the previous one')
+    m.tick(); expect(not art_paint(m), 'the eleventh: stock\'s picture')
+    m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0)
+    m.calls = []; m.call(PSYMS['np_art_once'], a0=0)
+    expect(not [c for c in m.calls if c[0] in ('widget_load_image', 'sba_now_cover')], 'a one-shot after the page is gone does nothing')
+
+    # the cover of the next queue record is asked for once, while a server track plays
+    m = NowMachine(); m.page(); m.src(0); m.sbcov = {-5: None, -6: None, -7: None}
+    q = recs(m); m.play(q, 0); m.init()
+    ahead = lambda rid: [c for c in m.calls if c == ('sba_now_cover', rid)]   # (each m.call, a tick included, starts a new call list; the playing track's own ask is two calls per tick)
+    expect(len(ahead(-6)) == 1 and not ahead(-7), 'the next track\'s cover is asked for once, not the one after')
+    m.tick(); expect(not ahead(-6), 'a tick later it is not asked again')
+    m.play(q, 1); m.tick()
+    expect(len(ahead(-7)) == 1, 'one step on: the new next track\'s')
+    m.tick(); expect(not ahead(-7), 'and once')
+    m.play(q, 2); m.tick()
+    expect(len(ahead(-8)) == 1, 'the next one')
+    m.play(q, 3); m.tick()
+    expect(not ahead(1) and not ahead(-9), 'a local record after it: nothing asked')
+    m.play(q, 4); m.tick()
+    expect([c for c in m.calls if c[0] == 'sba_now_cover' and c[1] <= -2] == [], 'a local track playing: no server ask at all')
+    m.play(q[:4], 3); m.tick()
+    expect({c[1] for c in m.calls if c[0] == 'sba_now_cover'} == {-8}, 'the last track of the queue: only its own cover')
+
+    # the info page of a server stream: no stream address (token, salt) and no stock size
+    URL = 'http://music.example.com:4533/rest/stream.view?id=t1&u=bob&t=0123456789abcdef&s=salty&format=raw'
+    def stream_info(path=URL, rid=-5, size=36 * 1048576, url='https://music.example.com:4533/base', lang=None):
+        m = NowMachine(); m.page(); m.src(0); m.pt = (30, 200, 1); m.set_language(lang) if lang else None
+        m.sbtrack = {-5: 't1'}; m.sbsize = {-5: size}; m.sburl = url
+        m.play([m.record(album='Srv', artist='A', path=path, rid=rid)], 0)
+        stock = dict(stock_en, label_size='File Size:0.00MB', label_location='Location:' + path)
+        m.info_page(stock, True); m.init(); return m
+    m = stream_info()
+    expect(m.label('label_size') == 'File Size: 36.00 MB' and m.label('label_location') == 'Location: https://music.example.com:4533' and m.label('label_album') == 'Album: Kid A',
+           f'a stream: the server size and address, the other lines as before ({m.label("label_size")}, {m.label("label_location")})')
+    expect(not any('0123456789abcdef' in t or 'salty' in t or 'bob' in t for t in m.texts.values()) , 'no token, salt or user on the page')
+    m.calls = []; m.tick(); m.tick()
+    expect(not sets(m), 'no rewrite loop')
+    m.texts[m.widgets['label_size']] = 'File Size:0.00MB'; m.texts[m.widgets['label_location']] = 'Location:' + URL; m.calls = []; m.tick()
+    expect(m.label('label_size') == 'File Size: 36.00 MB' and m.label('label_location') == 'Location: https://music.example.com:4533', 'stock writes them again (a track change): ours again')
+    for size, want in ((0, 'File Size: Unknown'), (7444890, 'File Size: 7.10 MB'), (1048575, 'File Size: 1.00 MB'), (4000000000, 'File Size: 3814.70 MB')):
+        expect(stream_info(size=size).label('label_size') == want, f'size {size}: {want}')
+    expect(stream_info(url='https://bob:secret@music.example.com/x?y=1').label('label_location') == 'Location: https://music.example.com', 'user info, path and query are not shown')
+    expect(stream_info(url='').label('label_location') == 'Location: Unknown', 'no saved server: Unknown')
+    m = stream_info(path='/mnt/mmc/Subsonic/a.flac')
+    expect(m.label('label_size') == 'File Size: 0.00 MB' and m.label('label_location') == 'Location: /mnt/mmc/Subsonic/a.flac', 'a downloaded track plays from its own path: stock\'s lines')
+    m = stream_info(rid=1)
+    expect(m.label('label_size') == 'File Size: 0.00 MB' and 'stream.view' in m.label('label_location'), 'a record outside the queue map: stock\'s lines')

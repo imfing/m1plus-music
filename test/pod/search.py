@@ -800,7 +800,7 @@ def entry_tests(ctx):
     P = pod_pages
     item = next(i for i, r in enumerate(P.ITEMS) if r.label == 'Search')
     expect(item == 21 == len(P.ITEMS) - 3 and P.ITEMS[item].action == P.ACT_SEARCH == 35 and P.ID_CHARS[item] == 'm' and item not in P.DEFAULT_MENU
-           and P.EXTRAS_GROUPS[1][1][-2] == 'Search' and P.EXTRAS_GROUPS[1][1][-3] == 'Radio' and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
+           and P.EXTRAS_GROUPS[1][1][-1:] == ('Search',) and P.EXTRAS_GROUPS[3][1][0] == 'Subsonic' and P.parse_menu_full(b'123456m\n') == ([1, 2, 3, 4, 5, 6, 21], []) and P.format_menu([1, 2, 21]) == '12m\n'
            and pod_i18n.key_for('Search') == 'Search' and all(pod_i18n.TEXT['Search'][pod_i18n.table_for(loc)] for loc in pod_i18n.LOCALES)
            and os.path.isfile(os.path.join(mod_icons.PNG, 'pod_ic_search.png')) and mod_icons.POD_ROWS['Search'][0] == 'pod_ic_search',
            'Search is item 21 (saved as "m"), hidden from the menu by default, in the Library group of Extras, with a translated label and its glyph')
@@ -1039,6 +1039,7 @@ def pinyin_tests(ctx):
         expect(costs[1] < costs[0] * 3.5 and costs[1] / count < 9000, f'{count} Chinese songs: the first scan with initials costs {costs[1] / 1e6:.1f} M instructions ({costs[1] / count:.0f} a song; {costs[0] / 1e6:.1f} M without)')
 
 
+NDREC = '/mnt/mmc/.m1plus/subsonic/search-history'
 REC_FILE, REC_TMP = '/mnt/data/m1plus/search-history', '/mnt/data/m1plus/search-history.tmp'
 REC_HEAD, REC_ROW, REC_MAX = D['SE_REC_HEAD_H'], D['SE_REC_ROW_H'], D['SE_REC_MAX']
 
@@ -1178,7 +1179,206 @@ def keyboard_text(m):
     return m.read_cstr(m.call(PSYMS['keyboard_text'], count=400000))
 
 
-SECTIONS = [recent_tests, fold_tests, query_tests, pinyin_tests, rank_tests, incremental_tests, page_tests, chips_tests, scope_tests, chip_cover_tests, live_tests, tap_tests, perf_tests, loader_tests, entry_tests, return_tests, embed_tests, asset_tests]   # tools/check.py runs each as its own task
+class SrcMachine(ListMachine):
+    """The Search page over a library source (search_open_src): lib_src_t is a block of words whose members, sba_search / sba_state / sba_gen and the openers a tap calls are mocked here. results:
+    {which: [(title, album, artist)]}; search_rc / sstate / gen are what the mocked sba_* answer."""
+    def __init__(self):
+        super().__init__()
+        self.results, self.search_rc, self.sstate, self.state_code, self.gen, self.asked, self.opened = {}, 0, 0, 0, 1, [], []
+
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address, '')
+        if not name.startswith('x_'): return super()._hook(u, address, size, _)
+        a0, a1, a2, a3, sp = u.reg_read_batch((UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3, UC_MIPS_REG_SP))
+        ret = 0
+        if name == 'x_list':
+            rs = self.results.get(a1, [])
+            self.asked.append(('list', a1, a2))
+            ret = self.new_deque(self.record(album=al, artist=ar, path=f'nd://id{i}', title=t, rid=-3 - i) for i, (t, al, ar) in enumerate(rs)) if rs else 0
+        elif name == 'x_cover':   # (s, rec, key, path, cap): the file the source names, written bare (the page puts "file://" in front), or none
+            if getattr(self, 'cover_pending', False): ret = 0   # asked, not there yet
+            elif getattr(self, 'cover_file', None): self.u.mem_write(a3, self.cover_file.encode() + b'\0'); ret = 1
+            else: ret = 0xffffffff
+        elif name == 'x_search':
+            self.asked.append(('search', self.read_cstr(a0))); ret = self.search_rc
+            if ret == 0: self.sstate = 1
+        elif name == 'x_is':   # sba_search_is(term): the last finished search was for this term (None = always)
+            ret = int(getattr(self, 'done', None) in (None, self.read_cstr(a0)))
+        elif name == 'x_state':
+            if a2: self.setword(a2, self.state_code)
+            ret = self.sstate
+        elif name == 'x_gen': ret = self.gen
+        elif name == 'x_open':
+            self.opened.append(('open', a0, self.read_cstr(self.word(a1 + O['REC_TITLE']))))
+        elif name == 'x_open_album':
+            self.opened.append(('album', a0, a1, self.read_cstr(self.word(a2 + O['REC_TITLE']))))
+        elif name == 'x_play':
+            self.opened.append(('play', a0, a1, len(self.deques[a2]), a3, self.word(sp + 16)))
+            ret = getattr(self, 'play_ret', 0)
+        elif name == 'x_dsd':   # ls_dsd_confirm(src, list, at)
+            self.opened.append(('dsd', a0, len(self.deques[a1]), a2))
+        u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff)
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+
+
+def src_machine(results=None):
+    m = search_widgets(cover_machine(albums=0, cls=SrcMachine), 0x20003000)
+    m.results = results or {}
+    m.class_lists[ARTISTS], m.class_lists[ALBUMS], m.songs = [], [], []
+    m.class_lists[ALL] = m.songs; m.showlist = m.songs; m.stock_songlist = True
+    for sym, nm in (('sba_search', 'x_search'), ('sba_state', 'x_state'), ('sba_gen', 'x_gen'), ('sba_search_is', 'x_is'), ('albums_open_src', 'x_open'), ('album_open_src', 'x_open_album'), ('so_play_src', 'x_play'), ('ls_dsd_confirm', 'x_dsd')):
+        m.handlers[PSYMS[sym]] = nm
+    fake = m.alloc(64)
+    m.fake_src = m.alloc(48)
+    m.setword(m.fake_src, m.cstr('navidrome'))
+    for off, nm in ((4, 'x_list'), (16, 'x_cover')):
+        m.setword(m.fake_src + off, fake + off); m.handlers[fake + off] = nm
+    return m
+
+
+def src_tests(ctx):
+    """search_open_src: a source's page asks the server (debounced), shows the cached results, taps open the source's pages / play through it; no recent searches; offline line."""
+    expect = ctx.expect
+    res = {6: [('Miles Davis', '', '')], 7: [('Kind of Blue', 'Kind of Blue', 'Miles Davis')], 8: [('So What', 'Kind of Blue', 'Miles Davis'), ('Blue in Green', 'Kind of Blue', 'Miles Davis')]}
+    shown = lambda m, n: (m.props[(m.widgets[n], 'visible')], m.props[(m.widgets[n], 'sensitive')])
+    # stock: NULL and &lib_stock are today's page
+    for arg in (0, PSYMS['lib_stock']):
+        m = page_machine([('Alpha', 'Ann', 'First')], ['Ann'], [('First', 'Ann')])
+        expect(m.call(PSYMS['search_open_src'], a0=arg, count=40000000) == 0, 'a stock source opens the page')
+        typed(m, 'alpha')
+        expect(titles(m) == ['Alpha'] and not any(c[0] == 'sba_search' for c in m.calls), f'stock: the library is searched in memory ({titles(m)})')
+    # a source: debounce, one request, rows from the cache
+    m = src_machine(res)
+    m.dirs.add('/mnt/mmc/.m1plus/subsonic')   # (the cache folder exists once the server was used)
+    expect(m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000) == 0, 'a source opens the page')
+    ticks(m)
+    expect(m.asked == [] and rows(m) == [], 'no query: nothing asked')
+    m.call(PSYMS['se_on_text'], a0=m.cstr('mi'), count=2000000)
+    m.call(PSYMS['se_on_text'], a0=m.cstr('mile'), count=2000000)
+    ticks(m)
+    expect([a for a in m.asked if a[0] == 'search'] == [('search', 'mile')], f'typing is debounced: one request with the last text ({m.asked})')
+    expect(rows(m) == [] and shown(m, 'label_status')[0] == 0, 'the results are not in: no rows, no "No Results" yet')
+    m.sstate, m.gen = 2, 2
+    ticks(m)
+    expect(rows(m) == [(ARTIST, 0), (ALBUM, 0), (SONG, 0), (SONG, 1)], f'the results arrived: Top Results lists artist, album, songs in the server order ({rows(m)})')
+    chip(m, CH_SONGS)
+    expect(len(rows(m)) == 2, 'the Songs chip')
+    chip(m, CH_TOP)
+    y_of = lambda i: i * ROW_H + ROW_H // 2
+    tap(m, y_of(0))
+    expect(m.opened[-1:] == [('open', m.fake_src, 'Miles Davis')], f'an artist opens albums_open_src ({m.opened})')
+    tap(m, y_of(1))
+    expect(m.opened[-1:] == [('album', m.fake_src, 0, 'Kind of Blue')], f'an album opens album_open_src ({m.opened})')
+    tap(m, y_of(3))
+    expect(m.opened[-1][0] == 'play' and m.opened[-1][1:5] == (m.fake_src, ALL, 2, 1), f'a song plays through so_play_src with the song results ({m.opened[-1]})')
+    expect(not [o for o in m.opened if o[0] == 'dsd'], 'a started song asks no DSD question')
+    m.play_ret = 0xfffffffe   # so_play_src: -2, an undownloaded DSD track
+    tap(m, y_of(3))
+    expect(m.opened[-2][0] == 'play' and m.opened[-1] == ('dsd', m.fake_src, 2, 1), f'a DSD song that is not downloaded asks the Download to Play? confirm for that result ({m.opened[-2:]})')
+    m.play_ret = 0
+    expect('/mnt/data/m1plus/search-history' not in m.fs, 'the library\'s recent searches file is not touched by a source')
+    expect(m.fs.get(NDREC) == b'mile\n', f'a result tapped saves the query in the source\'s own history file ({m.fs.get(NDREC)})')
+    # a new query asks again and clears the rows until it is answered; the spinner turns while it is out
+    typed(m, 'zzz')
+    expect(shown(m, 'se_spin')[0] == 1 and shown(m, 'label_status')[0] == 0, 'the request is out: one spinner, no "No Results"')
+    frames = lambda: [c for c in m.calls if c[0] == 'image_base_set_image' and c[1] == m.widgets['se_spin']]
+    m.calls = []; r_ = m.call(PSYMS['ls_spin_tick'], a0=0x5a5a5a50, count=20000000)   # (stock's timer_info_t, not the ctx)
+    expect(len(frames()) == 1 and r_ == RET_REPEAT, 'the spinner is on the shared ls_spin timer: a tick turns its frame and repeats')
+    m.calls = []; ticks(m, 12)
+    expect(not frames(), 'the page\'s own tick no longer steps the frames')
+    expect([a for a in m.asked if a[0] == 'search'][-1] == ('search', 'zzz') and rows(m) == [], 'a new query asks again and the old rows are gone')
+    m.results = {}; m.sstate = 2; m.gen += 1
+    ticks(m)
+    expect(rows(m) == [] and shown(m, 'label_status')[0] == 1 and said(m, 'label_status') == 'No Results' and shown(m, 'se_spin')[0] == 0, 'an empty answer: "No Results", the spinner gone')
+    # typing sends no request per key, and a slow older answer does not overwrite the newer query
+    m = src_machine(res)
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    for q in ('m', 'mi', 'mil', 'mile'):
+        m.call(PSYMS['se_on_text'], a0=m.cstr(q), count=2000000)
+        ticks(m, 4)
+    expect([a for a in m.asked if a[0] == 'search'] == [], f'keys faster than the pause send nothing ({m.asked})')
+    ticks(m)
+    expect([a for a in m.asked if a[0] == 'search'] == [('search', 'mile')], f'one request after the pause ({m.asked})')
+    m.done, m.sstate, m.gen = 'mil', 2, 2    # the answer of the query before: not shown, still waiting
+    ticks(m)
+    expect(rows(m) == [] and shown(m, 'se_spin')[0] == 1 and shown(m, 'label_status')[0] == 0, 'an older query\'s answer is ignored while the newer is out')
+    m.done, m.gen = 'mile', 3
+    ticks(m)
+    expect(len(rows(m)) == 4 and shown(m, 'se_spin')[0] == 0, f'the newer query\'s answer is shown ({rows(m)})')
+    # recent searches of a source: its own file is read and shown in the empty state; the library's is not
+    m = src_machine(res)
+    m.fs['/mnt/data/m1plus/search-history'] = b'library\n'
+    m.fs[NDREC] = b'jazz\nblue\n'
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    texts = paint(m)[0]
+    expect([t[0] for t in texts] == ['jazz', 'blue', 'Recently Searched'], f'the source\'s history shows in the empty state ({[t[0] for t in texts]})')
+    # scope: artists only
+    m = src_machine(res)
+    expect(m.call(PSYMS['search_open_src_in'], a0=m.fake_src, a1=1, count=40000000) == 0, 'a scoped source search opens')
+    ticks(m)
+    typed(m, 'mile')
+    m.sstate, m.gen = 2, 2
+    ticks(m)
+    expect(rows(m) == [(ARTIST, 0)], f'an artists-scoped source search lists only artists ({rows(m)})')
+    # offline
+    m = src_machine(res)
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    m.search_rc = 2
+    typed(m, 'miles')
+    expect(rows(m) == [] and shown(m, 'label_status')[0] == 1 and said(m, 'label_status') == 'Connect to Wi-Fi first', f'offline: "Connect to Wi-Fi first" ({said(m, "label_status")})')
+    # covers: the file the source names is decoded, as "file://" and that path
+    ST = sibling('songs')
+    m = src_machine(res)
+    m.cover_file = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    m.present.add(m.cover_file); m.files[m.cover_file] = 4096
+    m.images['file://' + m.cover_file] = (24, 24, struct.pack('<I', 0xff3070a0) * (24 * 24))
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    typed(m, 'mile')
+    m.sstate, m.gen = 2, 2
+    ticks(m)
+    paint(m)   # (the tiles are made as the rows are painted; the timer loads their covers)
+    ticks(m)
+    blits = paint(m)[3]
+    art = [b for b in blits if (b[2][2], b[2][3]) == (D['SE_ART'], D['SE_ART']) and b[0] in m.bitmaps]
+    expect(art and all(ST.near(ST.pixel(m, b[0], D['SE_ART'] // 2, D['SE_ART'] // 2), 0xff3070a0) for b in art),
+           f'the rows\' thumbnails are the file the source names ({len(art)} of them, {[hex(ST.pixel(m, b[0], 20, 20)) for b in art]})')
+    # a cover asked for (0): the shared poll (patch/libsrc.c) waits while the counters stand still, starts the grids again when one moved, and waits for the page to be on top
+    m = src_machine(res)
+    m.cover_pending, m.top_main = True, m.window
+    m.cover_file = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    m.images['file://' + m.cover_file] = (24, 24, struct.pack('<I', 0xff3070a0) * (24 * 24))
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    typed(m, 'mile')
+    m.sstate, m.gen = 2, 2
+    ticks(m)
+    paint(m); ticks(m); paint(m)
+    expect(m.call(PSYMS['ls_cover_tick'], count=900000000) == RET_REPEAT, 'a cover on its way: the shared cover poll is armed and repeats')
+    expect(m.call(PSYMS['ls_cover_tick'], count=900000000) == RET_REPEAT, 'the counters stood still: it waits')
+    m.present.add(m.cover_file); m.files[m.cover_file] = 4096; m.cover_pending = False; m.gen += 1
+    m.top_main = 0
+    m.call(PSYMS['ls_cover_tick'], count=900000000); ticks(m)
+    paint(m)
+    expect(not [b for b in paint(m)[3] if (b[2][2], b[2][3]) == (D['SE_ART'], D['SE_ART']) and b[0] in m.bitmaps and ST.near(ST.pixel(m, b[0], 20, 20), 0xff3070a0)], 'not the top window: the poll does not start the grids again')
+    m.top_main = m.window
+    m.call(PSYMS['ls_cover_tick'], count=900000000); ticks(m); paint(m); ticks(m)
+    art = [b for b in paint(m)[3] if (b[2][2], b[2][3]) == (D['SE_ART'], D['SE_ART']) and b[0] in m.bitmaps]
+    expect(art and all(ST.near(ST.pixel(m, b[0], D['SE_ART'] // 2, D['SE_ART'] // 2), 0xff3070a0) for b in art), 'the cover landed (the counter moved): the grids start again and show it')
+    # a failed request
+    m = src_machine(res)
+    m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000)
+    ticks(m)
+    typed(m, 'miles')
+    m.sstate, m.state_code, m.gen = 3, 6, 5
+    ticks(m)
+    expect(rows(m) == [] and said(m, 'label_status') == "Can't connect to the server", f"a failed request: the failure line ({said(m, 'label_status')})")
+
+
+SECTIONS = [recent_tests, fold_tests, query_tests, pinyin_tests, rank_tests, incremental_tests, page_tests, chips_tests, scope_tests, chip_cover_tests, live_tests, tap_tests, perf_tests, loader_tests, entry_tests, return_tests, embed_tests, asset_tests, src_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

@@ -23,6 +23,7 @@
 - **Now Playing:** cover-colour backgrounds, rounded artwork and remaining time.
 - **Podcasts:** local episodes, top shows and episodes for your region, directory search, feed subscriptions and episode downloads.
 - **Extras:** album/folder shuffle, internet radio, a virtual iPod, Cassette Mode, Vinyl Mode and an online cover and lyrics lookup.
+- **Subsonic:** browse a Subsonic server (Navidrome, Gonic, Airsonic) in the player's own Albums, Artists, Playlists and Songs pages, search it, stream over Wi-Fi, and download songs to the card for offline play. Based on a pull request by Gaurav Mishra and the work of shivaluma.
 - **Appearance:** an accent colour, a translucent lock screen, minimal theme, Lucide icons and Inter + Source Han Sans fonts.
 - **Equalizer:** a 10-band EQ editor, AutoEq headphone corrections downloaded over Wi-Fi, parametric presets from the card and a separate EQ for headphones, line out and USB DACs.
 - **Wi-Fi:** a new Wi-Fi page with WPA3 and Enhanced Open, and a redesigned Wi-Fi Transfer page to browse, upload, download and organise the card from a browser.

@@ -192,7 +192,7 @@ def home_tests(expect, page):
            and not [r for r in SETTINGS.rows if r.action in (pod_pages.ACT_GRID, pod_pages.ACT_STARTUP)]
            and [(r.label, r.action) for r in pod_pages.HOMESET_PAGE.rows] == [('Recent Albums', pod_pages.ACT_SHELF), ('Daily Mix', pod_pages.ACT_DAILY), ('Main Menu', pod_pages.ACT_PAGE), ('Extras', pod_pages.ACT_PAGE), ('Regenerate Daily Mix', pod_pages.ACT_REGEN)],
            'Settings ends with Developer, whose page holds the launcher rows: Boot to M1+ Music (switch) and Open Shanling Home, then Tools (Screenshot, Cache, Settings Files) and a Reset card (Reset All Settings); the Home Screen page has the shelf and mix switches, Main Menu, Extras and last Regenerate Daily Mix')
-    expect(page.rows[0].label == 'Now Playing' and page.rows[-1].label == 'Extras' and page.rows[settings_i].label == 'Settings' and len(page.rows) == 24
+    expect(page.rows[0].label == 'Now Playing' and page.rows[-1].label == 'Extras' and page.rows[settings_i].label == 'Settings' and len(page.rows) == 25
            and not [r for r in page.rows if r.action in (pod_pages.ACT_GRID, pod_pages.ACT_STARTUP)],
            'the menu keeps the grouped rows, a Settings row and the Extras row last, which opens the Settings page (no launcher rows left on it)')
 

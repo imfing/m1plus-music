@@ -32,7 +32,9 @@ The info page adds `np_scrim.png`: 320 × 324 at y 8, alpha 128 in the center,
 with 36-row linear edges. The lyrics page uses `np_scrim_lyrics.png`: 320 × 332 at y 0,
 alpha 68 with 44-row smoothstep edges. Decorative images and time labels are insensitive.
 
-Favorite is a filled/outline star; while a podcast plays it becomes a saved/unsaved bookmark.
+Favorite is a filled/outline star; while a podcast plays it becomes a saved/unsaved bookmark. While a server (Subsonic) track plays, streamed or downloaded, it is the server's favourite: `np_on_fav` (bound after
+stock's, so it runs first) calls `ls_favorite(&lib_nd, ...)` and returns `RET_STOP`, so stock's `manage_myfav` (`0x4ef884`) never writes the stream record into `myfav`; `np_server_fav` reads the flag through `nd_row` (cached, re-read when the
+track or `sba_gen` changes) and `np_fav_sync` keeps the star's style on it ([subsonic](subsonic.md)).
 Mode and queue glyphs use `#C8C8C8` (repeat-off `#6E6E6E`).
 The stock mode button (`btn_playmode`) keeps its four steps and looks. Its picture (`0x539888`) and click handler (`0x53b5fc`) read the *shown* mode,
 which is Shuffle while the payload's Shuffle flag is on (also with Repeat all, set from the Queue page): the Shuffle step turns the flag on (stock mode 0),
@@ -43,6 +45,11 @@ The stock `slider_play` retains a 30 px seek target with a 6 px track, 30% white
 ## Cover tone and corners
 
 Stock's `parseplaycover_thd` writes `/tmp/coverpic.jpg` or `/tmp/externpic.jpg`.
+A playing Navidrome track has no such file: `np_server_art` draws its cached cover (`sba_now_cover`, docs/modules/subsonic.md) over `img_playcover` from `np_on_art_paint`, before the corners; local tracks keep stock's picture.
+On a track change the previous server cover stays drawn (never stock's placeholder) until the new one is decoded: while a server track (`REC_ID <= -2`) plays, `np_on_art_paint` draws `sbmp`,
+and when it sees a `REC_ID` that `np_server_art` has not looked at it starts a 30 ms one-shot (`np_art_once`, ctx 0; the decode is never in the paint). A track with no cover file yet (or none at all) keeps the previous cover
+for `NP_SB_WAIT` (10) ticks, then stock's picture shows. Two tracks with the same cover file only change `sbrec`. A local track draws nothing of ours at once. While a server track plays,
+`np_prefetch` asks `sba_now_cover` for the queue record after the playing one (`PLAY_QUEUE` at `mclGetPlayPos()+1`), once per such record.
 `COVER_SRC` (`0x97cad8`) is 1 while busy, 2 for embedded art, 3 for folder art,
 or 5 for cached art. The payload reads files only in the ready states and never waits on
 the extraction mutex. Unreadable or empty files are retried; a rejected decode is retried
@@ -83,7 +90,10 @@ than competing with stock text writes. Invalid lengths restore stock labels.
 Missing time widgets disable that portion without disabling tint.
 
 The page tick reads the stock info labels and rewrites changed, complete strings only.
-It spaces colons and units and translates Genre/Year. Failed reads, truncation or output
+It spaces colons and units and translates Genre/Year.
+While the playing record is a server stream (`REC_ID <= -2`, mapped by `sba_rec_track`, and `REC_PATH` an `http` address) `np_stream_text` writes the size and location lines itself, since stock's come from the
+stream address (token and salt included) and a file that does not exist: stock's label, then `N.NN MB` from the server size kept in the queue map (`sba_rec_size`; "Unknown" when none) or the saved server's scheme and
+host[:port] (`sba_url`, user info, path and query dropped; "Unknown" with no server). A downloaded track plays from its own path and keeps stock's lines. The same `np.done` hashes keep it from looping. Failed reads, truncation or output
 overflow leave stock text. Stock text can appear for up to one 500 ms tick after a track change.
 
 The quality line differs: stock rewrites `label_info` with the compact text on every tick, so

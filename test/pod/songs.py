@@ -16,8 +16,8 @@ UI = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_songs.bi
 ALL = O['CLASS_ALL_SONGS']
 TEXT_X, TEXT_END, SEL = O['LIST_TEXT_X'], O['LIST_HAIR_END'] - O['SG_RAIL_INSET'], O['SG_SEL_COL']   # (the rail is on in these tests: the rows give up SG_RAIL_INSET)
 RAIL_X, RAIL_W = O['SG_RAIL_X'], O['SG_RAIL_W']
-WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_hname', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del',
-           'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'sg_bubble_letter', 'sg_bar',
+WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_spin', 'sg_hname', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del',
+           'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'label_row_dim', 'label_row_subdim', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'sg_bubble_letter', 'sg_bar',
            *VS_WIDGETS)
 
 
@@ -38,6 +38,41 @@ class SongsMachine(ListMachine):
         self.handlers[PSYMS['coverflow_artist_page']] = 'coverflow_artist_page'   # patch/coverflow.c, trapped
 
     snap = None
+    fake = None   # the fake library source's state (SrcMachine in src_tests)
+
+    def fake_sg(self, name, u):
+        """The members of the fake lib_src_t (fake_sg_*; the struct and the nop blocks they point at are built by fake_source)."""
+        a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
+        f = self.fake
+        if name == 'fake_sg_list':   # (s, which, scope): a fresh deque of the records, NULL when empty
+            f['asked'].append((a1, a2))
+            f.setdefault('scopes', []).append(self.read_cstr(self.word(a2 + O['REC_TITLE'])) if a2 else None)
+            recs = f['lists'].get(a1, [])
+            return self.new_deque(recs) if recs else 0
+        if name == 'fake_sg_play':   # (s, list, at, how, open, cls)
+            f['plays'].append((a1, a2, a3, self.word(u.reg_read(UC_MIPS_REG_SP) + 20)))
+            return f.get('play_ret', 0)
+        if name == 'fake_sg_cover':   # (s, rec, key, path, cap): 1 the file is there, 0 asked, -1 none
+            f['covers'].append(a2)
+            path = '/mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg' % a2   # (the source's own file, named by the source: never the Cover Flow cache file of the key)
+            self.u.mem_write(a3, path.encode() + b'\0')
+            return 1 if path in self.present else (0 if f['ask'] else 0xffffffff)
+        if name == 'fake_sg_row':   # (s, rec, out): the ls_row_t of the record (dl, pct, dsd, fav, offline)
+            self.u.mem_write(a2, struct.pack('<5i', *f.get('rows', {}).get(a1, (0, 0, 0, 0, 0))))
+            return 0
+        if name == 'fake_sg_act':   # (s, rec, what)
+            f['acts_dd'].append(sum(c[0] == 'deque_destroy' for c in self.calls)); f['acts'].append((a1, a2)); return f.get('act_ret', -1)
+        if name == 'fake_sg_queue_row':   # (s, rec): a deque of one queue record (the stream address), or NULL
+            f['queued'].append(a1)
+            if f.get('queue_none'): return 0
+            title = self.read_cstr(self.word(a1 + O['REC_TITLE']))
+            return self.new_deque([self.record(album='Album', artist='Artist', path=f'http://nd.example/stream?id={title}', title=title, name=f'{title}.flac', rid=-1000 - len(f['queued']))])
+        if name == 'fake_sg_gen': return f['gen']
+        if name == 'fake_sg_gen_rows': return f.get('gen_rows', f['gen'])
+        if name == 'fake_sg_state':   # (s, which, scope): LS_ST_*
+            f.setdefault('states', []).append((a1, a2)); return f.get('state', 0)
+        if name == 'fake_sg_complete': return f['complete'].get(a1, 1)
+        return 0
 
     def stock_rows(self):
         """The library's records as the database would give them again: the page reverses the stock list in place (record contents swapped), so a second query must see the stock order, and a queue loadSongList
@@ -65,7 +100,8 @@ class SongsMachine(ListMachine):
         if ret is not None and name == 'loadSongList':
             u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         ret = None
-        if name == 'coverflow_artist_page': ret = self.cf_page or 0
+        if name and name.startswith('fake_sg_'): ret = self.fake_sg(name, u)
+        elif name == 'coverflow_artist_page': ret = self.cf_page or 0
         elif name == 'window_manager_get_top_window' and self.stack is not None: ret = self.stack[-1] if self.stack else 0
         elif name == 'navigator_back' and self.stack is not None:
             self.calls.append(('navigator_back',)); self.stack.pop(); ret = 0
@@ -379,7 +415,7 @@ def asset_tests(ctx):
            and sv.children == [grid] and grid.type == 'view', 'the body is the library lists\' structure: list_view > scroll_view > one content view, with the stock mobile scroll bar')
     kids = {c.name: c for c in grid.children}
     hn = kids['sg_hname']
-    expect(list(kids) == ['sg_title', 'sg_hname', 'btn_play', 'btn_shuffle', 'hd_shuffle', 'hd_play', 'sg_glyph', 'sg_foot'] and kids['sg_title'].get('style:normal:font_size') == '32' and kids['sg_title'].get('sensitive') == 'false'
+    expect(list(kids) == ['sg_title', 'sg_hname', 'btn_play', 'btn_shuffle', 'hd_shuffle', 'hd_play', 'sg_glyph', 'sg_foot', 'sg_spin'] and kids['sg_title'].get('style:normal:font_size') == '32' and kids['sg_title'].get('sensitive') == 'false'
            and kids['sg_title'].get('style:normal:text_color') == '#FFFFFF' and (kids['sg_title'].x, kids['sg_title'].y, kids['sg_title'].h) == (12, 0, 52),
            'the content view holds the large title (32 px white, x 12, insensitive), the playlist header\'s name, the library\'s two flat pills, the playlist header\'s Shuffle disc, Play pill and glyph and the song count (no count in the header: the footer is the one)')
     expect(hn.type == 'label' and hn.get('visible') == 'false' and hn.get('sensitive') == 'false' and hn.get('style:normal:text_align_h') == 'center'
@@ -1768,6 +1804,7 @@ def lists_tests(ctx):
     calls = click(m, 'sg_del')
     bd = [c for c in calls if c[0] == 'batch_delete_file']
     expect(bd and bd[0][1] == comp_cls and bd[0][6] == [0], 'Delete: batch_delete_file with class 0xff14 (the generic songtable loop)')
+    expect(not is_shown(m, 'btn_search') and vis(m, 'btn_coverflow') == (1, 1), 'a composer\'s songs after select mode: still no Search button over Cover Flow')
     m.confirm_answer = None
     pick(m, 'select'); tap(m, 150, lay.row_y(2) + 30)
     m.windows['m1plus_playlists'] = 0
@@ -1789,7 +1826,421 @@ def lists_tests(ctx):
     expect(m.call(PSYMS['songs_open_artist'], a0=0, a1=O['CLASS_ARTISTS'], count=900000000) & NONE == NONE, 'no artist: -1')
 
 
-SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests]   # tools/check.py runs each as its own task
+def fake_source(m, lists, complete=None, ask=False, rows=None, caps=7):
+    """A lib_src_t of Python-handled members in m (names fake_sg_*): lists is {which: [records]}, complete {which: 0/1}, ask: a missing cover is "asked" (0), else none (-1);
+    caps: lib_src_t.caps (the stock-only controls the page may show: 7 is all of them). Returns its address."""
+    m.fake = dict(lists=lists, complete=complete or {}, asked=[], plays=[], covers=[], gen=1, ask=ask, rows=rows or {}, acts=[], acts_dd=[], queued=[])
+    src = m.alloc(0x40)
+    m.u.mem_write(src, bytes(0x40)); m.setword(src, m.cstr('fake_sg')); m.setword(src + 48, caps)
+    for i, n in enumerate(('list', 'rec_id', 'play', 'cover', 'seconds', 'row', 'act', 'gen', 'complete')):
+        block = m.alloc(16)   # nop; the trap at its address answers
+        m.u.mem_write(block, bytes(16))
+        if n in ('list', 'play', 'cover', 'gen', 'complete', 'row', 'act'): m.handlers[block] = f'fake_sg_{n}'
+        m.setword(src + 4 * (i + 1), block)
+    block = m.alloc(16)   # lib_src_t.queue_row (offset 44, after playing)
+    m.u.mem_write(block, bytes(16)); m.handlers[block] = 'fake_sg_queue_row'
+    m.setword(src + 44, block)
+    block = m.alloc(16)   # lib_src_t.state (offset 56, after count)
+    m.u.mem_write(block, bytes(16)); m.handlers[block] = 'fake_sg_state'
+    m.setword(src + 56, block)
+    block = m.alloc(16)   # lib_src_t.gen_rows (offset 60, after state)
+    m.u.mem_write(block, bytes(16)); m.handlers[block] = 'fake_sg_gen_rows'
+    m.setword(src + 60, block)
+    return src
+
+
+def src_titles(n, prefix='Song'): return [f'{chr(65 + i % 26)}{i} {prefix}' for i in range(n)]
+
+
+def src_records(m, titles, base=0):
+    """The records of a non-stock source: synthetic ids (<= -2), a path that is never a file."""
+    recs = []
+    for i, t in enumerate(titles):
+        r = make_song(m, t, f'Artist {i % 5}', f'Album {i % 5}', rid=-2 - base - i, path=f'nd://{base + i}')
+        m.present.discard(f'nd://{base + i}'); recs.append(r)
+    return recs
+
+
+def src_tests(ctx):
+    """18. A non-stock library source (songs_open_src, patch/libsrc.h): the stock page for src NULL / lib_stock, the source's Songs, Favorites and Downloaded lists on the same page, no
+    rail while the list is a part that grows, the list read again as gen moves (scroll position kept), play through the source, covers from the source."""
+    expect = ctx.expect
+    OPEN = PSYMS['songs_open_src']
+    NONE = 0xffffffff
+    LS_SONGS, LS_PLAYLISTS, LS_FAVORITES, LS_DOWNLOADED = 2, 3, 4, 5
+    # stock unchanged
+    for src in (0, PSYMS['lib_stock']):
+        m = list_machine(['Zed', 'Alpha', 'Mike'])
+        r = m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+        expect(r == 0 and ('window_open', 'm1plus_songs') in m.calls and ('loadLocalClassList', ALL) in m.calls and not any(c[0].startswith('fake') for c in m.calls),
+               f'src {src:#x}: Songs opens today\'s library page (the stock query)')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+        m = list_machine(['Zed', 'Alpha', 'Mike'], O['CLASS_FAV'])
+        r = m.call(OPEN, a0=src, a1=LS_FAVORITES, a2=m.cstr('Favorites'), count=900000000)
+        expect(r == 0 and ('loadLocalClassList', O['CLASS_FAV']) in m.calls, 'a stock source: Favorites is the stock Favorites list')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+        m = list_machine(['Zed'])
+        expect(m.call(OPEN, a0=src, a1=LS_DOWNLOADED, a2=m.cstr('Downloaded'), count=900000000) == NONE and 'window_open' not in m.names(), 'a stock source has no Downloaded list: -1, no page')
+    # the source's Songs, complete: the rows in the source's order, sections and the rail, no stock query
+    titles = ['Zebra', 'Apple', 'Banana', 'Cherry', 'Berry', 'Avocado']
+    m = list_machine(['Stock'])
+    recs = src_records(m, titles)
+    src = fake_source(m, {LS_SONGS: recs})
+    m.top_main = m.window
+    r = m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    queries = [c for c in m.calls if c[0] == 'loadLocalClassList']
+    expect(r == 0 and ('window_open', 'm1plus_songs') in m.calls and not queries and m.fake['asked'] == [(LS_SONGS, 0)] and 'cc_albums' not in m.names(),
+           f'the source\'s Songs: the page opens, the list is src->list(LS_SONGS, NULL), no stock query ({queries}, {m.fake["asked"]})')
+    lay = Layout(letters_of(titles))
+    expect(vis(m, 'btn_search') == (1, 1) and m.wtext[m.widgets['sg_title']] == 'Songs' and m.word(m.sv + SC_VH) == lay.content() and lay.secs and vis(m, 'sg_rail')[0] == 1,
+           f'a complete Songs list: sectioned by the first letter, with the rail ({m.word(m.sv + SC_VH)} {lay.content()})')
+    blits, texts, styles, fills = settle(m)
+    shown = [t for t, rc in texts]
+    expect(shown[:4] == titles[:4] and 'Artist 0' in shown, f'the rows show the source\'s records ({shown})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    expect(('deque_destroy',) in m.calls, 'the source\'s list is destroyed with the page')
+    # a source without Search or Select (lib_nd's caps 0): no button on the bar, the title runs to Now Playing and its capsule becomes the plain disc
+    m = list_machine(['Stock'])
+    src = fake_source(m, {LS_SONGS: src_records(m, ['Aaa', 'Bbb'])}, caps=0)
+    m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    np = lambda: tuple(m.props.get((m.widgets['btn_backtoplayer'], f'style:{st}:icon')) for st in ('normal', 'over', 'pressed'))
+    lt = m.widgets['label_title']
+    expect(not is_shown(m, 'btn_search') and not is_shown(m, 'btn_more') and not is_shown(m, 'btn_select') and ('widget_resize', lt, O['NAV_VIEW_X'] + 46 - 58, 22) in m.calls,
+           'caps 0: no Search, no Select and no "..." on the bar; the title runs to 260')
+    expect(np() == ('ah_nav_np', 'ah_nav_np', 'ah_nav_np_down'), f'and Now Playing is the plain disc, not a capsule\'s right cap ({np()})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # Search but no Select (lib_nd as built, LS_CAP_SEARCH): no middle piece, so Search moves to 214 beside Now Playing (no black gap in the capsule)
+    for which, title in ((LS_SONGS, 'Songs'), (LS_FAVORITES, 'Favorites')):
+        m = list_machine(['Stock'])
+        src = fake_source(m, {which: src_records(m, ['Aaa', 'Bbb'])}, caps=2)
+        m.call(OPEN, a0=src, a1=which, a2=m.cstr(title), count=900000000)
+        lt = m.widgets['label_title']
+        expect(is_shown(m, 'btn_search') and not is_shown(m, 'btn_more') and not is_shown(m, 'btn_select') and ('widget_move', m.widgets['btn_search'], O['NAV_VIEW_X'], 0) in m.calls
+               and ('widget_resize', lt, O['NAV_VIEW_X'] - 58, 22) in m.calls and np() != ('ah_nav_np', 'ah_nav_np', 'ah_nav_np_down'),
+               f'{title}, Search only: Search is the left cap at 214, Now Playing the right cap, the title runs to 214')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # Favorites and Downloaded: plain lists in the source's order, the title is the caller's
+    for which, title in ((LS_FAVORITES, 'Favorites'), (LS_DOWNLOADED, 'Downloaded')):
+        m = list_machine(['Stock'])
+        recs = src_records(m, titles)
+        src = fake_source(m, {which: recs})
+        r = m.call(OPEN, a0=src, a1=which, a2=m.cstr(title), count=900000000)
+        lay = Layout(['A'] * len(titles), sections=False)
+        expect(r == 0 and m.fake['asked'] == [(which, 0)] and m.word(m.sv + SC_VH) == lay.content() and m.wtext[m.widgets['sg_title']] == title and m.wtext[m.widgets['label_title']] == title,
+               f'{title}: a plain list, titled by the caller')
+        blits, texts, styles, fills = settle(m)
+        shown = [t for t, rc in texts]
+        expect(shown[:5] == titles[:5] and 'Artist 0' in shown, f'{title}: the rows are in the source\'s order ({shown})')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # a row's list: songs_open_src_in(src, LS_PLAYLISTS, row, title) reads src->list(LS_PLAYLISTS, the row), the row's copy kept for the re-reads
+    m = list_machine(['Stock'])
+    recs = src_records(m, titles)
+    row = make_song(m, 'Night', 'Night', 'Night', rid=-9, path='nd://pl9'); m.present.discard('nd://pl9')
+    src = fake_source(m, {LS_PLAYLISTS: recs})
+    r = m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_PLAYLISTS, a2=row, a3=m.cstr('Night'), count=900000000)
+    expect(r == 0 and m.fake['asked'][:1] and m.fake['asked'][0][0] == LS_PLAYLISTS and m.fake['scopes'][:1] == ['Night'] and m.wtext[m.widgets['sg_title']] == 'Night',
+           f'a playlist row: src->list(LS_PLAYLISTS, the row) (scopes {m.fake.get("scopes")}), titled Night ({m.fake["asked"]})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # a playlist whose tracks are not cached yet (lib_src_t.state loading): the page's header and the spinner, not the empty text; the rows fill in when they arrive; an empty answer is "No songs"
+    m = list_machine(['Stock'])
+    m.top_main = m.window
+    row = make_song(m, 'Night', 'Night', 'Night', rid=-9, path='nd://pl9'); m.present.discard('nd://pl9')
+    src = fake_source(m, {}, caps=2)   # lib_nd's caps: Search only
+    m.fake['state'] = 1
+    m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_PLAYLISTS, a2=row, a3=m.cstr('Night'), count=900000000)
+    opened = list(m.calls)
+    expect(vis(m, 'view_grid') == (1, 1) and vis(m, 'label_status')[0] == 0 and vis(m, 'sg_spin')[0] == 1 and vis(m, 'sg_foot')[0] == 0,
+           'a playlist still loading: the page (large title) and the spinner show, no status line, no "0 songs"')
+    expect(('timer_add', PSYMS['ls_spin_tick'], 250) in m.calls and m.wtext[m.widgets['sg_title']] == 'Night', 'the spinner turns on a timer; the title is the playlist\'s')
+    pills = ('btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph')
+    expect(all(vis(m, n)[0] == 0 and vis(m, n)[1] == 0 for n in pills[:4]) and vis(m, 'sg_glyph')[0] == 0, 'loading: no Play, Shuffle or glyph (the library\'s and the playlist\'s), all hidden and insensitive')
+    blits, texts, styles, fills = paint(m)
+    expect(not blits and not texts, f'loading: nothing is painted (no cover, no pill text, no rows): {len(blits)} blits {texts}')
+    m.fake['lists'][LS_PLAYLISTS] = src_records(m, titles); m.fake['state'] = 0; m.fake['gen'] = 2
+    m.calls = []
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    blits, texts, styles, fills = settle(m)
+    expect(vis(m, 'view_grid') == (1, 1) and vis(m, 'sg_spin')[0] == 0 and vis(m, 'sg_foot')[0] == 1 and titles[0] in [t for t, rc in texts] and titles[1] in [t for t, rc in texts], f'the tracks arrive: the rows fill in, the spinner goes ({[t for t, rc in texts][:4]})')
+    expect(vis(m, 'hd_play') == (1, 1) and vis(m, 'hd_shuffle') == (1, 1) and vis(m, 'sg_glyph')[0] == 1 and vis(m, 'btn_play')[0] == 0 and vis(m, 'btn_shuffle')[0] == 0,
+           f'a source playlist has the local playlist\'s header: the album-style Shuffle disc and Play pill, live, not the two flat pills ({[vis(m, n) for n in pills]})')
+    expect(vis(m, 'sg_hname')[0] == 1 and m.wtext[m.widgets['sg_hname']] == 'Night' and vis(m, 'sg_title')[0] == 0 and m.wtext[m.widgets['sg_foot']] == f'{len(titles)} songs' and 'Night' in [t for t, rc in texts] + [m.wtext[m.widgets['sg_hname']]],
+           'and the header: the name under the tile, the large title gone, the count as the footer')
+    expect(any(b[2][2] == O['PH_COVER'] and tuple(b[2][:2]) == (O['PH_COVER_X'], O['PH_COVER_Y']) for b in blits), 'and the tile (the mosaic or its placeholder) is drawn at the cover place')
+    expect(('widget_move', m.widgets['hd_play'], O['AH_PLAY_X'], O['PH_BTN_Y']) in opened and ('widget_move', m.widgets['hd_shuffle'], O['AH_SHUF_X'], O['PH_BTN_Y']) in opened, 'the disc and the pill sit under the header, as a local playlist\'s')
+    expect(not is_shown(m, 'btn_search') and not is_shown(m, 'btn_more') and not is_shown(m, 'btn_select') and np() == ('ah_nav_np', 'ah_nav_np', 'ah_nav_np_down'),
+           f'a source playlist has no Search and no left piece on the capsule: Now Playing is the plain disc ({np()})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    m = list_machine(['Stock'])
+    src = fake_source(m, {})
+    row = make_song(m, 'Night', 'Night', 'Night', rid=-9, path='nd://pl9'); m.present.discard('nd://pl9')
+    m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_PLAYLISTS, a2=row, a3=m.cstr('Night'), count=900000000)
+    expect(vis(m, 'label_status')[0] == 1 and m.wtext[m.widgets['label_status']] == 'No songs' and vis(m, 'view_grid')[0] == 0 and vis(m, 'sg_spin')[0] == 0, 'an empty answer: "No songs", no spinner')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    for st, want in ((2, "Can't connect to the server"), (3, 'Connect to Wi-Fi first')):   # LS_ST_FAILED / LS_ST_OFFLINE: the reason, no spinner
+        m = list_machine(['Stock'])
+        src = fake_source(m, {})
+        m.fake['state'] = st
+        row = make_song(m, 'Night', 'Night', 'Night', rid=-9, path='nd://pl9'); m.present.discard('nd://pl9')
+        m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_PLAYLISTS, a2=row, a3=m.cstr('Night'), count=900000000)
+        expect(vis(m, 'label_status')[0] == 1 and m.wtext[m.widgets['label_status']] == want and vis(m, 'sg_spin')[0] == 0, f'state {st}: {want!r}, no spinner')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # the library lists (scope NULL: Songs, Favorites) ask the state too: loading shows the spinner and no pills, the first rows reveal them
+    for which, title in ((LS_SONGS, 'Songs'), (LS_FAVORITES, 'Favorites')):
+        m = list_machine(['Stock'])
+        m.top_main = m.window
+        src = fake_source(m, {})
+        m.fake['state'] = 1
+        m.call(OPEN, a0=src, a1=which, a2=m.cstr(title), count=900000000)
+        expect(m.fake['states'][:1] == [(which, 0)] and vis(m, 'sg_spin')[0] == 1 and vis(m, 'label_status')[0] == 0 and vis(m, 'btn_play')[0] == 0 and vis(m, 'btn_shuffle')[0] == 0 and vis(m, 'sg_foot')[0] == 0,
+               f'{title} loading: asked src->state({which}, NULL), one spinner, no pills, no footer ({m.fake["states"][:2]})')
+        m.fake['lists'][which] = src_records(m, titles); m.fake['state'] = 0; m.fake['gen'] = 2
+        m.call(PSYMS['sg_on_gen'], count=900000000)
+        settle(m)
+        expect(vis(m, 'sg_spin')[0] == 0 and vis(m, 'btn_play') == (1, 1) and vis(m, 'btn_shuffle') == (1, 1), f'{title}: the rows arrive, the pills show and the spinner goes')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+    m = list_machine(['Stock'])
+    src = fake_source(m, {})
+    m.call(OPEN, a0=src, a1=LS_DOWNLOADED, a2=m.cstr('Downloaded'), count=900000000)
+    expect(vis(m, 'label_status')[0] == 1 and vis(m, 'view_grid')[0] == 0, 'an empty list shows the status line')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # an incomplete list: no rail, grows on gen without losing the place; complete: the rail comes
+    n0 = 60
+    titles = src_titles(n0)
+    m = list_machine(['Stock'])
+    m.top_main = m.window
+    recs = src_records(m, titles)
+    src = fake_source(m, {LS_SONGS: list(recs)}, complete={LS_SONGS: 0})
+    m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    plain = lambda n: Layout(['A'] * n, sections=False).content()
+    expect(m.word(m.sv + SC_VH) == plain(n0) and m.fake['asked'] == [(LS_SONGS, 0)], 'a paged Songs list: plain rows, no sections')
+    settle(m)
+    scroll_to(m, 20 * ROW)
+    at = off_of(m)
+    m.fake['lists'][LS_SONGS] = recs + src_records(m, src_titles(40, 'More'), base=n0)
+    m.calls = []
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    expect(not m.names().count('window_open') and 'timer_add' in m.names() and len(m.fake['asked']) == 1, 'gen unchanged: the list is not read again')
+    m.fake['gen'] = 2
+    m.calls = []
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    expect(len(m.fake['asked']) == 2 and m.word(m.sv + SC_VH) == plain(n0 + 40) and off_of(m) == at,
+           f'gen moved: the list is read again and grows, the scroll position stays ({off_of(m)} {at}, {m.word(m.sv + SC_VH)})')
+    expect(('deque_destroy',) in m.calls and not any(c[0] == 'loadLocalClassList' for c in m.calls), 'the old copy is destroyed, no stock query')
+    blits, texts, styles, fills = settle(m)
+    shown = [t for t, _ in texts]
+    expect('A0 Song' not in shown and 'U20 Song' in shown, f'the rows around the kept position are painted ({shown})')
+    m.fake['gen_rows'] = 2; m.fake['gen'] = 9   # only the download part of gen moved: no list read, the rows are painted again
+    m.calls = []
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    expect(len(m.fake['asked']) == 2 and any(c[0] == 'widget_invalidate_force' for c in m.calls), 'a download-only gen move: the list is not read again, the rows repaint')
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    expect(len(m.fake['asked']) == 2, 'and the new gen is taken: nothing more on the next tick')
+    del m.fake['gen_rows']
+    m.fake['complete'][LS_SONGS] = 1; m.fake['gen'] = 3
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    allt = src_titles(n0) + src_titles(40, 'More')
+    sec = Layout(letters_of(allt))
+    expect(len(sec.secs) > 1 and m.word(m.sv + SC_VH) == sec.content(), f'complete: sections and the rail come ({m.word(m.sv + SC_VH)} {sec.content()})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # the "N songs" footer waits for the whole list: hidden while the paged Songs list grows, shown (with the count) once it is complete
+    m = list_machine(['Stock'])
+    m.top_main = m.window
+    src = fake_source(m, {LS_SONGS: src_records(m, src_titles(n0))}, complete={LS_SONGS: 0})
+    m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    settle(m)
+    expect(vis(m, 'sg_foot')[0] == 0, 'a Songs list that is still growing: no "N songs" footer')
+    m.fake['complete'][LS_SONGS] = 1; m.fake['gen'] = 2
+    m.call(PSYMS['sg_on_gen'], count=900000000)
+    settle(m)
+    expect(vis(m, 'sg_foot')[0] == 1 and m.wtext[m.widgets['sg_foot']] == f'{n0} songs', f'complete: the footer shows the total ({m.wtext[m.widgets["sg_foot"]]})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # an artist's All Songs on a source (songs_open_src_in, LS_SONGS of a row) is the local artist's songs: no Search, no left piece on the capsule, no sections or rail even
+    # when the paged Songs list is complete (or not), the grey line the album, the footer whatever the global paging says
+    for done in (0, 1):
+        m = list_machine(['Stock'])
+        m.top_main = m.window
+        row = make_song(m, 'Artist 0', 'Artist 0', 'Artist 0', rid=-9, path='nd://ar9'); m.present.discard('nd://ar9')
+        src = fake_source(m, {LS_SONGS: src_records(m, src_titles(30))}, caps=2, complete={LS_SONGS: done})
+        m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_SONGS, a2=row, a3=m.cstr('Artist 0'), count=900000000)
+        np = lambda: tuple(m.props.get((m.widgets['btn_backtoplayer'], f'style:{st}:icon')) for st in ('normal', 'over', 'pressed'))
+        expect(not is_shown(m, 'btn_search') and not is_shown(m, 'btn_more') and not is_shown(m, 'btn_select') and np() == ('ah_nav_np', 'ah_nav_np', 'ah_nav_np_down'),
+               f'an artist\'s songs (Songs complete {done}): no Search, no left piece, Now Playing the plain disc ({np()})')
+        expect(m.word(m.sv + SC_VH) == plain(30) and vis(m, 'sg_rail')[0] == 0, f'an artist\'s songs (Songs complete {done}): no sections, no rail ({m.word(m.sv + SC_VH)} {plain(30)})')
+        blits, texts, styles, fills = settle(m)
+        shown = [t for t, rc in texts]
+        expect('Album 0' in shown and 'Artist 0' not in shown and vis(m, 'sg_foot')[0] == 1 and m.wtext[m.widgets['sg_foot']] == '30 songs',
+               f'the grey line is the album, as the local artist\'s songs; the footer shows ({shown[:6]})')
+        m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # a source's list of a row over a Songs page (the source's Songs page, Search, an artist, the All Songs tile): it opens over the page below, a second level is refused, and the page below is itself again
+    m = list_machine(['Stock'])
+    m.top_main = m.window
+    src = fake_source(m, {LS_SONGS: src_records(m, src_titles(30))}, caps=2, complete={LS_SONGS: 1})
+    m.call(PSYMS['songs_open_src'], a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000); settle(m)
+    row = make_song(m, 'Artist 0', 'Artist 0', 'Artist 0', rid=-9, path='nd://ar9'); m.present.discard('nd://ar9')
+    m.calls = []
+    r = m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_SONGS, a2=row, a3=m.cstr('Artist 0'), count=900000000)
+    expect(r == 0 and ('window_open', 'm1plus_songs') in m.calls, f'an artist\'s All Songs opens over the source\'s Songs page ({r:#x})')
+    r = m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_SONGS, a2=row, a3=m.cstr('Artist 0'), count=900000000)
+    expect(r == 0xffffffff, 'a second level is refused')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    r = m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_SONGS, a2=row, a3=m.cstr('Artist 0'), count=900000000)
+    expect(r == 0, 'the page below is the open one again once the page over it is destroyed (it takes a page over it again)')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # play goes through the source
+    titles = ['Zed', 'Alpha', 'Mike', 'Bravo']
+    m = list_machine(['Stock'])
+    recs = src_records(m, titles)
+    src = fake_source(m, {LS_FAVORITES: recs})
+    m.call(OPEN, a0=src, a1=LS_FAVORITES, a2=m.cstr('Favorites'), count=900000000)
+    settle(m)
+    lay = Layout(['A'] * 4, sections=False)
+    m.calls = []
+    calls = tap(m, 150, lay.row_y(2) + 30)
+    expect(len(m.fake['plays']) == 1 and m.fake['plays'][0][1:3] == (2, 0) and not any(c[0] in ('loadSongList', 'loadLocalClassList') for c in calls),
+           f'a row tap plays through the source: track 2, the play mode kept ({m.fake["plays"]})')
+    click(m, 'btn_play')
+    expect(m.fake['plays'][-1][1:3] == (0, 1), 'Play: the first track, in order')
+    click(m, 'btn_shuffle')
+    expect(m.fake['plays'][-1][1:3] == (NONE, 2) and len(m.fake['plays']) == 3 and not any(c[0] == 'shuffle_play' for c in m.calls), 'Shuffle: a random track, shuffled')
+    h = m.fake['plays'][0][0]
+    expect(h in m.deques and m.deques[h] == recs, 'the list handed to play is the page\'s own copy of the source\'s records')
+    # row "..." and Add/Delete do nothing for a source (ND-14)
+    m.calls = []
+    pick(m, 'select'); tap(m, 150, lay.row_y(1) + 30)
+    click(m, 'sg_del'); click(m, 'sg_add')
+    expect(not any(c[0] in ('batch_delete_file', 'navigator_to_with_context', 'window_open') for c in m.calls), 'Add / Delete in select mode do nothing on a source\'s tracks')
+    click(m, 'btn_return')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    # covers: from the source's file; a cover that is asked for is looked for again
+    titles = ['Aa', 'Bb']
+    m = list_machine(['Stock'], cached=False)
+    m.top_main = m.window   # pod_is_top: the page is in front (the shared cover poll only runs then)
+    recs = src_records(m, titles)
+    src = fake_source(m, {LS_SONGS: recs}, ask=True)
+    key = album_key('Artist 0', 'Album 0')
+    p = '/mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg' % key   # the file the source names (the page must decode that one, not the Cover Flow cache file of the key)
+    m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    timers = []
+    for _ in range(6): timers += [c for c in tick(m) if c[0] == 'timer_add']
+    expect(key in m.fake['covers'] and any(c[1] == PSYMS['ls_cover_tick'] and c[2] == 250 for c in timers), f'a missing cover is asked of the source, and the shared cover poll looks again shortly ({m.fake["covers"]} {key} {timers[:6]})')
+    blits, texts, styles, fills = settle(m)
+    m.present.add(p); m.files[p] = 4096; m.images['file://' + p] = (24, 24, struct.pack('<I', colour(0)) * (24 * 24))
+    m.call(PSYMS['ls_cover_tick'], count=80000000)
+    blits, texts, styles, fills = settle(m)
+    cov = [b for b in blits if b[2][2] == 52 and b[0] in m.bitmaps]
+    expect(cov and near(pixel(m, cov[0][0], 26, 26), colour(0)) and 'pthread_create' not in m.names() and not any(c[0] == 'cc_build_open' for c in m.calls),
+           'the file the source names is there: the cover shows its picture (not the Cover Flow cache file of the key, which does not exist); the page starts no cover build of its own')
+    # the poll gives up after LS_COVER_POLLS asks (the one rule); a page that is not on top asks nothing
+    m = list_machine(['Stock'], cached=False)
+    m.top_main = m.window
+    recs = src_records(m, titles)
+    src = fake_source(m, {LS_SONGS: recs}, ask=True)
+    m.call(OPEN, a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    for _ in range(6): tick(m)
+    n0 = len(m.fake['covers'])
+    m.top_main = 0
+    expect(m.call(PSYMS['ls_cover_tick'], count=80000000) == 8 and len(m.fake['covers']) == n0, 'not the top window: the poll waits, the source is not asked')
+    m.top_main = m.window
+    ends = [m.call(PSYMS['ls_cover_tick'], count=80000000) for _ in range(1210)]
+    expect(ends[-1] != 8 and 8 in ends[:50], 'the cover never lands: the poll gives up and ends after LS_COVER_POLLS asks')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+
+
+def src_marks_tests(ctx):
+    """19. A source's row marks on the Songs page (docs/modules/subsonic.md ND-13): the downloaded disc, the download ring and the DSD tag before the artist (the artist stays, no "Downloading" text), the dim styles of a row that cannot play; a stock page has none."""
+    from PIL import Image
+    expect = ctx.expect
+    LS_SONGS, DONE, ACTIVE, WAIT = 2, 3, 2, 1
+    titles = ['Aa', 'Ab', 'Ac', 'Ad', 'Ae', 'Af']
+    m = list_machine(['Stock'])
+    im = Image.open(os.path.join(ROOT, 'assets', 'icons', 'png', 'pc_atlas.png')).convert('RGBA')
+    m.images['pc_atlas'] = (im.width, im.height, im.tobytes())
+    recs = src_records(m, titles)
+    rows = {recs[0]: (DONE, 0, 0, 0, 0), recs[1]: (ACTIVE, 7, 0, 0, 0), recs[2]: (ACTIVE, -1, 1, 0, 0), recs[3]: (0, 0, 1, 0, 1), recs[4]: (DONE, 0, 1, 0, 0), recs[5]: (WAIT, 0, 0, 0, 1)}
+    src = fake_source(m, {LS_SONGS: recs}, rows=rows)
+    m.top_main = m.window
+    expect(m.call(PSYMS['songs_open_src'], a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000) == 0, 'the page opens on the fake source')
+    disc, dsd, ring = (O['PA_BADGE_PX'], O['PA_DSD_H']), (O['PA_DSD_W'], O['PA_DSD_H']), (O['PA_DL_PX'],) * 2
+    rowh = O['LIST_ROW_H']
+    blits, texts, styles, fills = settle(m)
+    top0 = min(rc[1] for (t, rc) in texts if t == 'Aa') - O['LIST_TITLE_Y']   # row 0's top at scroll 0; the second frame is scrolled by 3 rows
+    frames = [(blits, texts, styles, top0)]
+    scroll_to(m, 3 * rowh)
+    b2, t2, s2_, _ = settle(m)
+    frames.append((b2, t2, s2_, top0 - 3 * rowh))
+    marks, sub, dimmed, steps, cells = [], {}, set(), {}, {}
+    NSTEP = O['PA_DL_N']
+    cell = lambda b: b[1][0] // O['PA_DL_PX'] + (b[1][1] - O['PA_DSD_H']) // O['PA_DL_PX'] * O['PA_DL_COLS']   # the atlas cell a ring blit copies
+    for bl, tx, st, top in frames:
+        for b in bl:
+            if tuple(b[2][2:]) in (disc, dsd, ring):
+                kind = 'disc' if tuple(b[2][2:]) == disc else 'dsd' if tuple(b[2][2:]) == dsd else 'ring' if cell(b) < NSTEP else 'mark'
+                marks.append(((b[2][1] - top) // rowh, kind, b[2]))
+                if kind == 'ring': steps[(b[2][1] - top) // rowh] = cell(b)
+                if kind == 'mark': cells[(b[2][1] - top) // rowh] = cell(b)
+        for (t, rc), s in zip(tx, st):
+            if rc[3] == O['LIST_SUB_H']: sub[(rc[1] - top) // rowh] = (t, s, rc)
+            if s in ('label_row_dim', 'label_row_subdim'): dimmed.add(((rc[1] - top) // rowh, s))
+    discs = sorted({k for k, n, r in marks if n == 'disc'})
+    dsds = sorted({k for k, n, r in marks if n == 'dsd'})
+    expect(discs == [0, 4] and dsds == [2, 3, 4], f'the disc on the downloaded rows, the DSD tag on the DSD rows: {discs} {dsds}')
+    rings = sorted({k for k, n, r in marks if n == 'ring'})
+    expect(rings == [1, 2, 5] and steps == {1: 1, 2: 0, 5: 0}, f'the ring on the downloading and the queued rows (7 % = step 1, unknown and queued = the empty ring): {rings} {steps}')
+    expect(cells == {1: O['PA_DL_STOP'], 2: O['PA_DL_STOP'], 5: O['PA_DL_ARROW']}, f'a running download shows the stop square, a queued track the arrow: {cells}')
+    expect(sub[1][0] == 'Artist 1' and sub[2][0] == 'Artist 2' and sub[0][0] == 'Artist 0' and sub[4][0] == 'Artist 4' and not [1 for v in sub.values() if 'Downloading' in v[0] or 'Waiting' in v[0]],
+           f'the artist stays beside the ring, no state text: {[(k, v[0]) for k, v in sorted(sub.items())]}')
+    r1 = [x for k, n, x in marks if k == 1 and n == 'ring'][0]
+    expect(r1[0] == O['LIST_TEXT_X'] and sub[1][2][0] == O['LIST_TEXT_X'] + O['PA_DL_PX'] + 6, f'the ring starts at the text column and the artist follows it: {r1} {sub[1][2]}')
+    at = lambda r, n: [x for k, nm, x in marks if k == r and nm == n][0]
+    d0, d4, s4, s2, s3, r2 = at(0, 'disc'), at(4, 'disc'), at(4, 'dsd'), at(2, 'dsd'), at(3, 'dsd'), at(2, 'ring')
+    expect(d0[0] == O['LIST_TEXT_X'] and sub[0][2][0] == O['LIST_TEXT_X'] + O['PA_BADGE_PX'] + 6 and s4[0] == d4[0] + O['PA_BADGE_PX'] + 6 and sub[4][2][0] == s4[0] + O['PA_DSD_W'] + 6
+           and s3[0] == O['LIST_TEXT_X'] and sub[3][2][0] == s3[0] + O['PA_DSD_W'] + 6
+           and s2[0] == r2[0] + O['PA_DL_PX'] + 6 and sub[2][2][0] == s2[0] + O['PA_DSD_W'] + 6,
+           f'the marks start at the text column and the grey line follows them (ring, then DSD, on row 2): {d0} {sub[0][2]} {d4} {s4} {sub[4][2]} {r2} {s2}')
+    expect(dimmed == {(3, 'label_row_dim'), (3, 'label_row_subdim'), (5, 'label_row_dim'), (5, 'label_row_subdim')} and sub[0][1] == 'label_row_sub', f'only the rows that cannot play are in the dim styles: {sorted(dimmed)}')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    m = list_machine(['Zed', 'Alpha', 'Mike'])
+    m.images['pc_atlas'] = (im.width, im.height, im.tobytes())
+    m.call(PSYMS['songs_open_src'], a0=0, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000)
+    blits, texts, styles, fills = settle(m)
+    expect(not [b for b in blits if tuple(b[2][2:]) in (disc, dsd)] and not [s for s in styles if s in ('label_row_dim', 'label_row_subdim')] and not any(c[0] == 'widget_load_image' and c[1] == 'pc_atlas' for c in m.calls),
+           'a stock page paints no marks and never loads the atlas')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+
+
+def src_dsd_tests(ctx):
+    """20. The DSD confirm on a source's Songs page (ND-14): a row tap and Play answered -2 by the source ask "Download to Play?" for that row; Download is src->act(LS_ACT_DOWNLOAD), Cancel
+    is nothing; a source that played or refused shows no dialog."""
+    expect = ctx.expect
+    LS_FAVORITES = 4
+    TITLES = ['Alpha', 'Bravo', 'Charlie', 'Delta']
+    def page(play_ret, yes):
+        m = list_machine(['Stock'])
+        recs = src_records(m, TITLES)
+        src = fake_source(m, {LS_FAVORITES: recs})
+        m.fake.update(play_ret=play_ret, act_ret=0)
+        m.confirm_yes = yes; m.top_main = 0
+        m.call(PSYMS['songs_open_src'], a0=src, a1=LS_FAVORITES, a2=m.cstr('Favorites'), count=900000000)
+        settle(m)
+        m.calls = []
+        return m, recs
+    for what, act, row in (('a row tap', lambda m: tap(m, 150, TOP + 2 * ROW + 20), 2), ('Play', lambda m: click(m, 'btn_play'), 0)):
+        m, recs = page(-2, False)
+        act(m)
+        ask = [c for c in m.calls if c[0] == 'confirm']
+        expect(len(ask) == 1 and ask[0][1] == f'Download to Play?\nDSD tracks play from the card. {TITLES[row]}, ? MB.' and ask[0][2] == O['CONFIRM_KIND_WRAP'] and not m.fake['acts'],
+               f'{what}: -2 asks "Download to Play?" for the row; Cancel asks nothing ({[a[1:] for a in ask]})')
+        m, recs = page(-2, True)
+        act(m)
+        expect(m.fake['acts'] == [(recs[row], 1)], f'{what}: Download is src->act(LS_ACT_DOWNLOAD) on that row ({m.fake["acts"]})')
+        for ret in (0, -1):
+            m, recs = page(ret, True)
+            act(m)
+            expect(not [c for c in m.calls if c[0] == 'confirm'] and not m.fake['acts'], f'{what}: the source answering {ret} shows no dialog')
+
+
+SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests, src_tests, src_marks_tests, src_dsd_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

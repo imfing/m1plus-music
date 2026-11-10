@@ -17,13 +17,15 @@
  *     picture, a stream) or the decode fails; a new track starts over.
  * Stock keeps drawing its 264 px picture underneath and reloading it when the track changes; ours is drawn only while its track is the playing one (checked on every paint), so a late
  * stock reload or a track change never shows the old track's picture. The destroy cancels the job without waiting (cc_build_stop), removes the timer and the files and frees the
- * bitmap. Every failure leaves the stock page as it is. docs/modules/bigcover.md.
+ * bitmap. Every failure leaves the stock page as it is. A server track (streamed or downloaded) is keyed by its synthetic REC_ID, never by its path, and its picture is the server's cover file
+ * Now Playing draws (sba_rec_cover), fitted into the same bitmap; a downloaded one without it takes the job on its local file, a stream has no other source. docs/modules/bigcover.md.
  */
 #include "offsets.inc"
 #include "stock.h"
 #include "covercache.h"
 #include "home.h"
 #include "common.h"
+#include "sbapi.h"
 
 extern const char *np_cover_file(
     int *
@@ -33,6 +35,7 @@ extern const char *np_cover_file(
 #define BC_TICK_MS 250
 #define BC_TRY_MS 6000 /* how long a track waits for its cover source and the worker */
 #define BC_RUN_MS 10000 /* how long a job may run */
+#define BC_SRV_MS 60000 /* how long a server track waits for its cover file to be fetched */
 #define BC_TMP "/tmp/m1plus-bigcover.jpg"
 #define BC_BG 0xff141414u /* the page's bg_color, #141414: what shows around a non-square picture */
 #define BC_IDLE 0 /* the track is known, its job not started */
@@ -47,13 +50,19 @@ static struct {
         t0; /* the timer, the playing track's key (0 none), time_now_ms of the track's first sight / its job's start */
     int st, worker,
         src; /* BC_*; this page holds the shared job set; the cover source the job (or the picture) was made for */
+    int srv; /* the picture is the server's cover file (a server track), not a job's: no source word to compare */
 } bc __attribute__((section(".scratch")));
 
-/* The playing track and its path; the key is the path's hash, never 0, 0 for nothing playing or not a file path. */
+/* A server track (streamed or downloaded): its queue record is in the queue map. */
+static int bc_server(void *rec) { return rec && sba_rec_track(*(int *)((char *)rec + REC_ID))[0] != 0; }
+
+/* The playing track and its path; the key is the path's hash (a server track's: its synthetic REC_ID, so a stream address, which carries the login, is never hashed), never 0, 0 for nothing playing or not a file path. */
 static const char *bc_track(unsigned *key) {
     void *rec = cc_playing();
     const char *path = rec ? cc_str(rec, REC_PATH) : "";
-    *key = *path == '/' ? cc_fnv(2166136261u, path) | 1u : 0;
+    *key = bc_server(rec) ? (unsigned)*(int *)((char *)rec + REC_ID) | 1u
+           : *path == '/' ? cc_fnv(2166136261u, path) | 1u
+                          : 0;
     return path;
 }
 
@@ -63,7 +72,7 @@ static void bc_drop(void) {
     if (bc.worker || bc.st == BC_RUN) unlink(BC_TMP), unlink(BC_TMP ".tmp");
     bc.worker = 0;
     if (bc.st == BC_READY && bc.img) widget_invalidate_force(bc.img, (void *)0); /* stock's picture shows again */
-    bc.st = BC_IDLE;
+    bc.st = BC_IDLE, bc.srv = 0;
 }
 
 /* Stock's picture is the track's own embedded art (source 2) or its folder art (3), which is what the worker searches for, and the source is this track's: stock's parser stores
@@ -79,7 +88,8 @@ static int bc_src(const char *path) {
 static int bc_same(void) {
     unsigned key;
     const char *path = bc_track(&key);
-    return key == bc.tkey && bc.src && bc_src(path) == bc.src;
+    if (key != bc.tkey) return 0;
+    return bc.srv || (bc.src && bc_src(path) == bc.src);
 }
 
 /* The finished job: its file into the bitmap. READY, or GAVE when there is no file or it does not decode. */
@@ -109,7 +119,7 @@ static void bc_finish(void) {
 /* Ask the worker for the track's art. Whether it is running; busy or not yet allowed: nothing is changed (the next tick retries). */
 static void bc_start_job(const char *path) {
     int busy, src = bc_src(path);
-    if (!src || !np_cover_file(&busy) || busy || cc_build_busy() || !pod_screen_lit()) return;
+    if (*path != '/' || !src || !np_cover_file(&busy) || busy || cc_build_busy() || !pod_screen_lit()) return;
     unlink(BC_TMP), unlink(BC_TMP ".tmp");
     if (!cc_build_open(1, CC_MISSING)) return;
     if (cc_build_add_aspect(path, BC_TMP, BC_SIZE, src) != 1 || !cc_build_start()) {
@@ -118,6 +128,28 @@ static void bc_start_job(const char *path) {
         return;
     }
     bc.worker = 1, bc.st = BC_RUN, bc.src = src, bc.t0 = time_now_ms();
+}
+
+/* A server track's picture: the cover file Now Playing draws (sba_rec_cover on the queue record, asked for when it is not cached), decoded and fitted into the page's bitmap at 320 px (the 168 px file
+ * enlarged by the same exact average). 1 when it is up; 0 to go on (not cached yet: asked and looked at again next tick; or none: a downloaded track then takes the job below, a stream keeps stock's). */
+static int bc_server_art(void *rec, int *wait) {
+    char url[120];
+    unsigned *px;
+    int ok = 0, r;
+    memcpy(url, "file://", 8);
+    r = sba_rec_cover(rec, url + 7, sizeof url - 7);
+    *wait = r == 0;
+    if (r != 1) return 0;
+    if (!bc.bmp) bc.bmp = bitmap_create_ex(BC_SIZE, BC_SIZE, BC_SIZE * 4, BITMAP_RGBA8888);
+    px = bc.bmp ? (unsigned *)bitmap_lock_buffer_for_write(bc.bmp) : (unsigned *)0;
+    if (px) {
+        ok = cc_decode_fit(bc.win, url, 1, BC_SIZE, BC_BG, px);
+        bitmap_unlock_buffer(bc.bmp);
+    }
+    if (!ok) return 0;
+    bc.st = BC_READY, bc.srv = 1;
+    if (bc.img) widget_invalidate_force(bc.img, (void *)0);
+    return 1;
 }
 
 /* One step: the track, its job. */
@@ -142,6 +174,15 @@ static void bc_step(void) {
             bc.st = BC_GAVE;
         }
         return;
+    }
+    if (bc_server(cc_playing())) {
+        int wait;
+        if (bc_server_art(cc_playing(), &wait)) return;
+        if (*path !=
+            '/') { /* a stream: stock never makes a picture for it, so only the server's file is waited for (fetched meanwhile, the stock page stays) */
+            if (!wait || now - bc.t1 > BC_SRV_MS) bc.st = BC_GAVE;
+            return;
+        }
     }
     if (now - bc.t1 > BC_TRY_MS)
         bc.st = BC_GAVE;

@@ -22,7 +22,13 @@ TRACKS = ['So What', 'Freddie Freeloader', 'Blue in Green', 'All Blues', 'Flamen
 TONE = (0x3A, 0x1E, 0x24)   # a cover's tone behind the album page (pod_tone of a red cover, approximately)
 
 
-def album(s, scroll=300, menu=False, playing=2):
+ND_STATES = {   # a Navidrome row's sheet (patch/rowmenu.c rm_third): the third row and the star by the row's state
+    'new': (('Play Next', 'Play After', 'Download', 'Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'rm_ic_dl', 'rm_ic_fav', 'rm_ic_info')),
+    'done': (('Play Next', 'Play After', 'Remove Download', 'Undo Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'rm_ic_rmdl', 'rm_ic_unfav', 'rm_ic_info')),
+    'busy': (('Play Next', 'Play After', 'Cancel Download', 'Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'rm_ic_cxdl', 'rm_ic_fav', 'rm_ic_info'))}
+
+
+def album(s, scroll=300, menu=False, playing=2, nd=None):
     """The album page (patch/albumpage.c) scrolled to its tracks: the tinted window, the glass Back and Select | Now Playing capsule, each track's number, title and "..." (the title ends
     RM_TEXT_GAP before the zone), the hairline; the menu when asked. 450 px of window."""
     win, hdr = O['AH_WIN_H'], O['AH_HDR_H']
@@ -41,7 +47,7 @@ def album(s, scroll=300, menu=False, playing=2):
         im.alpha_composite(more, (right - O['RM_MORE_W'] + (O['RM_MORE_W'] - O['RM_DOTS_PX']) // 2, y + (ROW - 1 - O['RM_DOTS_PX']) // 2))
     for name, x, w in (('ah_nav_back', 7, 44), ('pod_nav_selectl', O['NAV_VIEW_X'], O['NAV_VIEW_W']), ('ah_nav_play', 260, 60)):
         g = s.img(name); im.alpha_composite(g, (x + (w - g.width) // 2, (NAV - g.height) // 2))
-    if menu: PS.row_menu(s, im)
+    if menu: PS.row_menu(s, im, *([ND_STATES[nd][0]] if nd else []), **({'glyphs': ND_STATES[nd][1]} if nd else {}))
     return im
 
 
@@ -58,7 +64,10 @@ def main():
               ('A list: no rail, the menu', PS.page(s, title=fav, row_menu_at=True, direct=True)),
               ('A favourite: Undo Favorite', PS.page(s, title=fav, row_menu_at='fav', direct=True)),
               ('Album page: the "..." on every track', album(s)),
-              ('Album page: the menu', album(s, menu=True))]
+              ('Album page: the menu', album(s, menu=True)),
+              ('Navidrome: the sheet', album(s, menu=True, nd='new')),
+              ('Navidrome: downloaded, a favourite', album(s, menu=True, nd='done')),
+              ('Navidrome: downloading', album(s, menu=True, nd='busy'))]
     pad, lab = 12, 20
     sheet = Image.new('RGB', (len(panels) * (320 + pad) + pad, 450 + lab + 2 * pad), (0x2A, 0x2A, 0x2A)); d = ImageDraw.Draw(sheet)
     for i, (title, im) in enumerate(panels):

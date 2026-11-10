@@ -218,6 +218,18 @@ static unsigned rc_id(const char *album) {
     return h | !h;
 }
 
+/* 1 for a stream address (a Subsonic server track's queue path). */
+static int rc_is_stream(const char *p) {
+    static const char *const pre[] = {"http://", "https://", "nd://"};
+    unsigned k, j;
+    for (k = 0; k < 3; ++k) {
+        for (j = 0; pre[k][j] && p[j] == pre[k][j]; ++j) {
+        }
+        if (!pre[k][j]) return 1;
+    }
+    return 0;
+}
+
 /* The track the player is on: its album to the front of the list. 1 when the list changed (and was written). */
 int recent_note(void *t) {
     const char *album;
@@ -227,6 +239,8 @@ int recent_note(void *t) {
         t); /* Podcasts: the place, the played mark, the speed (patch/pcmodel.c); every page that sees the playing track on a timer calls this */
     if (!t) return 0;
     if (pc_is_path(cc_str(t, REC_PATH))) return 0; /* an episode is not an album of the shelf */
+    if (rc_is_stream(cc_str(t, REC_PATH)))
+        return 0; /* a server track's path is its stream address (a credential, dead on the shelf): never written to the card */
     album = cc_str(t, REC_ALBUM);
     if (!*album) return 0; /* an untagged album is not recorded */
     key = rc_id(album);

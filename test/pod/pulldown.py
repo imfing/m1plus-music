@@ -86,7 +86,7 @@ class SM(StockEventMachine):
         if pad:   # the menu's trailing spacer row pod_pad (the mini player bar's list padding): hidden in the asset, the last child, O['MB_PAD'] high
             self.pad = self.widget(LI_VT, 0, rows * ROW_H, 310, O['MB_PAD'], sv); self.u.mem_write(self.pad + 0x24, struct.pack('<H', 0x1))   # enabled, not visible, not sensitive
         self.hdrs = []
-        if hdrs:   # the Extras page's section headers pod_hdr0..3 (tools/pod_ui.py extras_headers): hidden views HDR_H high after the rows, which the list_view layouter sums with their own heights
+        if hdrs:   # the Extras page's section headers pod_hdr0..4 (tools/pod_ui.py extras_headers): hidden views HDR_H high after the rows, which the list_view layouter sums with their own heights
             self.hdrs = [self.widget(LI_VT, 0, 0, 310, pod_pages.HDR_H, sv) for _ in pod_pages.EXTRAS_GROUPS]
             for h in self.hdrs: self.u.mem_write(h + 0x24, struct.pack('<H', 0x1))
         self.kids(sv, self.rows + self.hdrs + ([self.pad] if pad else []))

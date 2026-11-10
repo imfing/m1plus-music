@@ -15,6 +15,7 @@
 #include "podcasts.h"
 #include "radio.h"
 #include "upnext.h"
+#include "sbapi.h"
 
 extern unsigned pod_rand(unsigned n); /* patch/shuffle.c */
 
@@ -48,6 +49,9 @@ int upnext_add(void *rows, int after) {
     for (i = 0; i < n; ++i) { /* every row: a local song whose file is there */
         const char *path = cc_str(deque_at(rows, i), REC_PATH);
         if (pc_is_path(path)) return UPNEXT_PODCAST;
+        if (path[0] == 'h' && path[1] == 't' && path[2] == 't' && path[3] == 'p' &&
+            sba_rec_track(I(deque_at(rows, i), REC_ID))[0])
+            continue; /* a Navidrome row's stream address (sbsrc queue_row noted its id): nothing on the card to find */
         if (!*path || access(path, F_OK)) return UPNEXT_MISSING;
     }
     if (size && pos >= 0 && (unsigned)pos < size) { /* something is playing */

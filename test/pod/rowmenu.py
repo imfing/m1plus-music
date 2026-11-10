@@ -28,7 +28,7 @@ CARD_H = 5 * PLROW
 CARD_Y = 450 - CARD_H                                   # the sheet sits on the window's foot (window y 200..450)
 LABEL_W = 320 - pod_ui.RM_TEXT_X - pod_ui.RM_TEXT_R    # 250: Now Playing's More sheet's label box (48..298)
 EN = ('Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info')
-WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_item3', 'rm_item4', 'rm_label0', 'rm_label1', 'rm_label2', 'rm_label3', 'rm_label4', 'rm_icon3')
+WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_item3', 'rm_item4', 'rm_label0', 'rm_label1', 'rm_label2', 'rm_label3', 'rm_label4', 'rm_icon2', 'rm_icon3')
 SEL_VEC = pod.DATA['SEL_VEC'][0]
 UI_SONGS = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_songs.bin') if WORK else None
 UI_ALBUM = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_album.bin') if WORK else None
@@ -500,7 +500,164 @@ def fav_info_tests(ctx):
                and not toasts(calls) and not m.up_calls and not m.pk_calls and 'addMyFav' not in names, f'{page}: the menu closes, the page opens on the row\'s copy, then the copy is freed; no toast')
 
 
-SECTIONS = [asset_tests, paint_tests, touch_tests, menu_tests, fav_info_tests]
+LS_DL_NONE, LS_DL_WAIT, LS_DL_ACTIVE, LS_DL_DONE, LS_DL_FAILED = range(5)
+ACT_DOWNLOAD, ACT_DELETE_DL, ACT_FAVORITE, ACT_CANCEL_DL, ACT_UNFAVORITE = 1, 2, 3, 4, 5
+LS_SONGS_PAGE, LS_FAVORITES = 2, 4
+
+
+class Src:
+    """One page over a fake library source with the menu's widgets, the same way for the album page and the Songs page: rec(i), row state, act answers, what the source was asked."""
+    def __init__(self, page):
+        self.page = page
+        if page == 'album':
+            self.m = m = AB.fake_machine(n=6)
+            with_menu(m, 0)
+            m.call(PSYMS['album_open_src'], a0=m.src, a1=AB.ALBUMS, a2=m.fake_row, count=900000000)
+            self.T, self.recs = AB, m.fake_tracks
+            AB.scroll_to(m, 300); AB.paint(m)
+        else:
+            m = SG.list_machine(['Stock'])
+            with_menu(m, 0)
+            self.recs = SG.src_records(m, ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'])
+            src = SG.fake_source(m, {LS_FAVORITES: self.recs})
+            m.top_main = m.window
+            m.call(PSYMS['songs_open_src'], a0=src, a1=LS_FAVORITES, a2=m.cstr('Favorites'), count=900000000)
+            SG.settle(m)
+            m.top_main = 0   # (no top window: the confirm dialog's scrim needs a mapped one)
+            self.m, self.T = m, SG
+        self.m.calls = []
+
+    def y(self, i): return (AB.row_y(i) - 300 if self.page == 'album' else SG.TOP + i * ROW) + 30
+
+    def state(self, i, dl=0, pct=0, dsd=0, fav=0, offline=0):
+        (self.m.row_of if self.page == 'album' else self.m.fake['rows'])[self.recs[i]] = (dl, pct, dsd, fav, offline)
+
+    def acts(self): return self.m.acts if self.page == 'album' else self.m.fake['acts']
+    def acts_dd(self): return self.m.acts_dd if self.page == 'album' else self.m.fake['acts_dd']   # deques destroyed before each act
+    def queued(self): return self.m.queued if self.page == 'album' else self.m.fake['queued']
+
+    def set(self, **kw):
+        for k, v in kw.items():
+            if self.page == 'album': setattr(self.m, k, v)
+            else: self.m.fake[k] = v
+
+    def open(self, i):
+        self.m.calls = []
+        self.T.tap(self.m, 288, self.y(i))
+        return SG.vis(self.m, 'rm_card') == (1, 1)
+
+    def words(self):
+        m = self.m
+        return [m.wtext[m.widgets[f'rm_label{k}']] for k in range(5)], m.props.get((m.widgets['rm_icon2'], 'image')), m.props.get((m.widgets['rm_icon3'], 'image'))
+
+
+def source_tests(ctx):
+    """6. A source's row sheet (ND-14), on the album page and the Songs page: the third row is Download / Cancel Download / Remove Download by the row's state, Favorite / Undo Favorite from the
+    source's flag, Play Next / Play After hand the source's queue record (a stream address, never nd://) to upnext_add, an undownloaded DSD row asks "Download to Play?" instead, Download / Cancel /
+    Remove / Favorite go through src->act, Get Info opens the page for the row; the stock sheet still reads Add to Playlist."""
+    expect = ctx.expect
+    for page in ('album', 'songs'):
+        # the words and glyphs by state
+        want = [(dict(), 'Download', 'rm_ic_dl', 'Favorite', 'rm_ic_fav'), (dict(dl=LS_DL_FAILED), 'Download', 'rm_ic_dl', 'Favorite', 'rm_ic_fav'),
+                (dict(dl=LS_DL_WAIT), 'Cancel Download', 'rm_ic_cxdl', 'Favorite', 'rm_ic_fav'), (dict(dl=LS_DL_ACTIVE, pct=42), 'Cancel Download', 'rm_ic_cxdl', 'Favorite', 'rm_ic_fav'),
+                (dict(dl=LS_DL_DONE, fav=1), 'Remove Download', 'rm_ic_rmdl', 'Undo Favorite', 'rm_ic_unfav'), (dict(fav=1), 'Download', 'rm_ic_dl', 'Undo Favorite', 'rm_ic_unfav')]
+        for st, third, icon, fav, favicon in want:
+            S = Src(page)
+            S.state(2, **st)
+            ok = S.open(2)
+            labels, i2, i3 = S.words()
+            expect(ok and labels == ['Play Next', 'Play After', third, fav, 'Get Info'] and i2 == icon and i3 == favicon and 'checkFavExist' not in S.m.names(),
+                   f'{page} {st}: the sheet reads {labels}, third glyph {i2}, star {i3}, no stock favourite call')
+        # Download / Cancel / Remove through src->act
+        for st, item, what, name in ((dict(), 'rm_item2', ACT_DOWNLOAD, 'Download'), (dict(dl=LS_DL_ACTIVE), 'rm_item2', ACT_CANCEL_DL, 'Cancel Download'), (dict(dl=LS_DL_WAIT), 'rm_item2', ACT_CANCEL_DL, 'Cancel Download'),
+                                     (dict(dl=LS_DL_DONE), 'rm_item2', ACT_DELETE_DL, 'Remove Download')):
+            S = Src(page)
+            S.state(2, **st); S.open(2); S.m.calls = []
+            S.m.click(item)
+            expect(S.acts() == [(S.recs[2], what)] and SG.vis(S.m, 'rm_card') == (0, 0) and not S.m.up_calls and not S.m.pk_calls and not toasts(S.m.calls) and not S.queued(),
+                   f'{page}, {name}: src->act({what}) on the row, the menu closes, no queue and no picker ({S.acts()})')
+        # Favorite
+        for fav, act_ret, toast in ((0, 0, 'Added to Favorites'), (1, 0, 'Removed from Favorites'), (0, -1, None)):
+            S = Src(page)
+            S.set(act_ret=act_ret); S.state(3, fav=fav); S.open(3); S.m.calls = []
+            S.m.click('rm_item3')
+            names = [c[0] for c in S.m.calls]
+            expect(S.acts() == [(S.recs[3], ACT_UNFAVORITE if fav else ACT_FAVORITE)] and toasts(S.m.calls) == ([toast] if toast else []) and not {'addMyFav', 'deleteMusicFromFav'} & set(names) and SG.vis(S.m, 'rm_card') == (0, 0),
+                   f'{page}, Favorite (star {fav}, act {act_ret}): src->act(LS_ACT_FAVORITE, or LS_ACT_UNFAVORITE when the sheet showed Undo Favorite), toast {toast!r}, no stock myfav call ({S.acts()}, {toasts(S.m.calls)})')
+            expect(S.acts_dd() == [0] and [c[0] for c in S.m.calls].count('deque_destroy') == 1,
+                   f'{page}, Favorite: the record is freed after src->act has read it, not before ({S.acts_dd()}, {[c[0] for c in S.m.calls].count("deque_destroy")} destroyed)')
+        # Play Next / Play After: the source's queue record through upnext_add
+        for after, item, ok_toast in ((0, 'rm_item0', 'Playing Next'), (1, 'rm_item1', 'Added to Queue')):
+            S = Src(page)
+            S.open(1); S.m.calls = []
+            S.m.click(item)
+            m = S.m
+            rows = m.up_calls[-1][0] if m.up_calls else []
+            paths = [m.read_cstr(m.word(r + O['REC_PATH'])) for r in rows]
+            names = [c[0] for c in m.calls]
+            expect(S.queued() == [S.recs[1]] and len(m.up_calls) == 1 and m.up_calls[0][1] == after and len(paths) == 1 and paths[0].startswith('http://') and 'nd://' not in paths[0]
+                   and toasts(m.calls) == [ok_toast] and SG.vis(m, 'rm_card') == (0, 0) and names.count('deque_destroy') == 2 and not [c for c in m.calls if c[0] == 'confirm'],
+                   f'{page}, {"Play After" if after else "Play Next"}: the source\'s queue record ({paths}) goes to upnext_add({after}), toast {ok_toast!r}, both deques freed')
+            S = Src(page)
+            S.set(queue_none=True); S.open(1); S.m.calls = []
+            S.m.click(item)
+            expect(S.queued() == [S.recs[1]] and not S.m.up_calls and not toasts(S.m.calls) and SG.vis(S.m, 'rm_card') == (0, 0), f'{page}, {after}: a source that cannot queue the row (it says why itself): nothing added, no second toast')
+        S = Src(page)
+        S.m.up_ret = STREAM
+        S.open(1); S.m.calls = []; S.m.click('rm_item0')
+        expect(toasts(S.m.calls) == ['Not available while streaming'], f'{page}: upnext_add\'s refusal is toasted as for a local row ({toasts(S.m.calls)})')
+        # DSD: not downloaded asks to download (no queue record); downloaded queues
+        for item in ('rm_item0', 'rm_item1'):
+            S = Src(page)
+            S.state(2, dsd=1); S.set(act_ret=0); S.m.confirm_yes = False
+            S.open(2); S.m.calls = []; S.m.top_main = 0   # (no top window: the confirm dialog's scrim needs a mapped one)
+            S.m.click(item)
+            ask = [c for c in S.m.calls if c[0] == 'confirm']
+            title = 'Charlie' if page == 'songs' else 'Remote 2'
+            expect(len(ask) == 1 and ask[0][1] == f'Download to Play?\nDSD tracks play from the card. {title}, ? MB.' and not S.queued() and not S.m.up_calls and not S.acts() and SG.vis(S.m, 'rm_card') == (0, 0),
+                   f'{page}, {item}: an undownloaded DSD row asks "Download to Play?" (Cancel: nothing), no queue record ({[a[1:] for a in ask]})')
+            S = Src(page)
+            S.state(2, dsd=1); S.set(act_ret=0); S.m.confirm_yes = True
+            S.open(2); S.m.calls = []; S.m.top_main = 0
+            S.m.click(item)
+            expect(S.acts() == [(S.recs[2], ACT_DOWNLOAD)] and not S.m.up_calls and not S.queued(), f'{page}, {item}: Download in the confirm queues the file through src->act ({S.acts()})')
+            S = Src(page)
+            S.state(2, dsd=1, dl=LS_DL_DONE)
+            S.open(2); S.m.calls = []
+            S.m.click(item)
+            expect(S.queued() == [S.recs[2]] and len(S.m.up_calls) == 1 and not [c for c in S.m.calls if c[0] == 'confirm'], f'{page}, {item}: a DSD file on the card queues like any other row')
+        # Get Info
+        S = Src(page)
+        S.open(4); S.m.calls = []
+        S.m.click('rm_item4')
+        expect(S.m.si_calls == [S.recs[4]] and SG.vis(S.m, 'rm_card') == (0, 0) and not S.acts() and not toasts(S.m.calls), f'{page}: Get Info opens the page on the row ({S.m.si_calls})')
+        # a row that is not a track has no sheet on the Songs page
+    # a download's progress moves the source gen: the sheet stays open, the rows redraw, the list is read once the sheet has closed
+    for page in ('album', 'songs'):
+        S = Src(page)
+        S.state(2, dl=LS_DL_ACTIVE, pct=10)
+        S.open(2)
+        on_gen = PSYMS['ab_on_gen'] if page == 'album' else PSYMS['sg_on_gen']
+        reads = lambda: sum(1 for c in S.m.calls if c[0] == 'fake_ap_list') if page == 'album' else len(S.m.fake['asked'])
+        n0 = reads()
+        if page == 'songs': S.m.top_main = S.m.window   # (the page is on top: sg_on_gen reads only then)
+        if page == 'album': S.m.gen += 1
+        else: S.m.fake['gen'] += 1
+        S.m.calls = []
+        S.m.call(on_gen, count=900000000)
+        expect(SG.vis(S.m, 'rm_card') == (1, 1) and reads() == (n0 if page == 'songs' else 0) and 'timer_add' in S.m.names(),
+               f'{page}: gen moved while the sheet is open: the sheet stays and the list is not read ({SG.vis(S.m, "rm_card")}, {reads()})')
+        S.m.click('rm_scrim')
+        S.m.calls = []
+        S.m.call(on_gen, count=900000000)
+        expect(SG.vis(S.m, 'rm_card') == (0, 0) and reads() == (n0 + 1 if page == 'songs' else 1), f'{page}: once the sheet has closed the list is read again ({reads()})')
+    # the stock sheet reads Add to Playlist again (a source's words are set at every open)
+    m, T, row, y = row_machine('album')
+    T.tap(m, 288, y)
+    expect(m.wtext[m.widgets['rm_label2']] == 'Add to Playlist' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_add', 'the stock sheet: the third row is Add to Playlist with its own glyph')
+
+
+SECTIONS = [asset_tests, paint_tests, touch_tests, menu_tests, fav_info_tests, source_tests]
 
 
 def run(ctx):

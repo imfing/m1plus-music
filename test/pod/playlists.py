@@ -57,6 +57,10 @@ class LabelMachine(SelectMachine):
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
         a0, a1, a2 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1), u.reg_read(UC_MIPS_REG_A2)
+        if name.startswith('fake_pl_'):
+            ret = self.fake_pl(name, a0, a1, a2, u.reg_read(UC_MIPS_REG_A3), self.word(u.reg_read(UC_MIPS_REG_SP) + 16), self.word(u.reg_read(UC_MIPS_REG_SP) + 20))
+            u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+            return
         if name == 'widget_get_text':
             t, ret = self.label_text.get(a0), 0
             if t is not None:
@@ -82,6 +86,70 @@ class LabelMachine(SelectMachine):
         return super()._hook(u, address, size, _)
 
 
+    FAKE = ('list', 'rec_id', 'play', 'cover', 'seconds', 'row', 'act', 'gen')
+
+    def fake_src(self):
+        """A lib_src_t of fake_pl_ functions (a `jr ra` each at a trapped address) over the machine's playlists (self.playlists, self.playlist_songs): list, rec_id, play, cover (the
+        cache file by key: 1 present, 0 asked while the key is in fake_ask, else -1), gen (fake_gen). Calls land in self.fake_calls."""
+        self.fake_calls, self.fake_ask, self.fake_gen = [], set(), 5
+        self.top_main = self.window   # pod_is_top: the page is in front (the shared cover poll only runs then)
+        self.fake_song_ret = -1   # what songs_open_src_in answers: -1 (the page did not open, the playlist plays), 0 (opened)
+        self.fake_state_all = 0   # what src->state(LS_PLAYLISTS, NULL) answers (LS_ST_*)
+        self.fake_no_list, self.playlist_counts = set(), {}   # playlists whose tracks are not cached yet, and the sync's songCounts
+        src = self.alloc(60)
+        self.u.mem_write(src, bytes(60))
+        self.setword(src, self.cstr('fake'))
+        for i, f in enumerate(self.FAKE):
+            a = self.alloc(8); self.u.mem_write(a, struct.pack('<II', 0x03e00008, 0))
+            self.handlers[a] = 'fake_pl_' + f
+            self.setword(src + 4 * (i + 1), a)
+        a = self.alloc(8); self.u.mem_write(a, struct.pack('<II', 0x03e00008, 0))
+        self.handlers[a] = 'fake_pl_count'
+        self.setword(src + 52, a)   # lib_src_t.count (offset 52, after caps)
+        a = self.alloc(8); self.u.mem_write(a, struct.pack('<II', 0x03e00008, 0))
+        self.handlers[a] = 'fake_pl_state'
+        self.setword(src + 56, a)   # lib_src_t.state (offset 56, the last member)
+        self.fake_src_ptr = src
+        self.handlers[PSYMS['songs_open_src_in']] = 'fake_pl_songs'   # the playlist's Songs page: recorded, not run
+        return src
+
+    def fake_pl(self, name, a0, a1, a2, a3, s0, s1):
+        if name == 'fake_pl_list':   # (s, which, scope)
+            self.fake_calls.append(('list', a1, a2))
+            if a1 != 3: return 0
+            if not a2: return self.new_deque(self.playlists) if self.playlists else 0
+            pid = self.word(a2 + REC_DISC)
+            if pid in self.fake_no_list: return 0   # (not fetched yet)
+            sg = self.playlist_songs.get(pid)
+            return self.new_deque(sg) if sg else 0
+        if name == 'fake_pl_count':   # (s, which, scope): the sync's songCount while the list is not cached
+            self.fake_calls.append(('count', a1, a2))
+            if a1 != 3: return 0
+            return self.playlist_counts.get(self.word(a2 + REC_DISC), 0)
+        if name == 'fake_pl_state':   # (s, which, scope): a playlist whose tracks are not cached is loading
+            if a1 == 3 and not a2:
+                self.fake_calls.append(('state', a1, a2)); return self.fake_state_all   # the whole list
+            return 1 if a1 == 3 and a2 and self.word(a2 + REC_DISC) in self.fake_no_list else 0
+        if name == 'fake_pl_rec_id': return self.cstr('pl%d' % self.word(a1 + REC_DISC))
+        if name == 'fake_pl_gen': return self.fake_gen
+        if name == 'fake_pl_cover':   # (s, rec, key, path, cap)
+            p = art_file(a2)
+            self.fake_calls.append(('cover', a2))
+            if p in self.present:   # (the source's file: Navidrome's folder, named by the 8 hex digits of the key the page reads it back by)
+                n = '/mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg' % a2
+                self.present.add(n); self.files[n] = self.files.get(p, 4096)
+                if 'file://' + p in self.images: self.images['file://' + n] = self.images['file://' + p]
+                self.u.mem_write(a3, n.encode() + b'\0'); return 1
+            return 0 if a2 in self.fake_ask else -1
+        if name == 'fake_pl_play':   # (s, list, at, how, open, cls)
+            self.fake_calls.append(('play', [self.read_cstr(self.word(r + O['REC_TITLE'])) for r in self.deques[a1]], a2, a3, s1))
+            return 0
+        if name == 'fake_pl_songs':   # songs_open_src_in (src, which, scope, title)
+            self.fake_calls.append(('songs', a0 == self.fake_src_ptr, a1, self.read_cstr(self.word(a2 + O['REC_TITLE'])), self.read_cstr(a3)))
+            return self.fake_song_ret
+        return 0
+
+
 class PM:
     """A machine with the page's widgets as widget structs (window > list_view > scroll_view > view_grid, for demo's own widget_to_local), the library's
     albums (cover files for the albums not in `missing`), and the playlists given as [(id, name, [album numbers of its songs])]."""
@@ -90,7 +158,7 @@ class PM:
         m = LabelMachine()
         m.fs[SORT_FILE] = b'0\n'
         m.load_image = 0
-        for w in ('btn_return', 'btn_backtoplayer', 'label_row_title', 'label_row_sub', 'view_grid', 'label_status', 'label_grid_title', 'label_grid_sub', 'label_title', 'pl_title', 'img_nb_fade', 'btn_selall', 'pl_bar', 'pl_del', 'btn_plactions') + CARD_WIDGETS: Machine.widget(m, w)
+        for w in ('btn_return', 'btn_backtoplayer', 'label_row_title', 'label_row_sub', 'view_grid', 'label_status', 'label_grid_title', 'label_grid_sub', 'label_title', 'pl_title', 'img_nb_fade', 'btn_selall', 'pl_bar', 'pl_del', 'btn_plactions', 'pl_spin') + CARD_WIDGETS: Machine.widget(m, w)
         m.setword(m.widgets['label_title'] + 8, O['NAV_CF_X'] - O['NAV_TITLE_X']); m.setword(m.widgets['pl_title'] + 8, O['SG_TITLE_W'])   # the labels' widths (az_fit cuts to them)
         m.label_text[m.widgets['pl_del']] = 'Delete'   # the text the asset gives the pill
         for i, text in enumerate(CARD_TEXTS): m.label_text[m.widgets[f'vs_label{i}']] = text
@@ -122,14 +190,15 @@ class PM:
         return m
 
     @staticmethod
-    def rec(m, pid, name):
+    def rec(m, pid, name, songs=0):
         rec = m.record(album='', artist='', title=name, rid=pid)
         m.setword(rec + REC_DISC, pid)
+        m.setword(rec + 0x28, m.cstr('p\t\t%d\t0' % songs))   # REC_META: a source's row data, "p<TAB>cover<TAB>songs<TAB>seconds"
         return rec
 
     @staticmethod
     def add(m, pid, name, songs, other_artist=()):
-        m.playlists.append(PM.rec(m, pid, name))
+        m.playlists.append(PM.rec(m, pid, name, len(songs)))
         m.playlist_songs[pid] = [m.record(album=alb(a)[1], artist='Other' if a in other_artist else alb(a)[0], path=f'/mnt/mmc/m/{a}/1.flac',
                                           title=f'T{k}', rid=1000 + k) for k, a in enumerate(songs)]
 
@@ -400,7 +469,201 @@ def select_tests(expect, lists):
            'in select mode the pill and Select All are hit where they show, and the hidden navbar buttons take no touch')
 
 
-def run(ctx):
+def src_tests(ctx):
+    """The page over a library source (playlists_open_src, patch/libsrc.h): the same grid fed from src->list(LS_PLAYLISTS), a mosaic of the tracks' covers via src->cover, a tap
+    through so_play_src (or the playlist page hook), no stock-only action, the source's gen read again. src NULL / &lib_stock is the stock page."""
+    expect = ctx.expect
+    lists = [(1, 'Road', [0, 1]), (2, 'Night', [2, 2, 3, 4]), (3, 'Empty', []), (4, 'One', [5])]
+
+    def src_page(**kw):
+        m = PM(lists, **kw); src = m.fake_src()
+        m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+        return m, src
+
+    # stock unchanged: NULL is the stock page (its query, the list-plus button)
+    m = PM(lists)
+    m.call(PSYMS['playlists_open_src'], a0=0, count=60000000)
+    expect(('loadLocalClassList', O['CLASS_PLAYLISTS']) in m.calls and vis(m, 'btn_plactions') != (0, 0), 'playlists_open_src(NULL) is the stock page: the stock query, the list-plus button')
+    m = PM(lists)
+    m.call(PSYMS['playlists_open_src'], a0=PSYMS['lib_stock'], count=60000000)
+    expect(('loadLocalClassList', O['CLASS_PLAYLISTS']) in m.calls and vis(m, 'btn_plactions') != (0, 0), 'and so is &lib_stock')
+    m = PM(lists, missing=(0, 1))
+    m.call(PSYMS['playlists_open_src'], a0=0, count=60000000)
+    log = []; settle(m, log=log)
+    expect(not any(v[1:] == (14, 14) for v in m.bitmaps.values()) and not any(c[0] == 'timer_add' and c[1] == PSYMS['ls_cover_tick'] for c in log), 'the stock page (covers missing): no cover spinner')
+
+    # the grid from the source
+    m, src = src_page(missing=(4,))
+    blits, texts, styles = settle(m)
+    expect(not [c for c in m.calls if c[0] == 'loadLocalClassList'] and ('list', 3, 0) in m.fake_calls, 'the playlists come from src->list(LS_PLAYLISTS, NULL), not the stock query')
+    names = [tx for tx, st in sorted(((tx, r[1] * 10 + r[0]) for (tx, r), st in zip(texts, styles) if st == 'label_grid_title'), key=lambda t: t[1])]
+    subs = [tx for tx, st in sorted(((tx, r[1] * 10 + r[0]) for (tx, r), st in zip(texts, styles) if st == 'label_grid_sub'), key=lambda t: t[1])]
+    expect(names == ['Empty', 'Night', 'One', 'Road'] and subs == ['0 tracks', '4 tracks', '1 track', '2 tracks'], f'tiles: names (A-Z) and track counts from the source ({names}, {subs})')
+    order = sorted(lists, key=lambda l: l[1])
+    for i, (_, _, alb_) in enumerate(order):
+        distinct = list(dict.fromkeys(a for a in alb_ if a != 4))
+        want = want_mosaic(distinct)
+        got = cell_blit(blits, i)
+        if want: expect(got is not None and all(near(x, y) for x, y in zip(quadrants(m, got), want)), f'playlist {order[i][1]}: the mosaic is made of the tracks\' covers via src->cover')
+    expect(any(c[0] == 'cover' for c in m.fake_calls), 'the cover files were asked of src->cover')
+
+    # stock-only actions are hidden
+    expect(vis(m, 'btn_plactions') == (0, 0) and vis(m, 'btn_more')[0] == 1, 'the list-plus button is hidden (New Playlist, Import, Export, Delete Playlists, Clean Up); the "..." stays')
+    mi = tuple(m.props.get((m.widgets['btn_more'], f'style:{st}:icon')) for st in ('normal', 'over', 'pressed'))
+    expect(mi == ('pod_nav_more', 'pod_nav_more', 'pod_nav_more_down'), f'without the list-plus cap the "..." takes the left cap\'s rounded edge ({mi})')
+    sm = PM(lists); sm.call(PSYMS['playlists_open_src'], a0=0, count=60000000)
+    expect(not any(sm.props.get((sm.widgets['btn_more'], f'style:{st}:icon')) for st in ('normal', 'over', 'pressed')), 'the stock page keeps the asset\'s middle piece (no icon set at run time)')
+    m.click('btn_more')
+    expect(vis(m, 'vs_card')[0] == 1, 'the "..." card opens (Grid, List, Name)')
+    m.calls = []
+    for a in (A_NEW, A_IMPORT, A_EXPORT, A_DELETE):
+        m.click(a)
+        m.click('btn_more') if vis(m, 'vs_card')[0] == 0 else None
+    names_ = [c[0] for c in m.calls]
+    expect(not {'stock_playlist_import', 'stock_playlist_export', 'confirm', 'keyboard_open'} & set(names_) and ('widget_set_visible', m.widgets['pl_bar'], 1) not in m.calls and ('widget_set_visible', m.widgets['btn_selall'], 1) not in m.calls,
+           f'the stock-only rows do nothing even if reached ({sorted(set(names_))})')
+
+    # a tap plays the playlist through the source (no page hook)
+    m, src = src_page(missing=(4,)); settle(m); m.fake_calls.clear()
+    tap(m, MARGIN + 10, R0 + 10)   # the first cell: Empty (A-Z) has no tracks: nothing plays
+    expect(not [c for c in m.fake_calls if c[0] == 'play'], 'a playlist without tracks plays nothing')
+    tap(m, MARGIN + CPITCH + 10, R0 + 10)
+    plays = [c for c in m.fake_calls if c[0] == 'play']
+    expect(plays == [('play', ['T0', 'T1', 'T2', 'T3'], 0, 1, plays[0][4] if plays else 0)] and not [c for c in m.calls if c[0] in ('window_open', 'navigator_to_with_context') and c[1] != 'm1plus_playlists'],
+           f'a tap on Night plays its tracks in order through src->play (LS_PLAY_ORDER), no stock page ({plays})')
+    # the playlist's Songs page: songs_open_src_in(src, LS_PLAYLISTS, the row, its name); the page opens, nothing plays
+    m, src = src_page(missing=(4,)); settle(m); m.fake_calls.clear(); m.fake_song_ret = 0
+    tap(m, MARGIN + CPITCH + 10, R0 + 10)
+    expect(('songs', True, 3, 'Night', 'Night') in m.fake_calls and not [c for c in m.fake_calls if c[0] == 'play'],
+           f'a tap on Night calls songs_open_src_in with the source, LS_PLAYLISTS, the row and its name, and plays nothing ({m.fake_calls})')
+    # the page does not open: the playlist plays in order
+    m, src = src_page(missing=(4,)); settle(m); m.fake_calls.clear(); m.fake_song_ret = -1
+    tap(m, MARGIN + CPITCH + 10, R0 + 10)
+    expect([c[:4] for c in m.fake_calls if c[0] == 'play'] == [('play', ['T0', 'T1', 'T2', 'T3'], 0, 1)], f'no page: Night plays its tracks in order ({m.fake_calls})')
+
+    # a cover asked for and not there: read again by the page's poll; a gen change reads the playlists again
+    m = PM(lists, missing=(0, 1)); src = m.fake_src(); m.fake_ask = {fnv(fnv(O['FNV_SEED'], alb(i)[0]), alb(i)[1]) or 1 for i in (0, 1)}
+    for i in range(8): m.images[f'wf_spin{i}'] = (14, 14, bytes((0x55, 0x55, 0x55, 255)) * 196)   # (the Wi-Fi page's frames as cc_decode flattens them over black)
+    m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    log = []
+    blits, _, _ = settle(m, log=log)
+    road = [i for i, l in enumerate(order) if l[1] == 'Road'][0]
+    # the cover spinner: Road's mosaic has no cover yet (asked, PL_SCAN_MISS), so the 14 px wf_spin frame sits centred on its disc; Night, Empty and One (no cover to wait for) have none
+    def spinners(bl): return [b for b in bl if m.bitmaps[b[0]][1:] == (14, 14)]
+    sp = spinners(blits)
+    cx = MARGIN + (road % 2) * CPITCH + O['GRID_COVER'] // 2
+    expect(len(sp) == 1 and sp[0][2][2:] == (14, 14) and abs(sp[0][2][0] + 7 - cx) <= 1, f'one spinner, on the tile whose cover is on its way, centred: {[b[2] for b in sp]} (cell centre x {cx})')
+    expect(('timer_add', PSYMS['ls_cover_tick'], 250) in log, 'the spinner turns on the shared 250 ms cover poll')
+    f0 = sp[0][0]
+    expect(m.call(PSYMS['ls_cover_tick'], a0=0x5a5a5a50, count=60000000) == 8 and spinners(paint(m)[0])[0][0] != f0, 'a tick with a tile loading repeats (its argument is stock\'s timer_info_t: not read) and turns the frame')
+    for i in (0, 1):
+        pth = key_path(*alb(i)); m.present.add(pth); m.files[pth] = 4096
+        m.images['file://' + pth] = (24, 24, struct.pack('<I', colour(i)) * (24 * 24))
+    m.call(PSYMS['ls_cover_tick'], count=60000000)
+    blits, _, _ = settle(m)
+    got = cell_blit(blits, road)
+    expect(got is not None and all(near(x, y) for x, y in zip(quadrants(m, got), want_mosaic([0, 1]))), 'the poll reads Road again once its covers are there: the mosaic appears')
+    expect(not spinners(blits) and [m.call(PSYMS['ls_cover_tick'], count=60000000) for _ in range(3)][-1] != 8, 'the covers arrived: no spinner, and the shared poll ends')
+    # the cover never lands: the shared poll gives up after LS_COVER_POLLS asks (the spinner goes, the placeholder stays); a page not on top asks nothing
+    m = PM(lists, missing=(0, 1)); src = m.fake_src(); m.fake_ask = {fnv(fnv(O['FNV_SEED'], alb(i)[0]), alb(i)[1]) or 1 for i in (0, 1)}
+    for i in range(8): m.images[f'wf_spin{i}'] = (14, 14, bytes((0x55, 0x55, 0x55, 255)) * 196)
+    m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    settle(m)
+    m.top_main = 0; m.fake_calls.clear()
+    expect(m.call(PSYMS['ls_cover_tick'], count=60000000) == 8 and not m.fake_calls, 'not the top window: the poll waits and reads nothing')
+    m.top_main = m.window
+    for _ in range(1205):
+        m.call(PSYMS['ls_cover_tick'], count=60000000)
+        settle(m)
+    expect(not spinners(paint(m)[0]) and m.call(PSYMS['ls_cover_tick'], count=60000000) != 8, 'the covers never land: after LS_COVER_POLLS asks the spinner is gone and the poll has ended')
+    m.fake_gen = 6; m.playlists.pop(0); m.fake_calls.clear()
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    blits, texts, styles = settle(m)
+    names = [tx for (tx, r), st in zip(texts, styles) if st == 'label_grid_title']
+    expect(('list', 3, 0) in m.fake_calls and sorted(names) == ['Empty', 'Night', 'One'], f'a gen change reads the playlists again ({names})')
+    m.fake_calls.clear(); m.call(PSYMS['pl_on_gen'], count=60000000)
+    expect(('list', 3, 0) not in m.fake_calls, 'an unchanged gen reads nothing')
+    # a gen move that changes nothing in the list (any fetch anywhere moves it) updates in place: no tile is made again, nothing is decoded or dropped
+    m, src = src_page(missing=(4,))
+    blits0, _, _ = settle(m)
+    before = [cell_blit(blits0, i) for i in range(4)]
+    m.fake_gen += 1; m.fake_calls.clear()
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    log = list(m.calls)
+    blits1, _, _ = settle(m, log=log)
+    churn = [c for c in log if c[0] in ('widget_load_image', 'bitmap_create_ex', 'bitmap_destroy')]
+    expect(not churn and [cell_blit(blits1, i) for i in range(4)] == before and all(before), f'a gen move with the same playlists keeps every tile and decodes nothing ({churn})')
+    # one new playlist: it is added without reloading the others (each keeps its tile, at its new place), only its own cover is decoded
+    PM.add(m, 5, 'Alpha', [6])
+    m.fake_gen += 1
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    log = list(m.calls)
+    blits2, texts2, styles2 = settle(m, log=log)
+    names2 = [tx for tx, st in sorted(((tx, r[1] * 10 + r[0]) for (tx, r), st in zip(texts2, styles2) if st == 'label_grid_title'), key=lambda t: t[1])]
+    after = [cell_blit(blits2, i) for i in range(5)]
+    loads = [c[1] for c in log if c[0] == 'widget_load_image']
+    destroyed = [c for c in log if c[0] == 'bitmap_destroy']
+    expect(names2[:4] == ['Alpha', 'Empty', 'Night', 'One'] and after[1:4] == before[:3], f'the new playlist is in; Empty, Night and One keep their tiles at their new places (Road is below the view) ({names2}, {after}, {before})')
+    expect(loads == ['file:///mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg' % (fnv(fnv(O['FNV_SEED'], alb(6)[0]), alb(6)[1]) or 1)] and not destroyed and after[0] and all(near(x, y) for x, y in zip(quadrants(m, after[0]), want_mosaic([6]))),
+           f'only the new playlist\'s cover is decoded, nothing is dropped ({loads}, {destroyed})')
+    # a playlist whose content changed on the server (same id and name, a song more): its row is read again and shows the new count, the cover stays (same albums) with no decode;
+    # the other tiles are untouched
+    m, src = src_page(missing=(4,))
+    blits0, _, _ = settle(m)
+    before = [cell_blit(blits0, i) for i in range(4)]
+    night = next(i for i, r_ in enumerate(m.playlists) if m.read_cstr(m.word(r_ + O['REC_TITLE'])) == 'Night')
+    pid = m.word(m.playlists[night] + REC_DISC)
+    m.playlist_songs[pid].append(m.record(album=alb(2)[1], artist=alb(2)[0], path='/mnt/mmc/m/2/1.flac', title='T9', rid=1009))
+    m.playlists[night] = PM.rec(m, pid, 'Night', len(m.playlist_songs[pid]))
+    m.fake_gen += 1; m.fake_calls.clear()
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    log = list(m.calls)
+    blits1, texts1, styles1 = settle(m, log=log)
+    subs = [tx for tx, st in sorted(((tx, r[1] * 10 + r[0]) for (tx, r), st in zip(texts1, styles1) if st == 'label_grid_sub'), key=lambda t: t[1])]
+    churn = [c for c in log if c[0] in ('widget_load_image', 'bitmap_create_ex', 'bitmap_destroy')]
+    expect(subs == ['0 tracks', '5 tracks', '1 track', '2 tracks'] and ('list', 3, m.playlists[night]) in m.fake_calls, f'same id and name, a song more: the tile reads 5 tracks and its songs are read again ({subs})')
+    expect(not churn and [cell_blit(blits1, i) for i in range(4)] == before, f'the same albums: every tile keeps its picture, nothing is decoded or dropped ({churn})')
+    m.fake_calls.clear(); m.fake_gen += 1
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    log = list(m.calls)
+    settle(m, log=log)
+    expect(not [c for c in m.fake_calls if c[0] == 'list' and c[2]] and not [c for c in log if c[0] in ('widget_load_image', 'bitmap_create_ex', 'bitmap_destroy')],
+           'and a gen move with nothing changed after that reads no playlist and decodes nothing')
+    # no playlists: the empty page
+    m = PM([]); src = m.fake_src(); m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    expect(vis(m, 'label_status')[0] == 1 and vis(m, 'pl_spin')[0] == 0 and ('widget_set_tr_text', m.widgets['label_status'], 'No playlists') in m.calls, 'a source without playlists shows the empty page')
+    expect(('state', 3, 0) in m.fake_calls and vis(m, 'view_grid')[0] == 1, 'it asked src->state(LS_PLAYLISTS, NULL); the large title stays')
+    # the list is on its way: the one spinner and no status line; the playlists arrive: the grid, no spinner
+    m = PM([]); src = m.fake_src(); m.fake_state_all = 1
+    m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    expect(vis(m, 'pl_spin')[0] == 1 and vis(m, 'label_status')[0] == 0 and vis(m, 'view_grid')[0] == 1 and ('timer_add', PSYMS['ls_spin_tick'], 250) in m.calls, 'loading: one spinner, no status line, the title block shows')
+    m.playlists = [PM.rec(m, 1, 'Road', 2)]; m.playlist_songs[1] = []; m.fake_state_all = 0; m.fake_gen += 1
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    expect(vis(m, 'pl_spin')[0] == 0 and vis(m, 'label_status')[0] == 0 and vis(m, 'view_grid')[0] == 1, 'the playlists arrive: the spinner goes')
+    for st, text in ((2, "Can't connect to the server"), (3, 'Connect to Wi-Fi first')):
+        m = PM([]); src = m.fake_src(); m.fake_state_all = st
+        m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+        expect(vis(m, 'label_status')[0] == 1 and vis(m, 'pl_spin')[0] == 0 and ('widget_set_tr_text', m.widgets['label_status'], text) in m.calls, f'state {st}: {text!r}, no spinner')
+    m = PM(lists); src = m.fake_src(); m.fake_state_all = 1
+    m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    expect(('state', 3, 0) not in m.fake_calls and vis(m, 'pl_spin')[0] == 0, 'cached playlists: the state is not asked, no spinner')
+    # a playlist whose tracks are not cached: the tile shows the sync's songCount from the source's record until the list arrives
+    m = PM(lists, missing=(4,)); src = m.fake_src()
+    night_id = next(m.word(r_ + REC_DISC) for r_ in m.playlists if m.read_cstr(m.word(r_ + O['REC_TITLE'])) == 'Night')
+    m.playlist_counts = {night_id: 9}; m.fake_no_list = {night_id}
+    m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+    _, texts, styles = settle(m)
+    subs = [tx[0] for tx, st in zip(texts, styles) if st == 'label_grid_sub']
+    counts = [c for c in m.fake_calls if c[0] == 'count' and m.word(c[2] + REC_DISC) == night_id]
+    expect('9 tracks' in subs and counts, f'a playlist not read yet: its sync songCount, not 0 ({subs}, {m.fake_calls})')
+    m.fake_no_list.discard(night_id); m.fake_gen += 1
+    m.call(PSYMS['pl_on_gen'], count=60000000)
+    _, texts, styles = settle(m)
+    subs = [tx[0] for tx, st in zip(texts, styles) if st == 'label_grid_sub']
+    expect('4 tracks' in subs, f'the tracks arrive: the list\'s own count ({subs})')
+
+
+def stock_tests(ctx):
     expect, page = ctx.expect, ctx.page
     row = next(i for i, r in enumerate(page.rows) if r.label == 'Playlists')
     expect(page.rows[row].action == pod_pages.ACT_PLAYLISTS, 'the menu\'s Playlists row opens our page (ACT_PLAYLISTS)')
@@ -1035,3 +1298,9 @@ def run(ctx):
     m = PM([]); open_page(m)
     expect(vis(m, 'view_grid') == (0, 0) and m.props.get((m.widgets['label_title'], 'visible'), 0) == 0, 'the empty page hides the grid and its title; the small title stays hidden')
 
+
+def run(ctx):
+    for s in SECTIONS: s(ctx)
+
+
+SECTIONS = [stock_tests, src_tests]

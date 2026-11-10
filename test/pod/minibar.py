@@ -37,6 +37,8 @@ class BM(Machine):
         self.props[(self.widgets['pod_scrollview'], 'yoffset')] = 0
         self.props[(self.widgets['pod_pad'], 'visible')] = 0   # the asset's pod_pad is hidden
         self.present.add('/tmp/ignored')
+        self.sbtrack, self.sbcover = {}, {}   # server track REC_ID -> track id (sba_rec_track); REC_ID -> (sba_rec_cover's answer, the file's path) (patch/sbapi.c, tested in sbapi.py)
+        for n in ('sba_rec_track', 'sba_rec_cover', 'sba_now_cover'): self.handlers[PSYMS[n]] = n
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
@@ -46,6 +48,16 @@ class BM(Machine):
             v = self.word(a2 + 8); self.calls.append(('widget_set_style', a0, self.read_cstr(a1), v)); self.styles.append((a0, self.read_cstr(a1), v)); ret = 0
         elif name == 'value_set_uint32':
             self.setword(a0, 7); self.setword(a0 + 8, a1); ret = a0
+        elif name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+        elif name in ('sba_rec_cover', 'sba_now_cover'):   # (the record, path, cap): 1 and the path, 0 on its way, -1 none; sba_now_cover: the path or NULL
+            rid = self.word(a0 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            r, path = self.sbcover.get(rid, (-1, None))
+            if name == 'sba_now_cover': ret = self.cstr(path) if r == 1 else 0
+            else:
+                self.calls.append(('sba_rec_cover', rid))
+                if r == 1: self.u.mem_write(a1, path.encode() + b'\0')
+                ret = r
         elif name == 'mclGetPlayStatus':
             self.calls.append(('mclGetPlayStatus',)); ret = self.status
         elif name == 'playpause_quick_click':
@@ -427,6 +439,44 @@ def run(ctx):
     m = BM(); m.status = 2; m.track(title='Live', artist='', album='')
     m.start(); m.first(); b, w_, h_, px = m.pixels()
     expect(struct.unpack_from('<I', px, 4 * (S // 2 * S + S // 2))[0] == O['MB_GREY'], 'no placeholder image: flat grey')
+
+    # ------------------------------------------------------------------ a server track: the server's cover (the one Now Playing draws), never the library's album of the same name
+    SBC = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    def server_bar(path, cover, local_album=True, tmp=False):
+        mm = BM(); mm.placeholder(); mm.status = 2
+        t = mm.record(album='Album', artist='Artist', path=path, title='Remote', name='Remote.flac', rid=-5)
+        mm.play([t], 0); mm.sbtrack[-5] = 't5'; mm.sbcover[-5] = cover
+        if local_album: mm.cover('Artist', 'Album', rgb=(200, 40, 40))   # the library has an album of that name and artist
+        if tmp: mm.tmp_cover(rgb=(40, 200, 40))
+        if cover[0] == 1:
+            mm.blobs[SBC] = b'server-cover' * 20; mm.present.add(SBC)
+            mm.images['file://' + SBC] = (168, 168, bytes((40, 40, 200, 255)) * (168 * 168)); mm.load_image = 0
+        return mm
+    stream = 'http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt'
+    for path in (stream, '/mnt/mmc/Subsonic/Remote.flac'):
+        m = server_bar(path, (1, SBC)); m.start(); m.first()
+        expect(centre_rgb(m) == (40, 40, 200) and ('widget_load_image', 'file://' + SBC) in m.calls and ('widget_load_image', 'file://' + art_file(fnv(fnv(O['FNV_SEED'], 'Artist'), 'Album'))) not in m.calls,
+               f'a server track ({"streamed" if path == stream else "downloaded"}): the server\'s cover, not the library album\'s cache file that shares its artist and album')
+    m = server_bar(stream, (1, SBC)); m.start(); m.first(); m.calls = []; m.tick()
+    expect('fopen' not in m.names() and not [c for c in m.calls if c[0] == 'widget_load_image'], 'the server\'s file does not change: no settle reads after it is up')
+    # not cached yet: the placeholder (never the library album's), looked at on every tick until it lands, however long it takes
+    m = server_bar(stream, (0, None)); m.start(); m.first()
+    expect(centre_rgb(m) == (90, 90, 90) and ('widget_load_image', 'p_default') in m.calls, 'the server cover on its way: the placeholder disc')
+    asked = 0
+    for _ in range(3 * O['MB_SETTLE']): m.tick(); asked += m.names().count('sba_rec_cover')
+    expect(centre_rgb(m) == (90, 90, 90) and asked >= 3 * O['MB_SETTLE'], f'and the bar keeps asking beyond the settle ticks ({asked})')
+    m.sbcover[-5] = (1, SBC); m.blobs[SBC] = b'server-cover' * 20; m.present.add(SBC)
+    m.images['file://' + SBC] = (168, 168, bytes((40, 40, 200, 255)) * (168 * 168)); m.load_image = 0
+    m.calls = []; m.tick()
+    expect(centre_rgb(m) == (40, 40, 200), 'the file landed: the cover is redone with it')
+    # no server picture: demo's /tmp file as Now Playing has it, else the placeholder; the library's album is never taken
+    m = server_bar(stream, (-1, None)); m.start(); m.first()
+    expect(centre_rgb(m) == (90, 90, 90), 'a server track the server has no picture for: the placeholder, not the library album\'s cover')
+    m = server_bar('/mnt/mmc/Subsonic/Remote.flac', (-1, None), tmp=True); m.start(); m.first()
+    expect(centre_rgb(m) == (40, 200, 40), 'a downloaded server track with no server picture: the /tmp file demo wrote (its embedded art)')
+    # a local track with the same artist and album is unchanged: the album's cache file
+    m = server_bar('/mnt/mmc/Music/1.flac', (1, SBC)); m.sbtrack.clear(); m.start(); m.first()
+    expect(centre_rgb(m) == (200, 40, 40), 'a local track: the album\'s cache file as before')
 
     # ------------------------------------------------------------------ nothing queued again: the bar goes, the list is back
     m = BM(); m.placeholder(); m.status = 2; m.track(); m.cover()

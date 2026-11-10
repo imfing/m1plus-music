@@ -56,7 +56,7 @@ ACT_LIST = 21    # open a stock song list on the Songs page (patch/songs.c songs
 ACT_IPOD = 22    # open the Pod, the virtual iPod Classic page: a fullscreen window with a touch click wheel (patch/ipod.c ipod_open)
 ACT_PODCASTS = 23   # open the Podcasts page: the shows in /mnt/mmc/Podcasts and their episodes (patch/podcasts.c podcasts_open)
 ACT_RADIO = 50    # open the Radio page: Stations, Recently Played, Radio Browser (the directory's top stations, countries and genres, a station's search) (patch/radiopage.c radio_open)
-ACT_SUBSONIC = 77  # standalone Navidrome/Subsonic page
+ACT_SUBSONIC = 93 # the Navidrome root page (patch/ndroot.c)
 ACT_SEARCH = 35   # open the library search page (patch/search.c search_open; the stock search_page where ours will not open), the Search item of the menu and Extras
 ACT_KB_EN = 27  # switch row (Settings > Keyboards): English, always on and not switchable (the row's switch is shown on and the row is dimmed)
 ACT_KB_ZH = 28  # switch row (Settings > Keyboards): Chinese (Pinyin), off by default; on gives the on-screen keyboard a language key and the pinyin layer (patch/keyboard.c kb_zh_toggle)
@@ -110,6 +110,8 @@ ACT_RESETALL = 54 # action row of Developer > Tools: Reset All Settings, a confi
 ACT_REGION = 55    # value row (Settings > Library > Podcasts): the Podcast Region, the storefront the podcast search and Discover use, or Automatic; opens its picker page (arg = the page index; patch/pcregion.c pcregion_value)
 ACT_AREBUILD = 92  # action row (Settings > Library): Rebuild Artist Photos, a confirm dialog, then the request file Home's artist photo pass acts on (patch/m1plus.c arebuild_ask, patch/homecover.c)
 ACT_REGIONSET = 56 # picker row (Podcast Region): choose Automatic (arg 0) or a storefront (arg = its index in pcregion.CODES + 1); a check shows on the chosen row (patch/pcregion.c pcregion_set)
+ACT_NDVALUE = 94  # value row of the Navidrome Server page (patch/ndserver.c, tools/pod_ndserver.py): a grey value and the chevron, no glyph; that page binds its own rows, so no table of patch/m1plus.c has it
+ACT_NDACT = 95    # action row of the Navidrome Server page: Sync Now, Sign Out (no accessory, no glyph)
 ACT_CHGLIM = 80     # value row (Settings > System > Battery): Charge Limit, the saved limit ("80%" .. "100%"); opens its picker page (arg = the page index; patch/charging.c chg_limit)
 ACT_CHGLIMSET = 81  # picker row (Charge Limit): choose the limit (arg = 80, 85, 90, 95 or 100, no limit); a check shows on the chosen row (patch/charging.c chg_set)
 ACT_IDLE = 82       # value row (Settings > Now Playing > Idle Display): where Now Playing goes after ten seconds, Off, Album Cover, Cassette or Vinyl (the payload shows stock's Cover mode byte and the saved destination); opens its picker page (arg = the page index; patch/bigcover.c idle_choice)
@@ -124,10 +126,10 @@ _ACTS = [v for k, v in globals().items() if k.startswith('ACT_')]
 assert len(set(_ACTS)) == len(_ACTS), 'two ACT_* share an id (patch/m1plus.c mirrors them)'
 SWITCH_ACTIONS = (ACT_STARTUP, ACT_LANDSCAPE, ACT_SHELF, ACT_DAILY, ACT_KB_EN, ACT_KB_ZH, ACT_PCSEARCH, ACT_BATTPCT, ACT_PEQ_SWITCH, ACT_AZRAIL, ACT_AZHEAD, ACT_LOCKON, ACT_LOCKTIME, ACT_VOLKEYS)
 NO_CHEVRON_ACTIONS = (ACT_PLAYER, ACT_SHUFFLE, ACT_REGEN)   # rows that play or act in place (a switch or a value row has none either)
-VALUE_ACTIONS = (ACT_CTHEME, ACT_VREC, ACT_VTHEME, ACT_CCLIST, ACT_SFOLD, ACT_BG, ACT_ACCENT, ACT_REGION, ACT_PEQ, ACT_PEQ_PRESETS, ACT_PEQ_TENBAND, ACT_CHGLIM, ACT_LOCKSTYLE, ACT_IDLE, ACT_NEXTALBUM)    # rows with a grey value at the right, left of the chevron (the widget pod_value<row>); they open a picker page (arg = its page index)
+VALUE_ACTIONS = (ACT_CTHEME, ACT_VREC, ACT_VTHEME, ACT_CCLIST, ACT_SFOLD, ACT_BG, ACT_ACCENT, ACT_REGION, ACT_PEQ, ACT_PEQ_PRESETS, ACT_PEQ_TENBAND, ACT_CHGLIM, ACT_LOCKSTYLE, ACT_IDLE, ACT_NEXTALBUM, ACT_NDVALUE)    # rows with a grey value at the right, left of the chevron (the widget pod_value<row>); they open a picker page (arg = its page index)
 CHECK_ACTIONS = (ACT_THEMESET, ACT_RECSET, ACT_VTHSET, ACT_BGSET, ACT_ACCENTSET, ACT_LOCKSET, ACT_REGIONSET, ACT_CHGLIMSET, ACT_PEQ_PICK, ACT_PEQ_CPICK, ACT_PEQ_PAUTO, ACT_PEQ_PVAL, ACT_IDLESET, ACT_NASET)   # picker rows: a check at the right of the chosen one (the image pod_check<row>), no icon
-ACTION_ACTIONS = NO_CHEVRON_ACTIONS + (ACT_SHOT, ACT_REBUILD, ACT_AREBUILD, ACT_CLEARCACHE, ACT_CLEARDUR, ACT_SFDELALL, ACT_RESETALL, ACT_GRID)   # rows that act in place on a settings page: no chevron (Update Library, an ACT_HOME row, is one too: row_kind)
-VALUE_INIT = {ACT_CTHEME: 'Normal', ACT_VREC: 'Black', ACT_VTHEME: 'Graphite', ACT_BG: 'Black', ACT_ACCENT: 'Neutral', ACT_REGION: 'Automatic', ACT_CHGLIM: '100%', ACT_LOCKSTYLE: 'Large Cover', ACT_IDLE: 'Album Cover', ACT_NEXTALBUM: 'Off'}   # what the asset's value label says before the payload sets it
+ACTION_ACTIONS = NO_CHEVRON_ACTIONS + (ACT_SHOT, ACT_REBUILD, ACT_AREBUILD, ACT_CLEARCACHE, ACT_CLEARDUR, ACT_SFDELALL, ACT_RESETALL, ACT_GRID, ACT_NDACT)   # rows that act in place on a settings page: no chevron (Update Library, an ACT_HOME row, is one too: row_kind)
+VALUE_INIT = {ACT_CTHEME: 'Normal', ACT_VREC: 'Black', ACT_VTHEME: 'Graphite', ACT_BG: 'Black', ACT_ACCENT: 'Neutral', ACT_REGION: 'Automatic', ACT_CHGLIM: '100%', ACT_LOCKSTYLE: 'Large Cover', ACT_IDLE: 'Album Cover', ACT_NEXTALBUM: 'Off', ACT_NDVALUE: ''}   # what the asset's value label says before the payload sets it
 # The stock pages ACT_STOCK opens: (the name navigator_to takes = ui/<name>.bin, the value the row shows at the right: the payload reads the stock state, patch/m1plus.c VK_*, or None).
 # Each is a plain navigator_to(name) with no context in stock (docs/modules/settings.md "Stock pages"): the Settings list's rows, the Wi-Fi hub's two; Back returns to our page.
 # (The EQ row is ACT_PEQ: our Equalizer page, docs/modules/peq.md; stock's playset/equalizer_page is retired: its one caller opens the 10-Band editor, tools/pod.py EQ_ROW.)
@@ -269,7 +271,10 @@ LOCK_PAGE_INDEX = 62      # the Lock Screen picker
 LOCKWALL_PAGE_INDEX = 63  # the Lock Screen's Wallpaper picker
 LOCKSTYLE_PAGE_INDEX = 64 # the Lock Screen's Player Style picker
 LOCKINFO_PAGE_INDEX = 65  # the Lock Screen's Custom Wallpaper instructions
-NEXTALBUM_PAGE_INDEX = 66   # Settings > Playback > Continue Playing picker: the last of PAGES
+NEXTALBUM_PAGE_INDEX = 66   # Settings > Playback > Continue Playing picker: the Navidrome pages follow
+NDLOGIN_PAGE_INDEX = 67  # the Navidrome Sign In page
+NDSERVER_PAGE_INDEX = 68 # the Navidrome Server page
+NDROOT_PAGE_INDEX = 69   # the Navidrome root: the last of PAGES
 ITEMS = [   # item id = index; the default order, essentials first (iPod classic style)
     Row('Now Playing', ACT_PLAYER),
     Row('Cover Flow', ACT_COVER),
@@ -303,7 +308,7 @@ ITEMS = [   # item id = index; the default order, essentials first (iPod classic
     Row('Search', ACT_SEARCH),
     # Radio (docs/modules/radio.md): internet radio stations; an item like the rest, hidden from the menu by default (on Extras, in Library, after Podcasts).
     Row('Radio', ACT_RADIO),
-    Row('Navidrome', ACT_SUBSONIC),
+    Row('Subsonic', ACT_SUBSONIC),
 ]
 SETTINGS_ID = 18
 assert ITEMS[SETTINGS_ID].label == 'Settings'
@@ -312,17 +317,17 @@ assert ITEMS[SETTINGS_ID].label == 'Settings'
 # comes from DEFAULT_MENU and EXTRAS_GROUPS, not from the id.
 ITEM_IDS = ('Now Playing', 'Cover Flow', 'Albums', 'Artists', 'Songs', 'Playlists', 'Shuffle', 'Genres', 'Folders',
             'Favorites', 'Recently Added', 'Recently Played', 'Most Played', 'Composers', 'Hi-Res', 'Update Library',
-            'Tidal', 'CD Ripper', 'Settings', 'Pod', 'Podcasts', 'Search', 'Radio', 'Navidrome')
+            'Tidal', 'CD Ripper', 'Settings', 'Pod', 'Podcasts', 'Search', 'Radio', 'Subsonic')
 assert tuple(r.label for r in ITEMS[:len(ITEM_IDS)]) == ITEM_IDS, 'menu item ids are frozen: append new items, never insert or reorder'
 DEFAULT_MENU = [1, 2, 3, 4, 5]   # the items shown by default, in order (saved string "12345"): Cover Flow, Albums, Artists, Songs, Playlists, then Extras. A minimal menu: Now Playing is not
                                     # among them (the mini player bar of the Home instance opens it, docs/modules/minibar.md), nor are Shuffle and Settings; every other item is on the Extras page,
                                     # grouped (EXTRAS_GROUPS), and Settings > Main Menu can show any of them
 assert all(0 <= i < len(ITEMS) for i in DEFAULT_MENU) and len(set(DEFAULT_MENU)) == len(DEFAULT_MENU)
-ID_CHARS = '012345678abcdefghijklmno'   # stable saved item ids; Navidrome appends 'o'
+ID_CHARS = '012345678abcdefghijklmno'   # one saved-list character per menu item
 assert len(ID_CHARS) == len(ITEMS)
 OFF_CHAR = '-'           # the saved list's separator: the item characters after it are turned off (not listed on the Extras page); at most once
 DEFAULT_OFF = []         # no item is turned off by default
-MENU_FILE_MAX = 27       # 24 item characters, the separator and a newline; longer is invalid
+MENU_FILE_MAX = 27       # 24 item characters, optional off separator, newline and NUL
 MENU = Page('m1plus_menu', 'm1plus_menu_page', 'M1+ Music', rows=ITEMS + [
     Row('Extras', ACT_PAGE, EXTRAS_PAGE_INDEX),   # always shown, always last
 ])
@@ -542,14 +547,15 @@ def format_pulldown(shown):
 
 # Extras (iPod style): every item the menu does not show and the user did not turn off (the asset has a row for each item, in id
 # order, same index as the menu's; patch/menu.c hides the ones the menu shows or that are off and stacks the rest in EXTRAS_ORDER,
-# the same for every language). The items are in four titled groups, in a deliberate order (not alphabetical; the title is the
+# the same for every language). The items are in five titled groups, in a deliberate order (not alphabetical; the title is the
 # group's section header, a non-interactive caption, shown while the group has a row on the page): what plays, the library's
-# views, the song collections, the tools. Settings is in none: it is the Extras page's navbar button.
+# views, the song collections, the streaming services, the tools. Settings is in none: it is the Extras page's navbar button.
 EXTRAS_GROUPS = (
     ('Play', ('Now Playing', 'Shuffle', 'Pod')),
-    ('Library', ('Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search', 'Navidrome')),
+    ('Library', ('Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search')),
     ('Collections', ('Favorites', 'Recently Played', 'Recently Added', 'Most Played', 'Hi-Res')),
-    ('Tools', ('Update Library', 'CD Ripper', 'Tidal')),
+    ('Streaming', ('Subsonic', 'Tidal')),
+    ('Tools', ('Update Library', 'CD Ripper')),
 )
 _LABELS = [r.label for r in ITEMS]
 # Settings is in no group and is never listed: the Extras page's navbar has a Settings button instead (the asset keeps its row for the
@@ -788,8 +794,6 @@ WIFIPASS_PAGE = Page('m1plus_wifipass', 'm1plus_wifipass_page', 'Enter Password'
 WIFIOTHER_PAGE = Page('m1plus_wifiother', 'm1plus_wifiother_page', 'Join Wi-Fi Network', kind='wifiother')
 WIFISEC_PAGE = Page('m1plus_wifisec', 'm1plus_wifisec_page', 'Security', kind='wifisec')
 
-SUBSONIC_PAGE = Page('m1plus_subsonic', 'm1plus_subsonic_page', 'Navidrome', kind='subsonic')
-
 # PAGES[0] is the entry page.
 # Settings > Playback > EQ (patch/peq_ui.c, docs/modules/peq.md): stock's Equalizer switch, the 10-Band EQ (our ten-band curve; its curve's name in grey before the check) and a row per APO / AutoEQ preset in
 # /mnt/mmc/EQ, the one that plays checked. A cards page whose rows the payload binds itself (so kind 'peq', no exported rows): the switch in a card of its own, then a card of 10-Band EQ and
@@ -873,11 +877,22 @@ TENPREAMP_STEPS = 13   # patch/peq.h PEQ_GAIN_MAX + 1: 0 .. -12 dB
 TENPREAMP_PAGE = Page('m1plus_tenpreamp', 'm1plus_tenpreamp_page', 'Preamp', kind='tenpreamp')
 TENPREAMP_PAGE.layout = [Row('Auto', ACT_PEQ_PAUTO), Note('Auto reduces the level to help prevent distortion from EQ boosts.', lines=2)] + [Row('', ACT_PEQ_PVAL, n) for n in range(TENPREAMP_STEPS)]   # the note's space is the gap between the cards
 
+# The Navidrome root page (patch/ndroot.c, tools/pod_nd.py): the menu rows, the Server row, the footer and the shared empty state. It binds its own rows, so it is not a cards page (no rows for patch/m1plus.c).
+NDROOT_PAGE = Page('m1plus_ndroot', 'm1plus_ndroot_page', 'Subsonic', kind='ndroot')
+
+# The Navidrome Server page (patch/ndserver.c, tools/pod_ndserver.py): two cards of the Settings look, the login's three fields and Sync Now / Sign Out. It binds its own rows, so it is not a cards page
+# (no rows for patch/m1plus.c): `layout` is only the asset's.
+NDSERVER_PAGE = Page('m1plus_ndserver', 'm1plus_ndserver_page', 'Server', kind='ndserver')
+NDSERVER_PAGE.layout = [Row('Server URL', ACT_NDVALUE, 0), Row('Username', ACT_NDVALUE, 1), Row('Password', ACT_NDVALUE, 2), GAP, Row('Sync Now', ACT_NDACT, 3), Row('Sign Out', ACT_NDACT, 4)]
+
+# The Navidrome Sign In page (patch/ndserver.c nl_open, tools/pod_ndserver.py build_login): the Server page's three login rows with our keyboard embedded, as the Join Wi-Fi Network page.
+NDLOGIN_PAGE = Page('m1plus_ndlogin', 'm1plus_ndlogin_page', 'Sign In', kind='ndlogin')
+
 # PAGES[0] is the entry page.
 PAGES = [MENU, COVER, ARTISTS, SHUFFLE_PAGE, SETTINGS_PAGE, EXTRAS_PAGE, ALBUMS, MENUCFG_PAGE, LIBRARY_PAGE, HOMESET_PAGE, PLAYLISTS, SONGS, DAILYMIX,
          EXTRASCFG_PAGE, DEVELOPER_PAGE, IPOD, PODCASTS, TAPE, NPSET_PAGE, KEYBOARD, KEYBOARDS_PAGE, THEME_PAGE, ABOUT_PAGE, SEARCH, ALBUM_PAGE, VINYL, FOLDERS, QUEUE_PAGE,
          RECORD_PAGE, VINYL_WHITE, VTHEME_PAGE, ONLINEART, CACHE_PAGE, COVLIST, FILES_PAGE, UPDATE, RELNOTES, BG_PAGE, ACCENT_PAGE, APPEARANCE_PAGE, PULLDOWN_PAGE, RADIO, RADIONP, RADIOINFO, SONGINFO, REGION_PAGE, WIFI_PAGE, WIFIINFO_PAGE, WIFIPASS_PAGE, WIFIOTHER_PAGE, WIFISEC_PAGE,
-         PEQ_PAGE, PEQP_PAGE, PEQLIB_PAGE, TENBAND_PAGE, TENCURVE_PAGE, TENPREAMP_PAGE, AUTOEQ_PAGE, PEQBAND_PAGE, BATTERY_PAGE, CHGLIMIT_PAGE, IDLE_PAGE, LOCK_PAGE, LOCKWALL_PAGE, LOCKSTYLE_PAGE, LOCKINFO_PAGE, NEXTALBUM_PAGE]
+         PEQ_PAGE, PEQP_PAGE, PEQLIB_PAGE, TENBAND_PAGE, TENCURVE_PAGE, TENPREAMP_PAGE, AUTOEQ_PAGE, PEQBAND_PAGE, BATTERY_PAGE, CHGLIMIT_PAGE, IDLE_PAGE, LOCK_PAGE, LOCKWALL_PAGE, LOCKSTYLE_PAGE, LOCKINFO_PAGE, NEXTALBUM_PAGE, NDLOGIN_PAGE, NDSERVER_PAGE, NDROOT_PAGE]
 assert PAGES[KEYBOARDS_PAGE_INDEX] is KEYBOARDS_PAGE
 assert PAGES[NPSET_PAGE_INDEX] is NPSET_PAGE
 assert PAGES[SHUFFLE_PAGE_INDEX] is SHUFFLE_PAGE and PAGES[SETTINGS_PAGE_INDEX] is SETTINGS_PAGE
@@ -890,5 +905,6 @@ assert PAGES[VINYL_WHITE_INDEX] is VINYL_WHITE and PAGES[VTHEME_PAGE_INDEX] is V
 assert PAGES[PULLDOWN_PAGE_INDEX] is PULLDOWN_PAGE and PAGES[REGION_PAGE_INDEX] is REGION_PAGE
 assert PAGES[BATTERY_PAGE_INDEX] is BATTERY_PAGE and PAGES[CHGLIMIT_PAGE_INDEX] is CHGLIMIT_PAGE and PAGES[LOCK_PAGE_INDEX] is LOCK_PAGE and PAGES[LOCKWALL_PAGE_INDEX] is LOCKWALL_PAGE and PAGES[LOCKSTYLE_PAGE_INDEX] is LOCKSTYLE_PAGE and PAGES[LOCKINFO_PAGE_INDEX] is LOCKINFO_PAGE 
 assert PAGES[IDLE_PAGE_INDEX] is IDLE_PAGE
-assert PAGES[NEXTALBUM_PAGE_INDEX] is NEXTALBUM_PAGE and NEXTALBUM_PAGE_INDEX == len(PAGES) - 1
+assert PAGES[NEXTALBUM_PAGE_INDEX] is NEXTALBUM_PAGE and NEXTALBUM_PAGE_INDEX == PAGES.index(NDLOGIN_PAGE) - 1
+assert PAGES[NDLOGIN_PAGE_INDEX] is NDLOGIN_PAGE and PAGES[NDSERVER_PAGE_INDEX] is NDSERVER_PAGE and PAGES[NDROOT_PAGE_INDEX] is NDROOT_PAGE and NDROOT_PAGE_INDEX == len(PAGES) - 1
 assert PAGES[THEME_PAGE_INDEX] is THEME_PAGE

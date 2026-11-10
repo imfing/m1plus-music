@@ -30,7 +30,7 @@ RET = 0x00ff0000     # sentinel return address: emulation stops when PC lands he
 STACK = 0x7ffe0000
 SCRATCH = 0x10000000
 HEAP = 0x40000000
-HEAP_SIZE = 0x1000000
+HEAP_SIZE = 0x4000000
 
 
 def init(work):
@@ -297,6 +297,7 @@ class Machine:
         self.fs, self.fds, self.next_fd, self.fail = {}, {}, 3, set()
         self.dirs = {'/mnt/data', '/mnt/data/m1plus'}
         self.timers = []            # (callback, ms) of every timer_add
+        self.timer_arg = {}         # callback -> the arg of its last timer_add
         self.timer_fail = False
         self.create_fail = set()    # widget constructors (view_create, ..) that return 0
         self.deque_fail = False     # _create_deque returns 0 (no memory for a list copy)
@@ -649,6 +650,7 @@ class Machine:
         elif name == 'timer_add':
             self.calls.append(('timer_add', a0, a2)); ret = 0 if self.timer_fail else 0x777
             if ret: self.timers.append((a0, a2))
+            self.timer_arg[a0] = a1   # the ctx of its last timer_add (stock calls the callback with the timer_info_t, not this)
         elif name == 'timer_remove':
             self.calls.append(('timer_remove', a0)); ret = 0
         elif name == 'timer_modify':   # the page timer's new interval (patch/ipod.c ip_retime): recorded and applied to the last timer_add of that callback's slot
@@ -1018,6 +1020,12 @@ class Machine:
             self.u.mem_write(a0, bytes(self.u.mem_read(a1, a2))); ret = a0
         elif name == 'strcmp':
             x, y = self.read_cstr(a0), self.read_cstr(a1); ret = (x > y) - (x < y)
+        elif name in ('strlen', 'strchr', 'strrchr'):   # (the Navidrome source's row data: sbsrc.c reads its fields with these)
+            text = self.read_cstr(a0).encode('latin-1')
+            if name == 'strlen': ret = len(text)
+            else:
+                i = (text + b'\0').find(a1 & 0xff) if name == 'strchr' else (text + b'\0').rfind(a1 & 0xff)
+                ret = a0 + i if i >= 0 else 0
         elif name == 'utf8_to_pinyin':   # stock's own algorithm (0x73a5f0), its table read from the mapped image: appends to the buffer at out
             src, o = bytes(self.read_cstr(a0).encode('latin-1')), bytes(self.read_cstr(a1).encode('latin-1')); i = 0
             self.calls.append(('utf8_to_pinyin', src))
@@ -1198,6 +1206,9 @@ class Machine:
             p = self.fds[a0][0]; data = bytes(self.u.mem_read(a1, a2))
             self.calls.append(('write', p, data))
             if ('write', p) in self.fail: ret = -1
+            elif self.fds[a0][1] & 3 == 2:   # O_RDWR: written at the descriptor's position (lseek), as the device does (the Subsonic cache patches a starred flag in place)
+                old = self.fs.get(p, b''); pos = self.fds[a0][2]
+                self.fs[p] = old[:pos] + data + old[pos + len(data):]; self.fds[a0][2] = pos + len(data); ret = a2
             else: self.fs[p] = self.fs.get(p, b'') + data; ret = a2
         elif name == 'fsync':
             p = self.fds[a0][0]; self.calls.append(('fsync', p))
@@ -1322,7 +1333,9 @@ class Machine:
             buf = self.cstr(text); self.nested(o[20094], h, typ, buf, len(text.encode()), o[10095])
         body, rc, sent = r['body'], r['rc'], 0
         sizes = r['chunk'] if isinstance(r['chunk'], (list, tuple)) else [r['chunk']]   # 'chunk': an int, or a list of sizes in order (the last repeats)
-        buf = self.alloc(max(sizes) + 1)
+        need = max(sizes) + 1   # (one buffer for the machine's requests: a phase-2 fill makes hundreds)
+        if self.__dict__.get('_curl_buf_n', 0) < need: self._curl_buf, self._curl_buf_n = self.alloc(need), need
+        buf = self._curl_buf
         total = r.get('length', len(body))   # the answer's length as the server gave it (0: unknown)
 
         def xfer(sent):
@@ -1905,7 +1918,7 @@ COMPOSER_ALBUMS = {'Bach': ['Cello Suites', 'Goldberg Variations'], 'Mozart': ['
 
 
 AR_WIDGETS = ('artists_listview', 'view_grid', 'sg_rail', 'sg_bubble', 'sg_bubble_letter', 'ar_title', 'label_hdr', 'label_rail', 'label_rail_on', 'label_row_title',
-              'img_nb_fade')
+              'img_nb_fade', 'ar_spin')
 
 
 def artists_row_y(i, starts=(0, 1)):
@@ -1947,7 +1960,7 @@ def utf8(s):
 ALBUMS_PAGE_WIDGETS = ('btn_coverflow', 'btn_play', 'btn_shuffle', 'label_row_sub', 'label_grid_title', 'label_grid_sub', 'al_title', 'al_name', 'img_nb_fade') + VS_WIDGETS
 
 
-def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), composers=(), genres=(), albums_page=False):
+def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), composers=(), genres=(), albums_page=False, cls=ListMachine):
     """A machine with the Artists page's widgets, the stock artist list (class 0xf004), each
     artist's albums (loadAlbumList) and the library album list (getAllAlbum). Miles Davis has
     three albums, one of them (Jazz Hits) filed under Various Artists in the library list; Nina
@@ -1955,7 +1968,7 @@ def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), co
     A row's tap opens our Albums page scoped to the artist when albums_page is set (its widgets exist);
     otherwise that window will not open and the tap falls back to Cover Flow on the artist, which
     the Cover Flow tests of this module drive."""
-    m = cover_machine(albums=0, cls=ListMachine)
+    m = cover_machine(albums=0, cls=cls)
     m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the rail tests of this page (the switch defaults on)
     for n in AR_WIDGETS: m.widget(n)
     if albums_page:

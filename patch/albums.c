@@ -47,7 +47,7 @@
  * An artist's or composer's page opens with the header instead of the large title: the artist's circle (an artist's only; a composer's header never has one) (AL_PHOTO_D px, made by the loader's first tick, patch/artistphoto.c), the
  * name under it (al_name) and the pills under that; al_top() is where the rows start (docs/modules/albums.md "Scoped to an artist"). An artist with no photo in the cache has the same header without the circle
  * (no placeholder): the name and the pills PH_SHIFT higher, the rows with them. When the page opens it asks the cover worker to look at this artist again (al_recheck, after the page's own cover build); a photo
- * found or removed switches the circle in place (al_layout).
+ * found or removed switches the circle in place (al_layout). A source's artist has the circle when the picture file of its coverArt id is cached, or when it arrives while the page is up (the shared cover poll, al_cp_ask).
  *
  * The navbar is Cover Flow, "..." and Now Playing; the "..." card (patch/viewsort.c) searches (Search Albums; not on a scoped page), sorts (Title, Artist, Recently Added, Year: cc_album_order, saved in
  * ALBUMS_SORT_FILE) and switches the mode. The switch is in place (no window opens or closes): the tiles are dropped, the
@@ -68,6 +68,8 @@
 #include "viewsort.h"
 #include "search.h"
 #include "songops.h"
+#include "libsrc.h"
+#include "albums.h"
 #include "nextalbum.h"
 #include "artistphoto.h"
 
@@ -84,6 +86,11 @@ extern void *songs_artist_list(
 extern int songs_play_artist(
     void *artist, unsigned scope,
     int how); /* patch/songs.c: Play (SO_IN_ORDER) / Shuffle (SO_SHUFFLE) on the artist's (or composer's) songs; -1 when nothing plays */
+extern int album_open_src(const lib_src_t *src, unsigned cls,
+                          void *row); /* patch/albumpage.c: the album page of a source's album */
+extern int
+songs_open_src_in(const lib_src_t *src, int which, void *scope,
+                  const char *title); /* patch/songs.c: the source's songs scoped to a row (the artist's All Songs) */
 extern int
 coverflow_artist_albums(void *artist_row, unsigned scope, int keep_card, void **albums,
                         unsigned **keys); /* patch/coverflow.c: one artist's album rows and their cache keys */
@@ -159,10 +166,18 @@ static struct {
     az_t
         az; /* the list mode's sections, rail and pinned header (patch/azlist.c; az.nsec 0: a plain list: the scoped page, a grid) */
     int az_ok; /* the page's rail, bubble and header text styles were found: the list may have sections */
+    void *spin; /* a source's loading spinner (al_spin, optional) */
+    /* a library source other than the stock one (albums_open_src; NULL = stock, every line below idle): src gives the list (re-read when its gen moves: gen, gen_timer) and the covers
+     * (cp asks again while a cover is being fetched); started = the handlers are bound (a page that opened empty binds them at its first album) */
+    const lib_src_t *src;
+    unsigned gen, rows, gen_timer; /* the source's gen and gen_rows at the last read, and the timer that watches them */
+    int started;
     /* circ: the artist has a photo in the cache, so the circle is drawn and the name and pills are PH_SHIFT lower; without it the same header (name, pills, rows) is PH_SHIFT higher (the circle's room is gone, nothing else differs).
-     * rk: the re-check of this artist (patch/artistphoto.c ap_recheck) 0 not made, 1 running on the page's set, 2 done; rk_ep: ap_epoch() when it started */
+     * rk: the re-check of this artist (patch/artistphoto.c ap_recheck) 0 not made, 1 running on the page's set, 2 done (a source's page: 2 = the server has no picture for the artist); rk_ep: ap_epoch() when it started */
     int circ, rk;
     unsigned rk_ep;
+    ls_cpoll_t
+        cp; /* the shared cover poll (patch/libsrc.c ls_cover_poll): asks again and turns the cover spinners while a tile's cover is on its way */
     grid_t
         g; /* the tile ring (GRID_TILES, heap), the placeholder, the mode's cover size (g.side): patch/grid.c; LAST (test/pod/albums.py reads the fields above by index) */
 } al __attribute__((section(".scratch")));
@@ -278,7 +293,10 @@ static tile_t *al_tile(int a) {
         else if (
             al.artist_row) { /* an artist's or composer's album: its year as the grey line, none when no song of it has one */
             char year[5];
-            unsigned y = al.years ? al.years[row] : 0;
+            unsigned y = al.src     ? (unsigned)I(rec, REC_YEAR)
+                         : al.years ? al.years[row]
+                                    : 0; /* (a source's record carries its year) */
+            if (y < 1000 || y > 2999) y = 0;
             year[0] = y ? (char)('0' + y / 1000) : 0, year[1] = (char)('0' + y / 100 % 10),
             year[2] = (char)('0' + y / 10 % 10), year[3] = (char)('0' + y % 10), year[4] = 0;
             grid_set(t, cc_str(rec, REC_ALBUM), year, al.keys ? al.keys[row] : cc_album_key(rec));
@@ -289,7 +307,28 @@ static tile_t *al_tile(int a) {
 }
 
 /* The cover from the cache file, reduced to the mode's size with the box filter. */
-static void al_art(tile_t *t) { grid_art(&al.g, t); }
+static void al_cover_wait(void);
+static void al_art(tile_t *t, int a) {
+    char url[80];
+    int r;
+    if (!al.src) {
+        grid_art(&al.g, t);
+        return;
+    }
+    memcpy(
+        url, "file://",
+        8); /* the source's cover file (the Cover Flow cache file of the key): 1 there, 0 asked for (look again shortly), -1 none (the placeholder) */
+    r = t->ckey ? al.src->cover(al.src, cc_row(al.albums, al.order, (unsigned)a), t->ckey, url + 7, sizeof url - 7)
+                : -1;
+    t->load = 0;
+    if (r == 1)
+        grid_art_url(&al.g, t, url);
+    else {
+        t->art = 2;
+        if (r == 0)
+            al_cover_wait(), t->load = 1; /* (the spinner on the disc until the file is there or the source has none) */
+    }
+}
 
 /* ---------------------------------------------------------------------------
  * Paint (the cell paint is the grid's, patch/grid.c; the list mode's rows are this page's own)
@@ -382,24 +421,40 @@ _Static_assert(PH_SHIFT == AL_PHOTO_Y + AL_PHOTO_D && AL_HEAD_END - PH_SHIFT == 
                    AL_HEAD_PILL_Y - PH_SHIFT == SG_PILL_Y,
                "the artist header without a circle is the one with it, PH_SHIFT higher");
 
-/* Is there a photo for this artist now: a non-empty -168 file of its key (or of the lead artist's)? */
-static int al_has_photo(void) {
-    char url[80];
-    int st = ap_lookup(cc_str(deque_at(al.artist_row, 0), REC_TITLE), AP_HEAD, url);
+static void al_pic_wait(void);
+
+/* The artist's picture file as "file://<path>" in url (80 bytes), 1 when there is one: a library artist's non-empty -168 file of its key (or of the lead artist's); a source's artist: the file the source keeps for
+ * the artist's coverArt id, asked for when it is missing (0 while it is on its way: the shared cover poll looks again, al_pic_wait; -1 none, the empty marker too). */
+static int al_head_url(char *url) {
+    int st;
+    if (al.src) {
+        memcpy(url, "file://", 8);
+        st = al.src->cover(al.src, deque_at(al.artist_row, 0), 0, url + 7, 80 - 7);
+        if (st == 0) al_pic_wait();
+        if (st < 0) al.rk = 2; /* (a source's page: the server has no picture, the poll does not ask again) */
+        return st == 1;
+    }
+    st = ap_lookup(cc_str(deque_at(al.artist_row, 0), REC_TITLE), AP_HEAD, url);
     return st == AP_PHOTO || st == AP_LEAD;
 }
 
-/* The header's circle, once: the artist's -168 photo (or the lead artist's, ap_lookup) cut to a circle. A photo that does not decode leaves the plain page. */
+/* Is there a photo for this artist now? */
+static int al_has_photo(void) {
+    char url[80];
+    return al_head_url(url);
+}
+
+/* The header's circle, once: the artist's -168 photo (or the lead artist's, ap_lookup; a source's picture file) cut to a circle, a portrait file from its top third (cc_decode box 2, as pv_square cuts it). A photo that
+ * does not decode leaves the plain page. */
 static void al_head_load(void) {
     char url[80];
     unsigned *px;
     void *b;
-    int st = ap_lookup(cc_str(deque_at(al.artist_row, 0), REC_TITLE), AP_HEAD, url);
     al.hdr_done = 1;
-    if (st == AP_PHOTO || st == AP_LEAD) {
+    if (al_head_url(url)) {
         b = ap_bitmap(AL_PHOTO_D, &px);
         if (b) {
-            int ok = cc_decode(al.win, url, 1, AL_PHOTO_D, 1, px);
+            int ok = cc_decode(al.win, url, 1, AL_PHOTO_D, 2, px);
             if (ok) ap_circle(px, AL_PHOTO_D);
             bitmap_unlock_buffer(b);
             if (ok) {
@@ -450,7 +505,7 @@ static int al_on_load(const void *unused) {
     if (a >= 0) {
         tile_t *t = al_tile(a);
         int top = al.list ? az_row_y(&al.az, a) - al_off() : GRID_ROW_GAP + a / GRID_COLS * PITCH - al_coff();
-        al_art(t);
+        al_art(t, a);
         if (top < GRID_VIEW_H && top + (al.list ? LIST_ROW_H : CELL_H) > 0) al_redraw();
     }
     al_kick();
@@ -480,6 +535,12 @@ static int al_on_scroll(void *ctx, void *e) {
  */
 #define AL_BUILD_START_MS 50
 #define AL_BUILD_MS 500
+/* The display order of the list: the saved sort. A source has no song library to read the Recently Added and Year orders from: they follow the album records' own
+ * creation time and year (cc_album_order_src). */
+static unsigned *al_order(void) {
+    return (al.src ? cc_album_order_src : cc_album_order_mode)(al.albums, al.sort, al.rev);
+}
+
 #define AL_SCAN_BATCH 64 /* albums stat'ed per scan step */
 #define AL_SCAN_MS 20 /* between steps: input is served in between */
 
@@ -497,6 +558,38 @@ static void al_retry(void) {
 static int al_on_build(const void *unused);
 static void al_recheck(void);
 static void al_recheck_done(void);
+
+/* A source's covers on the shared poll (patch/libsrc.c ls_cover_poll): a cover the source is fetching (cover() returned 0) is asked for again every LS_COVER_MS while the page is on top, as every tile
+ * without a picture is (a tile the source has none for answers -1 again at once); the tiles with load set (patch/grid.c grid_spin_*) show the spinner meanwhile, turned and redrawn by the same tick,
+ * and the poll ends when nothing is being fetched or gives up. */
+static void al_cp_ask(void) {
+    int i;
+    if (!al.view || !al.src) return;
+    if (al.head && al.scope == CLASS_ARTISTS && !al.circ && al.rk != 2 && al_has_photo())
+        al_layout(
+            1); /* the artist's picture has arrived: the circle appears in place (still on its way: al_has_photo keeps the poll) */
+    for (i = 0; al.g.tiles && i < GRID_TILES; ++i)
+        if (al.g.tiles[i].album && al.g.tiles[i].art == 2) al.g.tiles[i].art = 0;
+    al_kick();
+}
+static int al_cp_spin(void) {
+    int n = grid_spin_turn(&al.g);
+    if (al.view) al_redraw();
+    return n;
+}
+static void al_cp_giveup(void) {
+    int i;
+    for (i = 0; al.g.tiles && i < GRID_TILES; ++i) al.g.tiles[i].load = 0; /* (the placeholder stays, no spinner) */
+    if (al.view) al_redraw();
+}
+static void al_cover_wait(void) {
+    grid_spin_open(&al.g, "wf_spin", 14);
+    if (al.view) ls_cover_poll(&al.cp, al.win, al_cp_ask, al_cp_spin, al_cp_giveup);
+}
+/* The artist's picture (a source's page, no circle yet) is on its way: no spinner, the page is the plain header until the poll finds the file. */
+static void al_pic_wait(void) {
+    if (al.view) ls_cover_poll(&al.cp, al.win, al_cp_ask, al_cp_spin, al_cp_giveup);
+}
 
 /* The page's build set released: a running worker is cancelled (joined if it has finished, else left to exit on its own, cc_build_stop). */
 static void al_build_end(void) {
@@ -567,7 +660,8 @@ static int al_on_build_start(const void *unused) {
 
 /* Starts the build a moment from now unless one is going or already due. */
 static void al_build_later(void) {
-    if (al.view && al.g.tiles && !al.own && !al.scanned && !al.build_timer)
+    if (al.view && al.g.tiles && !al.src && !al.own && !al.scanned &&
+        !al.build_timer) /* (a source makes its own covers: no cache worker) */
         al.build_timer = timer_add(al_on_build_start, (void *)0, AL_BUILD_START_MS);
 }
 
@@ -629,6 +723,15 @@ static int al_on_up(void *ctx, void *e) {
     dy = al_abs(I(e, PE_Y) - al.down_y);
     if (dx < AL_TAP_PX && dy < AL_TAP_PX && al_item_of(e) == a) {
         int row = (int)(al.order ? al.order[a] : (unsigned)a); /* the stock row */
+        if (al.src) { /* a source's album: its album page; an artist's All Songs tile: the source's songs of that artist */
+            void *rec = deque_at(al.albums, (unsigned)row);
+            if (al_is_card(
+                    rec)) /* the tile's own record (ID_ALL_SONGS, the artist's id in its path), so the source lists the artist's songs */
+                songs_open_src_in(al.src, LS_SONGS, rec, cc_str(deque_at(al.artist_row, 0), REC_TITLE));
+            else
+                album_open_src(al.src, 0, rec);
+            return RET_OK;
+        }
         /* the All Songs tile of an artist or a composer: our Songs page on every song (Cover Flow's All albums card; a page that does not open
          * leaves the stock page on the All songs row) */
         if (al_is_card(deque_at(al.albums, (unsigned)row)) &&
@@ -668,6 +771,7 @@ static int al_on_bg(void *ctx, void *e) {
 static int al_on_cover(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    if (al.src) return RET_OK; /* HOOK: Cover Flow is the stock library's window; a source has none yet */
     al_build_end(); /* one worker at a time: Cover Flow builds what is missing itself, with its Preparing screen */
     if (al.artist_row)
         coverflow_artist(al.artist_row, 0, al.scope); /* the same artist's covers */
@@ -676,18 +780,45 @@ static int al_on_cover(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* A source's artist page: the pills play the source's songs of the artist, the list the All Songs tile opens (the deque's last record, ID_ALL_SONGS, whose path carries the artist's id): in order from the first, or
+ * shuffled from a random one. A DSD track that is not on the card asks to download (ls_dsd_confirm copies its row, so the list can go). */
+static void al_play_src(int how) {
+    void *all, *list;
+    int r;
+    if (!al.albums || !deque_size(al.albums)) return;
+    all = deque_at(al.albums, deque_size(al.albums) - 1);
+    if (!al_is_card(all)) return;
+    list = al.src->list(al.src, LS_SONGS, all);
+    if (!list) { /* the artist's songs are not derived yet (the fill makes the artist files): say so, not nothing */
+        if (al.src->state && al.src->state(al.src, LS_SONGS, all) == LS_ST_LOADING)
+            pod_toast(TR("Loading…"));
+        else
+            pod_toast(TR("Can't play"));
+        return;
+    }
+    r = so_play_src(al.src, CLASS_ARTISTS, list, how == SO_SHUFFLE ? -1 : 0, how, pod_open_player);
+    if (r == -2) ls_dsd_confirm(al.src, list, how == SO_SHUFFLE ? -1 : 0);
+    deque_destroy(list);
+}
+
 /* An artist's page: Play is every song of the artist in order from the first, Shuffle the stock Shuffle mode from a random one (the Songs page's pills on the artist's list). */
 static int al_on_play(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (al.artist_row && al.count) songs_play_artist(deque_at(al.artist_row, 0), al.scope, SO_IN_ORDER);
+    if (al.src && al.artist_row && al.count)
+        al_play_src(SO_IN_ORDER);
+    else if (al.artist_row && al.count)
+        songs_play_artist(deque_at(al.artist_row, 0), al.scope, SO_IN_ORDER);
     return RET_OK;
 }
 
 static int al_on_shuffle(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (al.artist_row && al.count) songs_play_artist(deque_at(al.artist_row, 0), al.scope, SO_SHUFFLE);
+    if (al.src && al.artist_row && al.count)
+        al_play_src(SO_SHUFFLE);
+    else if (al.artist_row && al.count)
+        songs_play_artist(deque_at(al.artist_row, 0), al.scope, SO_SHUFFLE);
     return RET_OK;
 }
 
@@ -695,6 +826,9 @@ static int al_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (al.more_timer) timer_remove(al.more_timer);
+    if (al.gen_timer) timer_remove(al.gen_timer);
+    ls_cover_end(&al.cp);
+    ls_spin_end(al.spin);
     al_build_end(); /* the timer removed, the worker cancelled (cc_build_stop) */
     grid_free(&al.g);
     if (al.hdr) bitmap_destroy(al.hdr);
@@ -813,7 +947,8 @@ static void al_layout(int circ) {
 static void al_recheck(void) {
     char *buf;
     unsigned i, n = 0;
-    if (!al.view || !al.head || al.scope != CLASS_ARTISTS || al.rk || al.own || al.build_timer || !al.albums) return;
+    if (!al.view || !al.head || al.src || al.scope != CLASS_ARTISTS || al.rk || al.own || al.build_timer || !al.albums)
+        return;
     al.rk = 2; /* (asked once per open) */
     buf = calloc(1, AL_RC_BUF);
     if (!buf) return;
@@ -841,7 +976,7 @@ static void al_recheck(void) {
 /* The re-check is over: if a photo appeared or went, the header switches; a replaced one is read again. */
 static void al_recheck_done(void) {
     int want;
-    if (!al.view || !al.head || al.scope != CLASS_ARTISTS) return;
+    if (!al.view || !al.head || al.src || al.scope != CLASS_ARTISTS) return;
     want = al_has_photo();
     if (want != al.circ)
         al_layout(want);
@@ -882,7 +1017,7 @@ static void al_set_mode(int list) {
 /* The order changed: the tiles are dropped (they were for other albums), the list starts at the top, the cover scan starts again (nearest the first album in view first). */
 static void al_resort(void) {
     free(al.order);
-    al.order = cc_album_order_mode(al.albums, al.sort, al.rev);
+    al.order = al_order();
     if (!al.view || !al.g.tiles) return;
     al_stop_scroll();
     if (al.more_timer) timer_remove(al.more_timer);
@@ -911,7 +1046,10 @@ static int al_on_item(void *ctx, void *e) {
     if (!al.view) return RET_OK;
     vs_menu(&al.vs, 0, al.sort, al.rev, al.list);
     if (k == VS_SEARCH) {
-        if (search_open_in(SEARCH_ALBUMS) < 0) search_open();
+        if (al.src)
+            search_open_src_in(al.src, SEARCH_ALBUMS); /* the server's search, not the card's */
+        else if (search_open_in(SEARCH_ALBUMS) < 0)
+            search_open();
     } else if (k == VS_SORTS || k == VS_SORTS + 1) {
         int list = k == VS_SORTS + 1;
         if (list == al.list) return RET_OK;
@@ -941,97 +1079,10 @@ static int al_on_more(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* The page in the given mode. 0 once it is up, -1 if the window could not open, -2 if the asset is not ours (the
- * page is left again). artist_row (a deque holding the stock row of an artist, or a composer when scope says so) scopes it to that artist's albums: the
- * page then owns the deque, from the moment the window is up. */
-static int al_open(int list, void *artist_row, unsigned scope) {
-    if (al.win) return -1;
-    memset(&al, 0, sizeof al);
-    al.win = window_open("m1plus_albums");
-    if (!al.win) return -1;
-    al.list = list;
-    al.artist_row = artist_row, al.scope = scope;
-    widget_on(al.win, EVT_DESTROY, al_on_destroy, (void *)0);
-    pod_bind(al.win, "btn_return", pod_on_back, (void *)0);
-    pod_bind(al.win, "btn_backtoplayer", pod_on_player, (void *)0);
-    pod_bind(al.win, "btn_coverflow", al_on_cover, (void *)0);
-    pod_bind(al.win, "btn_more", al_on_more, (void *)0);
-    al.btn = widget_lookup(al.win, "btn_more", 1);
-    al.view = widget_lookup(al.win, "view_grid", 1);
-    al.sv = widget_lookup(al.win, "albums_scrollview", 1);
-    al.status = widget_lookup(al.win, "label_status", 1);
-    al.btn_play = widget_lookup(al.win, "btn_play", 1); /* optional: an artist's page only */
-    al.btn_shuffle = widget_lookup(al.win, "btn_shuffle", 1);
-    al.pills = artist_row && al.btn_play && al.btn_shuffle;
-    al.name_lbl = widget_lookup(al.win, "al_name", 1); /* optional: the photo header's name */
-    al.head = al.pills && al.name_lbl;
-    al.circ = al.head && scope == CLASS_ARTISTS &&
-              al_has_photo(); /* (the cache says: a photo, else the header has no circle; a composer: none) */
-    al.fade = widget_lookup(al.win, "img_nb_fade", 1); /* optional */
-    al.st_title = widget_lookup(al.win, "label_row_title", 1);
-    al.st_sub = widget_lookup(al.win, "label_row_sub", 1);
-    al.st_gtitle = widget_lookup(al.win, "label_grid_title", 1);
-    al.st_gsub = widget_lookup(al.win, "label_grid_sub", 1);
-    if (!al.view || !al.sv || !al.status || !al.st_title || !al.st_sub || !al.st_gtitle || !al.st_gsub) {
-        navigator_back(); /* an asset that is not ours */
-        return -2;
-    }
-    if (vs_bind(
-            &al.vs, al.win, al_on_item, al_on_scrim,
-            (artist_row ? VS_ALL_SORTS & ~(1u << CC_SORT_ARTIST) : VS_ALL_SORTS | VS_WITH_SEARCH) |
-                VS_WITH_VIEWS)) { /* (one artist's albums: no Artist row, and no Search row: it searched the whole library's albums) */
-        navigator_back(); /* an asset that is not ours */
-        return -2;
-    }
-    al.sort = artist_row ? cc_scoped_sort() : cc_sort_mode();
-    al.rev = cc_sort_rev();
-    vs_view(&al.vs, list);
-    al.az.win = al.win, al.az.sv = al.sv, al.az.top = al_top(), al.az.row = LIST_ROW_H;
-    az_prefs(&al.az);
-    al.az.st_hdr = widget_lookup(al.win, "label_hdr", 1);
-    al.az.st_rail = widget_lookup(al.win, "label_rail", 1);
-    al.az.st_rail_on = widget_lookup(al.win, "label_rail_on", 1);
-    al.az.rail = widget_lookup(al.win, "sg_rail", 1);
-    al.az.bubble = widget_lookup(al.win, "sg_bubble", 1);
-    al.az.bubble_letter = widget_lookup(al.win, "sg_bubble_letter", 1);
-    al.az_ok = al.az.st_hdr && al.az.st_rail && al.az.st_rail_on && al.az.rail && al.az.bubble && al.az.bubble_letter;
-    al_show(al.status, 0);
-    al.small = widget_lookup(al.win, "label_title", 1);
-    al.big = widget_lookup(al.win, "al_title", 1);
-    if (artist_row) { /* the artist's albums and, with two or more, the All Songs row last, titled with the artist (Cover Flow's scoped list) */
-        const char *name = cc_str(deque_at(artist_row, 0), REC_TITLE);
-        al.count = (unsigned)coverflow_artist_albums(artist_row, scope, 1, &al.albums, &al.keys);
-        if (al.count) { /* the years: one read of the artist's (composer's) songs (the stock queries of the Songs page's artist list) */
-            void *songs = songs_artist_list(deque_at(artist_row, 0), scope);
-            if (songs) al.years = cc_album_years(al.albums, songs);
-        }
-        al.order = cc_album_order_mode(
-            al.albums, al.sort, al.rev); /* the chosen order (Artist as Title); the keys and years stay by stock row */
-        az_fit(al.big,
-               name); /* both titles cut with an ellipsis to their room (296 px; the 110 px before Cover Flow) */
-        az_fit(al.small, name);
-        if (al.head) { /* the name under the circle, centred (22 px), in place of the large title */
-            az_fit(al.name_lbl, name);
-            al_show(al.name_lbl, 1);
-            al_show(al.big, 0);
-            if (!al.circ) widget_move(al.name_lbl, PH_NAME_X, AL_NAME_Y - PH_SHIFT);
-        }
-    } else {
-        az_fit(al.big, TR("Albums")); /* (the language's word) */
-        az_fit(al.small, TR("Albums"));
-        al.albums = cc_albums();
-        al.count = al.albums ? deque_size(al.albums) : 0;
-        al.order = cc_album_order_mode(al.albums, al.sort, al.rev);
-    }
-    al.az.count = (int)al.count;
-    if (!al.count || !grid_init(&al.g, al.win, GRID_TILES, GRID_COVER, 0)) {
+/* The grid and the handlers, once there is a list to show (at open; a source's page that opened empty gets them at its first album). 0 if the grid could not be made. */
+static int al_begin(void) {
+    if (!grid_init(&al.g, al.win, GRID_TILES, GRID_COVER, 0)) {
         grid_free(&al.g);
-        al_show(al.view, 0);
-        al_show(al.status, 1);
-        if (al.az_ok) al_show(al.az.rail, 0), al_show(al.az.bubble, 0); /* (nothing to index) */
-        widget_set_tr_text(al.status, al.count     ? "Not enough memory"
-                                      : artist_row ? "No albums"
-                                                   : "Update Local Music first");
         return 0;
     }
     if (al.pills) { /* under the large title: the pills as the Songs page's (the label and glyph centred as a pair), shown and live */
@@ -1047,7 +1098,7 @@ static int al_open(int list, void *artist_row, unsigned scope) {
         al_show(al.btn_shuffle, 1);
     }
     al.g.az = &al.az; /* (list rows lie below the headers) */
-    al_shape(list);
+    al_shape(al.list);
     al.g.st_title = al.st_gtitle,
     al.g.st_sub = al.st_gsub; /* the grid's two text styles (the list mode's are drawn by this page) */
     grid_placeholder(&al.g);
@@ -1081,29 +1132,240 @@ static int al_open(int list, void *artist_row, unsigned scope) {
         widget_on(al.az.rail, EVT_POINTER_ABORT, al_on_rail, (void *)0);
         widget_on(al.az.rail, EVT_AFTER_PAINT, al_on_rail_paint, (void *)0);
     }
+    al.started = 1;
+    return 1;
+}
+
+/* The empty page: the status line says why. A source's page keeps the large title (the content view) and shows, by the source's state: while the list is on its way only the one spinner;
+ * no Wi-Fi or a failed request, the reason; else "No albums". */
+static void al_empty(void) {
+    int st = LS_ST_READY;
+    if (al.src && !al.count && al.src->state)
+        st = al.src->state(al.src, LS_ALBUMS, al.artist_row ? deque_at(al.artist_row, 0) : (void *)0);
+    al_show(al.view, al.src != (const lib_src_t *)0 && !al.count);
+    al_show(al.status, !(st == LS_ST_LOADING && al.spin));
+    ls_spin(al.spin, st == LS_ST_LOADING && al.spin != (void *)0);
+    if (al.az_ok) al_show(al.az.rail, 0), al_show(al.az.bubble, 0); /* (nothing to index) */
+    widget_set_tr_text(al.status, al.count                  ? "Not enough memory"
+                                  : al.artist_row || al.src ? ls_empty_key(st, "No albums")
+                                                            : "Update Local Music first");
+}
+
+/* The source's gen moved: the list is read again and, if it changed, the tiles are made again (the scroll position stays where the content allows). A list that is the same swaps the records only:
+ * a sync that finished with the same albums does not stop a fling or blank the covers. */
+static void al_src_reload(void) {
+    void *albums = al.src->list(al.src, LS_ALBUMS, al.artist_row ? deque_at(al.artist_row, 0) : (void *)0);
+    unsigned n = albums ? deque_size(albums) : 0;
+    int max;
+    if (n && al.artist_row && I(deque_at(albums, n - 1), REC_ID) == ID_ALL_SONGS && n - 1 < 2)
+        --n; /* (the stock rule: the All Songs tile needs two albums) */
+    if (al.started && n && al.count == n && ls_same_list(al.albums, n, albums, n)) {
+        free(al.order);
+        deque_destroy(al.albums);
+        al.albums = albums;
+        al.order = al_order();
+        return;
+    }
+    free(al.order);
+    if (al.albums) deque_destroy(al.albums);
+    al.albums = albums, al.count = n;
+    al.az.count = (int)n;
+    al.order = al_order();
+    if (n) ls_spin(al.spin, 0);
+    if (!al.started) {
+        if (!n || !al_begin()) {
+            al_empty();
+            return;
+        }
+        al_show(al.status, 0);
+        al_show(al.view, 1);
+        return;
+    }
+    al_stop_scroll();
+    al.press = 0, al.down = 0, al.dir = 1;
+    grid_drop(&al.g); /* the tiles were for the old list */
+    grid_placeholder(&al.g);
+    al_sections();
+    if (n)
+        al_show(al.status, 0), al_show(al.view, 1);
+    else
+        al_empty();
+    al_size();
+    al_rail();
+    max = al_max_scroll();
+    if (al_off() > max) widget_set_prop_int(al.sv, "yoffset", max);
+    al.seen = al_off();
+    al_fade();
+    al_redraw();
+    al_kick();
+}
+
+static int al_on_gen(const void *unused) {
+    unsigned g;
+    (void)unused;
+    al.gen_timer = 0;
+    if (!al.view || !al.src) return RET_OK;
+    g = al.src->gen(al.src);
+    if (g != al.gen) {
+        al.gen = g;
+        if (ls_gen_rows(al.src) != al.rows)
+            al.rows = ls_gen_rows(al.src), al_src_reload(); /* (a download's progress alone moves no albums) */
+    }
+    al.gen_timer = timer_add(al_on_gen, (void *)0, LS_GEN_MS);
+    return RET_OK;
+}
+
+/* The page in the given mode. 0 once it is up, -1 if the window could not open, -2 if the asset is not ours (the
+ * page is left again). artist_row (a deque holding the stock row of an artist, or a composer when scope says so) scopes it to that artist's albums: the
+ * page then owns the deque, from the moment the window is up. */
+static int al_open(int list, void *artist_row, unsigned scope, const lib_src_t *src) {
+    if (al.win) return -1;
+    memset(&al, 0, sizeof al);
+    al.win = window_open("m1plus_albums");
+    if (!al.win) return -1;
+    al.list = list;
+    al.artist_row = artist_row, al.scope = scope;
+    al.src = src == &lib_stock ? (const lib_src_t *)0 : src; /* (the stock source is no source: today's code) */
+    widget_on(al.win, EVT_DESTROY, al_on_destroy, (void *)0);
+    pod_bind(al.win, "btn_return", pod_on_back, (void *)0);
+    pod_bind(al.win, "btn_backtoplayer", pod_on_player, (void *)0);
+    pod_bind(al.win, "btn_coverflow", al_on_cover, (void *)0);
+    pod_bind(al.win, "btn_more", al_on_more, (void *)0);
+    al.btn = widget_lookup(al.win, "btn_more", 1);
+    al.view = widget_lookup(al.win, "view_grid", 1);
+    al.sv = widget_lookup(al.win, "albums_scrollview", 1);
+    al.status = widget_lookup(al.win, "label_status", 1);
+    al.spin = widget_lookup(al.win, "al_spin", 1); /* optional */
+    al.btn_play = widget_lookup(al.win, "btn_play", 1); /* optional: an artist's page only */
+    al.btn_shuffle = widget_lookup(al.win, "btn_shuffle", 1);
+    al.pills = artist_row && al.btn_play && al.btn_shuffle;
+    al.name_lbl = widget_lookup(al.win, "al_name", 1); /* optional: the photo header's name */
+    al.head = al.pills && al.name_lbl;
+    al.circ =
+        al.head && scope == CLASS_ARTISTS &&
+        al_has_photo(); /* (the cache says: a photo, else the header has no circle; a composer: none; a source's artist: its picture file, the circle appears when it arrives) */
+    al.fade = widget_lookup(al.win, "img_nb_fade", 1); /* optional */
+    al.st_title = widget_lookup(al.win, "label_row_title", 1);
+    al.st_sub = widget_lookup(al.win, "label_row_sub", 1);
+    al.st_gtitle = widget_lookup(al.win, "label_grid_title", 1);
+    al.st_gsub = widget_lookup(al.win, "label_grid_sub", 1);
+    if (!al.view || !al.sv || !al.status || !al.st_title || !al.st_sub || !al.st_gtitle || !al.st_gsub) {
+        navigator_back(); /* an asset that is not ours */
+        return -2;
+    }
+    if (vs_bind(
+            &al.vs, al.win, al_on_item, al_on_scrim,
+            (artist_row ? VS_ALL_SORTS & ~(1u << CC_SORT_ARTIST) : VS_ALL_SORTS) | VS_WITH_VIEWS |
+                (!artist_row && (ls_caps(al.src) & LS_CAP_SEARCH)
+                     ? VS_WITH_SEARCH
+                     : 0))) { /* (one artist's albums: no Artist row, and no Search row: it searched the whole library's albums; a source without Search: no row) */
+        navigator_back(); /* an asset that is not ours */
+        return -2;
+    }
+    al.sort = artist_row ? cc_scoped_sort() : cc_sort_mode();
+    al.rev = cc_sort_rev();
+    vs_view(&al.vs, list);
+    al.az.win = al.win, al.az.sv = al.sv, al.az.top = al_top(), al.az.row = LIST_ROW_H;
+    az_prefs(&al.az);
+    al.az.st_hdr = widget_lookup(al.win, "label_hdr", 1);
+    al.az.st_rail = widget_lookup(al.win, "label_rail", 1);
+    al.az.st_rail_on = widget_lookup(al.win, "label_rail_on", 1);
+    al.az.rail = widget_lookup(al.win, "sg_rail", 1);
+    al.az.bubble = widget_lookup(al.win, "sg_bubble", 1);
+    al.az.bubble_letter = widget_lookup(al.win, "sg_bubble_letter", 1);
+    al.az_ok = al.az.st_hdr && al.az.st_rail && al.az.st_rail_on && al.az.rail && al.az.bubble && al.az.bubble_letter;
+    al_show(al.status, 0);
+    al.small = widget_lookup(al.win, "label_title", 1);
+    al.big = widget_lookup(al.win, "al_title", 1);
+    if (!(ls_caps(al.src) &
+          LS_CAP_COVERFLOW)) { /* no Cover Flow for this source: its button goes and the "..." takes the capsule's left cap (the Artists page's), with the title running to it */
+        al_show(widget_lookup(al.win, "btn_coverflow", 1), 0);
+        if (al.btn) {
+            widget_set_prop_str(al.btn, "style:normal:icon", "pod_nav_more");
+            widget_set_prop_str(al.btn, "style:over:icon", "pod_nav_more");
+            widget_set_prop_str(al.btn, "style:pressed:icon", "pod_nav_more_down");
+        }
+        if (al.small) widget_resize(al.small, NAV_VIEW_X - NAV_TITLE_X, 22);
+    }
+    if (artist_row) { /* the artist's albums and, with two or more, the All Songs row last, titled with the artist (Cover Flow's scoped list) */
+        const char *name = cc_str(deque_at(artist_row, 0), REC_TITLE);
+        if (al.src) { /* the source's albums of the artist (its record); keys stay NULL: each album keys itself */
+            al.albums = al.src->list(al.src, LS_ALBUMS, deque_at(artist_row, 0));
+            al.count = al.albums ? deque_size(al.albums) : 0;
+            if (al.count && I(deque_at(al.albums, al.count - 1), REC_ID) == ID_ALL_SONGS && al.count - 1 < 2)
+                --al.count;
+        } else
+            al.count = (unsigned)coverflow_artist_albums(artist_row, scope, 1, &al.albums, &al.keys);
+        if (!al.src &&
+            al.count) { /* the years: one read of the artist's (composer's) songs (the stock queries of the Songs page's artist list) */
+            void *songs = songs_artist_list(deque_at(artist_row, 0), scope);
+            if (songs) al.years = cc_album_years(al.albums, songs);
+        }
+        al.order = al_order(); /* the chosen order (Artist as Title); the keys and years stay by stock row */
+        az_fit(al.big,
+               name); /* both titles cut with an ellipsis to their room (296 px; the 110 px before Cover Flow) */
+        az_fit(al.small, name);
+        if (al.head) { /* the name under the circle, centred (22 px), in place of the large title */
+            az_fit(al.name_lbl, name);
+            al_show(al.name_lbl, 1);
+            al_show(al.big, 0);
+            if (!al.circ) widget_move(al.name_lbl, PH_NAME_X, AL_NAME_Y - PH_SHIFT);
+        }
+    } else {
+        az_fit(al.big, TR("Albums")); /* (the language's word) */
+        az_fit(al.small, TR("Albums"));
+        al.albums = al.src ? al.src->list(al.src, LS_ALBUMS, (void *)0) : cc_albums();
+        al.count = al.albums ? deque_size(al.albums) : 0;
+        al.order = al_order();
+    }
+    if (al.src) {
+        al.gen = al.src->gen(al.src);
+        al.rows = ls_gen_rows(al.src);
+        al.gen_timer = timer_add(al_on_gen, (void *)0, LS_GEN_MS);
+    }
+    al.az.count = (int)al.count;
+    if (!al.count || !al_begin()) {
+        al_empty();
+        return 0;
+    }
     return 0;
 }
 
 /* The M1+ Music menu's Albums row: the mode used last (the grid on a first use). A window that will not open leaves
  * the stock Albums list, through the Home dispatcher. 0 once something is requested. */
 int albums_open(void) {
-    int r = al_open(!al_use_grid(), (void *)0, 0);
+    int r = al_open(!al_use_grid(), (void *)0, 0, (const lib_src_t *)0);
     if (r == -1 && !al.win) return pod_home_open(HOME_ALBUM);
     return r;
 }
 
-/* The Artists page's row `index` of `artists` (patch/artists.c; the caller keeps its list): the same page, in the mode used last, on that artist's
- * albums (scope CLASS_ARTISTS, or CLASS_COMPOSERS for a composer), the name as its title. 0 once the page is up, -1 if it could not open (the caller
- * opens Cover Flow on the artist), -2 if the asset is not ours. */
-int albums_open_artist(void *artists, unsigned index, unsigned scope) {
-    void *row = artists && index < deque_size(artists) ? deque_at(artists, index) : (void *)0, *d;
+/* The page on a library source's albums (patch/libsrc.h): `artist` NULL every album, else the source's artist record (the caller keeps it) and that artist's. NULL or &lib_stock is the stock page
+ * (albums_open; an artist then opens as albums_open_artist does). The list is src->list(LS_ALBUMS), re-read when src->gen moves; the covers are src->cover (no cache worker); the Recently Added and Year
+ * rows show the source's own order; an album tap opens album_open_src, the All Songs tile songs_open_src_in (the artist's songs); the pills play the artist's songs (al_play_src); the Cover Flow button does nothing for a source. 0 once the page is up, -1 if
+ * the window could not open (a source has no stock page to fall back on), -2 if the asset is not ours. */
+static int al_open_artist(void *row, unsigned scope, const lib_src_t *src) {
+    void *d;
     int r;
     if (al.win || !row) return -1;
     d = _create_deque("stSongInfo");
     if (!d) return -1;
     deque_init(d);
     _deque_push_back(d, row); /* a copy, as the stock queries push rows */
-    r = al_open(!al_use_grid(), d, scope == CLASS_COMPOSERS ? CLASS_COMPOSERS : CLASS_ARTISTS);
+    r = al_open(!al_use_grid(), d, scope == CLASS_COMPOSERS ? CLASS_COMPOSERS : CLASS_ARTISTS, src);
     if (!al.win) deque_destroy(d); /* else the window's destroy frees it */
     return r;
+}
+
+int albums_open_src(const lib_src_t *src, void *artist) {
+    if (src == &lib_stock) src = (const lib_src_t *)0;
+    if (artist) return al_open_artist(artist, CLASS_ARTISTS, src);
+    return src ? al_open(!al_use_grid(), (void *)0, 0, src) : albums_open();
+}
+
+/* The Artists page's row `index` of `artists` (patch/artists.c; the caller keeps its list): the same page, in the mode used last, on that artist's
+ * albums (scope CLASS_ARTISTS, or CLASS_COMPOSERS for a composer), the name as its title. 0 once the page is up, -1 if it could not open (the caller
+ * opens Cover Flow on the artist), -2 if the asset is not ours. */
+int albums_open_artist(void *artists, unsigned index, unsigned scope) {
+    return al_open_artist(artists && index < deque_size(artists) ? deque_at(artists, index) : (void *)0, scope,
+                          (const lib_src_t *)0);
 }

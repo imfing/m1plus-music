@@ -43,6 +43,8 @@ class QM(SG.SongsMachine):
         super().__init__(*a, **k)
         for n in ('mclGetPlayType', 'start_playqueue', 'mclSetGaplessMode'): self.handlers[pod.FUNCTIONS[n][2]] = n
         self.install_libcstl()
+        self.sbtrack, self.sbcover = {}, {}   # server track REC_ID -> track id (sba_rec_track); REC_ID -> [sba_rec_cover's answer, the file's path] (patch/sbapi.c, tested in sbapi.py)
+        for n in ('sba_rec_track', 'sba_rec_cover'): self.handlers[PSYMS[n]] = n
         self.pics, self.pic_fp, self.dir_log = {}, {}, []   # path -> the picture file's bytes (an episode's show cover: pc_cover_ok seeks through its header), open handle -> [path, position]
 
     def _hook(self, u, address, size, _):
@@ -51,6 +53,12 @@ class QM(SG.SongsMachine):
         a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
         if name == 'opendir': self.dir_log.append(self.read_cstr(a0))   # (every folder read of the machine's life; the base mock answers)
         if name == 'mclGetPlayType': ret = self.ptype
+        elif name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+        elif name == 'sba_rec_cover':
+            rid = self.word(a0 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            r, path = self.sbcover.get(rid, [-1, None]); self.calls.append(('sba_rec_cover', rid)); ret = r
+            if r == 1: self.u.mem_write(a1, path.encode() + b'\0')
         elif name == 'fopen' and self.read_cstr(a0) in self.pics:
             path = self.read_cstr(a0); self.calls.append(('fopen', path, self.read_cstr(a1))); ret = self.alloc(4); self.pic_fp[ret] = [path, 0]
         elif name == 'fseek' and a0 in self.pic_fp: self.pic_fp[a0][1] = a1; ret = 0
@@ -1078,7 +1086,65 @@ def clear_tests(ctx):
            'mclSetGaplessMode (prologue, the byte store, the preload test and close) and the three player words are pinned')
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, rows_tests, loader_tests, episode_tests, collab_tests, cmap_tests, scroll_tests, play_tests, mode_tests, tick_tests, shuffle_tests, clear_tests]   # tools/check.py runs each as its own task
+def server_tests(ctx):
+    """5d. A server track (streamed or downloaded; its REC_ID is in the queue map) shows the source's cover file by that id, in the header and the rows: never the library's album of the same artist
+    and album, never its address. A cover on its way keeps the placeholder and is looked for again on the tick; none stays the placeholder. A server queue is this page's (its play type is a list
+    class, not a stream)."""
+    expect = ctx.expect
+    SC = '/mnt/mmc/.m1plus/subsonic/covers/%08x-168.jpg'
+    STREAM = 'http://nd.example:4533/rest/stream.view?id=t%d&t=tok&s=salt'
+
+    def server_queue(pos, plan):
+        """A queue of 9 (Artist/Album k = row // 3, the library has covers for Album 0 and 1) whose rows in plan are server tracks: row -> (stream or downloaded, sba_rec_cover's answer, the file)."""
+        m = queue_machine(n=9, pos=pos)
+        for i, (kind, ans, path) in plan.items():
+            rid = -(10 + i); r = m.songs[i]
+            m.sbtrack[rid] = f't{i}'; m.setword(r + O['REC_ID'], rid & 0xffffffff)
+            if kind == 'stream': m.setword(r + O['REC_PATH'], m.cstr(STREAM % i))
+            m.sbcover[rid] = [ans, path]
+            if ans == 1: m.present.add(path); m.images['file://' + path] = (168, 168, COVER_PIX[i % 2])
+        m.ptype = O['CLASS_ARTISTS']
+        m.top_main = m.window
+        r, calls = open_queue(m)
+        assert r == 0 and ('window_open', 'm1plus_queue') in calls, f'the server queue did not open ({r})'
+        return m
+    A, B, P = SC % 0x1000, SC % 0x1001, SC % 0x2005
+    m = server_queue(0, {1: ('stream', 1, B), 2: ('stream', 1, A), 3: ('down', 1, B), 4: ('stream', -1, SC % 0x2004), 5: ('stream', 0, P)})
+    load_all(m)
+    paint(m)
+    got = set(covers_of(m))
+    expect(got == {'file://' + A, 'file://' + B, 'file://' + m.cover_paths[0]},
+           f'the server rows decode the source\'s files (streamed or downloaded); the library album cache files of their albums (Album 1 is all server rows) are not read; the local playing track\'s header keeps its album ({sorted(got)})')
+    expect(not any('stream.view' in u or 'http' in u for u in m.loads) and m.sbcover[-15][0] == 0 and 'file://' + P not in got, 'no address is ever opened; the cover on its way is not decoded yet')
+    blits, texts, fills = paint(m)
+    expect(len([b for b in blits if b[2][2] == 52]) >= 3, 'every row in view has a cover blit (the file\'s or the placeholder)')
+    # it lands: the tick looks again and the next loader pass decodes it
+    m.sbcover[-15] = [1, P]; m.present.add(P); m.images['file://' + P] = (168, 168, COVER_PIX[1])
+    scroll_to(m, 0); tick(m); finish_loading(m)
+    scroll_to(m, 4 * ROW); paint(m); tick(m); finish_loading(m)
+    expect('file://' + P in m.loads, f'the cover that was on its way is decoded once the file is there ({sorted(set(covers_of(m)))})')
+    destroy(m)
+    # the header: the playing server track's file, never the album that shares its artist and album
+    m = server_queue(1, {1: ('stream', 1, B), 2: ('stream', 1, A)})
+    paint(m); finish_loading(m)
+    expect(('file://' + B) in m.loads and ('file://' + m.cover_paths[0]) not in m.loads, f'the header shows the playing server track\'s file, not Album 0\'s cache file ({sorted(set(covers_of(m)))})')
+    destroy(m)
+    none = {i: ('stream', -1, SC % (0x3000 + i)) for i in range(6, 9)}
+    m = server_queue(5, {5: ('stream', 0, P), **none})
+    paint(m); finish_loading(m)
+    expect(('file://' + P) not in m.loads and m.__dict__.get('queries') in (None, []) and len([b for b in paint(m)[0] if tuple(b[2][2:]) == (64, 64)]) == 1, 'a header cover on its way: the placeholder, no album lookup')
+    m.sbcover[-15] = [1, P]; m.present.add(P); m.images['file://' + P] = (168, 168, COVER_PIX[1])
+    tick(m); finish_loading(m); paint(m)
+    expect(('file://' + P) in m.loads, 'and the tick looks again: the file is decoded into the header when it lands')
+    destroy(m)
+    # a server track the source has no picture for: the placeholder, not the library album of that name
+    m = server_queue(4, {i: ('stream', -1, SC % (0x3000 + i)) for i in range(4, 9)})
+    paint(m); finish_loading(m)
+    expect(not [u for u in m.loads if u.startswith('file://')] and not m.__dict__.get('queries'), f'no source picture: the placeholder, and no cover map query (the library\'s Album 1 cache file is not taken: {m.loads})')
+    destroy(m)
+
+
+SECTIONS = [asset_tests, open_tests, header_tests, rows_tests, loader_tests, episode_tests, collab_tests, server_tests, cmap_tests, scroll_tests, play_tests, mode_tests, tick_tests, shuffle_tests, clear_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

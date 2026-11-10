@@ -6,6 +6,7 @@
  * browsing record, its select mode); these functions take what they need and touch no widget.
  */
 #pragma once
+#include "libsrc.h"
 
 enum {
     SO_KEEP,
@@ -32,11 +33,14 @@ int so_delete(int cls, void *list, unsigned count, const unsigned char *sel, uns
  * -1: the selection could not be made. */
 int so_add(int cls, unsigned count, const unsigned char *sel, unsigned nsel, int valid, char *title_save, int *picker);
 
-/* Song `at` (-1: a random one) of the list as the queue, in Now Playing (open). how: SO_*. Nothing changes when the song is not on the card (a message). */
-void so_play(int cls, void *list, int at, int how, so_open_fn open);
+/* Song `at` (-1: a random one) of the list as the queue, in Now Playing (open). how: SO_*. Nothing changes when the song is not on the card (a message). Returns 0 when the queue was started, -1 when nothing was (the message is shown). */
+int so_play(int cls, void *list, int at, int how, so_open_fn open);
 /* The same for a page that shows the list reversed (list is the reversed stock list, `at` a position in it): the queue loadSongList builds is reversed too, so the song at `at` is the one shown there and the queue plays in the order shown. */
-void so_play_dir(int cls, void *list, int at, int how, so_open_fn open, int rev);
+int so_play_dir(int cls, void *list, int at, int how, so_open_fn open, int rev);
+/* so_play through a library source (patch/libsrc.h): src NULL or &lib_stock is so_play(cls, ...) unchanged; another source plays its own records (cls is ignored by it). 0 started, -1 nothing
+ * started, -2 a DSD track that is not on the card (the page confirms a download). */
+int so_play_src(const lib_src_t *src, int cls, void *list, int at, int how, so_open_fn open);
 /* Puts the freshly built queue in the order a page shows (the Folders page's sorts) and returns where the record `pick` (the row played, a record of the page's list) now is, -1 when it cannot say. */
 typedef int (*so_reorder_fn)(void *queue, void *pick);
 /* so_play_dir with a reorder instead of a reversal (NULL: none). */
-void so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev, so_reorder_fn reorder);
+int so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev, so_reorder_fn reorder);

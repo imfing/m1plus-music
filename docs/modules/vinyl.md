@@ -43,7 +43,7 @@ Installed sizes (Graphite's names; Snow's `_white` are 62 KB base, 9 KB lid, 3 K
   the lid by its alpha; the arm's shadow (black by its alpha) and the arm (premultiplied over), both sampled bilinear through the arm's turn about the pivot
   (276, 70); the cap. The keys are copied cell by cell (`vn_key`). `test/pod/vinyl.py` has the same arithmetic in python and compares whole frames pixel for
   pixel.
-- **The label** is the album's cached cover (`/mnt/mmc/.m1plus/covers/<key>-168.jpg`, the album page's and the mini bar's, decoded with `cc_decode` box
+- **The label** is, for a server track (Subsonic; `ls_rec_cover`), the source's own cover file (`sba_rec_cover` on the record, as Now Playing and the mini bar: a placeholder label while it is on its way, `vn_settle` asks again and does not count the settle ticks off; never the library album of the same artist and album), else the album's cached cover (`/mnt/mmc/.m1plus/covers/<key>-168.jpg`, the album page's and the mini bar's, decoded with `cc_decode` box
   reduced to 152 px), else the playing track's `/tmp` cover once demo has written it (`np_cover_file`, `np_file_key`; looked at again every 500 ms,
   8 times, after a track change, as the mini bar does), else `vinyl_label`. The grooves and the sheen are static (the light does not turn with the record), so
   only the label's 155 px square is composed while it turns.

@@ -278,6 +278,8 @@ def main():
     s = PI.Side(work, True); s.mark = lambda *a: None   # no C/K markers here
     PI.lineout_bars(s).save(os.path.join(os.path.dirname(os.path.abspath(out)), 'lineout.png'))   # the Line Out pill: bar off / on, then the pull-down's bar copies on
     run('preview_recent_albums.py', work, os.path.dirname(os.path.abspath(out)))   # recent-songs-view.png, recent-album-view.png: Recently Added's two views (docs/modules/recent-albums.md)
+    run('preview_ndserver.py', work, os.path.dirname(os.path.abspath(out)))   # nd-server.png, nd-signin-*.png: the Navidrome Server page and its Sign In page (docs/modules/subsonic.md)
+    run('preview_ndroot.py', work, os.path.dirname(os.path.abspath(out)))   # nd-root-*.png: the Subsonic root page (status glyphs, footer, collapse, the Search + "..." capsule and its card)
     run('preview_accent.py', work, os.path.dirname(os.path.abspath(out)))   # accent-black.png, accent-graphite.png: the planned Accent + Background picker (a mock-up, not in the firmware)
     with tempfile.TemporaryDirectory() as t:
         p = lambda n: os.path.join(t, n)

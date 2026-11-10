@@ -837,9 +837,6 @@
 #define SG_RAIL_DOT 4
 #define SG_RAIL_DOT_RGB 0xff8a8a8au
 #define SG_RAIL_DISC 16
-#define SB_LIST_ACTION_X 238
-#define SB_LIST_ACTION_W 42
-#define SB_LIST_TEXT_W 172
 #define SG_ACCENT 0xffeceeeeu
 #define SG_BUBBLE 110
 #define SG_BAR_H 64
@@ -1216,6 +1213,10 @@
 #define PA_DOTS_PX 20
 #define PA_BADGE_X 24
 #define PA_BADGE_PX 12
+#define PA_DSD_X 40 /* the source rows' DSD tag (sbs_marks): 24 x 14, grey */
+#define PA_DSD_Y 48
+#define PA_DSD_W 24
+#define PA_DSD_H 14
 #define PA_PILL_Y 68
 #define PA_PILLF_X 0
 #define PA_PILLO_X 32
@@ -1227,6 +1228,13 @@
 #define PA_RING_A 110
 #define PA_CHEV 6
 #define PA_TILE_PX 44
+#define PA_DL_X 76 /* the source rows' download ring (patch/libsrc.c): 12 steps of PA_DL_PX, step k at column k % PA_DL_COLS, row k / PA_DL_COLS from here */
+#define PA_DL_Y 112
+#define PA_DL_PX 14
+#define PA_DL_N 12
+#define PA_DL_COLS 6
+#define PA_DL_ARROW 12 /* the marks, on the same grid after the steps: the arrow-down (a queued track) and the stop square (a running download, over its step) */
+#define PA_DL_STOP 13
 #define PA_PLAYB_X 48
 #define PA_PLAYB_Y 112
 #define PA_PLAYB_PX 28

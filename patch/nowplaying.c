@@ -35,6 +35,10 @@
 #include "i18n.h"
 #include "common.h"
 #include "lyrics.h"
+#include "sbsrc.h" /* sba_now_cover, sba_rec_track, sba_rec_size, sba_url, sba_gen; lib_nd and ls_favorite for the star */
+#define NP_ONCE_MS 30 /* the one-shot decode after a track change seen by the cover's paint */
+#define NP_SB_WAIT \
+    10 /* ticks (5 s) a server track with no cover file yet keeps the previous track's cover on the art before stock's picture shows */
 
 extern int
 queue_open(void); /* patch/queuepage.c: our Queue page; 0 once it is open, else the stock drawer should open */
@@ -50,6 +54,8 @@ static int np_on_queue(void *ctx, void *e) {
 
 static struct {
     void *fav; /* btn_fav (stock's star button): wears the bookmark styles while an episode plays */
+    int favrec, favv; /* a server track's star: the REC_ID favv (1 starred) was read for, 0 none yet */
+    unsigned favgen; /* sba_gen() at that read: the cache changed since when it differs */
     void *win, *rem, *tot; /* the window, np_remaining (ours), label_playlen (stock) */
     void *el, *pt; /* np_elapsed (ours), label_playtime (stock's elapsed time); both 0 if the page lacks either */
     unsigned timer; /* the repeating np_tick timer */
@@ -70,6 +76,14 @@ static struct {
     unsigned
         done[NP_INFO_N]; /* the hash of the text each label held after our last look: stock's text, or what we wrote */
     unsigned char corner[NP_ART_R * NP_ART_R]; /* the top left corner's coverage outside the arc, 0..255 */
+    void *art,
+        *sbmp; /* img_playcover, and the NP_ART x NP_ART RGBA bitmap of a server track's cover (made on first use, freed with the page) */
+    unsigned sbkey; /* np_hash of the cover file sbmp holds */
+    int sbrec, sbshow; /* the REC_ID of the track sbmp is for; 1: sbmp is drawn over stock's picture */
+    int sbseen; /* the REC_ID np_server_art last looked at */
+    int sbwait; /* ticks the playing server track has had no cover file while sbmp (the previous track's) is kept on show */
+    int pfrec; /* the REC_ID of the queue record whose cover was last asked for ahead */
+    unsigned once; /* the one-shot np_art_once timer, 0 none */
 } np __attribute__((section(".scratch")));
 
 /* A dark, a little desaturated tone of the cover's average colour (r, g, b bytes), as a color_t word
@@ -110,11 +124,23 @@ __attribute__((noinline)) unsigned np_shade(unsigned color, unsigned y) {
  * as the PNG mask of the earlier builds (test/pod/nowplaying.py). */
 __attribute__((noinline)) void np_corner_init(void) { pod_corner_fill(np.corner, NP_ART_R); }
 
+static int np_art_once(const void *timer);
+
 /* The cover widget's EVT_AFTER_PAINT: the four corners, in widget coordinates (the stock paint only translates). */
 static int np_on_art_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
     (void)ctx;
     if (!canvas || !np.win) return RET_OK;
+    if (np.art) { /* a server track's cover (stock draws nothing for a stream; its placeholder must not show between two tracks): sbmp stays up while a server track is playing, until
+                   * the new cover is decoded (np_art_once, a moment after the change is seen here, or the tick); a local track draws stock's picture */
+        void *t = cc_playing();
+        int rec = t ? *(int *)((char *)t + REC_ID) : 0;
+        if (rec <= -2) {
+            int r[4] = {0, 0, NP_ART, NP_ART};
+            if (np.sbshow && np.sbmp) canvas_draw_image(canvas, np.sbmp, r, r);
+            if (rec != np.sbseen && !np.once) np.once = timer_add(np_art_once, (void *)0, NP_ONCE_MS);
+        }
+    }
     pod_corners(canvas, np.corner, NP_ART_R, NP_ART, np.color, NP_ART_Y, NP_ALPHA_TOP, NP_ALPHA_BOTTOM, NP_WIN_H);
     return RET_OK;
 }
@@ -187,7 +213,9 @@ void np_relight(void) {
 /* The cover file of the source type, or NULL for a source with no JPEG file; busy is set while demo is still making it. */
 const char *np_cover_file(int *busy) { /* also the mini player bar's (patch/minibar.c) */
     int src = *(volatile int *)COVER_SRC;
+    const char *server_cover = sba_now_cover(cc_playing());
     *busy = src == COVER_SRC_BUSY;
+    if (server_cover) return server_cover;
     if (src == COVER_SRC_EMBEDDED) return "/tmp/coverpic.jpg";
     if (src == COVER_SRC_FOLDER || src == COVER_SRC_CACHE) return "/tmp/externpic.jpg";
     return (const char *)0;
@@ -212,6 +240,64 @@ __attribute__((noinline)) unsigned np_cover_sig(const char *path, int src) {
     h = (h ^ (unsigned)size) * 16777619u;
     h = (h ^ (unsigned)src) * 16777619u;
     return h | !h;
+}
+
+/* The cover of the queue record after the playing one, asked for once while a server track plays (sba_now_cover asks when the file is not cached and the ask has not failed), so
+ * it is usually there when the track starts. */
+static void np_prefetch(int rec) {
+    void *q = *(void **)PLAY_QUEUE, *next;
+    int pos = mclGetPlayPos(), nrec;
+    if (!q || pos < 0 || (unsigned)pos + 1 >= deque_size(q)) return;
+    next = deque_at(q, (unsigned)pos + 1);
+    nrec = next ? *(int *)((char *)next + REC_ID) : 0;
+    if (nrec <= -2 && nrec != rec && nrec != np.pfrec) np.pfrec = nrec, (void)sba_now_cover(next);
+}
+
+/* A playing server track's cover file is the big art: stock draws /tmp/coverpic.jpg, which it never writes for a stream. The picture is decoded once into a bitmap of ours
+ * and drawn over stock's by np_on_art_paint; a track with no cached cover (sba_now_cover asks for it) shows stock's, and so does every local track. */
+static void np_server_art(void) {
+    void *t = cc_playing();
+    int rec = t ? *(int *)((char *)t + REC_ID) : 0;
+    const char *path;
+    unsigned key, *px;
+    char url[160]; /* "file://" and a cover file's path */
+    if (!np.art) return;
+    np.sbseen = rec;
+    if (rec > -2) { /* a local track (or none): stock's picture */
+        if (np.sbshow) np.sbshow = 0, widget_invalidate_force(np.art, (void *)0);
+        np.sbwait = 0;
+        return;
+    }
+    np_prefetch(rec);
+    path = sba_now_cover(t);
+    if (!path) { /* not cached yet (sba_now_cover has asked), or the track has none: the previous cover stays for NP_SB_WAIT ticks, then stock's */
+        if (np.sbshow && ++np.sbwait > NP_SB_WAIT)
+            np.sbshow = 0, np.sbwait = 0, widget_invalidate_force(np.art, (void *)0);
+        return;
+    }
+    np.sbwait = 0;
+    key = np_hash(path);
+    if (np.sbshow &&
+        key == np.sbkey) { /* the picture is already up (the next track of the album): only the record changes */
+        np.sbrec = rec;
+        return;
+    }
+    if (!np.sbmp) np.sbmp = bitmap_create_ex(NP_ART, NP_ART, NP_ART * 4, BITMAP_RGBA8888);
+    px = np.sbmp ? (unsigned *)bitmap_lock_buffer_for_write(np.sbmp) : (unsigned *)0;
+    if (!px) return;
+    snprintf(url, sizeof url, "file://%s", path);
+    np.sbshow = cc_decode(np.win, url, 1, NP_ART, 1, px);
+    bitmap_unlock_buffer(np.sbmp);
+    np.sbkey = key, np.sbrec = rec;
+    widget_invalidate_force(np.art, (void *)0);
+}
+
+/* The one-shot timer of np_on_art_paint: decodes the new track's cover at once, outside the paint. Returning RET_OK ends the timer. */
+static int np_art_once(const void *timer) {
+    (void)timer;
+    np.once = 0;
+    if (np.win) np_server_art();
+    return RET_OK;
 }
 
 static void np_cover(void) {
@@ -387,6 +473,57 @@ __attribute__((noinline)) int np_info_text(int i, const char *s, char *out, unsi
     return 1;
 }
 
+/* The size and location lines of a playing server stream: stock's come from the queue record, whose path is the stream address (the token and salt are in it) and whose file does not exist. The
+ * label is stock's (its text up to the colon), the size is the server's (sba_rec_size, "N.NN MB"; "Unknown" when the server gave none), the location is the server's address without
+ * credentials, path or query. 0 for any other line or track (a local file, and a downloaded track, which plays from its own path, are stock's). */
+__attribute__((noinline)) int np_stream_text(int i, const char *s, char *out, unsigned size) {
+    void *t = cc_playing();
+    const char *path, *colon = s, *u, *e, *at;
+    int rec;
+    np_out o;
+    if ((i != 4 && i != 5) || !t) return 0;
+    rec = *(int *)((char *)t + REC_ID);
+    path = cc_str(t, REC_PATH);
+    if (rec > -2 || !np_starts(path, "http") || !sba_rec_track(rec)[0]) return 0;
+    o.p = out, o.end = out + size - 1;
+    while (*colon && *colon != ':') ++colon;
+    if (*colon && colon != s) {
+        for (u = s; u < colon; ++u) np_put(&o, *u);
+        np_puts(&o, ": ");
+    }
+    if (i == 4) {
+        unsigned bytes = sba_rec_size(rec), mb = bytes >> 20,
+                 hundredths = (((bytes & 0xfffffu) * 100u) + 524288u) >> 20;
+        char num[24];
+        if (hundredths >= 100) ++mb, hundredths -= 100;
+        if (bytes) {
+            snprintf(num, sizeof num, "%u.%02d MB", mb, (int)hundredths);
+            np_puts(&o, num);
+        } else {
+            np_puts(&o, TR("Unknown"));
+        }
+    } else {
+        const char *auth, *host;
+        u = sba_url();
+        auth = u;
+        while (*auth && !(auth[0] == ':' && auth[1] == '/' && auth[2] == '/')) ++auth;
+        auth = *auth ? auth + 3 : u;
+        for (e = auth; *e && *e != '/'; ++e) {
+        }
+        for (host = at = auth; at < e; ++at)
+            if (*at == '@') host = at + 1; /* userinfo is not shown */
+        if (host == e) {
+            np_puts(&o, TR("Unknown"));
+        } else {
+            for (at = u; at < auth; ++at) np_put(&o, *at);
+            for (at = host; at < e; ++at) np_put(&o, *at);
+        }
+    }
+    if (o.p >= o.end) return 0;
+    *o.p = 0;
+    return 1;
+}
+
 /* The quality line. Stock rewrites label_info with the compact text on every page tick, so a rewrite there would
  * alternate with stock's and the centred text would jump between the two widths. np_quality (a label of the asset, the
  * rectangle and look of label_info, hidden and insensitive) carries the formatted line: written only when its text
@@ -435,7 +572,7 @@ static void np_info(void) {
         h = np_hash(s);
         if (h == np.done[i]) continue; /* the text we last left (or saw) */
         np.done[i] = h; /* whatever happens below, this text is not looked at again */
-        if (!np_info_text((int)i, s, out, sizeof out)) continue;
+        if (!np_stream_text((int)i, s, out, sizeof out) && !np_info_text((int)i, s, out, sizeof out)) continue;
         for (n = 0; out[n] == s[n] && s[n]; ++n) {
         }
         if (out[n] == s[n]) continue; /* already as wanted */
@@ -446,6 +583,21 @@ static void np_info(void) {
 /* The favourite button of an episode is a bookmark (docs/modules/podcasts.md "Saved"): stock's star toggles myfav and sets btn_imgfav_style / btn_imgunfav_style (its click handler at once, show_player_face on a
  * track change); while the playing path is an episode the button's style is mapped to btn_imgsave_style / btn_imgunsave_style (the same icons, a bookmark, in the page theme), and back for music. Stock sets its style
  * only when the name differs from the one it wants, so the swap lasts until stock's next fill; our click handler (run after stock's) and the tick put it back. */
+static int np_is_server(void *rec) { return rec && sba_rec_track(*(int *)((char *)rec + REC_ID))[0] != 0; }
+
+/* The playing server track's favourite (1 starred), read from the cache through the source (nd_row on the queue record: the album's cache file, or the Favorites list) when the track or sba_gen
+ * differs from the last read, or fresh is set; else the last answer. A star moves the cache first and sba_gen when the server answers, so a refusal puts the star back by itself. */
+static int np_server_fav(void *rec, int fresh) {
+    int id = *(int *)((char *)rec + REC_ID);
+    unsigned gen = sba_gen();
+    if (fresh || np.favrec != id || np.favgen != gen) {
+        ls_row_t x;
+        lib_nd.row(&lib_nd, rec, &x);
+        np.favrec = id, np.favgen = gen, np.favv = x.fav;
+    }
+    return np.favv;
+}
+
 static void np_fav_sync(void) {
     const char *cur, *want = (const char *)0;
     void *rec;
@@ -454,6 +606,15 @@ static void np_fav_sync(void) {
     cur = *(const char *const *)((char *)np.fav + WIDGET_STYLE);
     if (!cur) return;
     rec = cc_playing();
+    if (np_is_server(
+            rec)) { /* a server track (streamed or downloaded): the star shows the server's favourite, not stock's myfav (which has no row for it) */
+        want = np_server_fav(rec, 0) ? "btn_imgfav_style" : "btn_imgunfav_style";
+        if (strcmp(cur, want)) {
+            widget_use_style(np.fav, want);
+            widget_set_prop_str(np.fav, "style:pressed:icon", "np_unfav_down");
+        }
+        return;
+    }
     ep = rec && pc_is_path(cc_str(rec, REC_PATH));
     if (ep) {
         if (!strcmp(cur, "btn_imgfav_style"))
@@ -471,9 +632,18 @@ static void np_fav_sync(void) {
     }
 }
 
+/* The star. A server track's goes to the server (ls_favorite: the row sheet's Favorite, with its toast) and RET_STOP keeps stock's handler away: it would write the stream record, whose address
+ * carries the login token, into the local favourites table. Bound after the stock init, so it runs first. Every other track is stock's. */
 static int np_on_fav(void *ctx, void *e) {
+    void *rec = cc_playing();
     (void)ctx;
     (void)e;
+    if (np_is_server(rec)) {
+        ls_favorite(&lib_nd, rec, np_server_fav(rec, 1));
+        np_server_fav(rec, 1);
+        np_fav_sync();
+        return RET_STOP;
+    }
     np_fav_sync();
     return RET_OK;
 }
@@ -482,6 +652,7 @@ static void np_work(void) {
     recent_note(cc_playing()); /* No stock list query: the page underneath owns pdeq_showlist;
                                * the menu's foreground handler resolves the cover key. */
     if (!pod_screen_lit()) return;
+    np_server_art();
     np_cover();
     np_time();
     np_info();
@@ -507,6 +678,7 @@ static void np_stop(void) {
     np_bar_black();
     ly_stop();
     if (np.timer) timer_remove(np.timer);
+    if (np.sbmp) bitmap_destroy(np.sbmp);
     memset(&np, 0, sizeof np);
 }
 
@@ -565,6 +737,7 @@ static void np_start(void *win) {
     }
     art = widget_lookup(win, "img_playcover", 1);
     if (art) {
+        np.art = art;
         np_corner_init();
         widget_on(art, EVT_AFTER_PAINT, np_on_art_paint, (void *)0);
     }

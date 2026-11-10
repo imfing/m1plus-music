@@ -4,6 +4,7 @@
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  */
 #pragma once
+#include "libsrc.h"
 
 /* Open the Search page (the Apple Music search screen: a field with our keyboard embedded at the bottom of the same page, chips, live results). 0 once the page is up; -1 when it could not open
  * (a Search page exists already, no memory, or the asset is not ours): the caller opens the stock search page. */
@@ -17,6 +18,13 @@ int search_open(void);
 #define SEARCH_SONGS 3
 #define SEARCH_PLAYLISTS 4
 int search_open_in(int scope);
+
+/* The page over a library source (patch/libsrc.h): src NULL or &lib_stock is search_open. Another source (Navidrome): typing, debounced as usual, asks the server (sba_search) and the page shows
+ * the cached results (artists, albums, songs; no playlists) once they arrive; offline it shows "Connect to Wi-Fi first". A tap opens albums_open_src / album_open_src, a song plays through
+ * so_play_src. Recent searches are kept for a source in its own file in the server's cache (SBA_DIR/search-history). 0 once the page is up; -1 as search_open. */
+int search_open_src(const lib_src_t *src);
+/* The same scoped to one type (SEARCH_ARTISTS / SEARCH_ALBUMS / SEARCH_SONGS), as search_open_in does for the library. */
+int search_open_src_in(const lib_src_t *src, int scope);
 
 /* Window coordinates (the window is 320 x 450 under the status bar). */
 #define SE_FIELD_X 12 /* the rounded search field: a capsule */
@@ -76,3 +84,4 @@ int search_open_in(int scope);
 #define SE_CAP_PLAYLISTS 100
 #define SE_TICK_MS 40 /* the page's one timer: the debounce counts these, the covers load one a tick */
 #define SE_DEBOUNCE 5 /* ticks without a key before the results refresh: 200 ms */
+#define SE_DEBOUNCE_SRC 12 /* the same for a source, which asks a server: 480 ms */

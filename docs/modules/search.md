@@ -164,7 +164,20 @@ Tried on the device with zEQLAAAAB and working: the embedded keyboard on the pag
 3. The CJK text cut in recent rows (the test's measure is the harness's 8 / 16 px per character).
 4. The scoped mode (`search_open_in`, below): emulation only, and nothing opens it yet.
 
+## Over a library source
+
+`search_open_src(src)` (NULL or `&lib_stock` = `search_open`). For Navidrome the page keeps its field, chips, rows and covers, but does not match in memory: the debounced text calls
+`sba_search`, the rows are the cached `LS_SEARCH_ARTISTS / ALBUMS / SONGS` lists (sbsrc.c, in the server's order, all one quality), and `se_tick` loads them when `sba_state(SBA_K_SEARCH)`
+leaves LOAD (rows are empty meanwhile). Offline (`SBA_NOWIFI`) the status line reads "Connect to Wi-Fi first", otherwise "No Results". Taps: artist `albums_open_src`, album `album_open_src`,
+song `so_play_src` with the song results. No playlists chip results, and no recent searches for a source (not read, not written).
+
 ## Deferred
 
 Highlighting the matched text, a "show all" row past the caps, a Clear button for the recent searches, the Folders and stock Artists / Albums
 pages' own search buttons (stock pages; the Albums grid and Artists pages have none), album and song covers beyond the cache (no extraction here), playlist mosaics.
+
+## Over a library source
+
+`search_open_src(src)` / `search_open_src_in(src, scope)` (Navidrome, `subsonic.md` "Search") run this page over a source: the server matches (`sba_search`, debounced 480 ms), the rows are the cached answer in the
+server's order, taps open `albums_open_src` / `album_open_src` / `so_play_src` (a song that is an undownloaded DSD track asks the `ls_dsd_confirm`, as the other pages do). Recent searches use `<Navidrome cache>/search-history` instead of the settings file. A spinner (`se_spin`, turned by the shared `ls_spin` timer) shows while a request is
+out; an empty answer says `No Results`, a failure the source's line.

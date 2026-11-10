@@ -23,6 +23,7 @@
 #include "home.h"
 #include "common.h"
 #include "covercache.h"
+#include "libsrc.h"
 
 extern unsigned np_file_key(const char *path); /* patch/nowplaying.c: a hash of the picture file, 0 if unreadable */
 extern const char *
@@ -556,23 +557,37 @@ static unsigned vn_track_key(void *t) {
     return h | !h;
 }
 
-/* The label: the album's cached cover (/mnt/mmc/.m1plus/covers), else the playing track's /tmp cover once demo has made it, reduced to VN_LAB_PX; else vinyl_label.
+/* A server track's cover (ls_rec_cover: the file Now Playing shows, asked for when missing); *server 1 when the track is one, -1 when it is not or there is no track. */
+static int vn_server_cover(void *t, char *url, unsigned cap, int *server) {
+    *server = 0;
+    return t ? ls_rec_cover(t, url, cap, server) : -1;
+}
+
+/* The label: a server track's cover (the source's file, never the library's album of the same name; a placeholder until it lands, vn_settle looks again), else the album's cached cover
+ * (/mnt/mmc/.m1plus/covers), else the playing track's /tmp cover once demo has made it, reduced to VN_LAB_PX; else vinyl_label.
  * first: a new track (the /tmp file is looked at again VN_SETTLE times: demo writes it a little after the change). */
 static void vn_cover(void *t, int first) {
-    char url[80], tmp[40];
+    char url[80], tmp[40], srv[120];
     const char *file = (const char *)0, *path;
     unsigned album = t && *cc_str(t, REC_ALBUM) ? cc_album_key(t) : 0, *px;
-    int busy = 0, ok = 0;
+    int busy = 0, ok = 0, server, sc = vn_server_cover(t, srv, sizeof srv, &server);
     if (first) vn.settle = VN_SETTLE;
     vn.fkey = 0;
-    file = album ? cc_url(url, album) : (const char *)0;
-    if (file) {
-        if (first) vn.settle = 0; /* the cache file is the album's: nothing to wait for */
-    } else if (t && (path = np_cover_file(&busy)) != (const char *)0 && !busy) {
-        vn.fkey = np_file_key(path);
-        if (vn.fkey) {
-            snprintf(tmp, sizeof tmp, "file://%s", path);
-            file = tmp;
+    if (sc == 1 && (vn.fkey = np_file_key(srv + 7)) != 0) {
+        file = srv;
+        if (first) vn.settle = 0; /* the server's file is the track's own, and does not change */
+    } else if (sc == 0) {
+        vn.settle = VN_SETTLE; /* on its way: vinyl_label, and vn_settle looks again */
+    } else {
+        file = !server && album ? cc_url(url, album) : (const char *)0;
+        if (file) {
+            if (first) vn.settle = 0; /* the cache file is the album's: nothing to wait for */
+        } else if (t && (path = np_cover_file(&busy)) != (const char *)0 && !busy) {
+            vn.fkey = np_file_key(path);
+            if (vn.fkey) {
+                snprintf(tmp, sizeof tmp, "file://%s", path);
+                file = tmp;
+            }
         }
     }
     px = file ? (unsigned *)bitmap_lock_buffer_for_write(vn.cover) : (unsigned *)0;
@@ -586,10 +601,21 @@ static void vn_cover(void *t, int first) {
 }
 
 static int vn_settle(void *t) { /* 1 when the label changed */
-    int busy = 0;
-    const char *path = np_cover_file(&busy);
+    int busy = 0, server, sc;
+    char srv[120];
+    const char *path;
     unsigned k;
     vn.cover_t = time_now_ms() + VN_COVER_MS;
+    sc = vn_server_cover(t, srv, sizeof srv, &server);
+    if (sc == 0) return 0; /* a server cover on its way: nothing is counted off while it is asked for */
+    if (sc == 1) { /* it landed: shown once */
+        vn.settle = 0;
+        k = np_file_key(srv + 7);
+        if (!k || k == vn.fkey) return 0;
+        vn_cover(t, 0);
+        return 1;
+    }
+    path = np_cover_file(&busy);
     if (busy) return 0; /* being replaced: not counted */
     vn.settle--;
     k = path ? np_file_key(path) : 0;

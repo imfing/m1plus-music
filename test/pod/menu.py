@@ -86,13 +86,13 @@ def entry_tests(ctx):
     #    repeat. Each row opens its stock destination through the dispatcher with its Home id, as Songs does.
     P = pod_pages
     labels = [r.label for r in page.rows]
-    expect(labels[-7:] == ['Settings', 'Pod', 'Podcasts', 'Search', 'Radio', 'Navidrome', 'Extras'] and labels.index('Artists') < labels.index('Extras'),
-           'the menu ends with Settings, Pod, Podcasts, Search, Radio, Navidrome, Extras; the library rows come first')
+    expect(labels[-7:] == ['Settings', 'Pod', 'Podcasts', 'Search', 'Radio', 'Subsonic', 'Extras'] and labels.index('Artists') < labels.index('Extras'),
+           'the menu ends with Settings, Pod, Podcasts, Search, Radio, Subsonic, Extras; the library rows come first')
     ex_i = labels.index('Extras')
     ex = P.EXTRAS_PAGE
     n_items = 9    # the menu items proper; the nine stock Home tiles follow them among the items
     expect(len(P.ITEMS) == 24 and len(page.rows) == 25 and ex_i == 24 and P.ITEMS[P.SETTINGS_ID].label == 'Settings' and not any(r.label == 'Screenshot' for r in P.ITEMS),
-           'twenty-four items (nine menu items, nine stock tiles, Settings, Pod, Podcasts, Search, Radio, Navidrome; no Screenshot), then Extras')
+           'twenty-four items (nine menu items, nine stock tiles, Settings, Pod, Podcasts, Search, Radio, Subsonic; no Screenshot), then Extras')
     expect(page.rows[ex_i].action == P.ACT_PAGE and P.PAGES[page.rows[ex_i].arg] is ex, 'the Extras row opens the Extras page')
     want = [('Favorites', 10), ('Recently Added', 13), ('Recently Played', 12), ('Most Played', 11), ('Composers', 8),
             ('Hi-Res', 9), ('Update Library', 2), ('Tidal', 1), ('CD Ripper', 15)]
@@ -140,7 +140,7 @@ def entry_tests(ctx):
     expect('window_open' not in m.names(), 'kill switch: neither the menu nor Extras opens')
     path = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_extras.bin')
     asset = asset_tree(path)
-    ex_rows = [c for c in node(asset, 'pod_scrollview').children if c.name.startswith('pod_row')]   # (and the four section headers, pod_hdr0..3)
+    ex_rows = [c for c in node(asset, 'pod_scrollview').children if c.name.startswith('pod_row')]   # (and the five section headers, pod_hdr0..4)
     icons = [r for r in awtk_ui.parse(open(path, 'rb').read()).walk() if r.name == 'pod_icon']
     expect(len(ex_rows) == 24 and len(icons) == 24, 'twenty-four Extras rows, each with its icon disc')
     header_asset_tests(ctx, awtk_ui.parse(open(path, 'rb').read()), 'Extras')
@@ -219,15 +219,16 @@ def arranged(m, rows):
 
 
 MENU_ROWS = 25   # twenty-four items, Extras
-# The Extras page's fixed order, written out (pod_pages.EXTRAS_GROUPS, English labels): four titled groups, not alphabetical
+# The Extras page's fixed order, written out (pod_pages.EXTRAS_GROUPS, English labels): five titled groups, not alphabetical
 EXTRAS_PLAY = ['Now Playing', 'Shuffle', 'Pod']
-EXTRAS_LIB = ['Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search', 'Navidrome']
+EXTRAS_LIB = ['Albums', 'Artists', 'Songs', 'Playlists', 'Cover Flow', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search']
 EXTRAS_COLL = ['Favorites', 'Recently Played', 'Recently Added', 'Most Played', 'Hi-Res']
-EXTRAS_TOOLS = ['Update Library', 'CD Ripper', 'Tidal']   # Settings is in no group: the Extras page's navbar button opens it
-EXTRAS_TITLES = ['Play', 'Library', 'Collections', 'Tools']
+EXTRAS_STREAM = ['Subsonic', 'Tidal']
+EXTRAS_TOOLS = ['Update Library', 'CD Ripper']   # Settings is in no group: the Extras page's navbar button opens it
+EXTRAS_TITLES = ['Play', 'Library', 'Collections', 'Streaming', 'Tools']
 # what the Extras page lists for the default menu (Cover Flow, Albums, Artists, Songs, Playlists): everything else but Settings (never listed)
-DEF_EXTRAS = ['Now Playing', 'Shuffle', 'Pod', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search', 'Navidrome', 'Favorites', 'Recently Played', 'Recently Added', 'Most Played', 'Hi-Res',
-              'Update Library', 'CD Ripper', 'Tidal']
+DEF_EXTRAS = ['Now Playing', 'Shuffle', 'Pod', 'Genres', 'Composers', 'Folders', 'Podcasts', 'Radio', 'Search', 'Favorites', 'Recently Played', 'Recently Added', 'Most Played', 'Hi-Res',
+              'Subsonic', 'Tidal', 'Update Library', 'CD Ripper']
 
 
 def open_menu(data=None, rows=MENU_ROWS, present=(), count=False):
@@ -269,7 +270,7 @@ def arrange_tests(ctx):
     NI = len(P.ITEMS)
     CU = P.SETTINGS_ID
     items18 = items[:18]   # the items but Settings
-    expect(items[:9] == ['Now Playing', 'Cover Flow', 'Albums', 'Artists', 'Songs', 'Playlists', 'Shuffle', 'Genres', 'Folders'] and items[CU] == 'Settings' and items[NI - 5] == 'Pod' and items[NI - 4] == 'Podcasts' and items[NI - 3] == 'Search' and items[NI - 2] == 'Radio' and items[NI - 1] == 'Navidrome' and CU == NI - 6
+    expect(items[:9] == ['Now Playing', 'Cover Flow', 'Albums', 'Artists', 'Songs', 'Playlists', 'Shuffle', 'Genres', 'Folders'] and items[CU] == 'Settings' and items[NI - 5] == 'Pod' and items[NI - 4] == 'Podcasts' and items[NI - 3] == 'Search' and items[NI - 2] == 'Radio' and items[NI - 1] == 'Subsonic' and CU == NI - 6
            and P.DEFAULT_MENU == [1, 2, 3, 4, 5] and P.parse_menu(None) == P.DEFAULT_MENU and P.parse_menu(b'12345\n') == P.DEFAULT_MENU,
            'the asset order is the item order; the default menu is items 1..5 (Cover Flow ... Playlists), Now Playing, Shuffle and Settings hidden')
     m = open_menu()
@@ -291,7 +292,7 @@ def arrange_tests(ctx):
                        (b'a\n', ['Favorites']), (b'0ei\n', ['Now Playing', 'Composers', 'CD Ripper']), (b'0123456ad\n', items[:7] + ['Favorites', 'Most Played']),
                        (b'ihgfedcba876543210\n', items18[::-1]), (b'012345678abcdefghi', items18), (b'012345678abcdefgh', items18[:-1]),
                        (b'i0\n', ['CD Ripper', 'Now Playing']), (b'j\n', ['Settings']), (b'0j\n', ['Now Playing', 'Settings']), (b'j0', ['Settings', 'Now Playing']),
-                       (b'012345678abcdefghijklmno\n', items), (b'onmlkjihgfedcba876543210', items[::-1]), (b'k\n', ['Pod']), (b'l\n', ['Podcasts']), (b'm\n', ['Search']), (b'n\n', ['Radio']), (b'o\n', ['Navidrome']), (b'0m\n', ['Now Playing', 'Search']), (b'1j2\n', ['Cover Flow', 'Settings', 'Albums'])):
+                       (b'012345678abcdefghijklmno\n', items), (b'onmlkjihgfedcba876543210', items[::-1]), (b'k\n', ['Pod']), (b'l\n', ['Podcasts']), (b'm\n', ['Search']), (b'n\n', ['Radio']), (b'o\n', ['Subsonic']), (b'0m\n', ['Now Playing', 'Search']), (b'1j2\n', ['Cover Flow', 'Settings', 'Albums'])):
         for off in (b'', b'-', b'-0', b'-a\n', b'-bd'):   # the part after '-' (items turned off Extras) never changes the menu; an item both shown and off is invalid
             d = (data.rstrip(b'\n') + off).rstrip(b'\n') + b'\n' if off else data
             m = open_menu(d)
@@ -433,26 +434,26 @@ def arrange_extras_tests(ctx):
     NI = len(P.ITEMS)
     CU = P.SETTINGS_ID
     # 12. Extras: every item the menu does not show, in id order (the hidden menu items, then the stock tiles)
-    # The fixed order, the same in every language (the English labels): four titled groups in a deliberate order, each with a section header
+    # The fixed order, the same in every language (the English labels): five titled groups in a deliberate order, each with a section header
     # (pod_hdr<group>, HDR_H high, a plain view that is never a touch target) above its first shown row; Settings, when the menu does not show it, is a Tool.
     hdr_h = P.HDR_H
-    full = EXTRAS_PLAY + EXTRAS_LIB + EXTRAS_COLL + EXTRAS_TOOLS
-    expect(P.EXTRAS_GROUPS == tuple(zip(EXTRAS_TITLES, map(tuple, (EXTRAS_PLAY, EXTRAS_LIB, EXTRAS_COLL, EXTRAS_TOOLS)))) and P.EXTRAS_TITLES == EXTRAS_TITLES
+    full = EXTRAS_PLAY + EXTRAS_LIB + EXTRAS_COLL + EXTRAS_STREAM + EXTRAS_TOOLS
+    expect(P.EXTRAS_GROUPS == tuple(zip(EXTRAS_TITLES, map(tuple, (EXTRAS_PLAY, EXTRAS_LIB, EXTRAS_COLL, EXTRAS_STREAM, EXTRAS_TOOLS)))) and P.EXTRAS_TITLES == EXTRAS_TITLES
            and sorted(full + ['Settings']) == sorted(items) and [items[i] for i in P.EXTRAS_ORDER] == full + ['Settings'] and 0 < hdr_h < ROW_H
-           and [P.EXTRAS_GROUP_OF[i] for i in P.EXTRAS_ORDER] == [0] * 3 + [1] * 12 + [2] * 5 + [3] * 3 + [4] and P.EXTRAS_GROUP_OF[CU] == len(P.EXTRAS_GROUPS),
-           f'the Extras order is Play, Library, Collections, Tools, each item once, in the written order, then Settings (in no group) ({[items[i] for i in P.EXTRAS_ORDER]})')
+           and [P.EXTRAS_GROUP_OF[i] for i in P.EXTRAS_ORDER] == [0] * 3 + [1] * 11 + [2] * 5 + [3] * 2 + [4] * 2 + [5] and P.EXTRAS_GROUP_OF[CU] == len(P.EXTRAS_GROUPS),
+           f'the Extras order is Play, Library, Collections, Streaming, Tools, each item once, in the written order, then Settings (in no group) ({[items[i] for i in P.EXTRAS_ORDER]})')
     left = lambda shown: [x for x in full if x not in shown]
     m, order, a = extras()
     want_ex = left([items[i] for i in P.DEFAULT_MENU])
     expect(order == want_ex == DEF_EXTRAS, f'default: Now Playing, Shuffle (Play), Genres, Composers, Folders (Library), the collections, the Tools; no Settings ({order})')
-    expect(all(a[i] == (0, False) for i in P.DEFAULT_MENU) and ('widget_set_prop_int', m.widgets['pod_scrollview'], 'virtual_h', len(want_ex) * ROW_H + 4 * hdr_h) in m.calls,
-           'the items the menu shows are hidden here, the list is the sixteen others and four headers long')
+    expect(all(a[i] == (0, False) for i in P.DEFAULT_MENU) and ('widget_set_prop_int', m.widgets['pod_scrollview'], 'virtual_h', len(want_ex) * ROW_H + 5 * hdr_h) in m.calls,
+           'the items the menu shows are hidden here, the list is the sixteen others and five headers long')
     ys = [y for y, i in sorted((y, i) for i, (y, on) in a.items() if on)]
     err = extras_ok(m, None)
     expect(not err, f'default: the arrangement is the Python model\'s (pod_pages.extras_display / extras_layout) ({err})')
-    expect(extras_state(m, range(NI)) == [('hdr', 0, 0), ('row', 0, 40), ('row', 6, 92), ('row', 19, 144), ('hdr', 1, 196), ('row', 7, 236), ('row', 13, 288), ('row', 8, 340), ('row', 20, 392), ('row', 22, 444), ('row', 21, 496), ('row', 23, 548),
-                                           ('hdr', 2, 600), ('row', 9, 640), ('row', 11, 692), ('row', 10, 744), ('row', 12, 796), ('row', 14, 848),
-                                           ('hdr', 3, 900), ('row', 15, 940), ('row', 17, 992), ('row', 16, 1044)] and hdr_h == 40,
+    expect(extras_state(m, range(NI)) == [('hdr', 0, 0), ('row', 0, 40), ('row', 6, 92), ('row', 19, 144), ('hdr', 1, 196), ('row', 7, 236), ('row', 13, 288), ('row', 8, 340), ('row', 20, 392), ('row', 22, 444), ('row', 21, 496),
+                                           ('hdr', 2, 548), ('row', 9, 588), ('row', 11, 640), ('row', 10, 692), ('row', 12, 744), ('row', 14, 796),
+                                           ('hdr', 3, 848), ('row', 23, 888), ('row', 16, 940), ('hdr', 4, 992), ('row', 15, 1032), ('row', 17, 1084)] and hdr_h == 40,
            'default: the headers and rows at their y (40 px headers, 52 px rows), written out')
     expect(ys[0] == hdr_h and ys == sorted(ys) and ys[1] - ys[0] == ROW_H and ys[3] - ys[2] == hdr_h + ROW_H, 'the shown rows are in display order; a header (40 px) lies between the groups, none between rows')
     m, order, a = extras(b'\n')
@@ -668,7 +669,7 @@ def extrascfg_tests(ctx, on_row, rows_s):
     items = [r.label for r in P.ITEMS]
     ids = [i for i in range(n) if i != CU]
     ex_i = next(i for i, r in enumerate(P.HOMESET_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.EXTRASCFG_PAGE_INDEX)
-    hdr_h, full = P.HDR_H, EXTRAS_PLAY + EXTRAS_LIB + EXTRAS_COLL + EXTRAS_TOOLS
+    hdr_h, full = P.HDR_H, EXTRAS_PLAY + EXTRAS_LIB + EXTRAS_COLL + EXTRAS_STREAM + EXTRAS_TOOLS
     CFG_DEF = [x for x in DEF_EXTRAS if x != 'Settings']   # the default menu's hidden items, but Settings (no row on this page), in the Extras order
     expect(P.HOMESET_PAGE.rows[ex_i].label == 'Extras' and P.PAGES[P.EXTRASCFG_PAGE_INDEX] is P.EXTRASCFG_PAGE and P.EXTRASCFG_PAGE.kind == 'extrascfg',
            'Home Screen has an Extras row that opens the Settings > Extras page')
@@ -704,11 +705,11 @@ def extrascfg_tests(ctx, on_row, rows_s):
     labels, ys = listed(m)
     expect(('window_open', P.EXTRASCFG_PAGE.key) in m.calls and labels == CFG_DEF and hidden_ok(m) and extras_ok(m, None, cfg=True) == ''
            and sorted(ys.values())[:3] == [hdr_h, hdr_h + ROW_H, hdr_h + 2 * ROW_H], f'default menu: the items it hides, in the Extras order, under their group headers ({labels}, {extras_ok(m, None, cfg=True)})')
-    expect([k for k, key, y in extras_state(m, ids)].count('hdr') == 4 and extras_state(m, ids)[-4][:2] == ('hdr', 3) and len(extras_state(m, ids)) == len(CFG_DEF) + 4,
-           'four headers shown: the Tools header too, for its three rows without Settings (which has no row here)')
+    expect([k for k, key, y in extras_state(m, ids)].count('hdr') == 5 and extras_state(m, ids)[-6][:2] == ('hdr', 3) and extras_state(m, ids)[-3][:2] == ('hdr', 4) and len(extras_state(m, ids)) == len(CFG_DEF) + 5,
+           'five headers shown: the Streaming and Tools headers too, for their four rows without Settings (which has no row here)')
     expect(all(v == ['sset_on'] for i, v in switches(m).items() if items[i] in labels) and 'Settings' not in labels,
            'every switch is on (listed on Extras); Settings has no row')
-    expect(m.names().count('widget_on') == 2 + len(ids) + 1 and ('widget_set_prop_int', m.widgets['pod_scrollview'], 'virtual_h', len(labels) * ROW_H + 4 * hdr_h) in m.calls,
+    expect(m.names().count('widget_on') == 2 + len(ids) + 1 and ('widget_set_prop_int', m.widgets['pod_scrollview'], 'virtual_h', len(labels) * ROW_H + 5 * hdr_h) in m.calls,
            'a click handler per row and a destroy handler; the list scrolls over exactly the rows and headers shown')
     expect(len([c for c in m.calls if c[0] == 'widget_restack']) == len(ids) + len(HDRS), 'the rows and the headers are restacked in display order, the hidden ones last (extras_ok)')
     m = open_page(b'\n')
@@ -727,7 +728,7 @@ def extrascfg_tests(ctx, on_row, rows_s):
         if err: expect(False, f'Settings > Extras, saved {data!r}: {err}'); break
     else: expect(True, 'the page is the Python model\'s for 300 random saved lists (headers shown iff their group has a row, y positions, stacking, virtual_h)')
     m = open_page(b'012345678abcdefghjklmno\n')   # everything shown in the menu but CD Ripper: its group's header shows with it, and no other
-    expect(extras_ok(m, b'012345678abcdefghjklmno\n', cfg=True) == '' and listed(m)[0] == ['CD Ripper'] and [t[:2] for t in extras_state(m, ids)] == [('hdr', 3), ('row', 17)],
+    expect(extras_ok(m, b'012345678abcdefghjklmno\n', cfg=True) == '' and listed(m)[0] == ['CD Ripper'] and [t[:2] for t in extras_state(m, ids)] == [('hdr', 4), ('row', 17)],
            'only CD Ripper left: the Tools header and the row')
     m = open_page(b'1-0a\n')
     labels, _ = listed(m)
@@ -817,12 +818,12 @@ def extrascfg_tests(ctx, on_row, rows_s):
 
 
 def header_asset_tests(ctx, tree, what):
-    """The section headers of an Extras-style asset (tools/pod_ui.py extras_headers): pod_hdr0..3, plain views HDR_H high holding the group's title as a small grey label, hidden and
+    """The section headers of an Extras-style asset (tools/pod_ui.py extras_headers): pod_hdr0..4, plain views HDR_H high holding the group's title as a small grey label, hidden and
     insensitive in the asset, none of them a list_item, and a touch on one reaches no row and not the header."""
     expect, P = ctx.expect, pod_pages
     sv = tree.find('pod_scrollview')
     hdrs = [c for c in sv.children if c.name.startswith('pod_hdr')]
-    expect([h.name for h in hdrs] == HDRS and all(h.type == 'view' and h.h == P.HDR_H < pod_ui.ROW_H and h.w == sv.w for h in hdrs), f'{what}: four header views pod_hdr0..3, {P.HDR_H} px high, as wide as the list')
+    expect([h.name for h in hdrs] == HDRS and all(h.type == 'view' and h.h == P.HDR_H < pod_ui.ROW_H and h.w == sv.w for h in hdrs), f'{what}: five header views pod_hdr0..4, {P.HDR_H} px high, as wide as the list')
     expect(all(h.get('visible') == 'false' and h.get('sensitive') == 'false' for h in hdrs), f'{what}: the headers start hidden and insensitive')
     expect([pod_i18n.shown_english(h.children[0]) for h in hdrs] == EXTRAS_TITLES and [pod_i18n.key_for(t) for t in EXTRAS_TITLES] == EXTRAS_TITLES,
            f'{what}: they show Play, Library, Collections and Tools (translated by their keys)')
@@ -832,7 +833,7 @@ def header_asset_tests(ctx, tree, what):
                and 0 < h.children[0].y and h.children[0].y + h.children[0].h <= h.h for h in hdrs),
            f'{what}: the caption is in the style of the Home menu\'s "Made for You" heading (x 10, 20 px) in the secondary grey, inside the strip, insensitive')
     expect(not [w for h in hdrs for w in h.walk() if w.type in ('list_item', 'image', 'button')], f'{what}: no list_item, chevron, icon or button in a header (no press visual)')
-    expect(sv.children[-4:] == hdrs and len([c for c in sv.children if c.name.startswith('pod_row')]) == len(sv.children) - 4, f'{what}: the headers follow the rows')
+    expect(sv.children[-5:] == hdrs and len([c for c in sv.children if c.name.startswith('pod_row')]) == len(sv.children) - 5, f'{what}: the headers follow the rows')
 
 
 def keyboards_tests(ctx, on_row, rows_s):

@@ -52,6 +52,8 @@ class BC(Machine):
         self.add_ret, self.start_ret = 1, 1
         self.log = []              # every call of every m.call(), in order
         self.clock = 1000
+        self.sbtrack, self.sbcover = {}, {}   # server track REC_ID -> track id (sba_rec_track); REC_ID -> (sba_rec_cover's answer, the file's path) (patch/sbapi.c, tested in sbapi.py)
+        for n in ('sba_rec_track', 'sba_rec_cover'): self.handlers[PSYMS[n]] = n
 
     # -- the scripted worker
     def _hook(self, u, address, size, _):
@@ -59,6 +61,16 @@ class BC(Machine):
         if name == 'stock_bigcover_resume':
             self.calls.append(('stock_bigcover_resume', u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)))
             u.reg_write(UC_MIPS_REG_V0, self.init_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        if name in ('sba_rec_track', 'sba_rec_cover'):
+            a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+            if name == 'sba_rec_track':
+                rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+            else:
+                rid = self.word(a0 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+                r, path = self.sbcover.get(rid, (-1, None)); self.calls.append(('sba_rec_cover', rid))
+                if r == 1: self.u.mem_write(a1, path.encode() + b'\0')
+                ret = r
+            u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
         if name not in WORKER: return super()._hook(u, address, size, _)
         a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
         ret = 0
@@ -651,7 +663,60 @@ def idle_setting_tests(ctx):
            'the picker asset: four rows without a glyph, a hidden insensitive check each, the note, the title')
 
 
-SECTIONS = [hook_tests, job_tests, life_tests, idle_tests, idle_setting_tests]
+def server_tests(ctx):
+    """A server track (streamed or downloaded): the page's picture is the server's cover file Now Playing draws, fitted at 320 px, keyed by the record's REC_ID, never its path."""
+    expect = ctx.expect
+    SV = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    STREAM = 'http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt'
+    DL = '/mnt/mmc/Subsonic/Remote.flac'
+    flat = lambda c: (lambda x, y: c)
+
+    def server(path, cover, rid=-5, src=0):
+        m = BC(tracks=(path,), src=src)
+        m.setword(m.recs[0] + O['REC_ID'], rid); m.sbtrack[rid] = 't5'; m.sbcover[rid] = cover
+        return m
+
+    def land(m, rgb=(10, 200, 90), side=168):
+        m.present.add(SV); m.images['file://' + SV] = (side, side, rgba(side, side, flat(rgb))); m.load_image = 0
+
+    # a stream: no worker, no hash of the address, the server's file at 320 px
+    m = server(STREAM, (1, SV)); land(m); m.open()
+    b = m.bmp()
+    expect(b is not None and m.bitmaps[b][1:] == (320, 320) and set(m.pixels(b)) == {word_of((10, 200, 90))}, 'a streamed server track: the server\'s 168 px cover, fitted into the 320 px bitmap (a flat colour exact)')
+    expect(m.count('cc_build_open') == 0 and m.count('cc_build_add_aspect') == 0 and not m.held, 'no job on the shared worker (stock makes no picture for a stream, and the address is never handed to it)')
+    bl = m.paint()
+    expect(bl == [(b, (0, 0, 320, 320), (0, 0, 320, 320))], f'and the paint draws it over the widget ({bl})')
+    m.tick(); m.tick()
+    expect(m.count('sba_rec_cover') == 1 and len(m.bitmaps) == 1 and m.count('cc_build_open') == 0, 'a track that has its picture asks for nothing more')
+    # the next track (another record): the old picture goes at once, the new one is made
+    m.setword(m.recs[0] + O['REC_ID'], 0xfffffff0); m.sbtrack[-16] = 't6'; m.sbcover[-16] = (1, SV)
+    land(m, rgb=(200, 20, 20)); m.tick()
+    expect(set(m.pixels(m.bmp())) == {word_of((200, 20, 20))} and m.paint(), 'another server track: its own picture')
+    # on its way: stock's page stays, the file is asked for on every tick until it lands (a stream has nothing else to wait for)
+    m = server(STREAM, (0, None)); m.open()
+    expect(m.bmp() is None and m.paint() == [], 'the cover is being fetched: nothing drawn, stock\'s picture stays')
+    for _ in range(30): m.tick()
+    expect(m.count('sba_rec_cover') >= 30 and m.bmp() is None and m.count('cc_build_open') == 0, 'and it is asked about on every tick, well beyond the six seconds a local track waits')
+    m.sbcover[-5] = (1, SV); land(m); m.tick()
+    expect(set(m.pixels(m.bmp())) == {word_of((10, 200, 90))}, 'the file landed: the picture is made')
+    # the server has none: given up for the track, nothing more asked
+    m = server(STREAM, (-1, None)); m.open(); n = m.count('sba_rec_cover')
+    m.tick(); m.tick(); m.tick(10000)
+    expect(m.bmp() is None and m.count('sba_rec_cover') == n and m.count('cc_build_open') == 0, 'no server picture for a stream: stock\'s page stays, no job, not asked again')
+    # a downloaded server track: the server's file first
+    m = server(DL, (1, SV), src=2); land(m); m.open()
+    expect(set(m.pixels(m.bmp())) == {word_of((10, 200, 90))} and m.count('cc_build_open') == 0, 'a downloaded server track: the server\'s file too, no job')
+    # without one it is a local file for the job: the embedded art at 320 px, keyed by the record
+    m = server(DL, (-1, None), src=2); m.open()
+    expect(m.all('cc_build_add_aspect') == [('cc_build_add_aspect', DL, TMP, 320, 2)] and m.held, 'a downloaded server track the server has no picture for: the worker makes the embedded art as for a local file')
+    m.finish(); m.tick()
+    expect(m.paint() and m.count('cc_build_stop') == 1, 'and it is drawn')
+    # a stream whose address is the only thing stock saw: the worker is never given an http path, whatever the source word says
+    m = server(STREAM, (-1, None), src=2); m.parse(STREAM); m.open(); m.tick()
+    expect(m.count('cc_build_add_aspect') == 0 and m.count('cc_build_open') == 0, 'the stream address is never handed to the worker even when stock\'s parser reports it')
+
+
+SECTIONS = [hook_tests, job_tests, life_tests, idle_tests, idle_setting_tests, server_tests]
 
 
 def run(ctx):

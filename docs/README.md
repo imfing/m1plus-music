@@ -17,6 +17,7 @@
 | [Firmware](firmware.md) | Stock hashes, updater behaviour, partitions and space recovery |
 | [Device checks](modules/device-checks.md) | Hardware validation checklist |
 | [History](history.md) | Recorded milestones, device findings and lessons |
+| [Subsonic / Navidrome](modules/subsonic.md) | Remote library, raw streaming, SD downloads and validation limits |
 
 Read the relevant `modules/` doc for implementation, pins and tests before changing a feature.
 Before searching stock binaries, read [payload](modules/payload.md) and [addresses](modules/addresses.md).

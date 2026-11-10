@@ -58,6 +58,8 @@ class VM(Machine):
         self.images = {n: self.png(n) for n in A.NAMES}
         for n in ('mclGetPlayStatus', 'playpause_quick_click', 'next_quick_click', 'prev_quick_click', 'get_playtimeandlength', 'widget_get_text', 'time_now_ms'):
             self.handlers[pod.FUNCTIONS[n][2]] = n
+        self.sbtrack, self.sbcover = {}, {}   # server track REC_ID -> track id (sba_rec_track); REC_ID -> (sba_rec_cover's answer, the file's path) (patch/sbapi.c, tested in sbapi.py)
+        for n in ('sba_rec_track', 'sba_rec_cover'): self.handlers[PSYMS[n]] = n
 
     def png(self, n):
         im = asset_image(n)
@@ -68,6 +70,14 @@ class VM(Machine):
         a0, a1, a2 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2))
         ret = None
         if name == 'mclGetPlayStatus': ret = self.status
+        elif name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+        elif name == 'sba_rec_cover':   # (the record, path, cap): 1 and the path, 0 on its way, -1 none
+            rid = self.word(a0 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            r, path = self.sbcover.get(rid, (-1, None))
+            self.calls.append(('sba_rec_cover', rid))
+            if r == 1: self.u.mem_write(a1, path.encode() + b'\0')
+            ret = r
         elif name == 'time_now_ms': ret = self.mock_ms
         elif name == 'playpause_quick_click':
             self.calls.append(('playpause_quick_click',)); self.cmds.append(('playpause',)); self.status = 2 if self.status != 2 else 3; ret = 1
@@ -86,8 +96,8 @@ class VM(Machine):
         u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff)
         u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
 
-    def playing(self, title='Midnight City', artist='M83', album='Hurry Up', pos=200, length=243, path='/mnt/mmc/m/midnight.flac'):
-        self.play([self.record(album=album, artist=artist, path=path, title=title, name=os.path.basename(path))], 0)
+    def playing(self, title='Midnight City', artist='M83', album='Hurry Up', pos=200, length=243, path='/mnt/mmc/m/midnight.flac', rid=None):
+        self.play([self.record(album=album, artist=artist, path=path, title=title, name=os.path.basename(path), **({} if rid is None else {'rid': rid}))], 0)
         self.pt = (pos, length)
 
     def open(self):
@@ -1023,4 +1033,41 @@ def run(ctx):
     for fn in SECTIONS: fn(ctx)
 
 
-SECTIONS = [number_tests, asset_tests, draw_tests, record_tests, cover_record_tests, cover_change_tests, setting_tests, theme_tests, theme_setting_tests, motion_tests, text_tests, touch_tests, idle_touch_tests, life_tests]
+def server_cover_tests(ctx):
+    """A server track's label (docs/modules/subsonic.md): the source's own cover file (sba_rec_cover on the record), never the library album of the same artist and album; a cover on its way leaves the plain label and
+    is looked at again until it lands; a track the server has no picture for takes demo's /tmp file; a local track keeps the album's cache file."""
+    expect = ctx.expect
+    SBC = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    blue, red = bytes((40, 40, 200, 255)) * (168 * 168), bytes((200, 40, 40, 255)) * (168 * 168)
+    local = art_file(album_key('M83', 'Hurry Up'))
+
+    def server(cover):
+        m = machine(rec=1, rid=-5, path='http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt')
+        m.sbtrack[-5], m.sbcover[-5] = 't5', cover
+        m.files[local] = 9000; m.images['file://' + local] = (168, 168, red)   # the library has an album of that name and artist
+        if cover[0] == 1: m.files[SBC] = 9000; m.images['file://' + SBC] = (168, 168, blue)
+        return m
+    m = server((1, SBC))
+    assert m.open() == 0; m.first()
+    expect('file://' + SBC in m.loads and 'file://' + local not in m.loads, f'a server track: the server\'s cover is the label, not the library album\'s cache file ({[u for u in m.loads if u.startswith("file://")]})')
+    c = m.cover_words()[76 * 152 + 76]
+    expect((c & 255, c >> 8 & 255, c >> 16 & 255) == (40, 40, 200), 'and its pixels are the server\'s picture')
+    m = server((0, None))
+    assert m.open() == 0; m.first()
+    expect('file://' + local not in m.loads and ('sba_rec_cover', -5) in m.calls, 'a cover on its way: the library album is not taken; the source is asked')
+    asked = 0
+    for _ in range(3 * O['VN_SETTLE']): m.tick(5000); asked += m.calls.count(('sba_rec_cover', -5))
+    expect(asked >= 3 * O['VN_SETTLE'] and 'file://' + local not in m.loads, f'and it is asked again beyond the settle ticks ({asked})')
+    m.sbcover[-5] = (1, SBC); m.files[SBC] = 9000; m.images['file://' + SBC] = (168, 168, blue)
+    m.tick(5000); m.tick(5000)
+    expect('file://' + SBC in m.loads, 'the file landed: the label is redone with it')
+    m = server((-1, None))
+    assert m.open() == 0; m.first()
+    expect('file://' + local not in m.loads, 'a server track the server has no picture for: not the library album\'s cover')
+    m = machine(rec=1, cover=True)
+    m.sbtrack[-5] = 't5'
+    assert m.open() == 0; m.first()
+    expect('file://' + local in m.loads and ('sba_rec_cover', -5) not in m.calls, 'a local track: the album\'s cache file as before, the source never asked')
+
+
+SECTIONS = [number_tests, asset_tests, draw_tests, record_tests, cover_record_tests, cover_change_tests, setting_tests, theme_tests, theme_setting_tests, motion_tests, text_tests, touch_tests, idle_touch_tests, life_tests, server_cover_tests]

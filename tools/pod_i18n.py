@@ -171,6 +171,8 @@ TEXT = dict([
        'Abrir Inicio Shanling', 'Apri Home Shanling', 'เปิดหน้าหลัก Shanling', 'Otwórz ekran Shanling', 'Открыть экран Shanling', 'Відкрити екран Shanling'),
     _t('Startup', '启动', '啟動', '起動', '시작', 'Démarrage', 'Start',
        'Inicio', 'Avvio', 'เริ่มต้น', 'Uruchamianie', 'Запуск', 'Запуск'),
+    _t('Streaming', '流媒体', '串流', 'ストリーミング', '스트리밍', 'Streaming', 'Streaming',
+       'Streaming', 'Streaming', 'สตรีมมิง', 'Streaming', 'Стриминг', 'Стримінг'),
     _t('Tools', '工具', '工具', 'ツール', '도구', 'Outils', 'Werkzeuge',
        'Herramientas', 'Strumenti', 'เครื่องมือ', 'Narzędzia', 'Инструменты', 'Інструменти'),
     _t('Shown on Home below the menu', '显示在主屏幕菜单下方', '顯示在主畫面選單下方', 'ホームのメニューの下に表示', '홈 메뉴 아래에 표시', "Affiché sous le menu d'accueil", 'Unter dem Menü auf dem Startbildschirm',
@@ -637,6 +639,13 @@ TEXT = dict([
     _t('Not audio', '不是音频', '不是音訊', '音声ではありません', '오디오가 아님', "Pas de l'audio", 'Kein Audio', 'No es audio', 'Non è audio', 'ไม่ใช่เสียง', 'To nie audio', 'Не аудио', 'Не аудіо'),
     _t('Card is full', '存储卡已满', '記憶卡已滿', 'カードがいっぱいです', '카드가 가득 참', 'Carte pleine', 'Karte voll', 'Tarjeta llena', 'Scheda piena', 'การ์ดเต็ม', 'Karta pełna', 'Карта заполнена', 'Картка заповнена'),
     _t('Queue is full', '队列已满', '佇列已滿', 'キューがいっぱいです', '대기열이 가득 참', "File d'attente pleine", 'Warteschlange voll', 'Cola llena', 'Coda piena', 'คิวเต็ม', 'Kolejka pełna', 'Очередь заполнена', 'Черга заповнена'),
+    _t('Download queue is full', '下载队列已满', '下載佇列已滿', 'ダウンロードキューがいっぱいです', '다운로드 대기열이 가득 참', 'File de téléchargement pleine', 'Download-Warteschlange voll', 'Cola de descargas llena', 'Coda di download piena', 'คิวดาวน์โหลดเต็ม', 'Kolejka pobierania pełna', 'Очередь загрузки заполнена', 'Черга завантаження заповнена'),
+    # Download Album (the Subsonic album page's "..." card, patch/sbsrc.c nd_act LS_ACT_DOWNLOAD_ALL): the row and its one toast (1 song / n songs picked by n == 1; pl, ru, uk the label form)
+    _t('Download Album', '下载专辑', '下載專輯', 'アルバムをダウンロード', '앨범 다운로드', "Télécharger l'album", 'Album laden', 'Descargar álbum', 'Scarica album', 'ดาวน์โหลดอัลบั้ม', 'Pobierz album', 'Загрузить альбом', 'Завантажити альбом'),
+    _t('Downloading 1 song', '正在下载 1 首歌曲', '正在下載 1 首歌曲', '1 曲をダウンロード中', '1곡 다운로드 중', 'Téléchargement de 1 titre', '1 Titel wird geladen', 'Descargando 1 canción', 'Download di 1 brano', 'กำลังดาวน์โหลด 1 เพลง', 'Pobieranie utworu: 1', 'Загрузка песни: 1', 'Завантаження пісні: 1'),
+    _t('Downloading %d songs', '正在下载 %d 首歌曲', '正在下載 %d 首歌曲', '%d 曲をダウンロード中', '%d곡 다운로드 중', 'Téléchargement de %d titres', '%d Titel werden geladen', 'Descargando %d canciones', 'Download di %d brani', 'กำลังดาวน์โหลด %d เพลง', 'Pobieranie utworów: %d', 'Загрузка песен: %d', 'Завантаження пісень: %d'),
+    _t('Downloading %d, queue full', '正在下载 %d 首，队列已满', '正在下載 %d 首，佇列已滿', '%d 曲をダウンロード中、キューは満杯', '%d곡 다운로드 중, 대기열 가득 참', 'Téléchargement de %d, file pleine', '%d werden geladen, Warteschlange voll', 'Descargando %d, cola llena', 'Download di %d, coda piena', 'กำลังดาวน์โหลด %d เพลง คิวเต็ม', 'Pobieranie: %d, kolejka pełna', 'Загрузка: %d, очередь заполнена', 'Завантаження: %d, чергу заповнено'),
+    _t('Already downloaded', '已下载', '已下載', 'ダウンロード済み', '이미 다운로드됨', 'Déjà téléchargé', 'Bereits geladen', 'Ya descargado', 'Già scaricato', 'ดาวน์โหลดแล้ว', 'Już pobrano', 'Уже загружено', 'Уже завантажено'),
     # The track rows' "..." menu (patch/rowmenu.c, docs/modules/rowmenu.md): its two rows (Add to Playlist is the Songs page's key), the two confirmations and the refusals of Play Next / Play After
     # (Adding Failed, Storage unavailable, Queue is full and Not enough memory are the stock key and the keys above)
     _t('Play Next', '下一首播放', '下一首播放', '次に再生', '다음에 재생', 'Lire ensuite', 'Als Nächstes spielen',
@@ -736,6 +745,11 @@ TEXT = dict([
        '¿Cancelar la suscripción a este podcast?', "Annullare l'iscrizione a questo podcast?", 'เลิกติดตามพอดแคสต์นี้หรือไม่?', 'Anulować subskrypcję tego podcastu?', 'Отписаться от этого подкаста?', 'Скасувати підписку на цей подкаст?'),
     _t('Download', '下载', '下載', 'ダウンロード', '다운로드', 'Télécharger', 'Laden', 'Descargar', 'Scarica', 'ดาวน์โหลด', 'Pobierz', 'Загрузить', 'Завантажити'),
     _t('Remove Download', '移除下载', '移除下載', 'ダウンロードを削除', '다운로드 제거', 'Supprimer le téléchargement', 'Download entfernen', 'Quitar descarga', 'Rimuovi download', 'ลบการดาวน์โหลด', 'Usuń pobrany plik', 'Удалить загрузку', 'Видалити завантаження'),
+    # a Navidrome track's "..." sheet and the DSD confirm (patch/rowmenu.c, patch/sbsrc.c ls_dsd_confirm; docs/modules/subsonic.md "Row sheet"): the confirm's text is the title, a line break, then the body (%s the track, %s its size in MB)
+    _t('Cancel Download', '取消下载', '取消下載', 'ダウンロードを中止', '다운로드 취소', 'Annuler le téléchargement', 'Download abbrechen', 'Cancelar descarga', 'Annulla download', 'ยกเลิกการดาวน์โหลด', 'Anuluj pobieranie', 'Отменить загрузку', 'Скасувати завантаження'),
+    _t('Download to Play?', '下载后播放？', '下載後播放？', 'ダウンロードして再生？', '다운로드 후 재생할까요?', 'Télécharger pour lire ?', 'Zum Abspielen laden?', '¿Descargar para reproducir?', 'Scaricare per riprodurre?', 'ดาวน์โหลดเพื่อเล่นหรือไม่?', 'Pobrać, aby odtworzyć?', 'Загрузить и слушать?', 'Завантажити і слухати?'),
+    _t('DSD tracks play from the card. %s, %s MB.', 'DSD 曲目需从存储卡播放。%s，%s MB。', 'DSD 曲目需從記憶卡播放。%s，%s MB。', 'DSD はカードで再生。%s、%s MB。', 'DSD 트랙은 카드에서 재생됩니다. %s, %s MB.', 'DSD : lecture depuis la carte. %s, %s Mo.', 'DSD wird von der Karte gespielt. %s, %s MB.',
+       'DSD se reproduce desde la tarjeta. %s, %s MB.', 'Le tracce DSD si riproducono dalla scheda. %s, %s MB.', 'เพลง DSD เล่นจากการ์ด %s, %s MB', 'Utwory DSD odtwarzane są z karty. %s, %s MB.', 'DSD играет с карты. %s, %s МБ.', 'DSD грає з картки. %s, %s МБ.'),
     _t('Mark as Played', '标为已播放', '標為已播放', '再生済みにする', '재생함으로 표시', 'Marquer comme lu', 'Als gehört markieren', 'Marcar como reproducido', 'Segna come riprodotto', 'ทำเครื่องหมายว่าเล่นแล้ว', 'Oznacz jako odtworzone', 'Отметить как прослушанное', 'Позначити як прослухане'),
     _t('Mark as Unplayed', '标为未播放', '標為未播放', '未再生にする', '재생 안 함으로 표시', 'Marquer comme non lu', 'Als ungehört markieren', 'Marcar como no reproducido', 'Segna come non riprodotto', 'ทำเครื่องหมายว่ายังไม่เล่น', 'Oznacz jako nieodtworzone', 'Отметить как непрослушанное', 'Позначити як непрослухане'),
     _t('Retry', '重试', '重試', '再試行', '다시 시도', 'Réessayer', 'Erneut', 'Reintentar', 'Riprova', 'ลองใหม่', 'Ponów', 'Повторить', 'Повторити'),
@@ -749,6 +763,9 @@ TEXT = dict([
        'Género', 'Genere', 'ประเภท', 'Gatunek', 'Жанр', 'Жанр'),
     _t('Year', '年份', '年份', '年', '연도', 'Année', 'Jahr',
        'Año', 'Anno', 'ปี', 'Rok', 'Год', 'Рік'),
+    # Now Playing's File Size / Location of a server stream when the server gave no size (np_stream_text)
+    _t('Unknown', '未知', '未知', '不明', '알 수 없음', 'Inconnu', 'Unbekannt',
+       'Desconocido', 'Sconosciuto', 'ไม่ทราบ', 'Nieznane', 'Неизвестно', 'Невідомо'),
     # the Albums "..." card (patch/viewsort.c, docs/modules/albums.md): the Title sort row, the View group (Grid, List) and the direction line under the ticked sort row
     _t('Title', '标题', '標題', 'タイトル', '제목', 'Titre', 'Titel',
        'Título', 'Titolo', 'ชื่อเรื่อง', 'Tytuł', 'Название', 'Назва'),
@@ -1106,6 +1123,8 @@ TEXT = dict([
        'Librería', 'Libreria', 'คลังเพลง', 'Biblioteka', 'Библиотека', 'Медіатека'),
     _t('Collections', '合集', '合集', 'コレクション', '컬렉션', 'Collections', 'Sammlungen',
        'Colecciones', 'Raccolte', 'คอลเลกชัน', 'Kolekcje', 'Коллекции', 'Колекції'),
+    _t('Streaming', '流媒体', '串流', 'ストリーミング', '스트리밍', 'Streaming', 'Streaming',
+       'Streaming', 'Streaming', 'สตรีมมิง', 'Streaming', 'Стриминг', 'Стримінг'),
     _t('Tools', '工具', '工具', 'ツール', '도구', 'Outils', 'Werkzeuge',
        'Herramientas', 'Strumenti', 'เครื่องมือ', 'Narzędzia', 'Инструменты', 'Інструменти'),
     # Radio (patch/radiopage.c, patch/radionp.c; docs/modules/radio.md). A native-speaker pass is wanted.
@@ -1373,6 +1392,7 @@ _MONTHS = {   # locale -> the twelve month texts
     'uk_UK': [f'%d {x}' for x in ('січ.', 'лют.', 'бер.', 'квіт.', 'трав.', 'черв.', 'лип.', 'серп.', 'вер.', 'жовт.', 'лист.', 'груд.')],
 }
 TEXT.update(_t(k, *[_MONTHS[loc][i] for loc in _L]) for i, k in enumerate(_MONTH_KEYS))
+TEXT['Subsonic'] = {loc: 'Subsonic' for loc in LOCALES}   # the product name, the same in every language (the menu row and the pages' title)
 TEXT.update([
     _t(', %d', '，%d年', '，%d年', ', %d年', ', %d년', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d', ', %d'),
     _t('Just now', '刚刚', '剛剛', 'たった今', '방금', 'À l’instant', 'Gerade eben', 'Ahora mismo', 'Adesso', 'เมื่อสักครู่', 'Przed chwilą', 'Только что', 'Щойно'),
@@ -1380,7 +1400,64 @@ TEXT.update([
     _t('%dh ago', '%d小时前', '%d小時前', '%d時間前', '%d시간 전', 'il y a %d h', 'vor %d Std.', 'hace %d h', '%d h fa', '%d ชั่วโมงที่แล้ว', '%d godz. temu', '%d ч назад', '%d год тому'),
     _t('%dd ago', '%d天前', '%d天前', '%d日前', '%d일 전', 'il y a %d j', 'vor %d T.', 'hace %d d', '%d g fa', '%d วันที่แล้ว', '%d dn. temu', '%d дн. назад', '%d дн. тому'),
 ])
-DATE_KEYS = _MONTH_KEYS + (', %d', '%dm ago', '%dh ago', '%dd ago', 'Refreshing %d/%d…', 'Exported %d show', 'Exported %d shows', 'Band %d')   # keys with a %d that do not start with it (the tables test, test/pod/i18n.py)
+DATE_KEYS = _MONTH_KEYS + (', %d', '%dm ago', '%dh ago', '%dd ago', 'Refreshing %d/%d…', 'Exported %d show', 'Exported %d shows', 'Band %d', 'Updating library… %d/%d', 'Loading covers… %d/%d', 'Loading artist images… %d/%d')   # keys with a %d that do not start with it (the tables test, test/pod/i18n.py)
+# The Navidrome Server page (patch/ndserver.c, tools/pod_ndserver.py): the row labels (the keyboard's titles and placeholders too), the two confirmations and the toasts. "Navidrome" stays as it is.
+TEXT.update([
+    _t('Server', '服务器', '伺服器', 'サーバー', '서버', 'Serveur', 'Server', 'Servidor', 'Server', 'เซิร์ฟเวอร์', 'Serwer', 'Сервер', 'Сервер'),
+    _t('Server URL', '服务器地址', '伺服器位址', 'サーバーURL', '서버 URL', 'URL du serveur', 'Server-URL', 'URL del servidor', 'URL del server', 'URL เซิร์ฟเวอร์', 'Adres serwera', 'Адрес сервера', 'Адреса сервера'),
+    _t('Username', '用户名', '使用者名稱', 'ユーザー名', '사용자 이름', 'Nom d’utilisateur', 'Benutzername', 'Usuario', 'Nome utente', 'ชื่อผู้ใช้', 'Nazwa użytkownika', 'Имя пользователя', 'Ім’я користувача'),
+    _t('Sync Now', '立即同步', '立即同步', '今すぐ同期', '지금 동기화', 'Synchroniser', 'Jetzt synchronisieren', 'Sincronizar', 'Sincronizza', 'ซิงค์ทันที', 'Synchronizuj', 'Синхронизация', 'Синхронізація'),
+    _t('Sign Out', '退出登录', '登出', 'サインアウト', '로그아웃', 'Se déconnecter', 'Abmelden', 'Cerrar sesión', 'Esci', 'ออกจากระบบ', 'Wyloguj się', 'Выйти', 'Вийти'),
+    _t('Sync your Subsonic library now?', '现在同步 Subsonic 曲库吗？', '現在同步 Subsonic 曲庫嗎？', 'Subsonic のライブラリを今すぐ同期しますか？', '지금 Subsonic 보관함을 동기화할까요?',
+       'Synchroniser la bibliothèque Subsonic maintenant ?', 'Subsonic-Mediathek jetzt synchronisieren?', '¿Sincronizar la biblioteca de Subsonic ahora?', 'Sincronizzare ora la libreria Subsonic?',
+       'ซิงค์คลัง Subsonic ตอนนี้หรือไม่', 'Zsynchronizować bibliotekę Subsonic teraz?', 'Синхронизировать медиатеку Subsonic сейчас?', 'Синхронізувати медіатеку Subsonic зараз?'),
+    _t('Sign out of Subsonic? Downloaded songs stay on the card.', '退出 Subsonic 登录？已下载的歌曲会保留在存储卡上。', '登出 Subsonic？已下載的歌曲會保留在記憶卡上。', 'Subsonic からサインアウトしますか？ダウンロード済みの曲はカードに残ります。',
+       'Subsonic에서 로그아웃할까요? 다운로드한 곡은 카드에 남습니다.', 'Se déconnecter de Subsonic ? Les titres téléchargés restent sur la carte.', 'Von Subsonic abmelden? Heruntergeladene Titel bleiben auf der Karte.',
+       '¿Cerrar sesión en Subsonic? Las canciones descargadas se quedan en la tarjeta.', 'Uscire da Subsonic? I brani scaricati restano sulla scheda.', 'ออกจาก Subsonic หรือไม่ เพลงที่ดาวน์โหลดไว้จะยังอยู่ในการ์ด',
+       'Wylogować się z Subsonic? Pobrane utwory zostają na karcie.', 'Выйти из Subsonic? Загруженные песни останутся на карте.', 'Вийти з Subsonic? Завантажені пісні залишаться на картці.'),
+    _t('Enter a valid server address', '请输入有效的服务器地址', '請輸入有效的伺服器位址', '有効なサーバーアドレスを入力', '올바른 서버 주소를 입력하세요', 'Saisissez une adresse de serveur valide', 'Gültige Serveradresse eingeben',
+       'Introduce una dirección de servidor válida', 'Inserisci un indirizzo server valido', 'ป้อนที่อยู่เซิร์ฟเวอร์ที่ถูกต้อง', 'Wpisz prawidłowy adres serwera', 'Введите правильный адрес сервера', 'Введіть правильну адресу сервера'),
+    _t('Enter a valid username', '请输入有效的用户名', '請輸入有效的使用者名稱', '有効なユーザー名を入力', '올바른 사용자 이름을 입력하세요', 'Saisissez un nom d’utilisateur valide', 'Gültigen Benutzernamen eingeben',
+       'Introduce un usuario válido', 'Inserisci un nome utente valido', 'ป้อนชื่อผู้ใช้ที่ถูกต้อง', 'Wpisz prawidłową nazwę użytkownika', 'Введите правильное имя пользователя', 'Введіть правильне ім’я користувача'),
+    _t('Enter a valid password', '请输入有效的密码', '請輸入有效的密碼', '有効なパスワードを入力', '올바른 비밀번호를 입력하세요', 'Saisissez un mot de passe valide', 'Gültiges Passwort eingeben',
+       'Introduce una contraseña válida', 'Inserisci una password valida', 'ป้อนรหัสผ่านที่ถูกต้อง', 'Wpisz prawidłowe hasło', 'Введите правильный пароль', 'Введіть правильний пароль'),
+    _t('Could not save settings', '无法保存设置', '無法儲存設定', '設定を保存できません', '설정을 저장할 수 없습니다', 'Impossible d’enregistrer les réglages', 'Speichern fehlgeschlagen',
+       'No se pudieron guardar los ajustes', 'Impossibile salvare le impostazioni', 'บันทึกการตั้งค่าไม่ได้', 'Nie można zapisać ustawień', 'Не удалось сохранить настройки', 'Не вдалося зберегти налаштування'),
+    _t('Add a server first', '请先添加服务器', '請先新增伺服器', '先にサーバーを追加', '먼저 서버를 추가하세요', 'Ajoutez d’abord un serveur', 'Zuerst Server hinzufügen',
+       'Añade primero un servidor', 'Aggiungi prima un server', 'เพิ่มเซิร์ฟเวอร์ก่อน', 'Najpierw dodaj serwer', 'Сначала добавьте сервер', 'Спочатку додайте сервер'),
+    # The Sign In page (patch/ndserver.c nl_*): the title and action key, and the error line under the card.
+    _t('Sign In', '登录', '登入', 'サインイン', '로그인', 'Entrer', 'Anmelden', 'Entrar', 'Accedi', 'เข้าสู่ระบบ', 'Zaloguj się', 'Войти', 'Увійти'),
+    _t('Incorrect username or password', '用户名或密码不正确', '使用者名稱或密碼不正確', 'ユーザー名かパスワードが違います', '사용자 이름 또는 비밀번호가 틀립니다', 'Identifiant ou mot de passe incorrect', 'Benutzername oder Passwort falsch',
+       'Usuario o contraseña incorrectos', 'Nome utente o password errati', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'Zła nazwa użytkownika lub hasło', 'Неверный логин или пароль', 'Хибний логін або пароль'),
+    _t("Can't connect to the server", '无法连接到服务器', '無法連線到伺服器', 'サーバーに接続できません', '서버에 연결할 수 없습니다', 'Connexion au serveur impossible', 'Server nicht erreichbar',
+       'No se puede conectar al servidor', 'Impossibile connettersi al server', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้', 'Brak połączenia z serwerem', 'Не удаётся подключиться к серверу', 'Не вдається підключитися до сервера'),
+    _t('Server certificate not trusted', '服务器证书不受信任', '伺服器憑證不受信任', 'サーバー証明書が信頼できません', '서버 인증서를 신뢰할 수 없습니다', 'Certificat du serveur non fiable', 'Serverzertifikat nicht vertrauenswürdig',
+       'Certificado del servidor no confiable', 'Certificato del server non attendibile', 'ไม่เชื่อถือใบรับรองเซิร์ฟเวอร์', 'Certyfikat serwera niezaufany', 'Сертификат сервера не доверенный', 'Сертифікат сервера не довірений'),
+    _t('Set the date and time first', '请先设置日期和时间', '請先設定日期和時間', '先に日付と時刻を設定', '먼저 날짜와 시간을 설정하세요', "Réglez d'abord la date et l'heure", 'Zuerst Datum und Uhrzeit einstellen',
+       'Ajusta primero la fecha y la hora', "Imposta prima data e ora", 'ตั้งวันที่และเวลาก่อน', 'Najpierw ustaw datę i godzinę', 'Сначала задайте дату и время', 'Спочатку задайте дату й час'),
+    # The Navidrome download and sync failures (patch/sbsrc.c sbs_message); the rest of its words are the Sign In page's, "Card is full", "Server error" and "Not enough memory".
+    _t('Write failed', '写入失败', '寫入失敗', '書き込みに失敗しました', '쓰기 실패', "Échec de l'écriture", 'Schreiben fehlgeschlagen', 'Error de escritura', 'Scrittura non riuscita', 'เขียนไม่สำเร็จ', 'Zapis nie powiódł się', 'Ошибка записи', 'Помилка запису'),
+    _t('Song not found on the server', '服务器上找不到该歌曲', '伺服器上找不到該歌曲', 'サーバーに曲が見つかりません', '서버에서 곡을 찾을 수 없습니다', 'Titre introuvable sur le serveur', 'Titel nicht auf dem Server gefunden', 'Canción no encontrada en el servidor', 'Brano non trovato sul server', 'ไม่พบเพลงบนเซิร์ฟเวอร์', 'Nie znaleziono utworu na serwerze', 'Песня не найдена на сервере', 'Пісню не знайдено на сервері'),
+    _t('Unexpected server response', '服务器响应异常', '伺服器回應異常', 'サーバーから予期しない応答がありました', '서버 응답이 올바르지 않습니다', 'Réponse inattendue du serveur', 'Unerwartete Serverantwort', 'Respuesta inesperada del servidor', 'Risposta imprevista dal server', 'เซิร์ฟเวอร์ตอบกลับผิดปกติ', 'Nieoczekiwana odpowiedź serwera', 'Неожиданный ответ сервера', 'Несподівана відповідь сервера'),
+    _t('Download interrupted', '下载已中断', '下載已中斷', 'ダウンロードが中断されました', '다운로드가 중단되었습니다', 'Téléchargement interrompu', 'Download unterbrochen', 'Descarga interrumpida', 'Download interrotto', 'การดาวน์โหลดถูกขัดจังหวะ', 'Pobieranie przerwane', 'Загрузка прервана', 'Завантаження перервано'),
+])
+# The Navidrome root page (patch/ndroot.c, tools/pod_nd.py): the Server row's state words, the footer and the empty state. "Navidrome" stays as it is.
+TEXT.update([
+    _t('Not Connected', '未连接', '未連線', '未接続', '연결 안 됨', 'Non connecté', 'Nicht verbunden', 'No conectado', 'Non connesso', 'ไม่ได้เชื่อมต่อ', 'Brak połączenia', 'Не подключено', 'Не підключено'),
+    _t('Syncing…', '正在同步…', '正在同步…', '同期中…', '동기화 중…', 'Synchro…', 'Sync läuft…', 'Sincronizando…', 'Sincronizzo…', 'กำลังซิงค์…', 'Synchronizacja…', 'Синхронизация…', 'Синхронізація…'),
+    # the status line while the background fill runs (patch/sbapi.c phase 2): songs, then covers; done/total, short because the line is narrow
+    _t('Updating library… %d/%d', '正在更新曲库… %d/%d', '正在更新曲庫… %d/%d', 'ライブラリを更新中… %d/%d', '라이브러리 업데이트 중… %d/%d', 'Mise à jour… %d/%d', 'Aktualisiere… %d/%d', 'Actualizando librería… %d/%d', 'Aggiorno libreria… %d/%d', 'กำลังอัปเดตคลัง… %d/%d', 'Aktualizacja biblioteki… %d/%d', 'Обновление медиатеки… %d/%d', 'Оновлення медіатеки… %d/%d'),
+    _t('Loading covers… %d/%d', '正在加载封面… %d/%d', '正在載入封面… %d/%d', 'カバーを読み込み中… %d/%d', '커버 불러오는 중… %d/%d', 'Pochettes… %d/%d', 'Cover laden… %d/%d', 'Cargando carátulas… %d/%d', 'Copertine… %d/%d', 'กำลังโหลดปก… %d/%d', 'Okładki… %d/%d', 'Загрузка обложек… %d/%d', 'Завантаження обкладинок… %d/%d'),
+    _t('Loading artist images… %d/%d', '正在加载歌手图片… %d/%d', '正在載入歌手圖片… %d/%d', 'アーティスト画像… %d/%d', '아티스트 이미지… %d/%d', "Images d'artistes… %d/%d", 'Künstlerbilder… %d/%d', 'Imágenes de artistas… %d/%d', 'Immagini artisti… %d/%d', 'กำลังโหลดรูปศิลปิน… %d/%d', 'Zdjęcia wykonawców… %d/%d', 'Фото исполнителей… %d/%d', 'Фото виконавців… %d/%d'),
+    _t('Synced %s', '%s同步', '%s同步', '%sに同期', '%s 동기화됨', 'Synchronisé %s', 'Synchronisiert %s', 'Sincronizado %s', 'Sincronizzato %s', 'ซิงค์ %s', 'Zsynchronizowano %s', 'Синхронизировано %s', 'Синхронізовано %s'),
+    _t('Synced just now', '刚刚同步', '剛剛同步', 'たった今同期', '방금 동기화됨', 'Synchronisé à l’instant', 'Gerade synchronisiert', 'Sincronizado ahora mismo', 'Sincronizzato adesso', 'เพิ่งซิงค์', 'Zsynchronizowano przed chwilą', 'Только что синхронизировано', 'Щойно синхронізовано'),
+    _t('Server Settings', '服务器设置', '伺服器設定', 'サーバー設定', '서버 설정', 'Réglages du serveur', 'Servereinstellungen', 'Ajustes del servidor', 'Impostazioni server', 'การตั้งค่าเซิร์ฟเวอร์', 'Ustawienia serwera', 'Настройки сервера', 'Налаштування сервера'),
+    _t('Not synced yet', '尚未同步', '尚未同步', '未同期', '아직 동기화되지 않음', 'Pas encore synchronisé', 'Noch nicht synchronisiert', 'Aún sin sincronizar', 'Non ancora sincronizzato', 'ยังไม่ได้ซิงค์', 'Jeszcze nie zsynchronizowano', 'Ещё не синхронизировано', 'Ще не синхронізовано'),
+    _t('Navidrome, Gonic, Airsonic and other Subsonic servers', 'Navidrome、Gonic、Airsonic 及其他 Subsonic 服务器', 'Navidrome、Gonic、Airsonic 及其他 Subsonic 伺服器', 'Navidrome、Gonic、Airsonic などの Subsonic サーバー', 'Navidrome, Gonic, Airsonic 및 기타 Subsonic 서버',
+       'Navidrome, Gonic, Airsonic et autres serveurs Subsonic', 'Navidrome, Gonic, Airsonic und andere Subsonic-Server', 'Navidrome, Gonic, Airsonic y otros servidores Subsonic', 'Navidrome, Gonic, Airsonic e altri server Subsonic',
+       'Navidrome, Gonic, Airsonic และเซิร์ฟเวอร์ Subsonic อื่นๆ', 'Navidrome, Gonic, Airsonic i inne serwery Subsonic', 'Navidrome, Gonic, Airsonic и другие серверы Subsonic', 'Navidrome, Gonic, Airsonic та інші сервери Subsonic'),
+    _t('Add Server', '添加服务器', '新增伺服器', 'サーバーを追加', '서버 추가', 'Ajouter un serveur', 'Server hinzufügen', 'Añadir servidor', 'Aggiungi server', 'เพิ่มเซิร์ฟเวอร์', 'Dodaj serwer', 'Добавить сервер', 'Додати сервер'),
+])
 DPAGE_KEYS = ('Updated today', 'Updated yesterday', 'Updated %s', 'Play', 'Songs you love and some to rediscover, made fresh every day.')   # the Daily Mix page's keys
 DAILY_KEYS =('Made for You', 'Daily Mix', 'Regenerate Daily Mix', '%s and more', '%s, %s')     # the card's keys (tools/pod_dailymix.py TEXT)
 

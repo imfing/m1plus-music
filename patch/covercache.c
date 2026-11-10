@@ -124,11 +124,11 @@ static void box_emit(void *user, const unsigned char *rgb) {
 
 /* Every destination pixel is the exact area average of the source its box covers: edge pixels count for the fraction of them inside (ar_push), so a 168 px
  * cover reduced to 144 or 92 reads cleanly where nearest sampling would shimmer, and no ratio blurs more than the box itself. */
-void cc_box(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at, unsigned size,
-            unsigned *out) {
+static void cc_box_cut(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at,
+                       unsigned size, unsigned *out, unsigned up) {
     ar_t a;
     unsigned side = w < h ? w : h, y;
-    const unsigned char *base = data + (h - side) / 2 * stride + (w - side) / 2 * 4;
+    const unsigned char *base = data + (h - side) / up * stride + (w - side) / 2 * 4;
     box_out_t o;
     o.out = out, o.size = size;
     if (!ar_init(&a, side, side, size, size)) {
@@ -136,6 +136,17 @@ void cc_box(const unsigned char *data, unsigned w, unsigned h, unsigned stride, 
         return;
     }
     for (y = 0; y < side; ++y) ar_push(&a, base + y * stride, 4, at[0], at[1], at[2], at[3], box_emit, &o);
+}
+
+void cc_box(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at, unsigned size,
+            unsigned *out) {
+    cc_box_cut(data, w, h, stride, at, size, out, 2);
+}
+
+/* cc_box for a picture of a person (the artist pictures, pv_square's rule): a landscape picture is cut at the centre of its width, a portrait one a third of the extra height from the top. */
+static void cc_box_top(const unsigned char *data, unsigned w, unsigned h, unsigned stride, const unsigned char *at,
+                       unsigned size, unsigned *out) {
+    cc_box_cut(data, w, h, stride, at, size, out, 3);
 }
 
 typedef struct {
@@ -316,7 +327,9 @@ int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsi
     data = format < 4 && iw && ih && iw <= 4096 && ih <= 4096 ? bitmap_lock_buffer_for_read(bitmap)
                                                               : (const unsigned char *)0;
     if (data) {
-        (box ? cc_box : cc_sample)(data, iw, ih, bitmap_get_line_length(bitmap), at[format], size, out);
+        (box == 2 ? cc_box_top
+         : box    ? cc_box
+                  : cc_sample)(data, iw, ih, bitmap_get_line_length(bitmap), at[format], size, out);
         bitmap_unlock_buffer(bitmap);
     }
     if (unload) widget_unload_image(w, bitmap);
@@ -851,9 +864,16 @@ static const char **so_key __attribute__((section(".scratch"))); /* their keys: 
 static int so_rev __attribute__((section(
     ".scratch"))); /* 1: the order's other direction (Z-A, oldest first); the special rows stay last either way */
 
+static int so_src __attribute__((section(
+    ".scratch"))); /* 1: a library source's records (their REC_ID is a negative hash: only -1 and -2 are special rows) */
+
+static int so_last(unsigned i) {
+    int id = I(so_rec[i], REC_ID);
+    return so_src ? id == -1 || id == -2 : id < 0;
+}
+
 static int so_cmp(unsigned a, unsigned b) {
-    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0,
-        d; /* "Unknown Album" (-1) and a scoped page's All songs row (-2) last */
+    int ua = so_last(a), ub = so_last(b), d; /* "Unknown Album" (-1) and a scoped page's All songs row (-2) last */
     if (ua != ub) return ua - ub;
     d = cc_key_cmp(so_key[2 * a], so_key[2 * b]);
     if (!d) d = cc_key_cmp(so_key[2 * a + 1], so_key[2 * b + 1]);
@@ -862,14 +882,14 @@ static int so_cmp(unsigned a, unsigned b) {
 
 /* The title order's fallback when there are no keys: the stock order, as it is or backwards (Z-A). */
 static int so_title_cmp(unsigned a, unsigned b) {
-    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0;
+    int ua = so_last(a), ub = so_last(b);
     if (ua != ub) return ua - ub;
     return (a < b) != (so_rev != 0) ? -1 : 1;
 }
 
 /* The Title order: the album titles' keys (one per row, so_key[i]) as the Artist order compares names; ties keep the stock order. */
 static int so_tkey_cmp(unsigned a, unsigned b) {
-    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0, d;
+    int ua = so_last(a), ub = so_last(b), d;
     if (ua != ub) return ua - ub;
     d = cc_key_cmp(so_key[a], so_key[b]);
     return d ? (so_rev ? -d : d) : a < b ? -1 : a > b;
@@ -939,7 +959,7 @@ static int so_name_cmp(unsigned a, unsigned b) {
 }
 
 static int so_recent_cmp(unsigned a, unsigned b) {
-    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0;
+    int ua = so_last(a), ub = so_last(b);
     if (ua != ub) return ua - ub;
     if (so_rank[a] != so_rank[b]) {
         int d = so_rank[a] < so_rank[b] ? -1 : 1;
@@ -951,7 +971,7 @@ static int so_recent_cmp(unsigned a, unsigned b) {
 
 /* newest year first (oldest first reversed), albums without one after them, then the stock (title) order */
 static int so_year_cmp(unsigned a, unsigned b) {
-    int ua = I(so_rec[a], REC_ID) < 0, ub = I(so_rec[b], REC_ID) < 0;
+    int ua = so_last(a), ub = so_last(b);
     if (ua != ub) return ua - ub;
     if (so_year[a] != so_year[b]) {
         if (so_rev && so_year[a] && so_year[b]) return so_year[a] < so_year[b] ? -1 : 1;
@@ -1046,11 +1066,22 @@ unsigned *cc_album_order(void *albums) {
     return cc_album_order_mode(albums, mode, rev);
 }
 
-unsigned *cc_album_order_mode(void *albums, int mode, int rev) {
+/* A source's album records carry their own year and creation time (REC_YEAR, REC_TIME_CREATE: getAlbumList2): rank 0xfffffffe - created (newest first; none stays last) and the year tag (1000..2999; 0 none). */
+static void so_rec_stats(unsigned n) {
+    unsigned i;
+    for (i = 0; i < n; ++i) {
+        unsigned c = (unsigned)I(so_rec[i], REC_TIME_CREATE);
+        int y = I(so_rec[i], REC_YEAR);
+        so_rank[i] = c ? 0xfffffffeu - c : SO_NONE;
+        so_year[i] = y >= 1000 && y <= 2999 ? (unsigned)y : 0;
+    }
+}
+
+static unsigned *so_order(void *albums, int mode, int rev, int src) {
     unsigned n = albums ? deque_size(albums) : 0, i;
     unsigned *v;
     if (!n) return (unsigned *)0;
-    so_rev = rev;
+    so_rev = rev, so_src = src;
     v = calloc(n, sizeof *v);
     so_rec = calloc(n, sizeof *so_rec);
     so_key = (const char **)0;
@@ -1063,7 +1094,8 @@ unsigned *cc_album_order_mode(void *albums, int mode, int rev) {
             so_key = cc_name_keys(n, so_title, so_rec);
         else {
             so_rank = calloc(n, sizeof *so_rank), so_year = calloc(n, sizeof *so_year);
-            if (so_rank && so_year && so_stats(n)) so_key = (const char **)so_rank; /* (only "it worked") */
+            if (so_rank && so_year && (src ? (so_rec_stats(n), 1) : so_stats(n)))
+                so_key = (const char **)so_rank; /* (only "it worked") */
         }
     }
     if (!v || !so_rec || (!so_key && mode != CC_SORT_TITLE)) {
@@ -1082,6 +1114,9 @@ unsigned *cc_album_order_mode(void *albums, int mode, int rev) {
     so_rec = (void **)0, so_key = (const char **)0, so_rank = so_year = (unsigned *)0;
     return v;
 }
+
+unsigned *cc_album_order_mode(void *albums, int mode, int rev) { return so_order(albums, mode, rev, 0); }
+unsigned *cc_album_order_src(void *albums, int mode, int rev) { return so_order(albums, mode, rev, 1); }
 
 void *cc_row(void *albums, const unsigned *order, unsigned i) { return deque_at(albums, order ? order[i] : i); }
 

@@ -20,6 +20,8 @@
  *             moves (the Songs page's loader); else the placeholder. The first miss builds the cover map (ONE getAllAlbum query, no file opened); an album's file is looked
  *             at once, when first asked for, and the answer kept (2 bits an album, 8 bytes an album kept, at most 4096 albums).
  *             A podcast episode is never looked up as an album: its show folder's picture (pc_show_cover, the Podcasts page's choice), else the placeholder.
+ *             A server track (its REC_ID is in the queue map) is never looked up as an album either: its cover is the source's file, the one Now Playing draws (sba_rec_cover; asked for when it
+ *             is not cached, the tile waits and the page's tick looks again), else the placeholder. A server queue is this page's: its play type is a list's, not a stream's (qp_stream).
  * No hook of its own; everything runs from the page's widgets and timers.
  */
 #include "offsets.inc"
@@ -32,6 +34,7 @@
 #include "azlist.h"
 #include "i18n.h"
 #include "podcasts.h"
+#include "sbapi.h"
 
 #define ROW LIST_ROW_H
 #define QP_AHEAD 2 /* rows kept beyond the view in the scroll direction */
@@ -65,6 +68,7 @@ static struct {
     cc_cmap_t
         *map; /* the library's album name -> cover key map (qp_key), built by the first miss; freed with the page */
     int map_tried; /* the map was asked for (built or not): never built twice in the page's life */
+    int hpend; /* the header's server cover is on its way: the tick looks again */
     unsigned pshow; /* the show (pc_show_of) whose picture purl is, 0 for none looked at yet */
     int purl_ok; /* purl holds that show's picture */
     char purl[408]; /* "file://" and the picture's path */
@@ -191,6 +195,20 @@ static const char *qp_ep_url(void *rec) {
     return qp.purl_ok ? qp.purl : (const char *)0;
 }
 
+/* A server track's record (streamed or downloaded)? Its cover is the source's file by the record's REC_ID, never a key of the library. */
+static int qp_srv(void *rec) { return rec && sba_rec_track(I(rec, REC_ID))[0] != 0; }
+
+/* A server track's cover for a tile: its file when it is there (the tile decodes it), the placeholder when the server has none, and a wait (1) when it was asked for and is on its way. */
+static int qp_srv_art(grid_t *g, grid_tile_t *t, void *rec) {
+    char url[120];
+    int r;
+    memcpy(url, "file://", 8);
+    r = sba_rec_cover(rec, url + 7, sizeof url - 7);
+    if (r == 0) return 1;
+    grid_art_url(g, t, r == 1 ? url : (const char *)0);
+    return 0;
+}
+
 /* The tile of row a (cover key and the two texts), made from the stock record (the caller has checked qp_valid). */
 static grid_tile_t *qp_tile(int a) {
     int lo, hi, fresh;
@@ -256,7 +274,7 @@ static int qp_next_load(void) {
     for (a = lo; a <= hi; ++a) {
         grid_tile_t *t = grid_find(&qp.g, a);
         int top = qp_row_y(a) - s, d;
-        if (t && t->art) continue;
+        if (t && (t->art || t->load)) continue; /* (load: a server cover on its way, the tick clears it) */
         d = qp_abs(top + ROW / 2 - QP_WIN_H / 2);
         if (top >= QP_WIN_H || top + ROW <= 0) d += 100000; /* ahead of the view */
         if (d < bd) bd = d, best = a;
@@ -294,6 +312,8 @@ static int qp_on_load(const void *unused) {
         void *rec = deque_at(qp.list, (unsigned)(qp.base + a)); /* (qp_next_load checked qp_valid) */
         if (pc_is_path(cc_str(rec, REC_PATH)))
             grid_art_url(&qp.g, t, qp_ep_url(rec)); /* an episode: no album to look up */
+        else if (qp_srv(rec))
+            t->load = qp_srv_art(&qp.g, t, rec);
         else
             t->ckey = qp_key(rec), grid_art(&qp.g, t);
         if (top < QP_WIN_H && top + ROW > 0) qp_redraw();
@@ -317,13 +337,20 @@ static int qp_on_scroll(void *ctx, void *e) {
 /* The header's cover for track rec (NULL: none, the placeholder): an episode's show picture (keyed by the show), else the album's cache file. */
 static void qp_cover(void *rec) {
     grid_tile_t *t = qp.hg.tiles ? grid_find(&qp.hg, 0) : (grid_tile_t *)0;
-    unsigned show = rec ? pc_show_of(cc_str(rec, REC_PATH)) : 0, key = show ? show : rec ? qp_key(rec) : 0;
+    unsigned show = rec ? pc_show_of(cc_str(rec, REC_PATH)) : 0, srv = qp_srv(rec),
+             key = show  ? show
+                   : srv ? (unsigned)I(rec, REC_ID) | 1u
+                   : rec ? qp_key(rec)
+                         : 0;
     if (!t || key == qp.hkey) return;
     qp.hkey = key;
     grid_free_art(t);
-    t->ckey = show ? 0 : key;
+    t->ckey = show || srv ? 0 : key;
+    qp.hpend = 0;
     if (show)
         grid_art_url(&qp.hg, t, qp_ep_url(rec));
+    else if (srv)
+        qp.hpend = qp_srv_art(&qp.hg, t, rec);
     else
         grid_art(&qp.hg, t);
     if (!qp.hg.placeholder && t->art != 1) grid_placeholder(&qp.hg);
@@ -472,6 +499,15 @@ static void qp_sync(void) {
     if (row != qp.row) qp_load(0);
 }
 
+/* Server covers that were asked for: their tiles (and the header) look again, once per tick, until the file is there or the source says there is none. */
+static void qp_srv_retry(void) {
+    int i, any = 0;
+    if (qp.hpend) qp.hkey = 0, qp_header(), qp_redraw();
+    for (i = 0; qp.g.tiles && i < qp.g.n; ++i)
+        if (qp.g.tiles[i].load) qp.g.tiles[i].load = 0, any = 1;
+    if (any) qp_kick();
+}
+
 static int qp_on_tick(const void *unused) {
     unsigned want;
     (void)unused;
@@ -479,6 +515,7 @@ static int qp_on_tick(const void *unused) {
     want = pod_screen_lit() ? QP_TICK_MS : POD_DARK_MS;
     if (qp.tick_timer && qp.tick_ms != want && timer_modify(qp.tick_timer, want) == RET_OK) qp.tick_ms = want;
     if (qp.fg) qp_sync();
+    qp_srv_retry();
     return RET_REPEAT;
 }
 

@@ -53,8 +53,8 @@ restore the prior state. There is no legacy-format parser.
 
 ## Extras and its settings
 
-`EXTRAS_GROUPS` defines Play, Library, Collections and Tools. Extras shows items absent from
-the main menu unless they are off; empty groups have no header. Each `pod_hdr0..3` is a 40 px
+`EXTRAS_GROUPS` defines Play, Library, Collections, Streaming (Subsonic, Tidal) and Tools. Extras shows items absent from
+the main menu unless they are off; empty groups have no header. Each `pod_hdr0..4` is a 40 px
 insensitive view with 20 px secondary-grey (#AAAAAA) text, not a clickable row. Shown headers/rows are restacked
 in display order; hidden children follow. A missing header only removes that heading.
 

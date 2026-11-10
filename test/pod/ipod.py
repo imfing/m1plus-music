@@ -68,6 +68,8 @@ class IM(Machine):
         for n in ('mclGetPlayStatus', 'playpause_quick_click', 'next_quick_click', 'prev_quick_click', 'loadAlbumdetailList', 'get_playtimeandlength'):
             self.handlers[pod.FUNCTIONS[n][2]] = n
         self.stock_songlist = True
+        self.sbtrack, self.sbcover = {}, {}   # server track REC_ID -> track id (sba_rec_track); REC_ID -> (sba_rec_cover's answer, the file's path) (patch/sbapi.c, tested in sbapi.py)
+        for n in ('sba_rec_track', 'sba_rec_cover'): self.handlers[PSYMS[n]] = n
         self.wall = 1800000000 + 4 * 3600 + 59 * 60   # 12:59 UTC (1800000000 is 08:00)
         self.strings = {'cdrippersettings': 'Settings', 'local_allsong': 'All Songs'}   # the stock key the Settings row uses (the shipped table says Settings)
         self.present.add('/mnt/mmc/m/1.flac')
@@ -97,6 +99,14 @@ class IM(Machine):
         if name == 'bitmap_create_ex' and self.fail_projection and (a0, a1) == (O['IP_ART'], O['IP_NP_REFLECT']):
             self.calls.append(('bitmap_create_ex', 0)); ret = 0
         elif name in TRAPS: self.calls.append((name,)); self.opened.append(name); ret = 0
+        elif name == 'sba_rec_track':
+            rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+        elif name == 'sba_rec_cover':   # (the record, path, cap): 1 and the path, 0 on its way, -1 none
+            rid = self.word(a0 + O['REC_ID']); rid = rid - (1 << 32) if rid >= 1 << 31 else rid
+            r, path = self.sbcover.get(rid, (-1, None))
+            self.calls.append(('sba_rec_cover', rid))
+            if r == 1: self.u.mem_write(a1, path.encode() + b'\0')
+            ret = r
         elif name == 'mclGetPlayStatus': ret = self.status
         elif name == 'playpause_quick_click':
             self.calls.append(('playpause_quick_click',)); self.cmds.append(('playpause',)); self.status = 2 if self.status != 2 else 3; ret = 1
@@ -1930,7 +1940,41 @@ def podcasts_pane_tests(ctx):
     expect(len(pc_blits(m)) == 1 and not [t for t, _ in m.paint()[0] if t == m.tr('No Podcasts')], 'with an episode on the card the picture shows and No Podcasts does not')
 
 
-SECTIONS = [angle_tests, asset_tests, menu_tests, open_tests, paint_tests, wheel_tests, feel_tests, tap_tests, nav_tests, stale_tests, playing_indicator_tests, music_menu_tests, root_shortcut_tests, now_row_tests, menu_padding_tests, rich_rows_tests, row_art_tests, playlist_art_tests, now_material_tests, classic_material_tests, split_menu_tests, pane_tests, shuffle_tests, settings_tests, i18n_tests, appearance_tests, transition_tests, fresh_art_tests, pane_sharp_tests, reference_nav_tests, shadow_slide_tests, now_steady_tests, podcasts_tests, podcasts_pane_tests]
+def server_cover_tests(ctx):
+    """A server track's Now Playing cover (ip_cover, docs/modules/subsonic.md): the source's own file (sba_rec_cover on the record), never the library album of the same artist and album; a cover on its way leaves
+    the placeholder and is looked at again until it lands; a local track keeps the album's cache file."""
+    expect = ctx.expect
+    SBC = '/mnt/mmc/.m1plus/subsonic/covers/0123abcd-168.jpg'
+    local = art_file(album_key('Artist', 'Album'))
+
+    def server(cover, path='http://nd.example:4533/rest/stream.view?id=t5&t=tok&s=salt', rid=-5):
+        m = machine(); m.open()
+        m.files[local] = 4096; m.present.add(local); m.images['file://' + local] = (168, 168, bytes((200, 40, 40, 255)) * (168 * 168))   # the library has an album of that name and artist
+        m.sbtrack[-5], m.sbcover[-5] = 't5', cover
+        if cover[0] == 1: m.files[SBC] = 4096; m.present.add(SBC); m.images['file://' + SBC] = (168, 168, bytes((40, 40, 200, 255)) * (168 * 168))
+        m.status = 2; m.pt = (10, 100)
+        m.play([m.song('Remote', path=path, name='Remote.flac', rid=rid)], 0)
+        m.warm = tick(m)   # (the page's first look at the new track)
+        return m
+    # (the main menu's cover pane takes the playing album's cache file too, ip_pane_want: a server track's pane takes none)
+    loads = lambda c: [x[1] for x in c if x[0] == 'widget_load_image']
+    m = server((1, SBC)); c = tick(m)
+    expect('file://' + SBC in loads(c) and 'file://' + local not in loads(c), f'a server track: the server\'s cover, not the library album\'s cache file ({loads(c)})')
+    m = server((0, None)); c = tick(m)
+    expect('file://' + local not in loads(c) and 'file://' + SBC not in loads(c), f'a cover on its way: the placeholder, not the library album ({loads(c)})')
+    asked = 0
+    for _ in range(8): c = tick(m); asked += c.count(('sba_rec_cover', -5)); expect('file://' + local not in loads(c), 'and the library album is never taken while it waits')
+    expect(asked >= 8, f'the source is asked again on every tick beyond the settle ticks ({asked})')
+    m.sbcover[-5] = (1, SBC); m.files[SBC] = 4096; m.present.add(SBC); m.images['file://' + SBC] = (168, 168, bytes((40, 40, 200, 255)) * (168 * 168))
+    c = tick(m); c += tick(m)
+    expect('file://' + SBC in loads(c), 'the file landed: the cover is redone with it')
+    m = server((-1, None)); c = tick(m)
+    expect('file://' + local not in loads(c), 'a server track the server has no picture for: not the library album\'s cover')
+    m = server((1, SBC), path='/mnt/mmc/m/1.flac', rid=7); m.sbtrack.clear(); c = m.warm + tick(m)
+    expect('file://' + local in loads(c) and 'file://' + SBC not in loads(c), 'a local track: the album\'s cache file as before')
+
+
+SECTIONS = [angle_tests, asset_tests, menu_tests, open_tests, paint_tests, wheel_tests, feel_tests, tap_tests, nav_tests, stale_tests, playing_indicator_tests, music_menu_tests, root_shortcut_tests, now_row_tests, menu_padding_tests, rich_rows_tests, row_art_tests, playlist_art_tests, now_material_tests, classic_material_tests, split_menu_tests, pane_tests, server_cover_tests, shuffle_tests, settings_tests, i18n_tests, appearance_tests, transition_tests, fresh_art_tests, pane_sharp_tests, reference_nav_tests, shadow_slide_tests, now_steady_tests, podcasts_tests, podcasts_pane_tests]
 
 
 def run(ctx):

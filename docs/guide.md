@@ -62,6 +62,8 @@ Home looks for photos while it builds covers after a library change. To pick up 
 later, open that artist's page, or use **Settings → Library → Rebuild Artist Photos**, which checks
 every artist again in the background.
 
+A Subsonic server's artists show the server's own artist picture instead, fetched in the background after a sync (the Subsonic page's status line says "Loading artist images…"); an artist the server has no picture for shows the grey placeholder in the list and the page without a circle.
+
 ## Settings
 
 Grey values show the current setting.
@@ -133,6 +135,11 @@ with Wi-Fi, Radio Browser: the Top Stations, countries, genres and a name search
 Radio Now Playing adds it to or removes it from My Stations. The Radio Now Playing page shows the song, the stream and previous/next along the list; local
 music stops the radio. Stations are `Radio/favourites.m3u` on the card; the `...` on the My Stations page has Import from Card, which adds the stations of
 every other `.m3u`, `.m3u8` or `.pls` in `Radio/` that are not there yet (your files are never changed).
+
+**Subsonic** (main menu Extras > Subsonic) plays from a Subsonic-compatible server such as Navidrome, Gonic or Airsonic. Tap **Add Server** and enter the server address (start it with `http://` or `https://`; a port and a subpath are fine), your username and your password, then tap **Sign In** (the password itself is not kept on the card, only a sign-in token for that server). A line under the card says what went wrong: "Incorrect username or password", "Can't connect to the server", or a certificate error. A certificate that is not trusted (a self-signed server) is not supported; on a home network use `http://`. The password is stored unencrypted on the card (`.m1plus/subsonic.conf`), so make a dedicated server account for the device.
+The root page's status line under the title reads **Synced** (with its age), **Syncing…**, **Updating library…**, **Loading covers…**, **Loading artist images…** (the library keeps filling in the background; you can browse meanwhile) or **Not Connected**. The six rows are Albums, Artists, Songs, Playlists, Favorites and Downloaded. The `...` card has **Sync Now** (it asks first) and **Server Settings** (server, username, password, Sync Now and Sign Out); the magnifier searches the server. Tap a song to stream the original file (nothing is transcoded). DSD files do not stream: tapping one asks **Download to Play?**.
+A server album's page has a `...` with **Download Album**, which queues every track not yet on the card (one message tells how many). A song's `...` sheet has Play Next, Play After, Download, Favorite and Get Info. Favorites are the server's own stars and stay in sync with it. Downloads go to `Subsonic/` on the card, one at a time; a small ring shows progress, a stopped download (Wi-Fi lost) resumes where it was, and Cancel Download or Remove Download from the sheet stops it or deletes the file. **Downloaded** lists them and works offline, also after **Sign Out**, which keeps the downloads and clears only the server's cache. Without Wi-Fi, songs that are not downloaded are dimmed.
+Limits: the Songs list shows the first 10,000 songs, a play queue holds the list in its order, up to 64 songs (from the one you tapped when the list is longer), and a playlist or favourites list up to 3,000 songs.
 
 **Cassette Mode** is a landscape Now Playing screen. Tap the cassette to pause/resume and the
 top-left screw to close. Change its theme under Settings.

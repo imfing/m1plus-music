@@ -20,6 +20,13 @@ with no record, no window, an asset without the widgets or no memory; a second o
 - **Bitrate** is the file's average (bytes over seconds, including tags and art), not a stream value; hidden for a CUE track. **Not readable:** sample rate and depth of M4A/AAC/ALAC, Opus, APE, DSD, WMA and other
   formats (their rows are hidden, the rest shows); bit depth of every lossy format. A missing file shows Format and Path only.
 
+## A Navidrome track (ND-14)
+
+`songinfo_open` asks `sbs_track(rec)` first: a record that is a Navidrome track (`nd://`) is not a file, so the page takes its facts from the source's row (the record's own data completed from the album's cache file): Format (the suffix, upper
+case), Sample Rate / Bit Depth (what the server sent; from the file's first bytes when the track is downloaded and the server left them out), Bitrate (the server's own figure), Duration, Size (the server's, else the file's) and
+**Path only for a downloaded track** (the local file; the server's own path is not kept in the cache). The cover is the cached Navidrome picture (`sba_cover_have`, loaded with `grid_art_url`), else the placeholder; nothing is requested.
+No file is read for an undownloaded track and TagLib is never used. Tests: `songinfo/remote_tests`.
+
 ## Tests and preview
 `test/pod/songinfo.py`: the asset and the page table, the 13 translations and the longest label (French, 280 of 288 px); FLAC (44.1/16, 96/24, 176.4/24 over an hour and a GB, 22.05/8), WAV, Ogg, MP3 with
 no tag and after tags of 300, 5000 and 70000 bytes, a sync with no next frame skipped, an unreadable header, an M4A holding MPEG-like bytes (no rate), a missing file, no or a folder-only extension, no title, CUE tracks, long path and title; geometry, scroll and the fade; no record, second

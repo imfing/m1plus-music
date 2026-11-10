@@ -78,6 +78,7 @@ cc_cmap_t *cc_cmap_build(cc_cmap_stat_t *st);
  * map NULL ok. */
 unsigned cc_cmap_key(cc_cmap_t *map, const char *album);
 void cc_cmap_free(cc_cmap_t *map);
+/* box 0 nearest sampling, 1 the area average of the centred square, 2 the same square cut as an artist picture is (pv_square: landscape centred, portrait a third of the extra height from the top). */
 int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsigned *out);
 /* cc_decode for a picture that must not be cropped: the whole picture fitted inside size x size over the word bg (cc_fit). 1 when out was written. */
 int cc_decode_fit(void *w, const char *url, int unload, unsigned size, unsigned bg, unsigned *out);
@@ -137,6 +138,9 @@ int cc_scoped_sort(
 unsigned *cc_album_order_mode(
     void *albums, int mode,
     int rev); /* cc_album_order for the given CC_SORT_* and direction instead of the saved ones; NULL: no albums or no memory (Title falls back to the stock order, backwards for Z-A); "Unknown Album" and the All Songs row stay last */
+unsigned *cc_album_order_src(
+    void *albums, int mode,
+    int rev); /* cc_album_order_mode for a library source's album records: Recently Added and Year read the records' own REC_TIME_CREATE and REC_YEAR, no song query */
 unsigned *cc_album_years(
     void *albums,
     void *

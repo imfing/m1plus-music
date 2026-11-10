@@ -59,6 +59,15 @@ The menu also closes when the page reads its list again (`sg_load` / `ab_load`: 
 | `UPNEXT_MEMORY` | "Not enough memory" |
 | `UPNEXT_DLNA` | "Not available while DLNA is on" |
 
+## A library source's rows (ND-14)
+
+`rowmenu_open_src(rm, row, rec, add, src)` (the pages pass their `src`; `rowmenu_open` is it with NULL) shows the same five-row card for a Navidrome track (docs/modules/subsonic.md "Row sheet"): the third row is **Download**
+(`rm_ic_dl`), **Cancel Download** (`rm_ic_cxdl`, waiting or running) or **Remove Download** (`rm_ic_rmdl`, on the card) from `src->row` (`ls_row_t.dl`), in place of Add to Playlist; Favorite / **Undo Favorite** follows `ls_row_t.fav`
+and goes through `src->act(LS_ACT_FAVORITE)` (no stock myfav call); the words and glyph of the third row are set at every open (Add to Playlist and `rm_ic_add` again for the stock library). Download, Cancel and Remove are
+`src->act` (`LS_ACT_DOWNLOAD`, `LS_ACT_CANCEL_DL`, `LS_ACT_DELETE_DL`); the row re-paints when `src->gen` moves. Play Next / Play After hand `src->queue_row(rec)` (a stock queue record: the stream address or the local file, its
+synthetic id added to the queue map by `sba_queue_add`) to `upnext_add`, which skips the file test for a stream address whose id the map knows; the source shows why when it cannot (offline and not downloaded). An undownloaded DSD
+row asks `ls_dsd_confirm` instead ("Download to Play?"). Get Info is `songinfo_open` (it reads the source's data for an `nd://` record). Tests: `rowmenu/source_tests` (album page and Songs page over fake sources).
+
 ## Design notes
 
 - No widget per row: the "..." is a bitmap (`rm_make_dots`: the image `rm_dots` decoded by `cc_decode`, its red channel the coverage, `#8C8C8C`) drawn by `rowmenu_paint` from the page's row painter with

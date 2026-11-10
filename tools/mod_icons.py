@@ -174,7 +174,8 @@ WIFI_SIG_W, WIFI_SIG_H, WIFI_SIG_DIM, WIFI_GREY, WIFI_SPIN_PX = 20, 16, (0x55, 0
 WIFI_SIG_GLYPHS = {1: 'wifi-low', 2: 'wifi-high', 3: 'wifi'}     # the lit arcs of wf_sig1..3
 WIFI_GLYPHS = {'wf_lock': ('lock', 16, WIFI_GREY), 'wf_info': ('info', 22, WIFI_GREY), 'wf_check': ('check', 20, WHITE),
                'wf_eye': ('eye', 22, WIFI_GREY), 'wf_eyeoff': ('eye-off', 22, WIFI_GREY)}   # the password page's show / hide button (eye: the password is hidden, a tap shows it)
-WIFI_IMAGES = sorted(WIFI_GLYPHS) + [f'wf_sig{n}' for n in range(4)] + [f'wf_spin{i}' for i in range(8)]
+WIFI_SPIN_L_PX = 28   # wf_spinL0..7: the same art at 28 px, the cover spinner of the Album page's header (patch/albumpage.c)
+WIFI_IMAGES = sorted(WIFI_GLYPHS) + [f'wf_sig{n}' for n in range(4)] + [f'wf_spin{i}' for i in range(8)] + [f'wf_spinL{i}' for i in range(8)]
 
 
 def wifi_signal(lit):
@@ -186,13 +187,14 @@ def wifi_signal(lit):
     return fit(fan, WIFI_SIG_W, WIFI_SIG_H, WIFI_SIG_W, 'c')
 
 
-def wifi_spinner(i, ss=8):
-    """WIFI_SPIN_PX square: a 280 degree arc 2.5 px wide in the secondary grey, turned i x 45 degrees."""
+def wifi_spinner(i, px=WIFI_SPIN_PX, ss=8):
+    """px square (WIFI_SPIN_PX, or WIFI_SPIN_L_PX for wf_spinL): a 280 degree arc 2.5 px wide at 14 px (scaled with px) in the secondary grey, turned i x 45 degrees."""
     from PIL import Image, ImageDraw
-    n = WIFI_SPIN_PX * ss
+    n, k = px * ss, px / WIFI_SPIN_PX
+    m, w = int(1.25 * k * ss), int(2.5 * k * ss)
     big = Image.new('L', (n, n), 0)
-    ImageDraw.Draw(big).arc((int(1.25 * ss), int(1.25 * ss), n - int(1.25 * ss) - 1, n - int(1.25 * ss) - 1), 45 * i, 45 * i + 280, fill=255, width=int(2.5 * ss))
-    im = Image.new('RGBA', (WIFI_SPIN_PX,) * 2, WIFI_GREY + (0,)); im.putalpha(big.resize((WIFI_SPIN_PX,) * 2, Image.LANCZOS)); return im
+    ImageDraw.Draw(big).arc((m, m, n - m - 1, n - m - 1), 45 * i, 45 * i + 280, fill=255, width=w)
+    im = Image.new('RGBA', (px,) * 2, WIFI_GREY + (0,)); im.putalpha(big.resize((px,) * 2, Image.LANCZOS)); return im
 
 
 DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + ['pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_art', 'pod_ic_sleep'] + sorted(ES_ICONS)   # (pod_ic_tape, pod_ic_vinyl: Now Playing's More sheet's Cassette Mode and Vinyl Mode rows, tools/mod_lists.py: no row page uses them)
@@ -202,7 +204,7 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'Shuffle': ('pod_ic_shuffle', 'shuffle'), 'Songs': ('pod_ic_songs', 'music'),
             'Albums': ('pod_ic_albums', 'disc-3'), 'Artists': ('pod_ic_artists', 'mic-vocal'),
             'Genres': ('pod_ic_genres', 'guitar'), 'Folders': ('pod_ic_folders', 'folder'),
-            'Playlists': ('pod_ic_playlists', 'list-music'), 'Navidrome': ('pod_ic_navidrome', 'disc-3'), 'Settings': ('pod_ic_prefs', 'sliders-horizontal'), 'Extras': ('pod_ic_extras', 'ellipsis'),
+            'Playlists': ('pod_ic_playlists', 'list-music'), 'Subsonic': ('pod_ic_navidrome', 'server'), 'Settings': ('pod_ic_prefs', 'sliders-horizontal'), 'Extras': ('pod_ic_extras', 'ellipsis'),
             'Shuffle Songs': ('pod_ic_shufsongs', 'music'), 'Shuffle Albums': ('pod_ic_shufalbums', 'disc-3'),
             'Shuffle Folders': ('pod_ic_shuffolders', 'folder'),
             # the Extras page (the stock Home tiles the menu does not repeat; glyphs as the Home grid's)
@@ -217,10 +219,8 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_playset', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings')}
 # The Folders page's row glyphs (patch/folders.c): the menu rows' bare white 24 px glyph for what POD_ROWS has no row for: an audio file, the SD card, a USB drive (folders, playlist files, the CD Library and the wave are pod_ic_folders, pod_ic_playlists, pod_ic_cdripper, pod_ic_nowplaying)
 FOLDER_ROWS = {'fo_ic_file': 'file-music', 'fo_ic_sd': 'memory-stick', 'fo_ic_usb': 'usb'}
-SUBSONIC_ICONS = {'pod_sb_sync': 'refresh-cw', 'pod_sb_download': 'download',
-                  'pod_sb_dsd': 'badge:DSD'}
-SUBSONIC_ART = ('pod_ic_navidrome_art', 'pod_ic_dsd_art')
-SUBSONIC_ART_PX = 136
+# The Navidrome pages' glyphs (patch/sbsrc.c row marks, tools/pod_nd.py): the Downloaded row and the downloaded-song disc.
+ND_ICONS = {'pod_sb_download': 'download'}
 # The Radio page's row glyphs (patch/radiopage.c): bare white 24 px glyphs for Top Stations, By Country (flag), By Genre, Stations (radio) and Radio Browser (globe; Now Playing and Recently Played are the menu rows' pod_ic_nowplaying and pod_ic_recent);
 # RADIO_ART is the radio-set glyph of the placeholders (the stations' tiles, the Now Playing page's art box, the mini bar): muted grey (ES_RGB), RADIO_ART_PX px.
 RADIO_ROWS = {'pod_ic_rd_stations': 'radio-tower', 'pod_ic_rd_top': 'trending-up', 'pod_ic_rd_country': 'earth', 'pod_ic_rd_genre': 'tag', 'pod_ic_rd_browser': 'globe'}
@@ -260,6 +260,7 @@ PL_MENU_ICONS = (('pl_ic_new', 'list-plus'), ('pl_ic_import', 'file-input'), ('p
 # the row's own "..." (RM_DOTS: the Lucide ellipsis, 24 px white on transparent; the payload makes it a RM_DOTS_RGB bitmap from the image's coverage and paints it at the right end of a track row)
 RM_MENU_ICONS = (('rm_ic_next', 'list-start'), ('rm_ic_after', 'list-end'), ('rm_ic_add', 'list-plus'), ('rm_ic_fav', 'star'), ('rm_ic_info', 'info'))
 RM_FAV_ON = ('rm_ic_unfav', 'star')   # Favorite's glyph while the track is a favourite (Undo Favorite): the same star filled solid; the payload swaps the row's image
+RM_DL_ICONS = (('rm_ic_dl', 'download'), ('rm_ic_rmdl', 'trash'), ('rm_ic_cxdl', 'x'))   # a Navidrome row's sheet (patch/rowmenu.c rm_third): the third row's Download / Remove Download / Cancel Download, in place of Add to Playlist's glyph
 RM_DOTS = ('rm_dots', 'ellipsis')
 RM_DOTS_PX = 24
 # Bare glyphs (no disc) on every list page: a BARE_PX canvas, stroke BARE_SW px absolute. The Pod rows' image is that
@@ -385,7 +386,7 @@ def is_badge(g): return g.startswith('badge:')
 def used_glyphs():
     """(Lucide names, Tabler names) of every glyph the tables use; custom ones excluded."""
     gl = [e[2] for e in HOME + SETTINGS + LISTS] + list(PULLDOWN.values()) + list(STATUS.values()) + \
-        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1], SYNC_BAR[1]] + list(NAV_VIEW.values()) + list(SUBSONIC_ICONS.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_FAV_ON[1]] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
+        [g for g in WIFI_LEVELS if g] + [COVER_GLYPH, POD_HOME_GLYPH, SHOT_BAR[1], SYNC_BAR[1]] + list(NAV_VIEW.values()) + list(ND_ICONS.values()) + [g for _, g in PL_MENU_ICONS] + [g for _, g in RM_MENU_ICONS] + [RM_FAV_ON[1]] + [RM_DOTS[1]] + list(ES_ICONS.values()) + [v[1] for v in POD_ROWS.values() if v[1] != SHANLING] + list(FOLDER_ROWS.values()) + list(RADIO_ROWS.values()) + [RADIO_ART[1]] + [g for g in CARD_GLYPHS.values() if g != SHANLING] + \
         [g for _, g, _ in GLYPHS] + [v[0] for v in SONGS_IMAGES.values()] + [v[0] for v in KEYBOARD_IMAGES.values()] + [KB_CLEAR[1], DP_ADD_GLYPH] + list(PC_GLYPHS) + [g for _, g in DISCS] + [v[0] for v in NP.values() if not v[0].startswith('pil:')] + ['lock:filled'] + R3_GLYPHS
     names = {gname(g) for g in gl if g and not is_custom(g) and not is_badge(g)}
     return sorted(n for n in names if not n.startswith('T:')), sorted(n[2:] for n in names if n.startswith('T:'))
@@ -770,15 +771,9 @@ def generate_all(sizes):
     f[ARTIST_ART[0]] = glyph(ARTIST_ART[1], ARTIST_ART_PX, 'cover', (0x8C,) * 3)
     for n, g in POD_ROWS.values(): f[n] = bare_icon(g, POD_ICON)
     for n, g in FOLDER_ROWS.items(): f[n] = bare_icon(g, POD_ICON)
-    for n, g in SUBSONIC_ICONS.items(): f[n] = bare_icon(g, POD_ICON)
-    nav_art = glyph('disc-3', 108, 'cover')
-    f[SUBSONIC_ART[0]] = Image.new('RGBA', (SUBSONIC_ART_PX, SUBSONIC_ART_PX), (0, 0, 0, 0))
-    f[SUBSONIC_ART[0]].alpha_composite(nav_art, ((SUBSONIC_ART_PX - nav_art.width) // 2, (SUBSONIC_ART_PX - nav_art.height) // 2))
-    dsd_badge = badge('DSD', ss=8, size=(112, 68), font_px=42, stroke=3.5, radius=12, pad=8)
-    f[SUBSONIC_ART[1]] = Image.new('RGBA', (SUBSONIC_ART_PX, SUBSONIC_ART_PX), (0, 0, 0, 0))
-    f[SUBSONIC_ART[1]].alpha_composite(dsd_badge, ((SUBSONIC_ART_PX - dsd_badge.width) // 2, (SUBSONIC_ART_PX - dsd_badge.height) // 2))
     for n, g in RADIO_ROWS.items(): f[n] = bare_icon(g, POD_ICON)
     f[RADIO_ART[0]] = glyph_fit(RADIO_ART[1], RADIO_ART_PX, RADIO_ART_PX, ES_RGB, 4, 4.0)
+    for n, g in ND_ICONS.items(): f[n] = bare_icon(g, POD_ICON)
     for g in set(CARD_GLYPHS.values()): f[card_name(g)] = card_icon(g)
     name, w, h, rgb = CARD_CHEVRON
     f[name] = pod_chevron(rgb)
@@ -786,12 +781,13 @@ def generate_all(sizes):
     for i, n in enumerate(SWATCHES): f[n] = swatch(i)
     for n, (g, px, rgb) in WIFI_GLYPHS.items(): f[n] = glyph_fit(g, px, px, rgb, 1, 2.0 if px >= 22 else 1.5)
     for n in range(4): f[f'wf_sig{n}'] = wifi_signal(n)
-    for i in range(8): f[f'wf_spin{i}'] = wifi_spinner(i)
+    for i in range(8): f[f'wf_spin{i}'] = wifi_spinner(i); f[f'wf_spinL{i}'] = wifi_spinner(i, WIFI_SPIN_L_PX)
     for p in CARD_PIECES:
         f[f'pod_cd_{p}'] = card_piece(p); f[f'pod_cd_{p}_down'] = card_piece(p, True)
         f[f'pod_cdl_{p}'] = card_piece(p, tall=True); f[f'pod_cdl_{p}_down'] = card_piece(p, True, tall=True)
     for n, g in PL_MENU_ICONS: f[n] = glyph(g, PL_MENU_PX, 'bare')
     for n, g in RM_MENU_ICONS: f[n] = glyph(g, BARE_PX, 'bare')
+    for n, g in RM_DL_ICONS: f[n] = glyph(g, BARE_PX, 'bare')
     f[RM_FAV_ON[0]] = glyph(RM_FAV_ON[1], BARE_PX, 'solid')
     f[RM_DOTS[0]] = glyph(RM_DOTS[1], RM_DOTS_PX, 'bare')
     for n, g in ES_ICONS.items(): f[n] = glyph_fit(g, ES_PX, ES_PX, ES_RGB, 2, 2.0)
@@ -838,7 +834,10 @@ SONGS_IMAGES = {'sg_play': ('play:filled', WHITE, 14, 16), 'sg_shuffle': ('shuff
                 'sg_shuffle_on': ('shuffle', DARK_GLYPH, 16, 16), 'sg_repeat_on': ('repeat', DARK_GLYPH, 16, 16), 'sg_repeat1_on': ('repeat-1', DARK_GLYPH, 16, 16),   # the Queue page's lit buttons (#C8C8C8): a near black glyph
                 'sg_trash': ('trash', (0xFF, 0x6B, 0x6B), 16, 16), 'sg_tick': ('+check', WHITE, 14, 14),
                 'pod_ic_vslist': ('list', WHITE, None, 20), 'pod_ic_vsgrid': ('layout-grid', WHITE, None, 20), 'pod_ic_vssearch': ('search', WHITE, None, 20), 'pod_ic_vsselect': ('T:circle-check', WHITE, None, 20),
-                'pod_ic_vsartist': ('mic-vocal', WHITE, None, 20), 'pod_ic_vsalbumartist': ('user-star', WHITE, None, 20)}   # the "..." cards' row glyphs (bare, as the Playlists menu's rows); ink None: drawn on the icon set's own 24 grid at VS_GRID_PX, not fitted to the box, so a round or square shape keeps the set's optical balance and the rows' glyphs look one size
+                'pod_ic_vsartist': ('mic-vocal', WHITE, None, 20), 'pod_ic_vsalbumartist': ('user-star', WHITE, None, 20),
+                'pod_ic_vsrefresh': ('refresh-cw', WHITE, None, 20), 'pod_ic_vsserver': ('server', WHITE, None, 20),   # the Subsonic root's "..." card (patch/ndroot.c): Sync Now, Server Settings
+                'pod_ic_vsdownload': ('download', WHITE, None, 20),   # the Subsonic album page's "..." card (patch/albumpage.c): Download Album
+                'nd_st_ok': ('circle-check', WIFI_GREY, 14, 14), 'nd_st_off': ('unplug', WIFI_GREY, 14, 14)}   # the Subsonic root's status line: connected, and not connected / offline (14 px, the spinner's size, the line's grey)   # the "..." cards' row glyphs (bare, as the Playlists menu's rows); ink None: drawn on the icon set's own 24 grid at VS_GRID_PX, not fitted to the box, so a round or square shape keeps the set's optical balance and the rows' glyphs look one size
 VS_GRID_PX = 21   # the "..." card glyphs' grid: 24 units = 21 px (1.5 px stroke), so a full-grid shape (layout-grid, circle-check) has about 17 px of ink in its 20 px box
 ALBUM += sorted(SONGS_IMAGES)
 
@@ -898,6 +897,10 @@ PA_G_Y, PA_G_PX = 32, 16                                 # the 16 px glyph strip
 PA_DOTS_Y, PA_DOTS_PX, PA_BADGE_X, PA_BADGE_PX = 48, 20, 24, 12   # the "..." glyph (20 px, grey) at x 0; the 12 px badge at x 24
 PA_PILL_Y, PA_PILLF_X, PA_PILLO_X, PA_PILLW_X, PA_PILLR_X, PA_PILL_PX, PA_PILLW_PX = 68, 0, 32, 64, 108, 30, 40   # the discs: filled (30), outlined (30), white (40) and outlined (40): the Latest Episode pill's ends
 PA_FILL_A, PA_RING_A, PA_TRACK_A = 56, 110, 80           # alpha of the filled pill, of the outlined pill's ring (2 px), of the progress ring's track
+PA_DSD_X, PA_DSD_Y, PA_DSD_W, PA_DSD_H = 40, 48, 24, 14      # the source rows' DSD mark (patch/sbsrc.c sbs_marks): a grey outlined "DSD" tag, 24 x 14, beside the badge
+PA_DL_X, PA_DL_Y, PA_DL_PX, PA_DL_N, PA_DL_COLS = 76, 112, 14, 12, 6   # the source rows' download ring (patch/libsrc.c): 12 steps of 14 px, step k (the arc k / 12) at column k % 6, row k / 6 from (76, 112)
+PA_DL_ARROW, PA_DL_STOP = 12, 13                         # the marks after the steps, the same grid: the arrow-down (WAIT, on the empty ring) and the stop square (ACTIVE, drawn over the ring's step); row 2 from (76, 112)
+PA_DL_TRACK, PA_DL_STROKE, PA_DL_STOP_PX = (0x5A,) * 3, 1.5, 5   # the ring's track grey (the arc and the marks are PA_BADGE_GREY, the downloaded disc's); the stop square is 5 px, centred in the cell (antialiased)
 PA_GREY, PA_BADGE_GREY, PA_DARK, PA_RED = (0xAA,) * 3, (0xD0,) * 3, (0x14,) * 3, (0xFF, 0x6B, 0x6B)
 PA_CHEV = 6                                              # glyph 6 of the strip: the chevron-right (grey) of the Shows page's Downloads row
 PA_TILE_PX, PA_TILE_R, PA_TILE_RGB, PA_TILE_GLYPH = 44, 8, (0x1E,) * 3, 22   # the Library rows' tile: a 44 px rounded square, the Lucide glyph (22 px, white) on it
@@ -933,6 +936,34 @@ def _pc_ring(k):
     out = Image.new('RGBA', (px, px), WHITE + (0,))
     out.putalpha(ImageChops.lighter(track, arc(k / PA_RING_N)))
     return out
+
+def _pc_dlring(k):
+    """The download ring's step k: a dark grey track circle and a light grey arc from 12 o'clock for k / PA_DL_N of it (1.5 px); 14 px. The marks (_pc_dlmark) go on top."""
+    from PIL import Image, ImageDraw
+    px, s = PA_DL_PX, 8
+    n, w = px * s, round(PA_DL_STROKE * s)
+    def layer(rgb, frac):
+        m = Image.new('L', (n, n), 0)
+        d = ImageDraw.Draw(m)
+        if frac >= 1: d.ellipse((0, 0, n - 1, n - 1), outline=255, width=w)
+        elif frac > 0: d.arc((0, 0, n - 1, n - 1), -90, -90 + 360 * frac, fill=255, width=w)
+        o = Image.new('RGBA', (px, px), rgb + (0,)); o.putalpha(m.resize((px, px), Image.LANCZOS)); return o
+    out = layer(PA_DL_TRACK, 1)
+    out.alpha_composite(layer(PA_BADGE_GREY, k / PA_DL_N))
+    return out
+
+def _pc_dlmark(stop):
+    """The ring's mark, 14 px: the stop square (PA_DL_STOP_PX, centred, light grey) when `stop`, else the arrow-down (8 px, light grey) centred."""
+    from PIL import Image, ImageDraw
+    px, s = PA_DL_PX, 8
+    if not stop:
+        o = Image.new('RGBA', (px, px), (0, 0, 0, 0))
+        o.alpha_composite(tint(glyph('arrow-down', 8, 'small'), PA_BADGE_GREY), ((px - 8) // 2, (px - 8) // 2))
+        return o
+    m = Image.new('L', (px * s, px * s), 0)
+    e = round((px - PA_DL_STOP_PX) / 2 * s)
+    ImageDraw.Draw(m).rectangle((e, e, px * s - e - 1, px * s - e - 1), fill=255)
+    o = Image.new('RGBA', (px, px), PA_BADGE_GREY + (0,)); o.putalpha(m.resize((px, px), Image.LANCZOS)); return o
 
 def _pc_disc(size, rgb, alpha, ring=0):
     """A disc (or a ring `ring` px wide) of one colour at one alpha, anti-aliased: the ends of a pill."""
@@ -992,7 +1023,11 @@ def pc_atlas():
     cell(PA_CHEV, tint(glyph('chevron-right', PA_G_PX, 'small'), PA_GREY))
     d = glyph('ellipsis', PA_DOTS_PX, 'solid'); a.alpha_composite(tint(d, PA_GREY), (0, PA_DOTS_Y))
     a.alpha_composite(_pc_badge(), (PA_BADGE_X, PA_DOTS_Y))
+    a.alpha_composite(tint(badge('DSD', size=(PA_DSD_W, PA_DSD_H), font_px=10, stroke=1, radius=3, pad=1), PA_GREY), (PA_DSD_X, PA_DSD_Y))
     a.alpha_composite(_pc_playb(), (PA_PLAYB_X, PA_PLAYB_Y))
+    for k in range(PA_DL_STOP + 1):   # the ring's steps, then the arrow and the stop square (cells PA_DL_ARROW, PA_DL_STOP)
+        im = _pc_dlring(k) if k < PA_DL_N else _pc_dlmark(k == PA_DL_STOP)
+        a.alpha_composite(im, (PA_DL_X + k % PA_DL_COLS * PA_DL_PX, PA_DL_Y + k // PA_DL_COLS * PA_DL_PX))
     a.alpha_composite(_pc_disc(PA_PILL_PX, WHITE, PA_FILL_A), (PA_PILLF_X, PA_PILL_Y))
     a.alpha_composite(_pc_disc(PA_PILL_PX, WHITE, PA_RING_A, 2), (PA_PILLO_X, PA_PILL_Y))
     a.alpha_composite(_pc_disc(PA_PILLW_PX, WHITE, 255), (PA_PILLW_X, PA_PILL_Y))
@@ -1679,7 +1714,7 @@ def replaced_names():
 
 def pod_row_names(): return sorted({n for n, _ in POD_ROWS.values()})
 def nav_names(): return sorted(set(NAV_VIEW) | {n + '_down' for n in NAV_VIEW})
-def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(RADIO_ROWS) | {RADIO_ART[0], ARTIST_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_FAV_ON[0], RM_DOTS[0]})
+def pod_names(): return sorted(set(pod_row_names()) | set(FOLDER_ROWS) | set(ND_ICONS) | set(RADIO_ROWS) | {RADIO_ART[0], ARTIST_ART[0]} | set(POD_HOME) | set(nav_names()) | set(ALBUM) | set(DAILY) | {SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM} | {n for n, _ in PL_MENU_ICONS} | {n for n, _ in RM_MENU_ICONS} | {RM_FAV_ON[0], RM_DOTS[0]} | {n for n, _ in RM_DL_ICONS})
 def np_names(): return sorted(set(NP) | {v[4] for v in NP.values() if v[4]})
 
 def added_rels(stock_rootfs=None, *args):
@@ -1853,7 +1888,7 @@ def add_nav_icons(out):
     the status bar's Screenshot camera (the hidden pod_shot image tools/pod_ui.py adds to ui/system_bar.bin) and the Playlists
     page's menu glyphs (ui/m1plus_playlists.bin)."""
     d = os.path.join(out, IMG)
-    for n in nav_names() + [SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM] + [n for n, _ in PL_MENU_ICONS] + [n for n, _ in RM_MENU_ICONS] + [RM_FAV_ON[0], RM_DOTS[0]]:
+    for n in nav_names() + [SHOT_BAR[0], LO_BAR, SYNC_BAR[0], SYNC_DM] + [n for n, _ in PL_MENU_ICONS] + [n for n, _ in RM_MENU_ICONS] + [n for n, _ in RM_DL_ICONS] + [RM_FAV_ON[0], RM_DOTS[0]]:
         q = os.path.join(d, n + '.png'); assert not os.path.exists(q), f'{n}.png already in the tree'
         shutil.copyfile(os.path.join(PNG, n + '.png'), q); os.chmod(q, IMG_MODE); os.utime(q, (IMG_MTIME, IMG_MTIME))
 
@@ -1861,7 +1896,7 @@ def add_album_icons(out):
     """The album page's images (ALBUM): the tint, Shuffle's disc and glyph, the pill and the play glyph; patch/albumpage.c
     and tools/pod_ui.py build_album_page refer to them by name."""
     d = os.path.join(out, IMG)
-    for n in ALBUM + DAILY + list(FOLDER_ROWS) + list(RADIO_ROWS) + [RADIO_ART[0], ARTIST_ART[0]]:   # (the Folders page's three row glyphs, the Radio page's too, the artist photo placeholder's)
+    for n in ALBUM + DAILY + list(FOLDER_ROWS) + list(RADIO_ROWS) + list(ND_ICONS) + [RADIO_ART[0], ARTIST_ART[0]]:   # (the Folders page's three row glyphs, the Radio page's too, the artist photo placeholder's)
         q = os.path.join(d, n + '.png'); assert not os.path.exists(q), f'{n}.png already in the tree'
         shutil.copyfile(os.path.join(PNG, n + '.png'), q); os.chmod(q, IMG_MODE); os.utime(q, (IMG_MTIME, IMG_MTIME))
 

@@ -360,7 +360,58 @@ def cover_tests(ctx):
     expect([c for c in m.calls if c[0] == 'toolsQueryDbTable'] == [], 'painting asks the database nothing')
 
 
-SECTIONS = [asset_tests, field_tests, geometry_tests, lifecycle_tests, cover_tests]
+def remote_tests(ctx):
+    """5. A Navidrome track (ND-14): the page reads the server's data (the cached row, completed from the album's file) instead of a file: format, sample rate and bit depth, bitrate, duration, size;
+    nothing is opened under "nd://" and TagLib is not used; Path appears only for a downloaded track (the local file); the cover is the cached Navidrome picture, else the placeholder."""
+    expect = ctx.expect
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('podtest_sbapi', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sbapi.py'))
+    SA = importlib.util.module_from_spec(spec); spec.loader.exec_module(SA)
+    meta = 't\t185\tflac\t0\tcv9\tal1'
+    m = machine('nd://t9', None, title='Nine', artist='The Artist', album='The Album')
+    m.setword(m.rec + 0x28, m.cstr(meta))
+    m.fs[f'{SA.ND}/al/al1.idx'] = SA.cache_file('track', [SA.row('track', id='t9', title='Nine', artist='The Artist', album='The Album', album_id='al1', cover='cv9', suffix='flac', seconds=185, track=9, disc=1,
+                                                              size=30_000_000, bitrate=900, sample_rate=96000, bit_depth=24)])
+    open_page(m)
+    head, pairs = parse(m)
+    expect(head['label_head'] == 'Nine' and head['label_sub'] == ['The Artist', 'The Album'], f'remote: the header texts ({head})')
+    expect(list(pairs) == ['Format', SR, 'Bitrate', 'Duration', 'Size'], f'remote, not downloaded: the pairs without a Path ({list(pairs)})')
+    expect(pairs['Format'] == 'FLAC' and pairs[SR] == '96 kHz / 24-bit' and pairs['Bitrate'] == '900 kbps' and pairs['Duration'] == '3:05' and pairs['Size'] == '30.0 MB',
+           f'remote: the server\'s format, rate and depth, its own bitrate, duration and size ({pairs})')
+    expect(not [c for c in m.calls + m.open_calls if c[0] in ('taglib_file_new', 'dur_probe') or (c[0] in ('open', 'fopen') and str(c[1]).startswith('nd://'))], 'remote: no file read, no TagLib')
+    # the album's file has no row: only what the record carries (format and length)
+    m = machine('nd://t9', None, title='Nine')
+    m.setword(m.rec + 0x28, m.cstr(meta))
+    open_page(m)
+    _, pairs = parse(m)
+    expect(list(pairs) == ['Format', 'Duration'] and pairs['Format'] == 'FLAC' and pairs['Duration'] == '3:05', f'remote, no cached row: Format and Duration from the record ({pairs})')
+    # no sizes anywhere: no bitrate from nothing
+    m = machine('nd://t9', None, title='Nine')
+    m.setword(m.rec + 0x28, m.cstr('t\t0\tmp3\t0\t\t'))
+    open_page(m)
+    _, pairs = parse(m)
+    expect(list(pairs) == ['Format'] and pairs['Format'] == 'MP3', f'remote with nothing else known: Format alone ({pairs})')
+    # downloaded: the local file is the Path, and what the server leaves out is read from it
+    spec = importlib.util.spec_from_file_location('podtest_sbdl', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sbdl.py'))
+    SD = importlib.util.module_from_spec(spec); spec.loader.exec_module(SD)
+    t = SD.track('t9', 'Nine', 'flac')
+    local = f'{SD.MUSIC}/{SD.name_of(t)}'
+    m = machine('nd://t9', None, title='Nine')
+    m.setword(m.rec + 0x28, m.cstr(meta))
+    m.fs[local] = flac(); m.files[local] = 30_000_000
+    m.fs[SD.IDX] = ('M1PLUS-DL 1\n' + '\t'.join(f'{k}={v}' for k, v in (('i', 't9'), ('t', 'Nine'), ('p', SD.name_of(t)), ('w', 30_000_000), ('x', 'flac'), ('l', 185))) + '\n').encode()
+    m.dirs.add(SD.MUSIC) if hasattr(m, 'dirs') else None
+    open_page(m)
+    _, pairs = parse(m)
+    expect(pairs.get('Path', '').replace(' ', '') == local.replace(' ', '') and pairs.get(SR) == '44.1 kHz / 16-bit' and pairs.get('Size') == '30.0 MB', f'remote, downloaded: Path is the local file; the rate and depth the server left out come from its header ({pairs})')
+    # a stock record is not remote
+    m = machine('/mnt/mmc/Music/a.flac', flac(), size=30_000_000)
+    open_page(m)
+    _, pairs = parse(m)
+    expect(pairs['Format'] == 'FLAC' and 'Path' in pairs, 'a stock record still reads its file')
+
+
+SECTIONS = [asset_tests, field_tests, geometry_tests, lifecycle_tests, cover_tests, remote_tests]
 
 
 def run(ctx):

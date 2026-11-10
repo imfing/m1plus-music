@@ -6,6 +6,7 @@
  * (tools/pod_ui.py row_menu, last in z-order); nothing here adds a widget per row.
  */
 #pragma once
+#include "libsrc.h"
 
 typedef struct rowmenu rowmenu_t;
 
@@ -32,6 +33,10 @@ struct rowmenu {
     int row; /* the page's index of the row */
     rowmenu_add_fn add;
     struct rowmenu_slot slot[5];
+    /* A source's row (rowmenu_open_src): the third row is Download / Cancel Download / Remove Download in place of Add to Playlist, Favorite and its toast go through the source. */
+    const lib_src_t *src; /* NULL: the stock library */
+    void *dl_label, *dl_icon; /* the third row's label and glyph, set at every open */
+    int dl; /* the third row's action for a source: LS_ACT_DOWNLOAD / LS_ACT_CANCEL_DL / LS_ACT_DELETE_DL */
 };
 
 /* Looks up and binds the widgets of the page's window and makes the "..." bitmap. 1 when the "..." can be shown (assets found, M1+ Music not switched off), else 0
@@ -53,6 +58,10 @@ void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int 
 
 /* Opens the sheet for the row `row` whose record is `rec`; `add` is the page's Add to Playlist. 1 when the menu is open, 0 when it cannot be (no "...", no memory). */
 int rowmenu_open(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add);
+
+/* The same for a row of a library source (src NULL or &lib_stock: rowmenu_open). The five rows: Play Next, Play After (the source's queue record through upnext_add; an undownloaded DSD row asks
+ * "Download to Play?" first), Download / Cancel Download / Remove Download by the row's state, Favorite / Undo Favorite (the source's star), Get Info (the page for the source's data). */
+int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, const lib_src_t *src);
 
 /* Closes the menu and drops the row copy. */
 void rowmenu_close(rowmenu_t *rm);

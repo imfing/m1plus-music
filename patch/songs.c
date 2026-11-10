@@ -41,7 +41,8 @@
  *             the Unknown Genre byte) for every query and play, as the stock row tap leaves it; the stock navbar has no Search there, so its card is Select alone.
  *             An artist's songs (Cover Flow's artist page, songs_open_artist) is the same page on class 0xff11: its whole state is the 0x390 byte browsing
  *             record loadAlbumList(0xf004) and loadAlbumdetailList(0xff01, the All songs row) build, which the page snapshots and puts back before every query
- *             and play; the artist is the title and the grey line of a row is its album. A composer's songs (songs_open_artist with CLASS_COMPOSERS) are the same on\n *             class 0xff14 (loadAlbumList(0xf005), loadAlbumdetailList(0xff02)), the grey line staying the artist.
+ *             and play; the artist is the title and the grey line of a row is its album. A composer's songs (songs_open_artist with CLASS_COMPOSERS) are the same on
+ *             class 0xff14 (loadAlbumList(0xf005), loadAlbumdetailList(0xff02)), the grey line staying the artist.
  *   albums    Recently Added (class 0xf009) has a View group in the "..." card (Albums / Songs, docs/modules/recent-albums.md): the same page shows the newest-first Albums grid
  *             (patch/grid.c, a second tile ring sg.rg). The grid is read from the full `time_create desc` query (sort_flag 3 through loadLocalClassList(0xf001), the flag put back
  *             at once), copied into at most RV_MAX library album rows (sg.rrow) at the moment of the toggle; the album view reads only that copy and the library's albums, never
@@ -62,11 +63,17 @@
 #include "i18n.h"
 #include "songops.h"
 #include "rowmenu.h"
+#include "libsrc.h"
+#include "sbsrc.h"
 
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
 extern int search_open(void); /* patch/search.c: our keyboard, then the results page; -1 when it did not open */
+extern int search_open_src(const lib_src_t *src); /* patch/search.c: the same over a library source */
 
 #define ROW LIST_ROW_H
+#define SG_MARK_UP \
+    1 /* a source row's marks sit 1 px above the grey line's box centre: that box centres the font's whole line, and the letters' own middle (cap height) is higher */
+#define SG_WIN_H 450 /* the window's height (the spinner is centred in it) */
 #define SG_W 320 /* the content's width: the list_view's (the scroll_view clips at 310) */
 #define SG_TAP_PX SC_DRAG_PX
 #define SG_AHEAD 2 /* rows loaded beyond the view in the scroll direction */
@@ -112,6 +119,8 @@ static struct {
     void *hd_play, *hd_shuffle;
     pod_pill_t pill;
     void *st_title, *st_sub; /* hidden labels whose styles are the text styles (the rail's and the header's are az's) */
+    void *st_dim,
+        *st_subdim; /* a source's rows that cannot play: the title's and the grey line's dim styles (NULL: drawn as the others) */
     void *bar;
     vs_t
         vs; /* the "..." card (patch/viewsort.c): Search Songs, Select, Albums / Songs (Recently Added), Title, File Name, Format, Recently Added (the library) */
@@ -160,6 +169,19 @@ static struct {
     rowmenu_t rm; /* the rows' "..." menu (patch/rowmenu.c) */
     int tend; /* the text end the tiles were last fitted for (without select mode): a list read again with another one drops them */
     int down_more; /* the press began in a row's "..." zone */
+    const lib_src_t *
+        src; /* a non-stock library source (songs_open_src), or 0: every stock path above is then unchanged; sg.list is the source's own copy (deque_destroy) */
+    int which; /* the source's list: LS_SONGS, LS_FAVORITES or LS_DOWNLOADED */
+    int part; /* the source's list is a part that grows (lib_src_t.complete): no sections, no rail */
+    unsigned sgen, srows; /* the source's gen and gen_rows when the list was read */
+    unsigned gen_timer; /* the source's gen poll */
+    ls_cpoll_t
+        cp; /* the shared cover poll (patch/libsrc.c ls_cover_poll): the retry of the covers the source was asked for */
+    void *
+        scope_d; /* a source's list of a row (songs_open_src_in): a one-record deque, our copy of the row, the scope of every re-read; freed with the page */
+    void *
+        spin; /* a source's page: the loading spinner (sg_spin, optional: the status label says Loading... without it) under the title */
+    int wait; /* the source's rows are not cached yet (lib_src_t.state): the page and the spinner show, not the empty text */
     grid_t g; /* the tile ring (LAST: test/pod/songs.py reads the fields above by index) */
 } sg __attribute__((section(".scratch")));
 
@@ -215,30 +237,48 @@ static void sg_reverse(void *list) {
 
 /* The index is of the stock list `list` as long as that list is still in *pdeq_showlist, as big, and starts with the same record. */
 static int sg_valid(void) {
-    void *cur = *(void **)PDEQ_SHOWLIST;
+    void *cur =
+        sg.src ? sg.list : *(void **)PDEQ_SHOWLIST; /* a source's list is the page's own copy: nothing replaces it */
     return sg.list && cur == sg.list && deque_size(cur) == sg.count && (!sg.count || deque_at(cur, 0) == sg.first);
 }
 
 static int sg_lib(void) {
-    return sg.cls == CLASS_ALL_SONGS;
+    return sg.cls == CLASS_ALL_SONGS && !sg.src;
 } /* the library: the only list with the sort card, sections and the rail */
+/* A source's complete Songs list is sectioned by the title's first letter (az_sections copes with a source that is not in title order); a part of it that grows has no rail. */
+static int sg_ranked(void) { return sg.src && sg.which == LS_SONGS && !sg.scope_d && !sg.part; }
 static int sg_genre(void) {
     return sg.cls == CLASS_GENRE_SONGS;
 } /* a genre's songs: the stock navbar has no Search there */
 static int sg_artist(void) {
     return sg.cls == CLASS_ARTIST_SONGS || sg.cls == CLASS_14;
 } /* an artist's (or a composer's) songs: Cover Flow's artist page is its other view (a toggle, not a stack) */
+/* The page kinds a source shares with the stock classes: a source's playlist is the playlist page (header, no Search), a source artist's All Songs the artist's songs (the artist is the
+ * title, the album the grey line, no sections, no Search; its Cover Flow slot stays empty as the source has no Cover Flow). */
+static int sg_playlist(void) { return sg.cls == CLASS_PLAYLIST_SONGS || (sg.src && sg.which == LS_PLAYLISTS); }
+static int sg_artist_songs(void) {
+    return sg.cls == CLASS_ARTIST_SONGS || (sg.src && sg.scope_d && sg.which == LS_SONGS);
+}
 static int sg_recent(void) {
     return sg.cls == CLASS_RECENTADD;
 } /* Recently Added: its card also holds the Albums / Songs rows (the songs or the newest albums) */
 static int sg_searches(void) {
-    return !sg_genre() && !sg_artist() && sg.cls != CLASS_PLAYLIST_SONGS && sg.btn_search;
-} /* a list with the Search button (a genre's songs: the stock navbar has none; an artist's: Cover Flow has its place; a playlist's: no Search inside a playlist) */
+    return !sg_genre() && !sg_artist() && !sg_artist_songs() && !sg_playlist() && sg.btn_search &&
+           (ls_caps(sg.src) &
+            LS_CAP_SEARCH); /* (sg_artist: a composer's songs too, which sg_artist_songs leaves out) */
+} /* a list with the Search button (a genre's songs: the stock navbar has none; an artist's: Cover Flow has its place; a playlist's: no Search inside a playlist; a source without the control: none) */
+static int sg_selects(void) { return (ls_caps(sg.src) & LS_CAP_SELECT) != 0; }
 static int sg_direct(void) {
     return !sg_lib() && !sg_recent();
 } /* a list whose "..." card would hold Select alone: the navbar has the Select button instead (btn_select), no card */
+static int sg_mid(void) {
+    return !sg_direct() || sg_selects();
+} /* the capsule has its "..." (or Select) piece; a source's direct list without Select has none */
 static int sg_title_end(void) {
-    return (sg_artist() && sg.btn_cf) || sg_searches() ? NAV_CF_X : NAV_VIEW_X;
+    if ((sg_artist() && sg.btn_cf) || sg_searches()) return sg_mid() ? NAV_CF_X : NAV_VIEW_X;
+    if (sg.src && !sg_selects())
+        return NAV_VIEW_X + NAV_VIEW_W; /* no button at all: the title runs to Now Playing (260) */
+    return NAV_VIEW_X;
 } /* the small title ends at the capsule's first piece: "..." (214), or Search / Cover Flow (168) */
 /* The rows of the "..." card the list offers, what its navbar had as buttons: Select (not in Recently Added's albums view), Albums / Songs (Recently Added), the four sorts (the library).
  * Search is the navbar button (btn_search), not a row. */
@@ -319,10 +359,8 @@ static int sg_is_sel(int i) { return sg.sel && (sg.sel[i >> 3] >> (i & 7) & 1); 
 static void sg_prep(tile_t *t, int a) {
     void *rec = deque_at(sg.list, (unsigned)a);
     const char *sub = cc_str(
-        rec,
-        sg.cls == CLASS_ARTIST_SONGS
-            ? REC_ALBUM
-            : REC_ARTIST); /* an artist's list: the artist is the title, the album the grey line (a composer's keeps the artist) */
+        rec, sg_artist_songs() ? REC_ALBUM
+                               : REC_ARTIST); /* an artist's list: the artist is the title, the album the grey line */
     char buf[300];
     if (sg.cls ==
         CLASS_OFTEN) { /* Most Played: "12 plays · Artist" (the count first, a long artist is the part that is cut); REC_TRACK = plays - 1 */
@@ -447,15 +485,24 @@ static int rv_cell_at(int x, int y) {
  */
 static void sg_paint_rows(void *canvas) {
     int r0, r1, r, off = sg_off(), tx = sg_tx(), hair = az_end(&sg.al) - tx, room = sg_text_end() - tx, pass;
-    if (sg.head) { /* a playlist's mosaic (the cover, or the placeholder disc until it is made) */
+    ls_row_t xr[32]; /* a source's row extras, read once per paint (src only; at most 32 rows are in view) */
+    unsigned dim = 0; /* bit r - r0: a source's row that cannot play now: dim title and grey line */
+    if (sg.head &&
+        !sg.wait) { /* a playlist's mosaic (the cover, or the placeholder disc until it is made; not while its tracks are on their way) */
         grid_tile_t *h = grid_find(&sg.hg, 0);
         if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
     }
-    if (sg.head) pod_pill_paint(&sg.pill, canvas, PH_BTN_Y - off); /* a playlist's Play pill text, over its picture */
+    if (sg.head && !sg.wait)
+        pod_pill_paint(&sg.pill, canvas, PH_BTN_Y - off); /* a playlist's Play pill text, over its picture */
     sg_span(&r0, &r1);
+    if (sg.src && r1 - r0 > 31) r1 = r0 + 31;
     for (r = r0; r <= r1; ++r) {
         tile_t *t = sg_tile(r);
         int y = sg_row_y(r) - off;
+        if (sg.src) {
+            sg.src->row(sg.src, deque_at(sg.list, (unsigned)r), &xr[r - r0]);
+            if (sg.st_dim && sg.st_subdim && xr[r - r0].offline) dim |= 1u << (r - r0);
+        }
         if (sg.press == r + 1 && !sg.select) az_fill(canvas, 0, y, y + ROW - 1, SG_W, LIST_PRESS);
         if (sg.select && sg.mark[0]) {
             void *m = sg.mark[sg_is_sel(r)];
@@ -470,11 +517,33 @@ static void sg_paint_rows(void *canvas) {
         az_fill(canvas, tx, y + ROW - 1, y + ROW, hair, LIST_HAIR);
         if (sg_more()) rowmenu_paint(canvas, &sg.rm, sg_more_right(), az_inset(&sg.al) > 0, y, ROW, GRID_VIEW_H);
     }
-    for (pass = 0; pass < 2; ++pass) { /* titles, then artists: one text style at a time */
-        widget_prepare_text_style(pass ? sg.st_sub : sg.st_title, canvas);
-        for (r = r0; r <= r1; ++r)
-            grid_text(canvas, sg_tile(r), pass, tx, sg_row_y(r) - off + (pass ? LIST_SUB_Y : LIST_TITLE_Y), room,
-                      pass ? LIST_SUB_H : LIST_TITLE_H, 0);
+    for (
+        pass = 0; pass < (sg.src ? 4 : 2);
+        ++pass) { /* titles, then artists, then (a source's rows that cannot play) the same in the dim styles: one text style at a time */
+        widget_prepare_text_style(pass == 0   ? sg.st_title
+                                  : pass == 1 ? sg.st_sub
+                                  : pass == 2 ? sg.st_dim
+                                              : sg.st_subdim,
+                                  canvas);
+        for (r = r0; r <= r1; ++r) {
+            int y = sg_row_y(r) - off, sub = pass & 1, pre = 0;
+            if (sg.src && (int)(dim >> (r - r0) & 1) != pass >> 1) continue;
+            if (sub && sg.src) { /* the grey line: the marks first, then the artist */
+                ls_row_t *x = &xr[r - r0];
+                pre = ls_marks_w(x);
+                if (pre) pre += LS_MK_GAP;
+                ls_marks_draw(canvas, sg.win, x, tx, y + LIST_SUB_Y + LIST_SUB_H / 2 - SG_MARK_UP, GRID_VIEW_H);
+            }
+            {
+                tile_t *t = sg_tile(r);
+                if (sub && t->xw != pre) { /* the marks' room changed: the lines are cut again from the record */
+                    t->xw = pre;
+                    sg_prep(t, r), t->fit = 0;
+                }
+                grid_text(canvas, t, sub, tx + pre, y + (sub ? LIST_SUB_Y : LIST_TITLE_Y), room - pre,
+                          sub ? LIST_SUB_H : LIST_TITLE_H, 0);
+            }
+        }
     }
     az_paint_heads(&sg.al, canvas); /* the section letters, then over everything the pinned band and its letter */
 }
@@ -521,6 +590,7 @@ static int sg_next_load(void) {
 }
 
 static int sg_on_load(const void *unused);
+static void sg_cp_arm(void);
 
 static int sg_moving(void) { return grid_moving(sg.sv); }
 
@@ -547,6 +617,18 @@ static void sg_art(tile_t *t) {
     char url[80];
     if (t->album - 1 >= (int)sg.count) {
         grid_art(&sg.g, t);
+        return;
+    }
+    if (sg.src) { /* the source's cover file (1 there, 0 asked: look again shortly, -1 none) */
+        int r;
+        memcpy(url, "file://", 8); /* the file the source returns is its own (not the Cover Flow cache key's) */
+        r = sg.src->cover(sg.src, deque_at(sg.list, (unsigned)(t->album - 1)), t->ckey, url + 7, sizeof url - 7);
+        if (r > 0)
+            grid_art_url(&sg.g, t, url);
+        else {
+            t->art = 2;
+            if (r == 0) sg_cp_arm();
+        }
         return;
     }
     t->ckey = cc_cover_key(sg.albums, t->ckey, cc_str(deque_at(sg.list, (unsigned)(t->album - 1)), REC_ALBUM), url);
@@ -617,6 +699,16 @@ static void sg_retry(void) { /* every tile that showed the placeholder for want 
     }
     if (any) sg_kick();
 }
+
+/* A source's covers that were asked for and are not there yet: the tiles that showed the placeholder look again, and so does a playlist's header. */
+static void sg_head_prep(void);
+static void sg_cp_ask(void) {
+    if (sg.view && sg.src) {
+        sg_retry();
+        if (sg.head && sg.hg.tiles) sg_head_prep(), sg_kick();
+    }
+}
+static void sg_cp_arm(void) { ls_cover_poll(&sg.cp, sg.win, sg_cp_ask, (int (*)(void))0, (void (*)(void))0); }
 
 static void sg_build_end(void) {
     if (sg.build_timer) timer_remove(sg.build_timer);
@@ -710,7 +802,8 @@ static int rv_on_build_start(const void *unused) {
 }
 
 static void sg_build_later(void) {
-    if (sg.view && (sg.rv ? sg.rg.tiles : sg.g.tiles) && !sg.own && !sg.build_timer)
+    if (!sg.src && sg.view && (sg.rv ? sg.rg.tiles : sg.g.tiles) && !sg.own &&
+        !sg.build_timer) /* (a source makes its own covers: lib_src_t.cover) */
         sg.build_timer = timer_add(sg.rv ? rv_on_build_start : sg_on_build_start, (void *)0, SG_BUILD_START_MS);
 }
 
@@ -754,11 +847,16 @@ static void sg_foot_text(void) {
  * the library's albums for the lookup), the tile made again only when they changed (a return to the front keeps the mosaic: no flicker), and the count. */
 static void sg_head_prep(void) {
     unsigned key[4];
-    int nk, fresh, i, same;
+    int nk, fresh, i, same, miss = 0;
     grid_tile_t *t;
     if (!sg.head) return;
     memset(key, 0, sizeof key);
-    nk = sg.count ? grid_mosaic_keys(sg.list, sg.albums, key, (int *)0) : 0;
+    if (sg.src) {
+        nk = sg.count ? sbs_mosaic_keys(sg.src, sg.list, key, &miss)
+                      : 0; /* (a source's covers are its own files: the keys are theirs, grid_t.url) */
+        if (miss) sg_cp_arm();
+    } else
+        nk = sg.count ? grid_mosaic_keys(sg.list, sg.albums, key, (int *)0) : 0;
     t = grid_tile(&sg.hg, 0, 0, 0, &fresh);
     for (i = 0, same = !fresh && t->nq == (nk > 1 && !sg.htmp ? 1 : nk) && t->art; i < 4; ++i)
         same = same && t->qkey[i] == key[i];
@@ -790,7 +888,7 @@ static void sg_rail_fit(void) { az_rail_fit(&sg.al, GRID_VIEW_H - sg_pad()); }
 static unsigned sg_sig(void *rec, unsigned key, unsigned rank) {
     const char *s[2];
     unsigned h = 2166136261u ^ key, k;
-    s[0] = sg_name(rec), s[1] = cc_str(rec, sg.cls == CLASS_ARTIST_SONGS ? REC_ALBUM : REC_ARTIST);
+    s[0] = sg_name(rec), s[1] = cc_str(rec, sg_artist_songs() ? REC_ALBUM : REC_ARTIST);
     h = (h ^ rank) * 16777619u;
     for (k = 0; k < 2; ++k) {
         const unsigned char *p = (const unsigned char *)s[k];
@@ -800,12 +898,24 @@ static unsigned sg_sig(void *rec, unsigned key, unsigned rank) {
     return h;
 }
 
+static int sg_on_gen(const void *unused);
+
+/* The one loading spinner (patch/libsrc.c ls_spin): centred in the window, a playlist's where its Play pill will be (the header's Play pill and cover are hidden while its tracks are on their way). */
+static void sg_spinner(int on) {
+    if (!sg.spin) return;
+    if (on) widget_move(sg.spin, (SG_W - 14) / 2, sg.head ? PH_BTN_Y + (AH_BTN_H - 14) / 2 : (SG_WIN_H - 14) / 2);
+    ls_spin(sg.spin, on);
+}
+
+static void sg_pills(void);
 static void sg_load(int keep) {
     unsigned i;
-    int at = keep ? sg_off() : 0, same = 0;
+    int at = keep ? sg_off() : 0, same = 0, st = LS_ST_READY;
     void *list = (void *)0;
     song_t *old = sg.idx;
     unsigned old_n = sg.count;
+    void *old_list =
+        sg.src ? sg.list : (void *)0; /* a source's list is ours: destroyed once the new one has replaced it */
     if (sg_lib())
         free(old),
             old =
@@ -817,16 +927,28 @@ static void sg_load(int keep) {
     rowmenu_close(&sg.rm); /* (a menu's row is an index of the list that is read again) */
     free(sg.sel);
     sg.idx = (song_t *)0, sg.sel = (unsigned char *)0, sg.list = sg.first = (void *)0, sg.count = sg.nsel = 0,
-    sg.al.count = 0, sg.al.nsec = 0, sg.press = sg.down = 0;
-    if (!sg.albums_tried) {
+    sg.al.count = 0, sg.al.nsec = 0, sg.press = sg.down = 0, sg.wait = 0;
+    if (!sg.albums_tried && !sg.src) {
         sg.albums_tried = 1;
         sg.albums = cc_albums();
     }
     sg.sort = sg_lib() ? *(int *)SORT_FLAG : 0; /* (a list has the order of its query: sort_flag is the library's) */
     if (sg.sort < 0 || sg.sort > 4) sg.sort = 0;
-    if (sg_query() > 0) list = *(void **)PDEQ_SHOWLIST;
+    if (sg.src) { /* gen and completeness are read before the list: a list read after "complete" is the whole one */
+        sg.sgen = sg.src->gen(sg.src);
+        sg.srows = ls_gen_rows(sg.src);
+        sg.part = !sg.scope_d && sg.src->complete &&
+                  !sg.src->complete(sg.src,
+                                    sg.which); /* (a scoped list is read whole; the paging is of the unscoped Songs) */
+        list = sg.src->list(sg.src, sg.which, sg.scope_d ? deque_at(sg.scope_d, 0) : (void *)0);
+    } else if (sg_query() > 0)
+        list = *(void **)PDEQ_SHOWLIST;
     if (list && sg_flipped()) sg_reverse(list);
     if (list) sg.count = deque_size(list);
+    if (sg.src && !list && sg.src->state)
+        st = sg.src->state(sg.src, sg.which, sg.scope_d ? deque_at(sg.scope_d, 0) : (void *)0);
+    sg.wait = st == LS_ST_LOADING;
+    if (sg.src) sg_pills(); /* (the pills come with the rows) */
     if (sg.count) {
         sg.idx = calloc(sg.count, sizeof(song_t));
         sg.sel = calloc((sg.count + 7) / 8, 1);
@@ -847,7 +969,7 @@ static void sg_load(int keep) {
                 sg_set_sig(&sg.idx[i], sg_sig(rec, sg.idx[i].key,
                                               sg.idx[i].letter)); /* (the library keeps no old index to compare) */
         }
-        if (sg_lib() && sg.sort == 0) {
+        if ((sg_lib() && sg.sort == 0) || sg_ranked()) {
             az_sections(&sg.al, &sg.idx[0].letter, sizeof(song_t));
             if (sg_flipped()) /* the headers and the rail show the letters of the mirrored ranks: rank 0 is Z, 25 is A, 26 is "#" */
                 for (i = 0; i < (unsigned)sg.al.nsec; ++i) {
@@ -858,7 +980,8 @@ static void sg_load(int keep) {
     }
     /* The same rows as before (count and every sig; the tiles hold their texts and covers by row): the tiles and the placeholder stay, so a list read again
      * does not flash its covers away. Anything else, or a doubt, drops them. A cover that was not there (art 2) is looked for again. */
-    if (old && old_n && old_n == sg.count && sg.g.tiles && sg.g.placeholder) {
+    if (old && old_n && (sg.src ? old_n <= sg.count : old_n == sg.count) && sg.g.tiles &&
+        sg.g.placeholder) { /* (a source's list that grew keeps the tiles of its first rows) */
         same = 1;
         for (i = 0; i < old_n && same; ++i)
             same = old[i].key == sg.idx[i].key && old[i].letter == sg.idx[i].letter && sg_same_sig(&old[i], &sg.idx[i]);
@@ -873,10 +996,17 @@ static void sg_load(int keep) {
         grid_drop(&sg.g);
     sg_head_prep();
     if (!same) grid_placeholder(&sg.g);
-    sg_show(sg.view, sg.count != 0);
-    sg_show(sg.status, sg.count == 0);
+    sg_show(sg.view,
+            sg.count != 0 || sg.wait); /* (a source's list still loading: the title block, with the spinner under it) */
+    sg_show(sg.status, sg.count == 0 && !(sg.wait && sg.spin));
+    if (sg.foot)
+        widget_set_visible(sg.foot, !sg.rv && !sg.wait && !sg.part,
+                           0); /* (no count while a paged list is still growing) */
     if (!sg.count)
-        widget_set_tr_text(sg.status, list ? "Not enough memory" : sg_lib() ? "Update Local Music first" : "No songs");
+        widget_set_tr_text(sg.status, list       ? "Not enough memory"
+                                      : sg_lib() ? "Update Local Music first"
+                                                 : ls_empty_key(st, "No songs"));
+    sg_spinner(sg.wait && sg.spin);
     sg_size();
     sg_foot_text();
     widget_set_prop_int(sg.sv, "yoffset",
@@ -893,6 +1023,31 @@ static void sg_load(int keep) {
     sg_redraw();
     sg_kick();
     sg_build_later();
+    if (sg.src) {
+        if (old_list && old_list != sg.list) deque_destroy(old_list);
+        if (list && list != sg.list) deque_destroy(list); /* (an empty list, or no memory for its index) */
+        if (!sg.gen_timer) sg.gen_timer = timer_add(sg_on_gen, (void *)0, LS_GEN_MS);
+    }
+}
+
+/* The source's gen moved (rows came, a download changed): read the list again where it does not disturb the user (select mode, the card, a finger on the list) and the page is on top.
+ * The scroll position is kept (sg_load(1)). */
+static int sg_on_gen(const void *unused) {
+    (void)unused;
+    sg.gen_timer = 0;
+    if (!sg.src || !sg.view) return RET_OK;
+    if (sg.src->gen(sg.src) != sg.sgen && !sg.select && !sg.menu && !sg.down && !sg_moving() && pod_is_top(sg.win)) {
+        if (ls_gen_rows(sg.src) ==
+            sg.srows) { /* only a download's progress moved: the rows are the same, the visible ones are painted again (their state is read while painting) */
+            sg.sgen = sg.src->gen(sg.src);
+            sg_redraw();
+        } else if (sg.rm.open)
+            sg_redraw(); /* (the row menu stays: progress only redraws the rows' ring, the list is read once the menu has closed) */
+        else
+            sg_load(1); /* (re-arms the timer) */
+    }
+    if (!sg.gen_timer) sg.gen_timer = timer_add(sg_on_gen, (void *)0, LS_GEN_MS);
+    return RET_OK;
 }
 
 /* Another query replaced the stock list under a page that is on top (a paint found it): read it again. A page behind another reads it when it comes back. */
@@ -910,7 +1065,8 @@ static int sg_on_stale(const void *unused) {
 /* The Play / Shuffle buttons: the library's two flat pills, or a playlist's header disc and pill (album page style); the set not in use is hidden AND insensitive, the
  * albums view (rv) has neither, and in select mode the shown ones stay in the content, dead. */
 static void sg_pills(void) {
-    int lib = !sg.rv && !sg.head, hd = !sg.rv && sg.head;
+    int lib = !sg.rv && !sg.head && !sg.wait,
+        hd = !sg.rv && sg.head && !sg.wait; /* (a source's rows still on their way: neither set) */
     widget_set_visible(sg.btn_play, lib, 0);
     widget_set_visible(sg.btn_shuffle, lib, 0);
     widget_set_sensitive(sg.btn_play, lib && !sg.select);
@@ -925,7 +1081,8 @@ static void sg_pills(void) {
 /* The widgets of the view: the albums have no Play / Shuffle pills, no song count and no Select (the card's Select row goes, Albums ticked then). */
 static void rv_ui(void) {
     sg_pills();
-    if (sg.foot) widget_set_visible(sg.foot, !sg.rv, 0); /* (an insensitive label: shown, never a touch target) */
+    if (sg.foot)
+        widget_set_visible(sg.foot, !sg.rv && !sg.part, 0); /* (an insensitive label: shown, never a touch target) */
     vs_offer(&sg.vs, sg_offers());
 }
 
@@ -1047,6 +1204,10 @@ static void sg_play_at(int at, int how) {
         sg_load(1);
         return;
     }
+    if (sg.src) { /* the source plays its own records (a DSD row that is not downloaded, -2, asks "Download to Play?") */
+        if (so_play_src(sg.src, sg.cls, sg.list, at, how, sg_open_player) == -2) ls_dsd_confirm(sg.src, sg.list, at);
+        return;
+    }
     sg_classinfo(); /* loadSongList runs the class query again and keeps classinfo for the memory playback */
     so_play_dir(sg.cls, sg.list, at, how, sg_open_player, sg_flipped());
 }
@@ -1136,7 +1297,7 @@ static int sg_on_selall(void *ctx, void *e) {
 static int sg_on_delete(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (!sg.select) return RET_OK;
+    if (!sg.select || sg.src) return RET_OK; /* (a source's tracks are not deleted from here) */
     if (so_delete(sg.cls, sg.list, sg.count, sg.sel, sg.nsel, sg_valid())) {
         sg_select(0);
         sg_load(1);
@@ -1149,7 +1310,7 @@ static int sg_on_add(void *ctx, void *e) {
     int r;
     (void)ctx;
     (void)e;
-    if (!sg.select) return RET_OK;
+    if (!sg.select || sg.src) return RET_OK; /* (a source's sheet has no Add to Playlist) */
     r = so_add(sg.cls, sg.count, sg.sel, sg.nsel, sg_valid(), sg.title_save, &sg.picker);
     if (r < 0) {
         sg_select(0);
@@ -1213,7 +1374,7 @@ static int sg_in_zone(void *e) {
 /* Add to Playlist for one row (the menu's third row): the page's picker with a selection of that row alone. */
 static void sg_add_one(int row) {
     int r;
-    if (!sg.sel || row < 0 || row >= (int)sg.count) return;
+    if (!sg.sel || row < 0 || row >= (int)sg.count || sg.src) return;
     sg.sel[row >> 3] |= (unsigned char)(1 << (row & 7));
     r = so_add(sg.cls, sg.count, sg.sel, 1, sg_valid(), sg.title_save, &sg.picker);
     memset(sg.sel, 0, (sg.count + 7) / 8); /* (the picker and the stock vector have their own copies) */
@@ -1225,7 +1386,9 @@ static void sg_open_menu(int a) {
         sg_load(1);
         return;
     }
-    rowmenu_open(&sg.rm, a, deque_at(sg.list, (unsigned)a), sg_add_one);
+    if (sg.src && I(deque_at(sg.list, (unsigned)a), REC_TYPE) != 8)
+        return; /* (a source's list may hold other rows: only a track has a sheet) */
+    rowmenu_open_src(&sg.rm, a, deque_at(sg.list, (unsigned)a), sg_add_one, sg.src);
 }
 
 static int sg_on_down(void *ctx, void *e) {
@@ -1366,6 +1529,10 @@ static int sg_on_item(void *ctx, void *e) {
 /* Search: our keyboard, then our results page (patch/search.c, docs/modules/search.md). Its queries leave their list in *pdeq_showlist, which makes this page read it again when it is
  * back. Where ours will not open (a results page is already under this one, or no keyboard asset) the stock page (@0x52704c: navigator_to("search_page"), nothing set first). */
 static void sg_search(void) {
+    if (sg.view && !sg.select && sg.src) {
+        search_open_src(sg.src); /* never the stock page: it would search the card */
+        return;
+    }
     if (sg.view && !sg.select && search_open() < 0) navigator_to_with_context("search_page", (const void *)0);
 }
 
@@ -1393,6 +1560,15 @@ static int sg_on_fg(void *ctx, void *e) {
         memcpy((void *)NAV_TITLE, sg.title_save, sizeof sg.title_save);
         sg_select(0);
         sg_load(1);
+    } else if (sg.src) {
+        if (sg.src->gen(sg.src) != sg.sgen) {
+            if (ls_gen_rows(sg.src) == sg.srows)
+                sg.sgen = sg.src->gen(sg.src), sg_redraw();
+            else
+                sg_load(1);
+        }
+        if (!sg.gen_timer) sg.gen_timer = timer_add(sg_on_gen, (void *)0, LS_GEN_MS);
+        sg_spinner(sg.wait && sg.spin);
     } else if (!sg.rv && (!sg_valid() || sg_changes())) /* (the album view reads no stock list: nothing is stale) */
         sg_load(1); /* (a list read again whose rows are the same keeps its tiles: sg_load) */
     sg_build_later();
@@ -1412,6 +1588,11 @@ static int sg_on_destroy(void *ctx, void *e) {
     (void)e;
     if (sg.more_timer) timer_remove(sg.more_timer);
     if (sg.stale_timer) timer_remove(sg.stale_timer);
+    if (sg.gen_timer) timer_remove(sg.gen_timer);
+    ls_cover_end(&sg.cp);
+    ls_spin_end(sg.spin);
+    if (sg.src && sg.list) deque_destroy(sg.list);
+    if (sg.scope_d) deque_destroy(sg.scope_d);
     sg_build_end();
     grid_free(&sg.g);
     grid_free(&sg.hg);
@@ -1438,7 +1619,10 @@ static int sg_stack(void) {
     sg_build_end();
     if (sg.more_timer) timer_remove(sg.more_timer);
     if (sg.stale_timer) timer_remove(sg.stale_timer);
-    sg.more_timer = sg.stale_timer = 0;
+    if (sg.gen_timer) timer_remove(sg.gen_timer);
+    ls_cover_end(&sg.cp);
+    ls_spin_end(sg.spin);
+    sg.more_timer = sg.stale_timer = sg.gen_timer = 0;
     memcpy(sg_under, &sg, sizeof sg);
     memset(&sg, 0, sizeof sg);
     return 0;
@@ -1446,11 +1630,29 @@ static int sg_stack(void) {
 
 /* The page listing class cls (pl_id: a playlist's id; key: the title's key, or 0 for name). 0 once the page is up, -1 if the window could not open, -2 if the
  * asset is not ours (the page is left again). */
-static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
+static void *sg_row_copy(
+    void *rec) { /* a one-record deque holding a copy of rec (as the stock queries push rows); NULL without memory */
+    void *d = _create_deque("stSongInfo");
+    if (!d) return (void *)0;
+    deque_init(d);
+    _deque_push_back(d, rec);
+    return d;
+}
+
+static int sg_open_page(int cls, int pl_id, const char *key, const char *name, const lib_src_t *src, int which,
+                        void *scope) {
     int i;
-    if (sg.win && (cls != CLASS_PLAYLIST_SONGS || sg_stack() == -1)) return -1;
+    void *scope_d = (void *)0;
+    if (scope && !(scope_d = sg_row_copy(scope)))
+        return -1; /* (before the stack: a failure leaves the page below as it is) */
+    /* a page is open already: a playlist's page, or a source's list of a row (an artist's All Songs reached through Search from the source's Songs page), goes over it (sg_stack); anything else does not open */
+    if (sg.win && ((cls != CLASS_PLAYLIST_SONGS && !(src && scope)) || sg_stack() == -1)) {
+        if (scope_d) deque_destroy(scope_d);
+        return -1;
+    }
     memset(&sg, 0, sizeof sg);
     sg.cls = cls, sg.pl_id = pl_id, sg.key = key;
+    sg.src = src, sg.which = which, sg.scope_d = scope_d;
     if (sg_artist())
         memcpy(sg.ci, (void *)CLASSINFO, CLASSINFO_SIZE); /* songs_open_artist ran the two queries just before */
     for (i = 0; name[i] && i < (int)sizeof sg.name - 1; ++i) sg.name[i] = name[i];
@@ -1459,6 +1661,7 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     sg.name[i] = 0;
     sg.win = window_open("m1plus_songs");
     if (!sg.win) {
+        if (sg.scope_d) deque_destroy(sg.scope_d), sg.scope_d = (void *)0;
         if (sg_under)
             memcpy(&sg, sg_under, sizeof sg), free(sg_under),
                 sg_under = (void *)0; /* the page below is the open one again */
@@ -1487,8 +1690,11 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     sg.view = widget_lookup(sg.win, "view_grid", 1);
     sg.sv = widget_lookup(sg.win, "songs_scrollview", 1);
     sg.status = widget_lookup(sg.win, "label_status", 1);
+    sg.spin = widget_lookup(sg.win, "sg_spin", 1); /* optional */
     sg.st_title = widget_lookup(sg.win, "label_row_title", 1);
     sg.st_sub = widget_lookup(sg.win, "label_row_sub", 1);
+    sg.st_dim = widget_lookup(sg.win, "label_row_dim", 1);
+    sg.st_subdim = widget_lookup(sg.win, "label_row_subdim", 1);
     sg.al.st_hdr = widget_lookup(sg.win, "label_hdr", 1);
     sg.al.st_rail = widget_lookup(sg.win, "label_rail", 1);
     sg.al.st_rail_on = widget_lookup(sg.win, "label_rail_on", 1);
@@ -1515,10 +1721,15 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     vs_dated(&sg.vs, 1u << 3); /* only Recently Added reads Newest First / Oldest First */
     if (sg_lib()) sg.rev = set_read(SONGS_SORT_FILE, '0') == 'a';
     rowmenu_bind(&sg.rm, sg.win); /* the rows' "..." menu (optional: no widgets means no "...") */
-    if (sg_direct()) { /* the card would hold Select alone: the Select button takes the "..." place (left cap at 214, or the middle piece after Search / Cover Flow) and sg.btn_more stands for it from here on */
-        sg_show(sg.btn_more, 0);
-        sg.btn_more = sg.btn_select;
-        sg_show(sg.btn_more, 1);
+    if (sg_direct()) {
+        if (sg_selects()) { /* the card would hold Select alone: the Select button takes the "..." place (left cap at 214, or the middle piece after Search / Cover Flow) and sg.btn_more stands for it from here on */
+            sg_show(sg.btn_more, 0);
+            sg.btn_more = sg.btn_select;
+            sg_show(sg.btn_more, 1);
+        } else { /* a source without Select: the card has nothing to hold, so neither button shows */
+            sg_show(sg.btn_more, 0);
+            sg_show(sg.btn_select, 0);
+        }
     }
     if ((sg_artist() && sg.btn_cf) ||
         sg_searches()) { /* the capsule's left cap at Albums' Cover Flow place: Cover Flow on an artist's songs, Search on the lists that search; the "..." (or Select) is its middle piece */
@@ -1526,9 +1737,18 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
         char down[32];
         snprintf(down, sizeof down, "%s_down", mid);
         sg_show(sg_artist() ? sg.btn_cf : sg.btn_search, 1);
+        if (!sg_mid()) /* no middle piece: the left cap moves to 214, beside Now Playing (no gap in the capsule) */
+            widget_move(sg_artist() ? sg.btn_cf : sg.btn_search, NAV_VIEW_X, 0);
         widget_set_prop_str(sg.btn_more, "style:normal:icon", mid);
         widget_set_prop_str(sg.btn_more, "style:over:icon", mid);
         widget_set_prop_str(sg.btn_more, "style:pressed:icon", down);
+    }
+    if (sg.src && !sg_searches() && !sg_selects() &&
+        !(sg_artist() &&
+          sg.btn_cf)) { /* no piece on the capsule's left: Now Playing is the plain disc, as on a bar with no buttons */
+        widget_set_prop_str(sg.np, "style:normal:icon", "ah_nav_np");
+        widget_set_prop_str(sg.np, "style:over:icon", "ah_nav_np");
+        widget_set_prop_str(sg.np, "style:pressed:icon", "ah_nav_np_down");
     }
     if (!sg_lib()) { /* a list: the titles are the list's */
         widget_resize(sg.title, sg_title_end() - NAV_TITLE_X, 22);
@@ -1536,9 +1756,10 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
     }
     /* A playlist's header (docs/modules/songs.md): the mosaic tile (the Playlists page's, patch/grid.c) and the name under it (the count is the footer under the last row,
      * as Apple Music's), the pills and the rows lower, the large title gone. Without the label, the tile or the quadrant buffer the page keeps its plain look (the large title). */
-    if (sg.cls == CLASS_PLAYLIST_SONGS && sg.hname) {
+    if (sg_playlist() && sg.hname) {
         sg.htmp = calloc((PH_COVER / 2) * (PH_COVER / 2), 4);
         if (grid_init(&sg.hg, sg.win, 1, PH_COVER, PH_COVER_R)) {
+            if (sg.src) sg.hg.url = sbs_cover_url;
             grid_placeholder(&sg.hg);
             sg.head = 1;
             sg.al.top = PH_TOP;
@@ -1600,7 +1821,7 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name) {
 }
 
 static int sg_open(int cls, int pl_id, const char *key, const char *name, int home) {
-    int r = sg_open_page(cls, pl_id, key, name);
+    int r = sg_open_page(cls, pl_id, key, name, (const lib_src_t *)0, 0, (void *)0);
     if (r == -1 && !sg.win && home >= 0) return pod_home_open(home);
     return r;
 }
@@ -1680,4 +1901,25 @@ int songs_play_artist(void *artist, unsigned scope, int how) {
     so_play(scope == CLASS_COMPOSERS ? CLASS_14 : CLASS_ARTIST_SONGS, list, how == SO_SHUFFLE ? -1 : 0, how,
             sg_open_player);
     return 0;
+}
+
+/* The page for a library source's list (patch/libsrc.h): the Songs page fed from src->list(which, NULL), which is LS_SONGS, LS_FAVORITES or LS_DOWNLOADED, titled `title`. Taps, Play and Shuffle play
+ * through so_play_src; covers come from src->cover; a list the source says is incomplete has no rail and is read again, scroll position kept, as the source's gen moves. src NULL or &lib_stock opens
+ * today's page: the library for LS_SONGS, the stock Favorites list for LS_FAVORITES (title is the stock's); LS_DOWNLOADED has none (-1). 0 once the page is up, -1 when it did not open, -2 an asset that is
+ * not ours (as the other openers). The rows' download state and the "..." sheet come from src->row and src->act (the row menu). */
+/* The same page scoped to a row of the source (patch/libsrc.h, src->list's scope): scope is the row (copied, the page keeps the copy for its re-reads): LS_PLAYLISTS of a
+ * playlist row is its tracks, LS_SONGS of an artist row is the artist's songs (the All Songs tile). NULL scope is songs_open_src. -1 when the page did not open or a
+ * list needs a scope it does not have. */
+int songs_open_src_in(const lib_src_t *src, int which, void *scope, const char *title) {
+    if (!src || src == &lib_stock) {
+        if (which == LS_SONGS) return songs_open();
+        return which == LS_FAVORITES ? songs_open_list(HOME_FAV) : -1;
+    }
+    if (which != LS_SONGS && which != LS_FAVORITES && which != LS_DOWNLOADED && which != LS_PLAYLISTS) return -1;
+    if (which == LS_PLAYLISTS && !scope) return -1;
+    return sg_open_page(CLASS_ALL_SONGS, 0, (const char *)0, title ? title : "", src, which, scope);
+}
+
+int songs_open_src(const lib_src_t *src, int which, const char *title) {
+    return songs_open_src_in(src, which, (void *)0, title);
 }

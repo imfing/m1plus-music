@@ -371,8 +371,8 @@ def layout_tests(ctx):
     expect(all(grid.get(f'style:normal:{k}') == v for k, v in (('text_color', '#FFFFFF'), ('font_size', '16'),
                                                                  ('text_align_h', 'left'), ('bg_color', '#000000'))),
            'its style is the 16 px white title text on black (what widget_prepare_text_style reads)')
-    expect(not [w for w in tree.walk() if w.type in ('list_item', 'slide_menu') or (w.type == 'image' and w.name != 'img_nb_fade' and not w.name.startswith('vs_'))],
-           'no widget per album: the page is a navbar, a list, the fade under the bar and a status label')
+    expect(not [w for w in tree.walk() if w.type in ('list_item', 'slide_menu') or (w.type == 'image' and w.name not in ('img_nb_fade', 'al_spin') and not w.name.startswith('vs_'))],
+           'no widget per album: the page is a navbar, a list, the fade under the bar, a status label and the loading spinner')
     bar = tree.find('scroll_bar_m')
     expect(bar is not None and bar.type == 'scroll_bar_m' and (bar.x, bar.w) == (SVW, 10) and bar in tree.find('albums_listview').children,
            'the list_view has the stock scroll_bar_m beside the scroll_view: the list_view layouter makes the scroll_view yslidable only for a mobile bar (scroll scenario: SA)')
@@ -1922,6 +1922,350 @@ def title_tests(ctx):
 
 
 
+FAKE_PIC = '/mnt/mmc/.m1plus/subsonic/covers/fa000001-168.jpg'   # (the fake source's picture file of its artist)
+
+
+class FakeAlbumsMachine(Machine):
+    """A machine with a fake non-stock lib_src_t (patch/libsrc.h) in memory: its list, cover and gen are Python (the functions' addresses are trapped, named fake_albums_*).
+    fake_rows: the records list() returns (a new deque each call); fake_have: the keys whose cover file is ready (cover() 1), fake_gone: keys with no cover (-1), any other key 0 (asked);
+    fake_gen: what gen() returns; fake_log: ('list', which, scope) / ('cover', key) / ('gen',)."""
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address)
+        if name == 'album_open_src':   # (src, cls, row): the source's album page, recorded and not run
+            a0, a1, a2 = (u.reg_read(r) for r in (mips_const.UC_MIPS_REG_A0, mips_const.UC_MIPS_REG_A1, mips_const.UC_MIPS_REG_A2))
+            self.calls.append(('album_open_src', a0 == self.fake_src, a1, self.read_cstr(self.word(a2 + O['REC_ALBUM']))))
+            u.reg_write(mips_const.UC_MIPS_REG_V0, 0); u.reg_write(mips_const.UC_MIPS_REG_PC, u.reg_read(mips_const.UC_MIPS_REG_RA))
+            return
+        if name == 'search_open_src_in':   # (src, scope): the source's search page, recorded and not run
+            self.calls.append(('search_open_src_in', u.reg_read(mips_const.UC_MIPS_REG_A0) == self.fake_src, u.reg_read(mips_const.UC_MIPS_REG_A1)))
+            u.reg_write(mips_const.UC_MIPS_REG_V0, 0); u.reg_write(mips_const.UC_MIPS_REG_PC, u.reg_read(mips_const.UC_MIPS_REG_RA))
+            return
+        if not name or not name.startswith('fake_albums_'): return super()._hook(u, address, size, _)
+        a0, a1, a2, a3 = (u.reg_read(r) for r in (mips_const.UC_MIPS_REG_A0, mips_const.UC_MIPS_REG_A1, mips_const.UC_MIPS_REG_A2, mips_const.UC_MIPS_REG_A3))
+        ret = 0
+        if name == 'fake_albums_list':
+            self.fake_log.append(('list', a1, a2)); ret = 0 if a1 == 2 and getattr(self, 'fake_no_songs', 0) else self.new_deque(self.fake_scoped.get(a2, self.fake_rows) if a2 else self.fake_rows)
+        elif name == 'fake_albums_cover' and a2 == 0:   # key 0: an artist's picture (the page's header): fake_pic 1 the file is there (FAKE_PIC), 0 asked, -1 none
+            self.fake_log.append(('pic',))
+            if self.fake_pic == 1: self.u.mem_write(a3, FAKE_PIC.encode() + b'\0')
+            ret = self.fake_pic
+        elif name == 'fake_albums_cover':
+            self.fake_log.append(('cover', a2))
+            if a2 in self.fake_have: self.u.mem_write(a3, art_file(a2).encode() + b'\0'); ret = 1
+            else: ret = 0xffffffff if a2 in self.fake_gone else 0
+        elif name == 'fake_albums_play':   # (s, list, at, how, open, cls): how is SO_IN_ORDER (1) / SO_SHUFFLE (2)
+            self.fake_log.append(('play', a2 if a2 < 0x80000000 else a2 - 0x100000000, a3)); ret = 0
+        elif name == 'fake_albums_gen':
+            self.fake_log.append(('gen',)); ret = self.fake_gen
+        elif name == 'fake_albums_state':   # (s, which, scope): LS_ST_*
+            self.fake_log.append(('state', a1, a2)); ret = self.fake_state
+        u.reg_write(mips_const.UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(mips_const.UC_MIPS_REG_PC, u.reg_read(mips_const.UC_MIPS_REG_RA))
+
+
+def fake_albums_machine(n=6, grid=True, cached=False, caps=7):
+    """The albums page's machine with a fake source of n albums ('Fake Album i' by 'Fake Artist i') at m.fake_src; the stock library has the usual 30 'Album i'.
+    caps: lib_src_t.caps (the stock-only controls the page may show: 7 is all of them)."""
+    m = albums_machine(30, cls=FakeAlbumsMachine, cached=cached)
+    m.fs[ALBUMS_FILE] = b'1\n' if grid else b'0\n'
+    m.fake_log, m.fake_have, m.fake_gone, m.fake_gen, m.fake_scoped = [], set(), set(), 7, {}
+    m.fake_rows = [m.record(album=f'Fake Album {i}', artist=f'Fake Artist {i}', path=f'nd://al{i}', rid=-3 - i) for i in range(n)]
+    m.fake_state = 0   # what src->state answers (LS_ST_*)
+    m.fake_pic = -1   # what src->cover answers for an artist's picture (key 0): 1 there, 0 asked, -1 none
+    m.top_main = m.window   # pod_is_top: the page is in front (the shared cover poll only runs then)
+    Machine.widget(m, 'al_spin')
+    st = m.alloc(60)
+    m.u.mem_write(st, bytes(60)); m.setword(st, m.cstr('fake')); m.setword(st + 48, caps)
+    for off, nm in ((4, 'list'), (16, 'cover'), (32, 'gen'), (56, 'state')):
+        addr = m.alloc(16); m.handlers[addr] = 'fake_albums_' + nm; m.setword(st + off, addr)
+    m.fake_src = st
+    for i in range(8): m.images[f'wf_spin{i}'] = (14, 14, bytes((0x55, 0x55, 0x55, 255)) * 196)   # (the Wi-Fi page's frames as cc_decode flattens them over black)
+    return m
+
+
+def fkey(i): return album_key(f'Fake Artist {i}', f'Fake Album {i}')
+
+
+def make_ready(m, i):
+    """The fake source's cover file of fake album i exists (as a fetch finishing leaves it) and the source says so."""
+    p = art_file(fkey(i))
+    m.present.add(p); m.files[p] = 4096; m.cache_index[p] = i; m.fake_have.add(fkey(i))
+
+
+def settle_calls(m, limit=60):
+    """settle(), and every call the loader ticks made (m.calls is reset by each call)."""
+    seen = []
+    for _ in range(limit):
+        seen += tick(m)
+        if not any(c[0] == 'timer_add' and c[1] == PSYMS['al_on_load'] for c in m.calls): break
+    return seen, paint(m)
+
+
+def src_tests(ctx):
+    """albums_open_src: the same page fed by a library source. Stock (NULL, &lib_stock) is the stock page; a fake source's albums are listed, their covers come from src->cover (no cache worker), and a gen change re-reads the list."""
+    expect = ctx.expect
+    LS_ALBUMS = 0
+    # 1. NULL and &lib_stock open the stock page: the stock albums, no source call, the cache build armed as today
+    for which in (0, PSYMS['lib_stock']):
+        m = albums_machine(30, cls=FakeAlbumsMachine, missing={2}); m.fake_log = []
+        m.fs[ALBUMS_FILE] = b'1\n'
+        m.call(PSYMS['albums_open_src'], a0=which, a1=0, count=20000000)
+        blits, texts = settle(m)
+        titles, _ = grid_texts(m, texts)
+        expect(content_h(m) == TOP + RGAP + 15 * PITCH and 'Album 0' in titles and not m.fake_log, f'src {which:#x}: the stock page, 30 albums, no source called')
+        m.calls = []; fired(m, 'al_on_build_start')
+        expect(count_of(m, 'pthread_create') == 1, f'src {which:#x}: stock still builds missing covers with the cache worker')
+        expect(not any(v[1:] == (14, 14) for v in m.bitmaps.values()) and not any(c[0] == 'timer_add' and c[1] == PSYMS['ls_cover_tick'] for c in m.calls), f'src {which:#x}: no cover spinner on the stock page')
+    # 2. a fake source: its albums, listed with LS_ALBUMS and no scope; the cache worker is never armed
+    for grid in (True, False):
+        m = fake_albums_machine(6, grid=grid)
+        m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+        expect(('list', LS_ALBUMS, 0) in m.fake_log, f'{"grid" if grid else "list"}: the albums are src->list(LS_ALBUMS, NULL)')
+        expect(content_h(m) == (TOP + RGAP + 3 * PITCH if grid else TOP + 6 * ROW), f'{"grid" if grid else "list"}: the content holds the source\'s 6 albums ({content_h(m)})')
+        expect(not [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['al_on_build_start']] and 'pthread_create' not in [c[0] for c in m.calls], f'{"grid" if grid else "list"}: no cache build is armed')
+        blits, texts = settle(m)
+        shown = [t[0] for t, sty in zip(texts, m.text_styles) if sty in ('label_grid_title', 'label_row_title')]
+        expect(len(shown) >= 4 and all(x.startswith('Fake Album ') for x in shown), f'{"grid" if grid else "list"}: the fake albums\' names are drawn ({shown})')
+        expect(not any('Album 1' == x for x in shown), 'none of the stock albums')
+        expect(not [c for c in m.calls if c[0] in ('cc_build_open', 'cc_build_add')], 'the cover worker is not used')
+    # 3. covers come from src->cover: not ready (0) = the placeholder, asked again by the page's timer; ready = the file is decoded
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    make_ready(m, 1)
+    m.fake_log.clear()
+    seen, (blits, _) = settle_calls(m)
+    asked = [e[1] for e in m.fake_log if e[0] == 'cover']
+    expect(sorted(asked) == sorted(fkey(i) for i in range(6)), f'every album asked the source for its cover (by its key) ({len(asked)})')
+    expect(f'file://{art_file(fkey(1))}' in m.loads and len([u for u in m.loads if u.startswith('file://')]) == 1, f'only the ready cover is decoded ({[u for u in m.loads if u.startswith("file://")]})')
+    expect(('timer_add', PSYMS['ls_cover_tick'], 250) in seen, 'a cover that was asked for (0) arms the shared cover poll (250 ms)')
+    # 3b. the cover spinner: a tile whose cover was asked for (0) shows the 14 px wf_spin frame centred on its disc, turned by a 250 ms timer; it goes with the cover (arrived or none)
+    def spinners(bl): return [b for b in bl if m.bitmaps[b[0]][1:] == (14, 14)]
+    sp = spinners(blits)
+    expect(len(sp) == 3 and all(b[2][2:] == (14, 14) and (b[2][0] + 7 - O['GRID_MARGIN']) % (O['GRID_COVER'] + O['GRID_GAP']) == O['GRID_COVER'] // 2 for b in sp),
+           f'a spinner on each of the 3 tiles in view being fetched (0, 2, 3), centred on the disc, none on the ready one (1): {[b[2] for b in sp]}')
+    expect(sum(1 for c in seen if c[0] == 'timer_add' and c[1] == PSYMS['ls_cover_tick']) == 1, 'the spinners turn on the same one timer')
+    f0 = {b[0] for b in sp}
+    expect(m.call(PSYMS['ls_cover_tick'], a0=0x5a5a5a50, count=20000000) == 8, 'a tick with tiles still loading repeats (its argument is stock\'s timer_info_t: not read)')
+    expect(len(f0) == 1 and {b[0] for b in spinners(paint(m)[0])} not in (f0, set()), 'the tick moved every spinner to the next frame')
+    make_ready(m, 4); m.fake_gone.add(fkey(5))
+    m.fake_log.clear()
+    m.call(PSYMS['ls_cover_tick'], count=20000000)
+    seen, (blits, _) = settle_calls(m)
+    expect(f'file://{art_file(fkey(4))}' in m.loads, 'the retry picks the cover that is ready now up')
+    expect(len(spinners(blits)) == 3, 'the tiles still being fetched keep theirs')
+    expect(m.fake_log.count(('cover', fkey(5))) == 1, 'a source with no cover (-1) is asked once per retry')
+    expect(m.call(PSYMS['ls_cover_tick'], count=20000000) == 8, 'the rest still being fetched keep the poll')
+    m.fake_gone |= {fkey(0), fkey(2), fkey(3)}; m.fake_log.clear()
+    m.call(PSYMS['ls_cover_tick'], count=20000000)
+    seen, _ = settle_calls(m)
+    expect(len(spinners(paint(m)[0])) == 0, 'nothing left being fetched: no spinner')
+    rets = [m.call(PSYMS['ls_cover_tick'], count=20000000) for _ in range(4)]
+    expect(rets[-1] != 8 and not any(c[0] == 'timer_add' and c[1] == PSYMS['ls_cover_tick'] for c in seen), f'nothing on its way: the shared poll ends after two quiet ticks ({rets})')
+    # 3c. the poll gives up (the one rule, patch/libsrc.c): LS_COVER_POLLS asks without the cover, then the spinners go and nothing asks again; the tile asked for later starts afresh
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    settle_calls(m)
+    for _ in range(1210):
+        m.call(PSYMS['ls_cover_tick'], count=20000000)
+        settle_calls(m)
+    asks = sum(1 for e in m.fake_log if e == ('cover', fkey(0)))
+    expect(1190 <= asks <= 1203 and len(spinners(paint(m)[0])) == 0 and m.call(PSYMS['ls_cover_tick'], count=20000000) != 8, f'after 1200 asks it gives up: no spinner, the poll has ended ({asks})')
+    # 3d. a page that is not on top (another window over it) asks nothing and turns nothing
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000); settle_calls(m)
+    m.top_main = 0; m.fake_log.clear()
+    expect(m.call(PSYMS['ls_cover_tick'], count=20000000) == 8 and not m.fake_log, 'not the top window: the poll stays armed but asks nothing')
+    # 4. a gen change re-reads the list; the same gen does not
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000); settle(m)
+    n0 = sum(1 for e in m.fake_log if e[0] == 'list')
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    expect(sum(1 for e in m.fake_log if e[0] == 'list') == n0 and any(c[0] == 'timer_add' and c[1] == PSYMS['al_on_gen'] for c in m.calls), 'the same gen: no re-read, the timer re-arms')
+    m.fake_rows = m.fake_rows + [m.record(album=f'Fake Album {i}', artist=f'Fake Artist {i}', path=f'nd://al{i}', rid=-3 - i) for i in range(6, 12)]
+    m.fake_gen += 1
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    expect(sum(1 for e in m.fake_log if e[0] == 'list') == n0 + 1 and content_h(m) == TOP + RGAP + 6 * PITCH, f'a new gen: the list is read again, 12 albums ({content_h(m)})')
+    blits, texts = settle(m)
+    scroll_to(m, 10000); blits, texts = settle(m)
+    shown = [t[0] for t, sty in zip(texts, m.text_styles) if sty == 'label_grid_title']
+    expect('Fake Album 11' in shown or 'Fake Album 10' in shown, f'the new albums are drawn ({shown})')
+    m.fake_rows = []; m.fake_gen += 1
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    expect(m.props.get((m.widgets['view_grid'], 'visible')) == 1 and m.props.get((m.widgets['label_status'], 'visible')) == 1 and ('widget_set_tr_text', m.widgets['label_status'], 'No albums') in m.calls,
+           'an empty list shows the status line (and keeps the large title)')
+    m.fake_rows = [m.record(album='Back', artist='Again', path='nd://x', rid=-2)]; m.fake_gen += 1
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    blits, texts = settle(m)
+    expect(content_h(m) == TOP + RGAP + PITCH and m.props.get((m.widgets['view_grid'], 'visible')) == 1 and 'Back' in [t[0] for t in texts], 'the list is back: the grid is shown again')
+    # 4a. a moved gen with the same albums (a cover or a sync that changed nothing): the tiles stay, nothing is decoded again, a fling goes on
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    make_ready(m, 1); settle(m)
+    decoded = lambda: len([u for u in m.loads if u.startswith('file://')])
+    n_dec, n0 = decoded(), sum(1 for e in m.fake_log if e[0] == 'list')
+    expect(n_dec == 1, f'the ready cover was decoded once ({n_dec})')
+    m.fake_rows = [m.record(album=f'Fake Album {i}', artist=f'Fake Artist {i}', path=f'nd://al{i}', rid=-3 - i) for i in range(6)]
+    m.fake_gen += 1
+    m.calls = []
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    names_ = [c[0] for c in m.calls]
+    settle(m)
+    expect(sum(1 for e in m.fake_log if e[0] == 'list') == n0 + 1 and decoded() == n_dec and 'bitmap_destroy' not in names_ and not any(c[0] == 'widget_load_image' for c in m.calls),
+           f'the list is read again and found the same: no tile is dropped, no cover decoded again ({decoded()}, {sorted(set(names_))})')
+    # 5. a source page that opens empty gets its handlers when the first album arrives
+    m = fake_albums_machine(0)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    expect(m.props.get((m.widgets['label_status'], 'visible')) == 1 and (m.widgets['view_grid'], O['EVT_POINTER_UP']) not in m.bound, 'opened empty: the status line, no handlers')
+    expect(('state', 0, 0) in m.fake_log, 'it asked src->state(LS_ALBUMS, NULL)')
+    m.fake_rows = [m.record(album='First', artist='One', path='nd://f', rid=-2)]; m.fake_gen += 1
+    m.call(PSYMS['al_on_gen'], count=20000000)
+    blits, texts = settle(m)
+    expect((m.widgets['view_grid'], O['EVT_POINTER_UP']) in m.bound and 'First' in [t[0] for t in texts], 'the first album: the grid and its handlers')
+    # 5a. an artist's page on a source: list(LS_ALBUMS, the artist's record), the header of a library artist without a photo (a source has none: no circle, no placeholder;
+    #     the name and the pills PH_SHIFT higher, docs/modules/albums.md), no stock query; Play and Shuffle play the source's songs of the artist
+    END, CD, SH = O['AL_HEAD_END'], O['AL_PHOTO_D'], O['PH_SHIFT']
+    m = fake_albums_machine(3)
+    for r, y in zip(m.fake_rows, (1999, 0, 2005)): m.setword(r + O['REC_YEAR'], y)   # (a source's records carry their year)
+    for w in ('btn_play', 'btn_shuffle', 'al_name'): Machine.widget(m, w)
+    m.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+    m.fake_rows.append(m.record(album='', artist='Fake Artist', path='nd://ar1', rid=-2))   # the stock All songs row, last: the artist's songs
+    addr = m.alloc(16); m.handlers[addr] = 'fake_albums_play'; m.setword(m.fake_src + 12, addr)
+    artist = m.record(album='', artist='Fake Artist', path='nd://ar1', title='Fake Artist', rid=-9)
+    m.calls = []
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=artist, count=20000000)
+    lists = [e for e in m.fake_log if e[0] == 'list']
+    expect(lists and lists[0][:2] == ('list', LS_ALBUMS) and lists[0][2] and ('pic',) in m.fake_log, 'the artist page asks the source for that artist\'s albums (a record) and for the artist\'s picture')
+    expect('loadAlbumList' not in m.names(), 'the artist page of a source makes no stock query')
+    w = lambda n: (m.props.get((m.widgets[n], 'visible'), 1), m.props.get((m.widgets[n], 'sensitive'), 1))
+    expect(('widget_set_text_utf8', m.widgets['al_name'], 'Fake Artist') in m.calls and w('al_name') == (1, 1) and w('al_title') == (0, 0)
+           and ('widget_set_text_utf8', m.widgets['label_title'], 'Fake Artist') in m.calls, 'the artist\'s name is the header\'s (al_name), the large title is hidden, the navbar\'s small title is the name')
+    expect(('widget_move', m.widgets['btn_play'], O['AL_PLAY_X'], O['AL_HEAD_PILL_Y'] - SH) in m.calls and ('widget_move', m.widgets['btn_shuffle'], O['AL_SHUFFLE_X'], O['AL_HEAD_PILL_Y'] - SH) in m.calls
+           and w('btn_play') == (1, 1) and w('btn_shuffle') == (1, 1), 'Play and Shuffle sit under the name, shown, PH_SHIFT higher (no circle)')
+    expect(content_h(m) == END - SH + RGAP + 2 * PITCH, f'3 albums and the All Songs tile under the header block ({content_h(m)})')
+    blits, texts = settle(m)
+    _, subs_ = grid_texts(m, texts)
+    expect('1999' in subs_ and '2005' in subs_ and 'Fake Artist 0' not in subs_ and '' not in subs_, f'a source artist\'s albums show the year line like the local artist page, none for an album without one ({sorted(subs_)})')
+    expect(not [b for b in blits if tuple(b[2])[2:] == (CD, CD)], 'no 88 px circle is drawn: a source\'s artist has no photo and the page shows no placeholder')
+    expect(not [c for c in m.calls if c[0] == 'widget_load_image' and 'artists/' in str(c[1])] and not [c for c in m.calls if c[0] == 'pthread_create'], 'no photo file is looked for and no cover worker starts')
+    for what, btn, want in (('Play', 'btn_play', (0, 1)), ('Shuffle', 'btn_shuffle', (-1, 2))):
+        m.fake_log.clear(); m.calls = []
+        m.click(btn, count=40000000)
+        lists = [e for e in m.fake_log if e[0] == 'list' and e[1] == 2]
+        expect(lists and lists[0][2] == m.fake_rows[-1], f'{what}: the source\'s songs of the artist are listed through the All Songs record')
+        plays = [e for e in m.fake_log if e[0] == 'play']
+        expect(len(plays) == 1 and plays[0][1:] == want, f'{what}: src->play(at {want[0]}, how {want[1]}) ({plays})')
+    m.fake_no_songs = 1   # the artist's songs are not derived yet: Play says why instead of doing nothing
+    for st, want in ((1, 'Loading\u2026'.encode().decode('latin-1')), (0, "Can't play")):   # (the mocked translation reads UTF-8 as latin-1)
+        m.fake_state = st; m.calls = []
+        m.click('btn_play', count=40000000)
+        expect([c[1] for c in m.calls if c[0] == 'toast'] == [want] and not [e for e in m.fake_log if e[0] == 'play' and False], f'no songs list and the source is {"loading" if st else "not loading"}: the toast "{want}" ({[c[1] for c in m.calls if c[0] == "toast"]})')
+    m.fake_no_songs = 0
+    m.calls = []
+    m.call(PSYMS['al_on_destroy'], count=4000000)
+    expect(sum(1 for c in m.calls if c[0] == 'bitmap_destroy') >= 1, 'closing the page frees the circle')
+    # 5a2. a source artist's picture (src->cover with key 0 on the artist's record): cached = the 88 px circle exactly as a library artist with a photo; on its way = the plain header, then the circle appears in place
+    #      when the shared cover poll finds the file; none = the plain header, asked once. A portrait file is cut from its top third, as the artist cache cuts it. Never a placeholder circle.
+    port = b''.join(bytes((250, 250, 30, 255)) * 84 if 18 <= y < 28 else bytes((30, 30, 220, 255)) * 84 for y in range(140))   # 84 x 140; rows 18..27 yellow (the top third's first rows; a centred cut starts at 28)
+
+    def artist_page(pic):
+        mm = fake_albums_machine(3)
+        for w_ in ('btn_play', 'btn_shuffle', 'al_name'): Machine.widget(mm, w_)
+        mm.images['pod_ic_ar_art'] = (24, 24, bytes((0x8c, 0x8c, 0x8c, 255)) * (24 * 24))
+        mm.images['file://' + FAKE_PIC] = (84, 140, port)
+        mm.fake_pic = pic
+        mm.fake_rows.append(mm.record(album='', artist='Fake Artist', path='nd://ar1', rid=-2))
+        mm.calls = []
+        mm.call(PSYMS['albums_open_src'], a0=mm.fake_src, a1=mm.record(album='', artist='Fake Artist', path='nd://ar1', title='Fake Artist', rid=-9), count=20000000)
+        return mm
+    circle = lambda mm_, bl: [b for b in bl if tuple(b[2])[2:] == (CD, CD)]
+    pix = lambda mm_, b, x, y: struct.unpack('<I', mm_.u.mem_read(mm_.bitmaps[b[0]][0] + (y * CD + x) * 4, 4))[0]
+    moved = lambda mm_, n, y: ('widget_move', mm_.widgets[n], O['PH_NAME_X'] if n == 'al_name' else (O['AL_PLAY_X'] if n == 'btn_play' else O['AL_SHUFFLE_X']), y) in mm_.calls
+    m = artist_page(1)
+    expect(content_h(m) == END + RGAP + 2 * PITCH and not moved(m, 'al_name', O['AL_NAME_Y'] - SH) and not moved(m, 'btn_play', O['AL_HEAD_PILL_Y'] - SH),
+           f'a cached picture: the header with the circle (name and pills where a library artist with a photo has them, the rows END down) ({content_h(m)})')
+    expect(not circle(m, paint(m)[0]), 'no circle before the loader has made it')
+    blits, _ = settle(m)
+    c = circle(m, blits)
+    expect(len(c) == 1 and tuple(c[0][2][:2]) == (O['AL_PHOTO_X'], O['AL_PHOTO_Y']), f'the circle is drawn at ({O["AL_PHOTO_X"]}, {O["AL_PHOTO_Y"]}) ({[b[2] for b in c]})')
+    top_, mid_ = pix(m, c[0], CD // 2, 4), pix(m, c[0], CD // 2, CD // 2)
+    expect(top_ >> 24 == 255 and (top_ & 255) > 220 and (top_ >> 16 & 255) < 60 and (mid_ >> 16 & 255) > 200 and (mid_ & 255) < 60 and pix(m, c[0], 0, 0) >> 24 == 0,
+           f'the portrait file is cut from its top third (yellow at the top, blue under it), as a circle with clear corners ({top_:#x}, {mid_:#x})')
+    m = artist_page(0)
+    expect(content_h(m) == END - SH + RGAP + 2 * PITCH and moved(m, 'al_name', O['AL_NAME_Y'] - SH) and ('timer_add', PSYMS['ls_cover_tick'], 250) in m.calls,
+           'a picture on its way: the plain header (PH_SHIFT higher), the shared cover poll armed')
+    blits, _ = settle(m)
+    expect(not circle(m, blits) and not [b for b in blits if m.bitmaps[b[0]][1:] == (88, 88)], 'and no circle, no placeholder disc')
+    m.fake_pic = 1
+    m.calls = []
+    m.call(PSYMS['ls_cover_tick'], a0=0x5a5a5a50, count=40000000)
+    expect(moved(m, 'al_name', O['AL_NAME_Y']) and moved(m, 'btn_play', O['AL_HEAD_PILL_Y']) and moved(m, 'btn_shuffle', O['AL_HEAD_PILL_Y']) and content_h(m) == END + RGAP + 2 * PITCH,
+           f'the picture arrived while the page was up: the header switches in place (name and pills PH_SHIFT lower, the content taller) ({content_h(m)})')
+    blits, _ = settle(m)
+    c = circle(m, blits)
+    top_ = pix(m, c[0], CD // 2, 4) if c else 0
+    expect(len(c) == 1 and (top_ & 255) > 220 and (top_ >> 16 & 255) < 60, 'and the circle is drawn, decoded from the arrived file')
+    m.fake_log.clear()
+    for _ in range(4): m.call(PSYMS['ls_cover_tick'], count=40000000)
+    expect(('pic',) not in m.fake_log, 'with the circle up the poll does not ask for the picture again')
+    m = artist_page(-1)
+    n0 = m.fake_log.count(('pic',))
+    for _ in range(6): m.call(PSYMS['ls_cover_tick'], count=40000000)
+    blits, _ = settle(m)
+    expect(n0 == 1 and m.fake_log.count(('pic',)) == 1 and content_h(m) == END - SH + RGAP + 2 * PITCH and not circle(m, blits), 'no picture (-1): the plain header, asked once for it though the albums\' covers are polled')
+    m = artist_page(0)
+    for _ in range(1210): m.call(PSYMS['ls_cover_tick'], count=40000000)
+    blits, _ = settle(m)
+    expect(not circle(m, blits) and content_h(m) == END - SH + RGAP + 2 * PITCH, 'a picture that never comes: the poll gives up, the plain header stays')
+    m = artist_page(1)
+    m.images['file://' + FAKE_PIC] = (84, 140, b'')
+    m.load_image = 1
+    blits, _ = settle(m)
+    expect(not circle(m, blits) and content_h(m) == END - SH + RGAP + 2 * PITCH, 'a picture file that does not decode: the plain header')
+    # 5b. a source without Cover Flow or Search (lib_nd's caps 0): no Cover Flow button, the "..." is the capsule's left cap and the title runs to 214;
+    #     the card holds the sorts and the views, no Search row
+    m = fake_albums_machine(6, caps=0)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    expect(vis(m, 'btn_coverflow') == (0, 0) and m.props.get((m.widgets['btn_more'], 'style:normal:icon')) == 'pod_nav_more'
+           and m.props.get((m.widgets['btn_more'], 'style:pressed:icon')) == 'pod_nav_more_down'
+           and m.word(m.widgets['label_title'] + 8) == O['NAV_VIEW_X'] - O['NAV_TITLE_X'],
+           'caps 0: Cover Flow hidden, the "..." a left cap (pod_nav_more), the title to 214')
+    m.click('btn_more')
+    expect(vis(m, 'vs_item6') == (0, 0) and vis(m, 'vs_item4')[0] == 1 and vis(m, 'vs_item0')[0] == 1, 'its card: four sorts and Grid / List, no Search row')
+    # 5c. lib_nd's caps (Search only): the card's Search row is there and opens the source's search scoped to albums
+    m = fake_albums_machine(6, caps=2)
+    m.handlers[PSYMS['search_open_src_in']] = 'search_open_src_in'
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    expect(vis(m, 'btn_coverflow') == (0, 0), 'caps Search only: no Cover Flow button')
+    m.click('btn_more')
+    expect(vis(m, 'vs_item6') == (1, 1), 'caps Search only: the card has the Search row')
+    m.calls = []
+    m.click('vs_item6', count=40000000)
+    expect(('search_open_src_in', True, 2) in m.calls, f'the Search row opens search_open_src_in(source, SEARCH_ALBUMS) ({[c for c in m.calls if c[0] == "search_open_src_in"]})')
+    m = fake_albums_machine(6)
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    expect(vis(m, 'btn_coverflow') == (1, 1) and m.props.get((m.widgets['btn_more'], 'style:normal:icon')) is None
+           and m.word(m.widgets['label_title'] + 8) == O['NAV_CF_X'] - O['NAV_TITLE_X'],
+           'caps all: Cover Flow shows, the "..." keeps its middle piece and the title ends at 168 (the stock page\'s bar)')
+    # 6. a tap on a source's album opens the album page on the source (album_open_src, the tapped row), no stock album page
+    m = fake_albums_machine(6)
+    m.handlers[PSYMS['album_open_src']] = 'album_open_src'
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000); settle(m)
+    calls = tap_at(m, 30, TOP + RGAP + 10)
+    expect(('album_open_src', True, 0, 'Fake Album 0') in calls, f'a tap on a source album calls album_open_src with the source and that album ({calls})')
+    expect(not [c for c in calls if c[0] in ('cc_open_album', 'album_open', 'navigator_to_with_context')], 'a tap on a source album opens no stock album page')
+    # 7. a source's Recently Added and Year orders follow its records' own creation time and year (no song query); an album without one stays last; the reverse flips the rest
+    years, created = [2001, 1990, 0, 2010, 1985, 1999], [50, 10, 0, 90, 70, 30]
+    for mode, rev, want in ((3, 0, [3, 0, 5, 1, 4, 2]), (3, 1, [4, 1, 5, 0, 3, 2]), (2, 0, [3, 4, 0, 5, 1, 2]), (2, 1, [1, 5, 0, 4, 3, 2])):
+        m = fake_albums_machine(6, grid=False)
+        for i, r in enumerate(m.fake_rows): m.setword(r + O['REC_YEAR'], years[i]); m.setword(r + O['REC_TIME_CREATE'], created[i])
+        m.fs[SORT_FILE] = (chr(ord('a' if rev else '0') + mode) + '\n').encode()
+        m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000); settle(m)
+        got = globals()['shown'](m)   # (src_tests has a local named shown)
+        expect(got[:6] == [f'Fake Album {i}' for i in want] and not any(c[0] == 'loadLocalClassList' for c in m.calls),
+               f'a source in {"Year" if mode == 3 else "Recently Added"}{" (reversed)" if rev else ""}: its own records\' order, no song query ({got})')
+
+
+
+
 AZ_RAIL, AZ_HEAD = '/mnt/data/m1plus/appearance-index-rail', '/mnt/data/m1plus/appearance-headers'   # the Index Rail and Section Headers switches (both on by default)
 HDR = O['SG_HDR_H']
 AZ_TITLES = ['1999', 'Abbey Road', 'Aja', 'Bitches Brew', 'Blue', 'Cheap Trick', 'Dookie', 'Dookie Two', 'Zeta']   # the Title order: the sections # A B C D Z
@@ -2115,7 +2459,39 @@ def az_tests(ctx):
     expect(content_h(m) == az_model(0)[2] and vis(m, 'sg_rail') == (1, 1), 'the switches are read when the page opens: a change meanwhile waits for the next open')
 
 
-SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests, az_tests, nextalbum_tests]   # tools/check.py runs each as its own task
+
+def loading_tests(ctx):
+    """A source's Albums page (all, and an artist's) before its list is there: the state decides. LOADING is the one spinner and nothing else (the large title stays); FAILED / OFFLINE say why;
+    READY is "No albums"; a list with rows is never asked; the rows arriving remove the spinner."""
+    expect = ctx.expect
+    status = lambda m: m.props.get((m.widgets['label_status'], 'visible')) == 1
+    spin = lambda m: m.props.get((m.widgets['al_spin'], 'visible')) == 1
+    for scoped in (False, True):
+        what = 'an artist\'s albums' if scoped else 'Albums'
+        for grid in (True, False):
+            m = fake_albums_machine(0, grid=grid); m.fake_state = 1
+            artist = m.record(album='', artist='Fake Artist', path='nd://ar1', title='Fake Artist', rid=-9) if scoped else 0
+            m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=artist, count=20000000)
+            expect(('state', 0, artist) in m.fake_log and spin(m) and not status(m) and m.props.get((m.widgets['view_grid'], 'visible')) == 1,
+                   f'{what} ({"grid" if grid else "list"}) loading: asked src->state(LS_ALBUMS, scope), one spinner, no status line, the title block stays')
+            expect(('timer_add', PSYMS['ls_spin_tick'], 250) in m.calls, f'{what}: the spinner turns on a timer')
+            m.fake_rows = [m.record(album='First', artist='One', path='nd://f', rid=-2), m.record(album='Second', artist='One', path='nd://g', rid=-3)]
+            m.fake_state, m.fake_gen = 0, m.fake_gen + 1
+            m.fake_scoped = {artist: m.fake_rows} if scoped else {}
+            m.call(PSYMS['al_on_gen'], count=20000000)
+            blits, texts = settle(m)
+            expect(not spin(m) and not status(m) and {'First', 'Second'} & {t[0] for t in texts}, f'{what}: the albums arrive, the spinner goes and the grid shows')
+        for st, text in ((0, 'No albums'), (2, "Can't connect to the server"), (3, 'Connect to Wi-Fi first')):
+            m = fake_albums_machine(0); m.fake_state = st
+            artist = m.record(album='', artist='Fake Artist', path='nd://ar1', title='Fake Artist', rid=-9) if scoped else 0
+            m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=artist, count=20000000)
+            expect(status(m) and not spin(m) and ('widget_set_tr_text', m.widgets['label_status'], text) in m.calls, f'{what}: state {st} says {text!r}, no spinner')
+    m = fake_albums_machine(4); m.fake_state = 1
+    m.call(PSYMS['albums_open_src'], a0=m.fake_src, a1=0, count=20000000)
+    expect(not any(e[0] == 'state' for e in m.fake_log) and not spin(m) and not status(m), 'cached rows: shown at once, the state is not asked, no spinner')
+
+
+SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests, az_tests, src_tests, loading_tests, nextalbum_tests]   # tools/check.py runs each as its own task
 
 def run(ctx):
     for section in SECTIONS: section(ctx)

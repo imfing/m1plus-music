@@ -19,6 +19,7 @@
 #include "i18n.h"
 #include "pcdetail.h"
 #include "songinfo.h"
+#include "sbsrc.h"
 
 #define GI_X 16 /* the pairs' left edge and width */
 #define GI_W 288
@@ -316,6 +317,9 @@ typedef struct {
     char title[200], artist[200], album[200], path[GI_SRC];
     int cue_start, cue_end;
     unsigned ckey;
+    int remote; /* a Navidrome track: t is its row, the page takes its facts from the server's data (and the local file once downloaded) */
+    char cover[200]; /* remote: the cover's cache file when it is there */
+    sba_track_t t;
 } gi_rec_t;
 
 /* The title, artist and album beside the cover, centred on its height, then the pairs. */
@@ -333,23 +337,42 @@ static void gi_build(const gi_rec_t *r) {
         gi.ln[i].y = (short)(gi.ln[i].y + GI_TOP + (GI_COVER - y) / 2); /* (y is the block's height: it started at 0) */
     y = GI_TOP + GI_COVER + GI_HEAD_GAP;
 
-    gi_format_text(fmt, r->path);
-    gi_read_head(r->path,
-                 !strcmp(fmt, "MP3") || !strcmp(fmt, "MP2") || !strcmp(fmt, "MP1") || !strcmp(fmt, "MPA") ||
-                     !strcmp(fmt, "MPGA"),
-                 &h);
-    sz = cc_file_size(r->path);
-    if (sz < 0 || sz > 0x7fffffff) sz = 0;
-    if (cue_dur) { /* a CUE track with both ends: nothing to measure */
-        sec = (unsigned)(r->cue_end - r->cue_start);
-    } else if (
-        sz) { /* the table (this size), else FLAC's own total, else TagLib's length of this one file; less a CUE track's start */
-        int v, start = r->cue_start > 0 ? r->cue_start : 0;
-        dur_acquire();
-        v = dur_file(r->path, (unsigned)sz);
-        dur_release();
-        if (v < 0) v = h.flac && h.rate ? (int)gi_div36(h.hi, h.lo, h.rate) : dur_probe(r->path);
-        sec = v > start ? (unsigned)(v - start) : 0;
+    if (r->remote) { /* the server's data; the file's own bytes only when it is on the card (what the server leaves out) */
+        const sba_track_t *t = &r->t;
+        unsigned k;
+        memset(&h, 0, sizeof h);
+        for (k = 0; t->suffix[k] && k < 7; ++k)
+            fmt[k] = (char)(t->suffix[k] >= 'a' && t->suffix[k] <= 'z' ? t->suffix[k] - 32 : t->suffix[k]);
+        fmt[k] = 0;
+        h.rate = t->sample_rate, h.bits = t->bit_depth;
+        sz = t->size;
+        if (r->path[0]) { /* downloaded */
+            gi_head_t fh;
+            gi_read_head(r->path, !strcmp(fmt, "MP3") || !strcmp(fmt, "MP2"), &fh);
+            if (!h.rate) h.rate = fh.rate, h.bits = fh.bits;
+            if (!sz) sz = cc_file_size(r->path);
+            if (sz < 0 || sz > 0x7fffffff) sz = 0;
+        }
+        sec = t->seconds;
+    } else {
+        gi_format_text(fmt, r->path);
+        gi_read_head(r->path,
+                     !strcmp(fmt, "MP3") || !strcmp(fmt, "MP2") || !strcmp(fmt, "MP1") || !strcmp(fmt, "MPA") ||
+                         !strcmp(fmt, "MPGA"),
+                     &h);
+        sz = cc_file_size(r->path);
+        if (sz < 0 || sz > 0x7fffffff) sz = 0;
+        if (cue_dur) { /* a CUE track with both ends: nothing to measure */
+            sec = (unsigned)(r->cue_end - r->cue_start);
+        } else if (
+            sz) { /* the table (this size), else FLAC's own total, else TagLib's length of this one file; less a CUE track's start */
+            int v, start = r->cue_start > 0 ? r->cue_start : 0;
+            dur_acquire();
+            v = dur_file(r->path, (unsigned)sz);
+            dur_release();
+            if (v < 0) v = h.flac && h.rate ? (int)gi_div36(h.hi, h.lo, h.rate) : dur_probe(r->path);
+            sec = v > start ? (unsigned)(v - start) : 0;
+        }
     }
     gi_rate_text(rate, h.rate);
     if (h.rate && h.bits && h.bits <= 32) {
@@ -361,8 +384,10 @@ static void gi_build(const gi_rec_t *r) {
         snprintf(val, sizeof val, "%s", h.rate ? rate : "");
     }
     br[0] = 0;
-    if (whole && sec &&
-        sz) { /* the file's average: its bytes over its length (a CUE track's length is not the file's) */
+    if (r->remote && r->t.bitrate)
+        *gi_s(gi_u(br, r->t.bitrate, 0), " kbps") = 0; /* (the server's own figure) */
+    else if (whole && sec &&
+             sz) { /* the file's average: its bytes over its length (a CUE track's length is not the file's) */
         *gi_s(gi_u(br, (((unsigned)sz / sec) * 8 + 500) / 1000, 0), " kbps") = 0;
     }
     dur[0] = size[0] = 0;
@@ -443,7 +468,15 @@ int songinfo_open(void *rec) {
     /* the cover: the file of the track's own artist and album, else the library album record of that name's (a collab shows the album's cover): one targeted query, none when the
      * own file is there or the track has no album tag; a record with no file shows the placeholder like the own key */
     r->ckey = cc_album_key(rec);
-    if (!cc_url(url, r->ckey)) {
+    if (sbs_track(
+            rec, &r->t)) { /* a Navidrome track: its path is the local file (when downloaded), nothing else is a file */
+        r->remote = 1, r->ckey = 0;
+        if (!sba_dl_path(r->t.id, r->path, sizeof r->path)) r->path[0] = 0;
+        if (sba_track_cover(r->t.album_id, r->t.cover, r->cover, sizeof r->cover, 0) != 1)
+            r->cover[0] = 0; /* (the album's file; never asks) */
+    } else if (
+        !cc_url(url,
+                r->ckey)) { /* (main's fallback: a track's own album cover, else the library record's of that album) */
         unsigned rep = cc_album_rep_key(cc_str(rec, REC_ALBUM));
         if (rep) r->ckey = rep;
     }
@@ -483,7 +516,14 @@ int songinfo_open(void *rec) {
     t = grid_tile(&gi.g, 0, 0, 0, &fresh);
     if (t) {
         grid_set(t, "", "", r->ckey);
-        grid_art(&gi.g, t);
+        if (r->remote) {
+            char url[210];
+            if (r->cover[0]) {
+                snprintf(url, sizeof url, "file://%s", r->cover);
+                grid_art_url(&gi.g, t, url);
+            }
+        } else
+            grid_art(&gi.g, t);
         if (t->art != 1) grid_placeholder(&gi.g);
     }
     gi_build(r);

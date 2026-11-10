@@ -13,6 +13,7 @@
  *   on_cancel    Back (the navbar's or the hardware key) without Search; NULL for none
  *   flags        KB_DONE: the action key (on_done) reads "Done" instead of "Search"
  *                KB_LONG: the text may be KB_MAX_LONG bytes, not KB_MAX
+ *                KB_PASSWORD: a password field (KB_PASS_MAX bytes, shown as dots, as keyboard_attach's)
  * Returns 0 once the page is up, -1 when it could not open (another keyboard is still there: one at a time, also from inside a callback, since the page is
  * destroyed only after the callback ran; or the asset is not ours). The callbacks run on the UI thread, from the event that closed the page (on_cancel for the hardware
  * Back key from the page's destroy event); the page is gone or closing, so a callback must not use it. */

@@ -54,6 +54,8 @@
 #include "i18n.h"
 #include "podcasts.h"
 #include "radio.h"
+#include "sbapi.h"
+#include "libsrc.h"
 
 extern unsigned np_file_key(const char *path); /* patch/nowplaying.c: a hash of the picture file, 0 if unreadable */
 extern const char *
@@ -181,24 +183,33 @@ void mb_art_end(mb_art_t *a, unsigned *px) {
     bitmap_unlock_buffer(a->bmp);
 }
 
-/* The playing track's cover into the bitmap. first: a new track (the /tmp file is read again for a few ticks). 1 when the bitmap changed. */
+/* The playing track's cover into the bitmap. first: a new track (the /tmp file is read again for a few ticks). 1 when the bitmap changed. A server track's is the server's file (the one Now Playing
+ * shows), a placeholder until it lands (mb_art_settle keeps looking), else demo's /tmp file; never the library's album of the same name. */
 int mb_art_cover(mb_art_t *a, void *win, void *t, int first) {
-    char url[80], tmp[40];
+    char url[80], tmp[120];
     const char *file = (const char *)0, *path;
     unsigned album = *cc_str(t, REC_ALBUM) ? cc_album_key(t) : 0, *px, i;
-    int busy = 0;
+    int busy = 0, server, sc = ls_rec_cover(t, tmp, sizeof tmp, &server);
     px = mb_art_begin(a);
     if (!px) return 0;
     if (first) a->settle = MB_SETTLE;
     a->fkey = 0;
-    file = album ? cc_url(url, album) : (const char *)0;
-    if (file) {
-        if (first) a->settle = 0; /* the cache file is the album's, not the track's: nothing to wait for */
-    } else if ((path = np_cover_file(&busy)) != (const char *)0 && !busy) {
-        a->fkey = np_file_key(path);
-        if (a->fkey) {
-            snprintf(tmp, sizeof tmp, "file://%s", path);
-            file = tmp;
+    if (sc == 1 && (a->fkey = np_file_key(tmp + 7)) != 0) {
+        file = tmp;
+        if (first) a->settle = 0; /* the server's file is the track's own, and does not change */
+    } else if (sc == 0) {
+        a->settle = MB_SETTLE; /* on its way: the placeholder, and mb_art_settle looks again */
+    } else {
+        file = !server && album ? cc_url(url, album)
+                                : (const char *)0; /* (a server track never takes the library's album of its name) */
+        if (file) {
+            if (first) a->settle = 0; /* the cache file is the album's, not the track's: nothing to wait for */
+        } else if ((path = np_cover_file(&busy)) != (const char *)0 && !busy) {
+            a->fkey = np_file_key(path);
+            if (a->fkey) {
+                snprintf(tmp, sizeof tmp, "file://%s", path);
+                file = tmp;
+            }
         }
     }
     if (!file || !cc_decode(win, file, 1, MB_ART, 1,
@@ -212,9 +223,18 @@ int mb_art_cover(mb_art_t *a, void *win, void *t, int first) {
 
 /* Demo writes the /tmp cover a little after the track changes: look again for MB_SETTLE ticks and redo the cover if the file is new. */
 int mb_art_settle(mb_art_t *a, void *win, void *t) {
-    int busy = 0;
-    const char *path = np_cover_file(&busy);
+    int busy = 0, server;
+    char tmp[120];
+    const char *path;
     unsigned k;
+    int sc = ls_rec_cover(t, tmp, sizeof tmp, &server);
+    if (sc == 0) return 0; /* a server cover on its way: nothing is counted off while it is asked for */
+    if (sc == 1) { /* it landed: shown once */
+        a->settle = 0;
+        k = np_file_key(tmp + 7);
+        return k && k != a->fkey ? mb_art_cover(a, win, t, 0) : 0;
+    }
+    path = np_cover_file(&busy);
     if (busy) return 0; /* being replaced: not counted */
     a->settle--;
     k = path ? np_file_key(path) : 0;

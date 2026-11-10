@@ -30,6 +30,7 @@
 #include "pcnet.h"
 #include "pcdetail.h"
 #include "search.h"
+#include "sbapi.h"
 
 #define I(w, off) (*(int *)((char *)(w) + (off)))
 
@@ -1058,6 +1059,8 @@ static int oa_track(void) {
     const char *path, *slash, *dot;
     unsigned n = 0, k;
     if (!rec) return 0;
+    if (sba_rec_track(I(rec, REC_ID))[0])
+        return 0; /* a server track: its path is a stream address (with the login) or a download, and its album key is the library's, which a picked cover would overwrite */
     path = cc_str(rec, REC_PATH);
     if (!*path) return 0;
     while (path[n] && n + 5 < OA_PATH) ++n;

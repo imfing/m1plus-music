@@ -21,7 +21,7 @@ O = cdefs.defines(HEADER)
 
 PA = ('PA_SIZE', 'PA_RING_N', 'PA_RING_PX', 'PA_RING_COLS', 'PA_G_Y', 'PA_G_PX', 'PA_DOTS_Y', 'PA_DOTS_PX', 'PA_BADGE_X',
       'PA_BADGE_PX', 'PA_PILL_Y', 'PA_PILLF_X', 'PA_PILLO_X', 'PA_PILLW_X', 'PA_PILLR_X', 'PA_PILL_PX', 'PA_PILLW_PX',
-      'PA_FILL_A', 'PA_RING_A', 'PA_CHEV', 'PA_TILE_PX')
+      'PA_FILL_A', 'PA_RING_A', 'PA_CHEV', 'PA_TILE_PX', 'PA_DL_X', 'PA_DL_Y', 'PA_DL_PX', 'PA_DL_N', 'PA_DL_COLS', 'PA_DL_ARROW', 'PA_DL_STOP')
 MB = ('MB_TITLE_Y', 'MB_TITLE_H', 'MB_ART', 'MB_ART_X', 'MB_ART_Y', 'MB_ART_R', 'MB_TEXT_X', 'MB_TEXT_W', 'MB_ARTIST_Y',
       'MB_ARTIST_H', 'MB_PLAY_X', 'MB_NEXT_X', 'MB_BTN_W')
 DP = ('DP_TITLE_Y', 'DP_SUB_Y', 'DP_UPD_Y', 'DP_BTN_Y', 'DP_DESC_Y')
@@ -123,7 +123,7 @@ SKIPPED = (
     ('mod_icons', 'MB_PLAY_INK, MB_PAUSE_H, MB_SKIP_H, MB_SKIP_W', 'no C define (the bar glyph shapes are the Python model\'s)'),
     ('mod_icons', 'NAV_PX = 24, SHOT_BAR_PX, SYNC_BAR_PX, SYNC_DM_PX, PL_MENU_PX, SWATCH_PX', 'no C define'),
     ('mod_icons', 'AH_TINT[0], AH_TINT[1], AH_TINT[3]', 'alpha rows and window height: no C define'),
-    ('mod_icons', 'PA_TRACK_A, PA_TILE_R, PA_TILE_GLYPH', 'no C define'),
+    ('mod_icons', 'PA_TRACK_A, PA_TILE_R, PA_TILE_GLYPH, PA_DL_TRACK, PA_DL_STROKE, PA_DL_STOP_PX', 'no C define (the stop square\'s size is in the atlas cell)'),
     ('mod_icons', 'CARD_PIECE (ROW_W, ROW_H, CARD_X, CARD_W, CARD_R)', 'no C define (tools/pod_settings.py geometry)'),
     ('mod_nowplaying', 'TITLE_PX, META_PX, TIMES_PX', 'font sizes, no C define'),
     ('mod_ipodrows', 'TITLE_PX, ARTIST_PX, META_PX = 22, 18, 15', 'font sizes; the offsets.inc AH_TITLE_H (22) is a height'),

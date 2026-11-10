@@ -44,7 +44,7 @@ def check_texts(font):
         for loc in pod_i18n.LOCALES:
             t = by[loc]
             check(t and t == t.strip() and all(ord(c) >= 0x20 for c in t), f'{key!r} {loc}: empty or untidy text {t!r}')
-            if key.startswith(('%d', 'Added %d')) or key in pod_i18n.DATE_KEYS or key.startswith('Cancelled, '):
+            if key.startswith(('%d', 'Added %d', 'Downloading %d')) or key in pod_i18n.DATE_KEYS or key.startswith('Cancelled, '):
                 n = key.count('%d')   # the English text says how many: one, or two for the refresh dialog's "%d of %d" and "%d updated, %d failed"
                 check(t.count('%d') == n and t.count('%s') == key.count('%s') and '%' not in t.replace('%d', '').replace('%s', ''), f'{key!r} {loc}: need exactly {n} %d (and {key.count("%s")} x %s) in {t!r}')   # ("%d deleted, %s freed": a count and a size)
             elif '%s' in key: check(t.count('%s') == key.count('%s') and '%' not in t.replace('%s', ''), f'{key!r} {loc}: need exactly {key.count("%s")} x %s in {t!r}')   # the Daily Mix card's templates

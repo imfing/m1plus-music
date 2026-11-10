@@ -409,7 +409,39 @@ def clear_tests(ctx):
     expect(clear(m) == 1 and m.play_pos == 3 and len(qpaths(m)) == 4 and not names(m, 'start_player') and not names(m, 'mclSetPlayPos'), 'Play Next then Clear: the position is the playing song and nothing is restarted')
 
 
-SECTIONS = [insert_tests, shuffle_tests, gapless_tests, refusal_tests, idle_tests, lock_tests, clear_tests, pinned_tests]   # tools/check.py runs each as its own task
+def navidrome_tests(ctx):
+    """7. A Navidrome row's queue record (patch/sbsrc.c queue_row, docs/modules/subsonic.md): its REC_PATH is a stream address, so there is no file to find; the row is taken when sba_queue_add
+    noted its id (the queue map), refused as missing when the address is not one the map knows, and a local path is still checked."""
+    expect = ctx.expect
+    url = 'http://nd.example:4533/rest/stream.view?id='
+
+    def note(m, tid):
+        t = m.alloc(1200); m.u.mem_write(t, tid.encode() + b'\0')
+        return signed(m.call(PSYMS['sba_queue_add'], a0=t, count=900000000))
+    for after, label in ((0, 'Play Next'), (1, 'Play After')):
+        m = machine()
+        rid = note(m, 't9')
+        expect(rid <= -2 and note(m, 't9') == rid and note(m, 't8') != rid, f'sba_queue_add: an id <= -2, the same one for the same track, another for another ({rid})')
+        row = m.record(album='A', artist='A', path=url + 't9', title='Nine', name='Nine.flac', rid=rid)
+        before = qpaths(m)
+        r = add(m, m.new_deque([row]), after)
+        got = qpaths(m)
+        expect(r == ADDED and len(got) == len(before) + 1 and url + 't9' in got and (got[-1] == url + 't9' if after else got[4] == url + 't9')
+               and not [c for c in m.calls if c[0] == 'access' and c[1].startswith('http')], f'{label}: a noted stream-address row is inserted ({r}, at {got.index(url + "t9") if url + "t9" in got else None} of {len(got)}), no file test on the address')
+    m = machine()
+    row = m.record(album='A', artist='A', path=url + 't7', title='Seven', name='Seven.flac', rid=-123456)
+    before = snapshot(m)
+    expect(add(m, m.new_deque([row])) == MISSING and snapshot(m) == before, 'an address whose id the queue map does not know is refused like a missing file')
+    rid = note(m, 't6')
+    row = m.record(album='A', artist='A', path='/mnt/mmc/Subsonic/gone.flac', title='Six', name='gone.flac', rid=rid)
+    expect(add(m, m.new_deque([row])) == MISSING, 'a local file path is still tested even for a noted id')
+    m = machine(n=6, pos=1); m.play_pos = -1
+    rid = note(m, 't5')
+    row = m.record(album='A', artist='A', path=url + 't5', title='Five', name='Five.flac', rid=rid)
+    expect(add(m, m.new_deque([row])) == STARTED and not [c for c in m.calls if c[0] == 'access' and c[1].startswith('http')], 'nothing playing: a stream-address row starts the queue')
+
+
+SECTIONS = [insert_tests, shuffle_tests, gapless_tests, refusal_tests, idle_tests, lock_tests, clear_tests, pinned_tests, navidrome_tests]   # tools/check.py runs each as its own task
 
 
 def run(ctx):

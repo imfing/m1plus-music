@@ -38,6 +38,10 @@
 #include "keyboard.h"
 #include "picker.h"
 #include "viewsort.h"
+#include "libsrc.h"
+#include "sbsrc.h"
+#include "songops.h"
+#include "playlists.h"
 
 extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination through the dispatcher */
 extern int
@@ -107,6 +111,13 @@ static struct {
     int have_sig;
     int bg; /* another window is in front: the loader does not run (pl_on_bg) */
     void *btn_plactions; /* the navbar's list-plus button: the capsule's left cap at NAV_CF_X, opens the actions card */
+    const lib_src_t *
+        src; /* the library source (playlists_open_src): NULL = the stock playlists, today's code; set before everything else reads it */
+    unsigned gen, rows,
+        gen_timer; /* src: the source's gen() and gen_rows when the playlists were read, and the timer that watches it */
+    void *spin; /* a source's loading spinner (pl_spin, optional) */
+    ls_cpoll_t
+        cp; /* the shared cover poll (patch/libsrc.c ls_cover_poll): the rescan and the cover spinners' turn while a source's mosaic is still filling */
     grid_t g; /* LAST (test/pod/playlists.py reads the fields above by index) */
 } pl __attribute__((section(".scratch")));
 
@@ -224,6 +235,36 @@ static void pl_texts(tile_t *t, int a) {
     grid_set(t, cc_str(pl_rec(a), REC_TITLE), sub, 0);
 }
 
+static void pl_kick(void);
+/* A source's covers on the shared poll (patch/libsrc.c ls_cover_poll): a tile whose playlist was read with a cover still on its way (PL_SCAN_MISS) shows the spinner (a tile with load set,
+ * patch/grid.c grid_spin_*) until its mosaic has a picture; every tick of the poll reads those playlists again (the file may be there now; a cover does not move the gen) and turns and redraws
+ * the spinners; the poll ends when no playlist is waiting any more, or gives up (the spinners go; the tiles are read again when the page returns). */
+static void pl_cp_ask(void) {
+    int i, any = 0;
+    if (!pl.src || !pl.view || pl.bg || !pl.info || !pl.count) return;
+    for (i = 0; i < (int)pl.count; ++i)
+        if (pl.info[i].scanned == PL_SCAN_MISS) pl.info[i].scanned = 0, any = 1;
+    if (any) pl_kick();
+}
+static int pl_cp_spin(void) {
+    int n;
+    if (!pl.view) return 0;
+    n = grid_spin_turn(&pl.g);
+    pl_redraw();
+    return n;
+}
+static void pl_cp_giveup(void) {
+    int i;
+    for (i = 0; pl.g.tiles && i < pl.g.n; ++i) pl.g.tiles[i].load = 0;
+    if (pl.view) pl_redraw();
+}
+static void pl_loading(tile_t *t, int a) {
+    t->load = pl.src && pl.info && pl.info[a].scanned == PL_SCAN_MISS;
+    if (!t->load) return;
+    grid_spin_open(&pl.g, "wf_spin", 14);
+    if (pl.view) ls_cover_poll(&pl.cp, pl.win, pl_cp_ask, pl_cp_spin, pl_cp_giveup);
+}
+
 /* The tile's texts and mosaic keys from the playlist's scan (the count shows once the playlist has been read). */
 static void pl_prep(tile_t *t, int a) {
     info_t *in = &pl.info[a];
@@ -234,6 +275,7 @@ static void pl_prep(tile_t *t, int a) {
     memcpy(t->qkey, in->key, sizeof t->qkey);
     if (in->scanned && !in->nk) t->art = 2; /* no album with a cover: the placeholder */
     pl_texts(t, a);
+    pl_loading(t, a);
 }
 
 /* The texts are cut to a width that the select mode changes (the list's rows make room for the mark): every tile's are made again from the playlist. */
@@ -379,6 +421,25 @@ static int pl_on_paint(void *ctx, void *e) {
 
 /* Reads playlist i's songs: how many, and from the first PL_SCAN the first four distinct albums that have a cover. The stock query leaves them
  * in *pdeq_showlist, which the next query replaces (the library lookup is therefore loaded first). */
+/* A source's playlist: its tracks from src->list; the mosaic's keys are the first four distinct cover files among the first PL_SCAN tracks (sbs_mosaic_keys; one asked for and not there yet: PL_SCAN_MISS,
+ * the file may appear). The mosaic reads the files by those keys (grid_t.url). */
+static void pl_scan_src(info_t *in, void *rec) {
+    void *list = pl.src == &lib_nd
+                     ? sbs_playlist_scan(pl.src, rec) /* (src->list, but a cached playlist is not asked for again) */
+                     : pl.src->list(pl.src, LS_PLAYLISTS, rec);
+    int miss = 0;
+    if (list)
+        in->songs = (int)deque_size(list);
+    else
+        in->songs = pl.src->count ? pl.src->count(pl.src, LS_PLAYLISTS, rec)
+                                  : 0; /* (not cached yet: the sync's songCount, not a 0) */
+    in->nk = sbs_mosaic_keys(pl.src, list, in->key, &miss);
+    if (!list && pl.src->state && pl.src->state(pl.src, LS_PLAYLISTS, rec) == LS_ST_LOADING)
+        miss = 1; /* (the tracks are on their way: read again, the tile fills in place) */
+    in->scanned = miss ? PL_SCAN_MISS : 1;
+    if (list) deque_destroy(list);
+}
+
 static void pl_scan(int i) {
     info_t *in = &pl.info[i];
     int n, miss;
@@ -390,6 +451,10 @@ static void pl_scan(int i) {
     if (!pl.albums_tried) {
         pl.albums_tried = 1;
         pl.albums = cc_albums();
+    }
+    if (pl.src) {
+        pl_scan_src(in, pl_rec(i));
+        return;
     }
     *(int *)(CLASSINFO + 4) = pl_id(i);
     loadLocalClassList(CLASS_PLAYLIST_SONGS);
@@ -468,6 +533,7 @@ static int pl_on_load(const void *unused) {
                 t->ckey = ck, t->fit = 0;
             } else
                 pl_prep(t, a);
+            pl_loading(t, a);
         } else if (!t->art)
             grid_mosaic(&pl.g, t, pl.tmp);
         if (top < GRID_VIEW_H && top + pl_height() > 0) pl_redraw();
@@ -522,13 +588,20 @@ static int pl_same_str(const char *a, const char *b) {
     return *a == *b;
 }
 
-/* The freshly read list is the page's: as many rows, the same id and name in each (a rename, delete, add or reorder changes one). */
+/* What a source's playlist row carries besides its id and name (the cover, the song count, the length: the row's REC_META); "" for a stock row. */
+static const char *pl_meta(void *rec) { return pl.src ? cc_str(rec, REC_META) : ""; }
+
+/* The freshly read list is the page's: as many rows, the same id, name and content in each (a rename, delete, add, reorder or a changed song count or cover changes one). */
 static int pl_same_list(void *old, unsigned oldn, void *fresh, unsigned n) {
     unsigned i;
     if (!old || !fresh || oldn != n) return 0;
     for (i = 0; i < n; ++i) {
         void *a = deque_at(old, i), *b = deque_at(fresh, i);
-        if (I(a, REC_DISC) != I(b, REC_DISC) || !pl_same_str(cc_str(a, REC_TITLE), cc_str(b, REC_TITLE))) return 0;
+        if (pl.src ? !pl_same_str(pl.src->rec_id(pl.src, a), pl.src->rec_id(pl.src, b))
+                   : I(a, REC_DISC) != I(b, REC_DISC))
+            return 0;
+        if (!pl_same_str(cc_str(a, REC_TITLE), cc_str(b, REC_TITLE))) return 0;
+        if (!pl_same_str(pl_meta(a), pl_meta(b))) return 0;
     }
     return 1;
 }
@@ -566,21 +639,99 @@ static void pl_sort(void) {
     pl_key = (const char **)0;
 }
 
+/* A source's list as the page shows it: a hash of every row's id, name and content (cover, song count, length; the source's gen moves for any fetch anywhere, so it says nothing about this list). */
+static unsigned pl_src_sig(void *list) {
+    unsigned h = 2166136261u, i, k;
+    for (i = 0; list && i < deque_size(list); ++i) {
+        void *r = deque_at(list, i);
+        const char *s[3];
+        s[0] = pl.src->rec_id(pl.src, r), s[1] = cc_str(r, REC_TITLE), s[2] = pl_meta(r);
+        for (k = 0; k < 3; ++k) {
+            const unsigned char *p = (const unsigned char *)s[k];
+            for (; *p; ++p) h = (h ^ *p) * 16777619u;
+            h = (h ^ 0x100) * 16777619u; /* (the field's end: "ab","c" is not "a","bc") */
+        }
+    }
+    return h ? h : 1;
+}
+
+/* A source's list that changed (a playlist came, went or was renamed), the page's tiles carried over: each row that is in both lists (same id and name) keeps its tile, its decoded
+ * cover and its scan (read again, quietly: the tile's picture stays when the albums are the same), at its new place; only the new rows start empty. `old` is the previous list and
+ * `oldord` its name order. 0 when there is no memory (the caller drops everything). */
+static int pl_carry(void *old, unsigned oldn, const unsigned *oldord, unsigned newn) {
+    int *inv = calloc(oldn ? oldn : 1, sizeof *inv);
+    info_t *fresh = calloc(newn ? newn : 1, sizeof(info_t));
+    unsigned k, j, hint = 0;
+    int i;
+    if (!inv || !fresh) {
+        free(inv);
+        free(fresh);
+        return 0;
+    }
+    for (j = 0; j < oldn; ++j) inv[j] = -1;
+    for (
+        k = 0; k < newn;
+        ++k) { /* the old place of each new row: the next after the last match first (an insert or a delete moves the rest by one), else a search */
+        void *r = deque_at(pl.pls, pl_slot(k));
+        const char *id = pl.src->rec_id(pl.src, r), *name = cc_str(r, REC_TITLE);
+        unsigned t;
+        for (t = 0; t < oldn; ++t) {
+            unsigned c = (hint + t) % oldn, so = oldord ? oldord[c] : c;
+            void *o = deque_at(old, so);
+            if (pl_same_str(pl.src->rec_id(pl.src, o), id) && pl_same_str(cc_str(o, REC_TITLE), name)) {
+                inv[c] = (int)k, hint = c + 1;
+                for (i = 0; i < 4; ++i) fresh[k].key[i] = pl.info[c].key[i];
+                fresh[k].nk = pl.info[c].nk,
+                fresh[k].songs = pl.info[c].songs; /* (scanned stays 0: read again by the loader) */
+                break;
+            }
+        }
+    }
+    for (i = 0; i < pl.g.n; ++i) { /* the tiles follow their playlist; a tile of a playlist that is gone is free */
+        grid_tile_t *t = &pl.g.tiles[i];
+        if (!t->album) continue;
+        if (t->album - 1 < (int)oldn && inv[t->album - 1] >= 0)
+            t->album = inv[t->album - 1] + 1;
+        else {
+            grid_free_art(t);
+            memset(t, 0, sizeof *t);
+        }
+    }
+    free(pl.info);
+    pl.info = fresh;
+    free(inv);
+    return 1;
+}
+
 static void pl_load(void) {
     void *list, *old = pl.pls;
-    unsigned oldn = pl.count;
+    unsigned oldn = pl.count, *oldord = pl.ord, was = pl.count;
+    int carry = 0;
     unsigned sig[PL_SIG];
     int have, keep, i;
     pl_select(0); /* a page read again is not in select mode (the marks were of the old list) */
     if (pl.more_timer) timer_remove(pl.more_timer);
     pl.more_timer = 0;
-    have = pl_dbsig(sig);
     pl.pls = (void *)0;
-    if (loadLocalClassList(CLASS_PLAYLISTS) > 0) {
-        list = *(void **)PDEQ_PLAYLIST;
-        if (list && deque_size(list)) pl.pls = cc_copy_list(list);
+    if (pl.src) { /* the source's own copy; the hash of its rows stands for the database's state */
+        memset(sig, 0, sizeof sig);
+        pl.gen = pl.src->gen(pl.src);
+        pl.rows = ls_gen_rows(pl.src);
+        have = 1;
+        list = pl.src->list(pl.src, LS_PLAYLISTS, (void *)0);
+        if (list && deque_size(list))
+            pl.pls = list;
+        else if (list)
+            deque_destroy(list);
+        sig[0] = pl_src_sig(pl.pls);
+    } else {
+        have = pl_dbsig(sig);
+        if (loadLocalClassList(CLASS_PLAYLISTS) > 0) {
+            list = *(void **)PDEQ_PLAYLIST;
+            if (list && deque_size(list)) pl.pls = cc_copy_list(list);
+        }
+        picker_restore();
     }
-    picker_restore();
     pl.count = (pl.pls ? deque_size(pl.pls) : 0) + (unsigned)pl_v();
     if (pl.count > PL_MAX + (unsigned)pl_v()) pl.count = PL_MAX + (unsigned)pl_v();
     /* Nothing changed (the same playlists, the database file untouched since the scans were made): the scans and the tiles stay (a visit to a playlist's songs page or a
@@ -588,7 +739,6 @@ static void pl_load(void) {
     keep = have && pl.have_sig && pl.info && pl.g.tiles && pl.count && oldn == pl.count &&
            pl_same_list(old, oldn - (unsigned)pl_v(), pl.pls, pl.count - (unsigned)pl_v());
     for (oldn = 0; keep && oldn < PL_SIG; ++oldn) keep = sig[oldn] == pl.sig[oldn];
-    if (old) deque_destroy(old);
     /* The cover cache grows while another page is open (the Cover Flow build): a playlist whose scan found an album without a file is read again, and its
      * tile composed again, by the loader. Complete scans (every album had its file or none) stay: no query, no decode. */
     for (oldn = 0; keep && oldn < pl.count; ++oldn)
@@ -596,21 +746,35 @@ static void pl_load(void) {
     free(pl.sel);
     pl.sel = (unsigned char *)0, pl.nsel = 0;
     if (!keep) {
+        pl.ord = (unsigned *)0; /* (pl_sort frees the order it is given: the old one is kept here for pl_carry) */
         pl_sort();
-        grid_drop(&pl.g);
-        free(pl.info);
-        pl.info = pl.count ? calloc(pl.count, sizeof(info_t)) : (info_t *)0;
-        if (pl.count && !pl.info) pl.count = 0;
-        for (i = 0; pl.info && i < pl_v(); ++i) pl.info[i].scanned = 1; /* New playlist, Favourites: nothing to read */
-        grid_placeholder(&pl.g);
+        carry = pl.src && !pl_v() && old && pl.info && pl.g.tiles && pl.g.placeholder && was && pl.count &&
+                pl_carry(old, was, oldord, pl.count);
+        if (!carry) {
+            grid_drop(&pl.g);
+            free(pl.info);
+            pl.info = pl.count ? calloc(pl.count, sizeof(info_t)) : (info_t *)0;
+            if (pl.count && !pl.info) pl.count = 0;
+            for (i = 0; pl.info && i < pl_v(); ++i)
+                pl.info[i].scanned = 1; /* New playlist, Favourites: nothing to read */
+            grid_placeholder(&pl.g);
+        }
+        free(oldord);
     }
+    if (old) deque_destroy(old);
     pl.have_sig = have;
     memcpy(pl.sig, sig, sizeof pl.sig);
     pl.sel = pl.count ? calloc((pl.count + 7) / 8, 1)
                       : (unsigned char *)0; /* none: no select mode (the menu's Delete opens the stock page) */
-    pl_show(pl.view, pl.count != 0);
-    pl_show(pl.status, pl.count == 0);
-    if (!pl.count) widget_set_tr_text(pl.status, "No playlists");
+    {
+        int st = pl.src && !pl.count && pl.src->state ? pl.src->state(pl.src, LS_PLAYLISTS, (void *)0) : LS_ST_READY;
+        pl_show(pl.view,
+                pl.count != 0 ||
+                    pl.src != (const lib_src_t *)0); /* (a source's page keeps the large title when it has no rows) */
+        pl_show(pl.status, pl.count == 0 && !(st == LS_ST_LOADING && pl.spin));
+        ls_spin(pl.spin, st == LS_ST_LOADING && pl.count == 0 && pl.spin != (void *)0);
+        if (!pl.count) widget_set_tr_text(pl.status, pl.src ? ls_empty_key(st, "No playlists") : "No playlists");
+    }
     pl_size();
     pl.dir = 1;
     pl.seen = pl_off();
@@ -699,6 +863,20 @@ static void pl_create(void);
 static void pl_pick_add(int id);
 static void pl_pick_later(int id);
 
+extern int songs_open_src_in(
+    const lib_src_t *src, int which, void *scope,
+    const char *title); /* patch/songs.c: the source's tracks of a row (here a playlist's) on our Songs page */
+
+/* A tap on a source's playlist: its Songs page; if that page does not open, the playlist plays in order (the tap of a row). */
+static void pl_open_src(void *rec) {
+    void *list;
+    if (songs_open_src_in(pl.src, LS_PLAYLISTS, rec, cc_str(rec, REC_TITLE)) == 0) return;
+    list = pl.src->list(pl.src, LS_PLAYLISTS, rec);
+    if (!list) return;
+    so_play_src(pl.src, CLASS_PLAYLIST_SONGS, list, 0, LS_PLAY_ORDER, pod_open_player);
+    deque_destroy(list);
+}
+
 static void pl_open(int i) {
     void *rec;
     if (pl_v()) { /* the picker: New playlist (row 0), Favourites (row 1), or the add to that playlist */
@@ -709,6 +887,10 @@ static void pl_open(int i) {
         return;
     }
     rec = pl_rec(i);
+    if (pl.src) {
+        pl_open_src(rec);
+        return;
+    }
     if (songs_open_playlist(I(rec, REC_DISC), cc_str(rec, REC_TITLE)) != -1) return;
     snprintf((char *)NAV_TITLE, 0x200, "%s", cc_str(rec, REC_TITLE));
     *(int *)(CLASSINFO + 4) = I(rec, REC_DISC);
@@ -733,6 +915,7 @@ static void pl_head(void) { /* the navbar's title: "N Selected" in select mode, 
 
 /* The select mode is there when the asset has its widgets, the marks decoded and the selection bitset exists. */
 static int pl_select_ok(void) {
+    if (pl.src) return 0;
     return pl.btn_selall && pl.bar && pl.del && pl.mark[0] && pl.mark[1] && pl.sel && pl.count;
 }
 
@@ -979,7 +1162,7 @@ static int pl_on_more(void *ctx, void *e) {
 static int pl_on_actions(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (pl.view && !pl.menu && !pl.select) pl_menu_kind(2);
+    if (pl.view && !pl.menu && !pl.select && !pl.src) pl_menu_kind(2);
     return RET_OK;
 }
 
@@ -1018,6 +1201,7 @@ static int pl_on_item(void *ctx, void *e) {
         return RET_OK;
     }
     which -= VS_SEARCH;
+    if (pl.src) return RET_OK; /* New Playlist, Import, Export, Delete Playlists are the stock library's */
     *(int *)NAVIGATION_STATUS = 0; /* the stock pages' normal (not multi-select) mode: export all */
     if (which == PL_NEW) {
         pl_create(); /* the keyboard is not modal: pl_named reads the list when the name is in */
@@ -1041,6 +1225,23 @@ static int pl_on_item(void *ctx, void *e) {
 /* ---------------------------------------------------------------------------
  * The page
  */
+/* A source's page watches its gen: the data changed, the page reads again (the playlists whose cover was asked for are read again by the shared cover poll, pl_cp_ask). */
+static int pl_on_gen(const void *unused) {
+    unsigned g;
+    (void)unused;
+    if (!pl.src || !pl.view || pl.bg) return RET_REPEAT;
+    g = pl.src->gen(pl.src);
+    if (g != pl.gen && ls_gen_rows(pl.src) == pl.rows) { /* only a download's progress moved: no playlist changed */
+        pl.gen = g;
+        return RET_REPEAT;
+    }
+    if (g != pl.gen) {
+        pl_load();
+        return RET_REPEAT;
+    }
+    return RET_REPEAT;
+}
+
 static int pl_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
@@ -1102,6 +1303,9 @@ static int pl_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (pl.more_timer) timer_remove(pl.more_timer);
+    if (pl.gen_timer) timer_remove(pl.gen_timer);
+    ls_cover_end(&pl.cp);
+    ls_spin_end(pl.spin);
     grid_free(&pl.g);
     if (pl.pls) deque_destroy(pl.pls);
     if (pl.albums) deque_destroy(pl.albums);
@@ -1129,9 +1333,12 @@ static int pl_on_destroy(void *ctx, void *e) {
 }
 
 /* 0 once the page is up, -1 if the window could not open, -2 if the asset is not ours (the page is left again). */
-static int pl_open_page(void) {
+static int pl_on_gen(const void *unused);
+
+static int pl_open_page(const lib_src_t *src) {
     if (pl.win) return -1;
     memset(&pl, 0, sizeof pl);
+    pl.src = src == &lib_stock ? (const lib_src_t *)0 : src;
     pl.win = window_open("m1plus_playlists");
     if (!pl.win) return -1;
     widget_on(pl.win, EVT_DESTROY, pl_on_destroy, (void *)0);
@@ -1146,6 +1353,7 @@ static int pl_open_page(void) {
     pl.view = widget_lookup(pl.win, "view_grid", 1);
     pl.sv = widget_lookup(pl.win, "playlists_scrollview", 1);
     pl.status = widget_lookup(pl.win, "label_status", 1);
+    pl.spin = widget_lookup(pl.win, "pl_spin", 1); /* optional */
     pl.fade = widget_lookup(pl.win, "img_nb_fade", 1); /* optional */
     pl.big = widget_lookup(pl.win, "pl_title", 1);
     pl.g.st_title = widget_lookup(pl.win, "label_grid_title", 1);
@@ -1178,6 +1386,7 @@ static int pl_open_page(void) {
             return 0;
         }
         pl.g.st_title = st_title, pl.g.st_sub = st_sub;
+        if (pl.src) pl.g.url = sbs_cover_url; /* (a source's mosaic keys are its cover files' hashes) */
     }
     pl.mark[0] = pod_make_mark(pl.win, "unselect");
     pl.mark[1] = pod_make_mark(pl.win, "selected");
@@ -1189,6 +1398,15 @@ static int pl_open_page(void) {
     if (pl_v() && !pick.star) pick.star = pl_make_star();
     pl.list = pl_v() || !pl_use_grid(); /* the picker is always the list (the saved choice is the page's own) */
     pl_shape(pl.list);
+    if (pl.src) { /* read-only remote playlists: no list-plus button (New Playlist, Import, Export, Delete Playlists, Clean Up are the stock library's), the title runs on */
+        pl_show(pl.btn_plactions, 0);
+        widget_set_prop_str(pl.btn_more, "style:normal:icon",
+                            "pod_nav_more"); /* (the capsule's left cap is gone: "..." takes its rounded edge) */
+        widget_set_prop_str(pl.btn_more, "style:over:icon", "pod_nav_more");
+        widget_set_prop_str(pl.btn_more, "style:pressed:icon", "pod_nav_more_down");
+        if (pl.title) widget_resize(pl.title, NAV_VIEW_X - NAV_TITLE_X, 22);
+        pl.gen_timer = timer_add(pl_on_gen, (void *)0, LS_GEN_MS);
+    }
     if (pl_v()) { /* the picker: Back and the title only */
         pl_show(pl.btn_more, 0), pl_show(pl.np, 0), pl_show(pl.btn_plactions, 0);
         if (pl.title) widget_resize(pl.title, SG_SELALL_X - NAV_TITLE_X, 22);
@@ -1212,9 +1430,15 @@ static int pl_open_page(void) {
 }
 
 /* The M1+ Music menu's Playlists row. A window that will not open leaves the stock Playlists page, through the Home dispatcher. 0 once something is requested. */
-int playlists_open(void) {
-    int r = pl_open_page();
-    if (r == -1 && !pl.win) return pod_home_open(HOME_PLAYLIST);
+int playlists_open(void) { return playlists_open_src((const lib_src_t *)0); }
+
+/* The Playlists page over a library source (patch/libsrc.h): src NULL or &lib_stock is the stock playlists, today's page. Another source's page is read-only (no New Playlist, Import,
+ * Export, Delete Playlists, Clean Up); its window that will not open is -1 (there is no stock page to fall back to). */
+__attribute__((noinline)) int playlists_open_src(const lib_src_t *src) {
+    int r;
+    if (src == &lib_stock) src = (const lib_src_t *)0;
+    r = pl_open_page(src);
+    if (r == -1 && !pl.win && !src) return pod_home_open(HOME_PLAYLIST);
     return r;
 }
 
@@ -1230,7 +1454,7 @@ int playlists_pick(void) {
         memset(&pl, 0, sizeof pl);
     }
     pick.on = 1;
-    r = pl_open_page();
+    r = pl_open_page((const lib_src_t *)0);
     if (r < 0) {
         pick.on = 0; /* (a page left again, -2, ends in pl_on_destroy, which puts the stash back) */
         if (r == -1 && pick.stash) {
