@@ -33,7 +33,7 @@ void ap_lib_drop(void);
 #define AP_GLYPH "pod_ic_ar_art" /* the placeholder's mic-vocal glyph (#8C8C8C on transparent, tools/mod_icons.py) */
 /* What ap_lookup found (the Artists page keeps it, 2 bits an artist): nothing known yet (no file), a photo under the name's own key, no photo (the marker), a photo under the lead artist's key. */
 enum { AP_UNKNOWN, AP_PHOTO, AP_NONE, AP_LEAD };
-/* The lead artist of "A feat. B": the name before the first of " feat. ", " ft. ", " featuring ", " & ", " x ", ", ", "; " (ASCII case folded; the earliest in the name wins) into out (n bytes). 0: none of them, or a lead too long. */
+/* The lead artist of "A feat. B": the first name m1_artist_split finds (patch/common.h; the separator table lives there, docs/modules/artists.md "Separators") into out (n bytes). 0: the field has no separator, or the lead is too long. */
 int ap_lead(const char *name, char *out, unsigned n);
 /* The -44 (size AP_LIST) or -168 (AP_HEAD) file of the name's own key when it holds a picture (AP_PHOTO), else of the lead artist's key (AP_LEAD); url ("file://..." in 80 bytes) is set for those two. AP_NONE: the name's file is the empty
  * marker and the lead has no photo either (or none, or its marker); AP_UNKNOWN: a file is missing. Opens files: never from a paint. */

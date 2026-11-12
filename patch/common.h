@@ -33,6 +33,15 @@ int m1_scan_dir(
     const char *name,
     const char *
         dot); /* the library scan's strcmp(name, ".") replacement: 0 for any name starting with '.' (docs/modules/payload.md hook 5) */
+/* One artist of an artist field: a slice of the caller's string, never a copy. */
+typedef struct {
+    const char *p;
+    unsigned n;
+} m1_artist_span;
+/* The names in an artist field, in the order they appear: split on " feat. ", " ft. ", " featuring ", " & ", " x ", ", " and "; " (ASCII case folded; each separator
+ * carries the spaces it is written with, so a bare "Tom;Jerry" stays one name), parts trimmed and empty ones dropped, at most max into out. Returns the count (1 for a
+ * field with no separator, 0 when there is nothing to share). Reads `field` only: the span must not outlive it. docs/modules/artists.md "Separators". */
+int m1_artist_split(const char *field, m1_artist_span *out, int max);
 int m1_card_mounted(
     void); /* the SD card is mounted (statfs: /mnt/mmc is another file system than /mnt); never write under /mnt/mmc otherwise */
 /* a (na bytes) then b (nb) into path in dir (CARD_DIR or a folder in it) on the card, atomically (tmp, fsync, rename, fsync of dir);
