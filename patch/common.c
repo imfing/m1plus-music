@@ -22,6 +22,43 @@ __attribute__((noinline)) int m1_scan_dir(const char *name, const char *dot) {
  * its out_size argument before reading it, counts the whole encoding and writes all of it), so a long lyric line or tag overran the caller's stack buffer. This reads the wide
  * text (widget_get_text) and encodes it here: a text that does not fit is cut at a character boundary, buf is always NUL terminated (size >= 1). Returns the length the whole
  * text needs (snprintf's), so the text fitted when the result is below size; -1 when the widget has no text (buf is then empty). A code point beyond U+10FFFF or a surrogate is U+FFFD. */
+static int m1_lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+
+/* An artist field's names (docs/modules/artists.md "Separators"): the separators carry their own spaces, so a name that only looks
+ * like a list ("Tom;Jerry") is left whole, and the earliest separator in the field wins over any later one. Parts are slices of the
+ * caller's string: nothing is copied, nothing is allocated, and the empty part a trailing separator leaves is dropped by the trim. */
+static const char *const m1_artist_seps[] = {" feat. ", " ft. ", " featuring ", " & ", " x ", ", ", "; "};
+
+int m1_artist_split(const char *field, m1_artist_span *out, int max) {
+    unsigned len, start = 0, n = 0;
+    if (!field || !out || max <= 0) return 0;
+    len = (unsigned)strlen(field);
+    while (n < (unsigned)max) {
+        unsigned cut = len, seplen = 0, i, k, s, a, b;
+        for (s = 0; s < sizeof m1_artist_seps / sizeof *m1_artist_seps; ++s) {
+            unsigned l = (unsigned)strlen(m1_artist_seps[s]);
+            for (i = start; i + l <= len && i < cut; ++i) {
+                for (k = 0; k < l && m1_lower((unsigned char)field[i + k]) == (unsigned char)m1_artist_seps[s][k]; ++k);
+                if (k == l) {
+                    cut = i;
+                    seplen = l;
+                    break;
+                }
+            }
+        }
+        for (a = start, b = cut; a < b && (field[a] == ' ' || field[a] == '\t'); ++a);
+        while (b > a && (field[b - 1] == ' ' || field[b - 1] == '\t')) --b;
+        if (b > a) {
+            out[n].p = field + a;
+            out[n].n = b - a;
+            ++n;
+        }
+        if (cut >= len) break;
+        start = cut + seplen;
+    }
+    return (int)n;
+}
+
 int m1_text_utf8(void *widget, char *buf, unsigned size) {
     const unsigned *t = widget ? widget_get_text(widget) : (const unsigned *)0;
     unsigned n = 0, w = 0, c, len, cut = 0;

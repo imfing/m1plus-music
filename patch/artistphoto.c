@@ -79,23 +79,17 @@ static char *ap_path(char *out, unsigned key, const char *suffix) {
 
 /* ---- showing a photo (UI thread) */
 
-static const char *const ap_seps[] = {" feat. ", " ft. ", " featuring ", " & ", " x ", ", ", "; "};
-
+/* The lead artist: the first name of the shared splitter (patch/common.c m1_artist_split, docs/modules/artists.md "Separators"), so this
+ * page and every later consumer of an artist field read the same separator table. A field with no separator has no lead: 0. */
 int ap_lead(const char *name, char *out, unsigned n) {
-    unsigned len = strlen(name), best = len, i, k, s;
-    for (s = 0; s < sizeof ap_seps / sizeof *ap_seps; ++s) {
-        unsigned l = strlen(ap_seps[s]);
-        for (i = 0; i + l <= len && i < best; ++i) {
-            for (k = 0; k < l && ap_fold((unsigned char)name[i + k]) == (unsigned char)ap_seps[s][k]; ++k);
-            if (k == l) {
-                best = i;
-                break;
-            }
-        }
-    }
-    if (best >= len || best >= n) return 0;
-    memcpy(out, name, best);
-    out[best] = 0;
+    m1_artist_span sp;
+    unsigned len, a = 0, b;
+    if (!name || m1_artist_split(name, &sp, 1) < 1 || sp.n >= n) return 0;
+    len = (unsigned)strlen(name);
+    for (b = len; b > a && (name[b - 1] == ' ' || name[b - 1] == '\t'); --b);
+    if (sp.p == name + a && sp.n == b) return 0; /* one name: nothing to lead */
+    memcpy(out, sp.p, sp.n);
+    out[sp.n] = 0;
     return 1;
 }
 
