@@ -38,7 +38,8 @@
 #define NL_FULL_MS 1500u /* a request the full queue refused is made again after this */
 
 static struct {
-    unsigned songs_at, ring_n, awake_until; /* awake_until: the keep-awake timer's grace after a queue */
+    unsigned songs_at, ring_n, awake_until,
+        stream_at; /* awake_until: the keep-awake timer's grace after a queue; stream_at: the active remote-stream session */
     unsigned awake; /* its timer handle (0 none) */
     char msg[48]; /* sbs_message's "Server error 503" */
     unsigned due,
@@ -46,6 +47,7 @@ static struct {
     int dsd_row,
         tries; /* dsd_row: the list row the last play answered -2 for; tries: the confirm's button relabel timer */
     char sc_id[SBA_ID]; /* the scrobble's track: the server track the player was on at the last tick ("" none) */
+    char sleep_id[SBA_ID]; /* stream that armed the thermal sleep guard; a different track begins a fresh session */
     unsigned sc_ms, sc_need,
         sc_at; /* how long it has played, how long counts as a play (ms), when the last tick saw it playing */
     int sc_run, sc_sent; /* it was playing at the last tick; the play was reported */
@@ -655,6 +657,7 @@ int sbs_playing(const char *id) {
  */
 #define NL_AWAKE_MS 1000
 #define NL_AWAKE_GRACE_MS 5000u
+#define NL_STREAM_SLEEP_MS 1800000u /* 30 minutes of confirmed active remote playback */
 #define NL_SCROBBLE_MS \
     240000u /* a play counts after four minutes, or half the track when that is sooner (the usual scrobble rule) */
 
@@ -681,9 +684,29 @@ static void nl_scrobble(void *rec, int st, int ours) {
 static int nl_awake_tick(const void *timer) {
     void *rec = cc_playing();
     int st = mclGetPlayStatus(), ours = rec && sba_rec_track(I(rec, REC_ID))[0];
+    int remote = st == 2 && ours && sbn_http_url(P(rec, REC_PATH));
+    unsigned now = (unsigned)time_now_ms();
     (void)timer;
     nl_scrobble(rec, st, ours);
-    if ((st == 2 && ours && sbn_http_url(P(rec, REC_PATH))) || sba_dl_busy()) {
+    if (remote) {
+        const char *id = sba_rec_track(I(rec, REC_ID));
+        if (!nl.stream_at || strcmp(nl.sleep_id, id)) {
+            nl.stream_at = now;
+            nl_copy(nl.sleep_id, sizeof nl.sleep_id, id);
+        }
+        if (now - nl.stream_at >= NL_STREAM_SLEEP_MS) {
+            mclSetPause(); /* pause before stock standby so wake never resumes a live network stream */
+            nl.awake = 0;
+            nl.stream_at = 0;
+            nl.sleep_id[0] = 0;
+            into_standby(); /* stock path: display and Wi-Fi off, no persistent power-setting write */
+            return RET_OK;
+        }
+    } else {
+        nl.stream_at = 0;
+        nl.sleep_id[0] = 0;
+    }
+    if (remote || sba_dl_busy()) {
         reset_poweroptions_timer(1, 1,
                                  0); /* a stream plays or a download runs: stock standby would stop Wi-Fi and the CPU */
         return RET_REPEAT;

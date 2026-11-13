@@ -13,7 +13,7 @@ PP_TITLE_H, PP_LINE_Y, PP_LINE_H = 52, 52, 20   # patch/offsets.inc: the large t
 BIG_H = PP_LINE_Y + PP_LINE_H + 8   # the top item: the large title and the status line under it (the first row's centre lies 80 + 26 px down the page)
 ES_DL_GAP = 12      # the empty state's Downloaded pill under the Add Server pill
 ROW_H = 52          # tools/pod_ui.py ROW_H
-FOOT_H = 64         # the footer's item: patch/offsets.inc SG_FOOT_H (the label SG_FOOT_GAP under the last row) and 12 px of air; the column is then 456 px of the 400 px list, so the offset reaches SG_COLLAPSE 46 (max 56)
+FOOT_H = 104        # song count and the permanent three-line streaming sleep-guard explanation, then 12 px of air
 SPIN_PX = 14        # the status glyph and the spinner (mod_icons nd_st_*, the Wi-Fi page's wf_spin frames)
 SPIN_GAP = 6        # the glyph to the text
 ICON_X, ICON_PX = 16, 24
@@ -88,6 +88,14 @@ def build(page):
             foot.set('sensitive', 'false')
             styled(foot, ('normal',), 'text_align_v', 'middle')
             it.children.append(foot)
+            guard1 = plain_label('nd_guard1', OFFSETS['SG_HDR_X'], 38, SCREEN_W - 2 * OFFSETS['SG_HDR_X'], 18, '', 13, SG_FOOT_RGB, 'left')
+            guard2 = plain_label('nd_guard2', OFFSETS['SG_HDR_X'], 55, SCREEN_W - 2 * OFFSETS['SG_HDR_X'], 18, '', 12, SG_FOOT_RGB, 'left')
+            guard3 = plain_label('nd_guard3', OFFSETS['SG_HDR_X'], 72, SCREEN_W - 2 * OFFSETS['SG_HDR_X'], 18, '', 12, SG_FOOT_RGB, 'left')
+            guard1.set('sensitive', 'false'); guard2.set('sensitive', 'false'); guard3.set('sensitive', 'false')
+            guard1.set(*pod_i18n.text_prop('Streams enter standby after 30 min'))
+            guard2.set(*pod_i18n.text_prop('Playback pauses and Wi-Fi turns off'))
+            guard3.set(*pod_i18n.text_prop('to save battery and reduce heat'))
+            it.children.extend((guard1, guard2, guard3))
         it.y = y
         sv.children.append(it)
     root.children.append(lv)

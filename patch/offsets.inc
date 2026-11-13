@@ -865,7 +865,7 @@
 #define PH_TOP 272              /* PH_PILL_Y + SG_PILL_H + 12: where the rows start (SG_TOP is 104 under the large title) */
 #define PH_SHIFT 96             /* an artist's page with no photo (patch/albums.c, docs/modules/albums.md): the circle's room, AL_PHOTO_Y + AL_PHOTO_D, is taken out - the name (AL_NAME_Y), the pills (AL_HEAD_PILL_Y), the rows (AL_HEAD_END) and the small title's AL_HEAD_COLLAPSE all move up by it and nothing else changes: the name at y 14, the pills at y 52 (SG_PILL_Y), the block ending at AL_PILLS_END */
 #define PH_COLLAPSE 204        /* the navbar shows the small title once the name's box (its bottom, y 204) has scrolled away */
-#define SG_FOOT_H 52            /* the song count under the last row ("25 songs"): this much content, the text box SG_FOOT_GAP below the row, SG_FOOT_TEXT_H high, from x SG_HDR_X */
+#define SG_FOOT_H 92            /* song count plus three permanent stream-sleep explanation lines under the last row */
 #define SG_FOOT_GAP 14
 #define SG_FOOT_TEXT_H 20
 #define SG_FOOT_PX 15           /* the album page's footer's size, in the secondary grey #AAAAAA */

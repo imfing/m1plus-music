@@ -1551,6 +1551,17 @@ PENDING_KEYS = ()
 
 KEYS = sorted(TEXT)
 
+TEXT.update(dict([_t('Streams enter standby after 30 min', '串流 30 分钟后进入待机', '串流 30 分鐘後進入待機', 'ストリーミングは30分後にスタンバイに入ります', '스트리밍은 30분 후 대기 모드로 전환됩니다',
+   'Le streaming passe en veille après 30 min', 'Streaming geht nach 30 Min. in Standby', 'La transmisión entra en espera tras 30 min', 'Lo streaming entra in standby dopo 30 min',
+   'สตรีมจะเข้าสู่โหมดพักหลัง 30 นาที', 'Strumień przechodzi w tryb czuwania po 30 min', 'Поток перейдёт в режим ожидания через 30 мин', 'Потік перейде в режим очікування через 30 хв'),
+_t('Playback pauses and Wi-Fi turns off', '播放暂停并关闭 Wi-Fi', '播放暫停並關閉 Wi-Fi', '再生を一時停止して Wi-Fi をオフにします', '재생을 일시 정지하고 Wi-Fi를 끕니다',
+   'La lecture se met en pause et le Wi-Fi se coupe', 'Wiedergabe pausiert und WLAN wird ausgeschaltet', 'La reproducción se pausa y se apaga el Wi-Fi', 'La riproduzione si mette in pausa e il Wi-Fi si spegne',
+   'หยุดเล่นชั่วคราวและปิด Wi-Fi', 'Odtwarzanie zostaje wstrzymane, a Wi-Fi wyłączone', 'Воспроизведение приостанавливается, Wi-Fi отключается', 'Відтворення призупиняється, Wi-Fi вимикається'),
+_t('to save battery and reduce heat', '以节省电量并减少发热', '以節省電量並減少發熱', 'バッテリーを節約し発熱を抑えます', '배터리를 절약하고 발열을 줄입니다',
+   'pour économiser la batterie et réduire la chaleur', 'um Akku zu sparen und Wärme zu verringern', 'para ahorrar batería y reducir el calor', 'per risparmiare batteria e ridurre il calore',
+   'เพื่อประหยัดแบตเตอรี่และลดความร้อน', 'aby oszczędzać baterię i ograniczać nagrzewanie', 'для экономии заряда и снижения нагрева', 'щоб заощадити заряд і зменшити нагрівання')]))
+KEYS = sorted(TEXT)
+
 
 def english(key):
     """The English text a key stands for (our keys are their own English; stock keys come from STOCK)."""
