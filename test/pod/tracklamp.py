@@ -276,12 +276,12 @@ def setting_tests(ctx):
     P = pod_pages
     T = P.RGB_THEME_PAGE
     expect(DEFS['TL_THEMES'] == len(P.RGB_THEMES) == 6 and P.RGB_THEMES == ('Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', 'Candle', 'Wave')
-           and [DEFS[k] for k in ('TL_REFERENCE', 'TL_BREATHE', 'TL_HEARTBEAT', 'TL_LIGHTHOUSE', 'TL_CANDLE', 'TL_OCEAN')] == list(range(6)), 'six themes, the page\'s order is the header\'s')
-    expect([(r.label, r.action, r.arg) for r in T.rows] == [(n, P.ACT_RGBTHEME, i) for i, n in enumerate(P.RGB_THEMES)] and all(P.row_kind(r) == 'check' for r in T.rows) and P.ACT_RGBTHEME == 140
-           and (T.key, T.title) == ('m1plus_rgbtheme', 'Theme') and P.PAGES[P.RGB_THEME_PAGE_INDEX] is T, 'the Theme picker: a check row a theme, the argument is the theme')
+           and [DEFS[k] for k in ('TL_REFERENCE', 'TL_BREATHE', 'TL_HEARTBEAT', 'TL_LIGHTHOUSE', 'TL_CANDLE', 'TL_OCEAN')] == list(range(6)), 'six themes numbered from Reference (the default)')
+    expect([(r.label, r.action, r.arg) for r in T.rows] == [(n, P.ACT_RGBTHEME, i) for i, n in sorted(enumerate(P.RGB_THEMES), key=lambda t: (t[0] < 4, t[0]))] and all(P.row_kind(r) == 'check' for r in T.rows) and P.ACT_RGBTHEME == 140
+           and (T.key, T.title) == ('m1plus_rgbtheme', 'Theme') and P.PAGES[P.RGB_THEME_PAGE_INDEX] is T, 'the Theme picker: a check row a theme, Ambient\'s two first, the argument is the theme, not the row\'s place')
     lay = [x.label if isinstance(x, P.Row) else (type(x).__name__, x.text) for x in T.layout]
-    expect(lay == [('Hdr', 'Sample Rate'), 'Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', ('Note', "The color changes with the file's sample rate"), ('Hdr', 'Ambient'), 'Candle', 'Wave'],
-           f'two headed cards: Sample Rate, the four that show the rate, with a note on the colour; Ambient, the two with colours of their own ({lay})')
+    expect(lay == [('Hdr', 'Ambient'), 'Candle', 'Wave', ('Hdr', 'Sample Rate'), 'Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', ('Note', "The color changes with the file's sample rate")],
+           f'two headed cards: Ambient, the two with colours of their own; Sample Rate, the four that show the rate, with a note on the colour last ({lay})')
     led = [x.label if isinstance(x, P.Row) else x for x in P.LED_PAGE.layout]
     expect(led == ['Off', 'Green', 'Blue', 'Dynamic', P.GAP, 'Follow Screen', P.GAP, 'Theme'] and P.row_kind(P.LED_PAGE.rows[4]) == 'switch', f'LED Light: the choices, the Follow Screen switch, then the Theme row, each card of its own ({led})')
     expect(not any(hasattr(P, a) for a in ('ACT_RGBWARNING', 'ACT_RGBVOLUME')) and not any(isinstance(x, P.Row) and P.row_kind(x) == 'switch' for x in T.layout), 'no switch on the page')
@@ -378,11 +378,11 @@ def setting_tests(ctx):
     expect(row_state(m, 5) == (1, 1) and theme_value(m) == 'Candle', 'opening with Dynamic on and Candle: the Theme row shows Candle')
     m = page(P.LED_PAGE_INDEX, 6, b'2\n')
     expect(checks(m, 4) == [0, 0, 0, 1], 'with the setting on: the check is on Dynamic')
-    for saved, at in ((b'1\n', 0), (b'5\n', 4)):
+    for saved, at in ((b'1\n', 2), (b'5\n', 0)):
         m = page(P.RGB_THEME_PAGE_INDEX, 6, saved)
         expect(('window_open', T.key) in m.calls and checks(m, 6) == [int(i == at) for i in range(6)], f'the theme page with the file {saved}: the check is on row {at}')
-    m.click('pod_row2')
-    expect(m.fs[FILE] == b'3\n' and checks(m, 6) == [0, 0, 1, 0, 0, 0], 'a tap on Heartbeat: saved as 3, the check follows')
+    m.click('pod_row4')
+    expect(m.fs[FILE] == b'3\n' and checks(m, 6) == [0, 0, 0, 0, 1, 0], 'a tap on Heartbeat: saved as 3, the check follows')
     expect(display is not None, 'Display\'s own tests cover Off, Green and Blue')
 
 
