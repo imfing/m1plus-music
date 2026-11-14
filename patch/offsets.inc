@@ -499,6 +499,7 @@
 #define EVT_WINDOW_WILL_OPEN 0x12a
 #define EVT_WINDOW_TO_BG 0x12c
 #define EVT_WINDOW_TO_FG 0x12d
+#define EVT_WINDOW_CLOSE 0x12e /* the window manager's close event, before the window is destroyed (the pull-down binds stock's 0x4750ec to it at 0x475f94) */
 #define NP_BAR_STOCK 0xff000000u
 #define NP_BAR_LUM_MAX 119000000u
 /* The lyrics page (patch/lyrics.c, docs/modules/lyrics.md). The view np_lyrics is LY_W x LY_VIEW_H (tools/mod_nowplaying.py LYR_*: the stock list's rectangle);
@@ -555,6 +556,7 @@
 #define IL_TICK_MS 500
 #define IL_FIRST_MS 50
 #define LY_IDLE_MS 3000
+#define NP_IDLE_TICKS 20 /* stock's idle countdown start (NP_IDLE_COUNT): 20 ticks of 500 ms */
 #define LY_TAP_PX 10
 #define LY_COAST_MS 200
 #define LY_HOLD_MS 1000
@@ -767,12 +769,14 @@
 /* Now Playing's More dialog (patch/playmore.c, docs/modules/playmore.md): ui/dialog/playmore_dialog.bin is a 320 px wide
  * sheet pinned at y 130 (the stock init, @0x479d10, and its to-background handler @0x4789f0) holding list_view playmore_listview >
  * scroll_view playmore_scrollview (310 px, the scroll bar scroll_bar_m beside it, 10 px) > list_item rows, PM_ROW_H (50, the
- * list_view's item_height) high each; the asset adds the hidden rows pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art and pod_sleep. The payload shows PM_PAGE_N rows (page 1) or PM_PAGE2_N
- * (page 2) at a time and puts the sheet, as high as they are, on the bottom of the 480 px screen (the stock 130 + 350 ends there too). */
+ * list_view's item_height) high each; the asset adds the hidden rows pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art, pod_sleep, pod_mode and pod_lyr. The payload shows PM_PAGE_N rows (page 1),
+ * PM_PAGE2_N (page 2) or PM_PAGE_MODE_N (the Display Mode page) at a time and puts the sheet, as high as they are, on the bottom of the 480 px screen (the stock 130 + 350 ends there too). */
 #define PM_ROW_H 50
-#define PM_PAGE_N 6               /* page 1's rows (Look up album, Look up artist, Add to playlist, Cassette Mode, Vinyl Mode, More; the asset's pod_goep, Go to Podcasts, is the episode's first row): the sheet is that high (PM_ROW_H x) */
+#define PM_PAGE_N 5               /* page 1's rows (Look up album, Look up artist, Add to playlist, Display Mode, More; the asset's pod_goep, Go to Podcasts, is the episode's first row): the sheet is that high (PM_ROW_H x) */
 #define PM_PAGE_EP_N 2            /* page 1 of a podcast episode (Go to Podcasts, More) */
 #define PM_PAGE2_N 6              /* page 2's rows (the back header, Speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete) */
+#define PM_PAGE_MODE_N 4          /* the Display Mode page's rows (the back header, Cassette Mode, Vinyl Mode, Lyrics Mode) */
+#define PM_PAGE_MAX 6             /* the tallest page's rows */
 #define PM_SCREEN_H 480
 #define PM_DIALOG_W 320
 #define PM_SV_W 310
@@ -1319,13 +1323,13 @@
 #define PP_LINE_X 12 /* = SG_TITLE_X: the grey line under a large title starts under the title */
 #define PP_HEAD_H 28
 #define PP_HEAD_PITCH 34
-#define PP_HEAD_X 14
+#define PP_HEAD_X 12 /* = GRID_MARGIN: the header starts where the Shows header and grid do */
 #define PP_SHOWS_X 12 /* = GRID_MARGIN, SG_TITLE_X: the header starts where the covers under it and the large title do */
 #define PP_SHELF_MAX 3
 #define PP_SHELF_ART 92
 #define PP_SHELF_R 8
-#define PP_SHELF_X 14
-#define PP_SHELF_PITCH 100
+#define PP_SHELF_X 12 /* = GRID_MARGIN: the first cover starts where the grid's do */
+#define PP_SHELF_PITCH 102 /* covers at 12, 114, 216: the third ends at 308, the grid's right edge */
 #define PP_SHELF_W 92
 #define PP_SHELF_TITLE_Y 96
 #define PP_SHELF_TITLE_H 18
@@ -1333,7 +1337,7 @@
 #define PP_SHELF_LEFT_H 16
 #define PP_SHELF_PITCH_Y 142
 #define PP_SHELF_PLAY_INSET 6
-#define PP_DL_TILE_X 16
+#define PP_DL_TILE_X 12 /* = GRID_MARGIN: the tile starts where the grid does */
 #define PP_DL_TILE_Y 10
 #define PP_DL_TEXT_X 72
 #define PP_DL_TEXT_W 206 /* the text ends at x 278 (72 + 206), 10 px before the shared chevron */

@@ -380,6 +380,7 @@ UP = sibling('upnext')
 SHM = sibling('shuffle')
 POSW, MODEW, CLSW, SOCKW, GAPW, PREW = 0xa0abdc, 0xa0abe0, 0xa0abd8, 0xa0abec, pod.DATA['MCL_GAPLESS'][0], pod.DATA['MCL_PRELOAD'][0]   # mclNextSong's words: position, raw mode, class, hciplayer socket, Gapless byte, preload state
 NEXT_SONG = 0x5d5800
+FOLDER_SKIPB, FOLDER_CBW = 0xa0ab88, 0xa0aae0   # mclNextSong's folder branch (0x5d599c, 0x5d59a8): the Folder Skip byte and the folder callback
 ALBUM_CLS = O['CLASS_ALBUM_TRACKS']
 ORDERSTOP = '{mcl-orderstop\\null}'
 SHOWLIST, CLASSINFO = pod.DATA['PDEQ_SHOWLIST'][0], pod.DATA['CLASSINFO'][0]
@@ -406,11 +407,12 @@ class EM(UP.UM):
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
-        if name not in ('mclStop', 'send', 'stock_start_player') + ALBUM_GETTERS + TRACK_GETTERS: return super()._hook(u, address, size, _)
+        if name not in ('mclStop', 'send', 'stock_start_player', 'folder_cb') + ALBUM_GETTERS + TRACK_GETTERS: return super()._hook(u, address, size, _)
         a0, a1, a2 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2))
         ret = 0
         if name == 'mclStop': self.calls.append(('mclStop',))
         elif name == 'send': self.calls.append(('send', self.read_cstr(a1)))
+        elif name == 'folder_cb': self.calls.append(('folder_cb', self.read_cstr(a0), a1)); ret = self.folder_ret
         elif name == 'stock_start_player':
             q = self.deques[self.word(pod.DATA['PLAY_QUEUE'][0])]; pos = self.word(POSW)
             self.calls.append(('mclStartPlayer', pos, self.read_cstr(self.word(q[pos] + O['REC_PATH']))))
@@ -643,6 +645,24 @@ def UP_full(m):
     m.setword(POSW, O['SHUFFLE_MAX'] - 2); m.play_pos = O['SHUFFLE_MAX'] - 2
 
 
+def folder_tests(ctx):
+    """Stock's folder branch of the end (class word 1, the Folder Skip byte, the callback at 0xa0aae0) calls deque_at(queue, pos) with the position still in $a1 from the end test's read at
+    0x5d596c (no reload before 0x5d59b4): the stub keeps $a1 across na_end, whatever na_end answers, so the callback gets the playing row's path."""
+    expect = ctx.expect
+    last = '/mnt/mmc/Alpha/3.flac'
+    for label, kw, prep in (('setting off', {'setting': False}, lambda m: None), ('setting on, no source', {}, lambda m: c(m, 'na_on_load')), ('setting on, a source that refuses', {}, lambda m: m.present.add(KILL))):
+        for auto in (1, 0):
+            for ret in (0, 1):
+                m, d, ks = world(**kw); prep(m)
+                cb = m.alloc(16); m.handlers[cb] = 'folder_cb'; m.folder_ret = ret
+                m.setword(CLSW, 1); m.u.mem_write(FOLDER_SKIPB, b'\x01'); m.setword(FOLDER_CBW, cb)
+                m.calls = []; m.getcalls = []
+                m.call(NEXT_SONG, a0=auto, count=60000000)
+                got = [x for x in m.calls if x[0] in ('mclStop', 'send', 'mclStartPlayer', 'folder_cb', 'deque_at_oob')]
+                want = [('folder_cb', last, 1)] + ([('mclStartPlayer', 2, last)] if ret else [('mclStop',)] + ([('send', ORDERSTOP)] if auto else [('mclStartPlayer', 2, last)]))
+                expect(got == want, f'Folder Skip at the end ({label}, auto {auto}, callback {ret}): the callback gets the playing row, then stock\'s own end ({got})')
+
+
 def gapless_tests(ctx):
     """Gapless on and off, with the preload closed (the usual state at the last song) or cancelled: the appended album starts the same way."""
     expect = ctx.expect
@@ -665,11 +685,15 @@ def pin_tests(ctx):
     expect((w(stock_demo, site), w(stock_demo, site + 4)) == pod.NEXTALBUM_DISPLACED and w(built, site) == pod.j(PSYMS['pod_na_site']) and w(built, site + 4) == 0, 'the two words became `j pod_na_site; nop`')
     expect(w(built, site + 8) == w(stock_demo, site + 8) and w(built, site - 4) == w(stock_demo, site - 4), 'their neighbours are stock\'s')
     stub = PSYMS['pod_na_site']
+    pins = {a: old for a, old, _ in pod.NEXTALBUM_PINS}
     words = [w(built, stub + 4 * i) for i in range(13)]
-    expect(words[:2] == [pod.jal(PSYMS['na_end'], stub), 0] and words[2] >> 16 == 0x3c1c and words[4] >> 26 == 5 and words[8] == pod.j(0x5d5990) and words[10] == pod.j(0x5d5950), 'the stub: jal na_end, $gp set, bnez to `j 0x5d5950`, else the displaced words and `j 0x5d5990`')
+    expect(words[0] == pod.jal(PSYMS['na_end'], stub) and words[2] >> 16 == 0x3c1c and words[4] >> 26 == 5 and words[8] == pod.j(0x5d5990) and words[10] == pod.j(0x5d5950), 'the stub: jal na_end, $gp set, bnez to `j 0x5d5950`, else the displaced words and `j 0x5d5990`')
+    mv = lambda rd, rs, x: x >> 26 == 0 and (x >> 11) & 31 == rd and x & 0x7ff in (0x21, 0x25) and sorted(((x >> 21) & 31, (x >> 16) & 31)) == [0, rs]   # move rd, rs (addu / or with $zero)
+    expect(mv(16, 5, words[1]) and mv(5, 16, words[5]), 'the two delay slots keep $a1 across the call: move $s0, $a1 and move $a1, $s0')
+    expect({0x5d596c: 0x8c65abdc, 0x5d59b4: 0x0320f809, 0x5d59b8: 0x8e440000, 0x5d59a8: 0x8c50aae0, 0x5d59ec: 0x8c50abec, 0x5d5928: 0x24100001}.items() <= pins.items(),
+           'pinned: the position read into $a1, the deque_at call that uses it, and the three writes of $s0 that make it free at the site')
     expect(words[6:8] == list(pod.NEXTALBUM_DISPLACED), 'the stub re-executes the displaced words')
     expect(MANIFEST['hook_next_album'] == {'addr': site, 'target': stub}, 'the manifest lists the hook')
-    pins = {a: old for a, old, _ in pod.NEXTALBUM_PINS}
     for a in (0x5d5950, 0x5d5974, 0x5d5984, 0x5d5994, 0x5d59d8, 0x4ee83c, 0x4ee874, 0x4ecb5c, 0x4ed008):
         img = bytearray(stock_demo); struct.pack_into('<I', img, pod.fileoff(img, a), w(stock_demo, a) ^ 0x100)
         expect(a in pins and struct.unpack_from('<I', img, pod.fileoff(img, a))[0] != pins[a], f'a changed word at {a:#x} differs from its pin, which pod.py checks before writing')
@@ -678,4 +702,4 @@ def pin_tests(ctx):
            {'getAlbumByAlbumArtist', 'getAlbumByArtist', 'getAlbumByComposer', 'getMusicByAlbum', 'getMusicByAlbumAndAlbumSonger', 'getMusicByAlbumAndSonger', 'getMusicByAlbumAndComposer'}, 'every stock getter na_end calls has its prologue pinned')
 
 
-SECTIONS = [setting_tests, row_tests, note_tests, page_tests, arm_tests, next_tests, load_tests, end_tests, chain_tests, scoped_tests, refusal_tests, gapless_tests, pin_tests]
+SECTIONS = [setting_tests, row_tests, note_tests, page_tests, arm_tests, next_tests, load_tests, end_tests, chain_tests, scoped_tests, refusal_tests, folder_tests, gapless_tests, pin_tests]

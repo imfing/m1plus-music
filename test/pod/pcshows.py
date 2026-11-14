@@ -157,7 +157,7 @@ def layout_tests(ctx):
     chev = sorted(tuple(b[2]) for b in bl if tuple(b[1]) == (0, 0, 10, 16))   # the shared chevron bitmap
     expect(tiles == [(o['PP_DL_TILE_X'], L['y_srch'] - LO + o['PP_DL_TILE_Y'], 44, 44, (0, 0)), (o['PP_DL_TILE_X'], L['y_dl'] - LO + o['PP_DL_TILE_Y'], 44, 44, (0, 0)), (o['PP_DL_TILE_X'], L['y_sub'] - LO + o['PP_DL_TILE_Y'], 44, 44, (0, 0)), (o['PP_DL_TILE_X'], L['y_sav'] - LO + o['PP_DL_TILE_Y'], 44, 44, (0, 0))]
            and chev == [(o['PP_DL_CHEV_X'], L[k] - LO + (o['PC_ROW_H'] - 1 - 16) // 2, 10, 16) for k in ('y_srch', 'y_dl', 'y_sub', 'y_sav')] and o['PP_DL_CHEV_X'] == o['LIST_CHEV_X'] and o['PP_DL_TEXT_X'] + o['PP_DL_TEXT_W'] == o['LIST_CHEV_X'] - 10,
-           f'four Library rows: the discover, download, podcast and bookmark tiles (images of their own) at x 16, a chevron each ({tiles}, {chev})')
+           f'four Library rows: the discover, download, podcast and bookmark tiles (images of their own) at x 12, a chevron each ({tiles}, {chev})')
     rows = [(t, s, r) for (t, r), s in zip(texts, styles) if s in ('label_row_title', 'label_row_sub')]
     want = [('Discover', 'label_row_title', (o['PP_DL_TEXT_X'], L['y_srch'] - LO + o['LIST_TITLE_Y'], o['PP_DL_TEXT_W'], o['LIST_TITLE_H'])), ('Apple Podcasts', 'label_row_sub', (o['PP_DL_TEXT_X'], L['y_srch'] - LO + o['LIST_SUB_Y'], o['PP_DL_TEXT_W'], o['LIST_SUB_H'])),
             ('Downloaded', 'label_row_title', (o['PP_DL_TEXT_X'], L['y_dl'] - LO + o['LIST_TITLE_Y'], o['PP_DL_TEXT_W'], o['LIST_TITLE_H'])), ('5 episodes', 'label_row_sub', (o['PP_DL_TEXT_X'], L['y_dl'] - LO + o['LIST_SUB_Y'], o['PP_DL_TEXT_W'], o['LIST_SUB_H'])),
@@ -199,7 +199,7 @@ def layout_tests(ctx):
     heads = [(t, r) for (t, r), s in zip(*PCP.paint(m, 100)[1:3]) if s == 'label_ps_sech']
     expect(('Shows', (o['PP_SHOWS_X'], L3['y_shows'] - 100, 320 - 2 * o['PP_SHOWS_X'], o['PP_HEAD_H'])) in heads, f'the Shows header, scrolled into view ({heads})')
     sc = [tuple(b[2]) for b in bl if tuple(b[2][2:]) == (o['PP_SHELF_ART'], o['PP_SHELF_ART'])]
-    expect(sc == [(pod_show.shelf_item(i, L3['y_shelf'])[0], pod_show.shelf_item(i, L3['y_shelf'])[1], 92, 92) for i in range(3)], f'three 92 px covers at x 14, 114, 214 ({sc})')
+    expect(sc == [(pod_show.shelf_item(i, L3['y_shelf'])[0], pod_show.shelf_item(i, L3['y_shelf'])[1], 92, 92) for i in range(3)], f'three 92 px covers at x 12, 114, 216 ({sc})')
     st = [(t, r) for (t, r), s in zip(texts, styles) if s == 'label_ps_stitle']
     sl = [(t, r) for (t, r), s in zip(texts, styles) if s == 'label_ps_sleft']
     expect([r for _, r in st] == [(pod_show.shelf_item(i, L3['y_shelf'])[0], pod_show.shelf_item(i, L3['y_shelf'])[2], o['PP_SHELF_W'], o['PP_SHELF_TITLE_H']) for i in range(3)]
@@ -410,11 +410,11 @@ def cont_tests(ctx):
     refg(m)
     st, left, _ = shelf(m)
     expect([t for t, _ in st] == ['Bravo 3', 'Bravo 1', 'Bravo 2'] and m.props.get((m.sv, 'virtual_h')) == lay(m, cont=3)['h'], f'four partly played: only the three most recent ({[t for t, _ in st]}), the oldest left out')
-    expect([r[0] for _, r in st] == [14, 114, 214] and all(r[2] == o['PP_SHELF_W'] for _, r in st), 'in a static row at x 14, 114, 214, 92 px wide: no horizontal scrolling')
+    expect([r[0] for _, r in st] == [12, 114, 216] and all(r[2] == o['PP_SHELF_W'] for _, r in st), 'in a static row at x 12, 114, 216, 92 px wide: no horizontal scrolling')
     ys = lay(m, cont=3)['y_shelf']
     want = [pod_show.shelf_play(i, ys) + (o['PA_PLAYB_PX'], o['PA_PLAYB_PX']) for i in range(3)]
     covers = [pod_show.shelf_item(i, ys)[:2] for i in range(3)]
-    expect(discs(m) == want and want[0] == (14 + 92 - 6 - 28, ys + o['PP_HEAD_PITCH'] + 92 - 6 - 28, 28, 28)
+    expect(discs(m) == want and want[0] == (12 + 92 - 6 - 28, ys + o['PP_HEAD_PITCH'] + 92 - 6 - 28, 28, 28)
            and all(d[0] + 28 + 6 == c[0] + 92 and d[1] + 28 + 6 == c[1] + 92 for d, c in zip(want, covers)),
            f'a 28 px play disc on each of the three covers, 6 px from its right and bottom edges ({discs(m)})')
     # an item that ends (played) or whose file is gone is no item

@@ -232,6 +232,7 @@ def rows_tests(expect):
     allowed |= {pod.fileoff(built, pod.LOCKSCREEN_INIT), pod.fileoff(built, pod.LOCKSCREEN_INIT) + 4}     # the lock screen init hook (patch/lockscreen.c)
     allowed |= {pod.fileoff(built, pod.PLAYMORE_INIT), pod.fileoff(built, pod.PLAYMORE_INIT) + 4}         # the More dialog init hook
     allowed |= {pod.fileoff(built, pod.PULLDOWN_INIT), pod.fileoff(built, pod.PULLDOWN_INIT) + 4}         # the pull-down init hook
+    allowed |= {pod.fileoff(built, pod.TSDOWN), pod.fileoff(built, pod.TSDOWN) + 4}                       # the touch-down hook (patch/pulldown.c m1plus_tsdown)
     allowed |= {pod.fileoff(built, pod.START_PLAYER), pod.fileoff(built, pod.START_PLAYER) + 4}           # the mclStartPlayer hook (Internet Radio's hand-over)
     allowed |= {pod.fileoff(built, h) + k for h in (pod.SAVE_STOP, pod.SAVE_START) for k in (0, 4)}      # the output-change hooks (Internet Radio)
     allowed |= {pod.fileoff(built, pod.BACKTOPLAYER), pod.fileoff(built, pod.BACKTOPLAYER) + 4}   # the on_backtoplayer_onclick hook
@@ -254,7 +255,7 @@ def rows_tests(expect):
     allowed.add(pod.fileoff(built, pod.FORMAT_LAMP_SITE))                                                # on_wm_idle_status's mclGetPlayStatus call (patch/tracklamp.c tl_play_status)
     allowed.add(pod.fileoff(built, pod.PLAYREC_SITE))                                                    # on_wm_idle_status's add_playrecord call (patch/sbsrc.c sbs_play_record)
     allowed.add(pod.fileoff(built, pod.TIDALKB_SITE))                                                    # the stock Tidal search page's edit_set_focus call (patch/tidalkb.c tidal_kb_focus)
-    allowed.update(pod.fileoff(built, a) for a in pod.PULLDOWN_OPEN_SITES)                               # on_wm_tsmove_fun's two navigator_to calls that open the page a pull-down tile chose (patch/pulldown.c pd_open_settings)
+    allowed.update(pod.fileoff(built, a) for a in pod.PULLDOWN_OPEN_SITES + (pod.PULLDOWN_DIALOG_SITE,))                               # on_wm_tsmove_fun's two navigator_to calls that open the page a pull-down tile chose (patch/pulldown.c pd_open_settings)
     allowed.add(pod.fileoff(built, pod.BATTERY_SITE))                                                    # show_sysbar_face's get_battery_capacity call (patch/battery.c)
     allowed |= {pod.fileoff(built, pod.timezones.SELECT), pod.fileoff(built, pod.timezones.SELECT) + 4}   # select_timezone's hook (tools/timezones.py)
     allowed |= {pod.fileoff(built, a) for a, *_ in pod.timezones.edits(0, 0)}                           # the time zone picker's clamp, counts and two call sites

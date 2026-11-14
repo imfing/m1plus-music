@@ -703,6 +703,10 @@ static void ly_poll(unsigned now) {
     if (!len && ly.dvis[0]) ly.dirty = 1;
 }
 
+/* Now Playing's ten idle seconds start again: stock restarts its countdown (NP_IDLE_COUNT, 20 ticks of 500 ms) only from its buttons, so the timed view (Idle Display) opened in the middle of a
+ * drag over the lyrics. Called for every touch on the lines and by the tick while the finger is down or the lines are scrolled away, so the ten seconds run from the moment the lines go back. */
+static void ly_awake(void) { *(volatile int *)NP_IDLE_COUNT = NP_IDLE_TICKS; }
+
 void ly_tick(void) {
     int n;
     unsigned now;
@@ -734,6 +738,7 @@ void ly_tick(void) {
         /* a measure that failed in the last layout is tried again by this tick's move as well (its distance is the lines' measured heights) */
         ly.skip = 0;
         ly_poll(now);
+        if (ly.down || ly.browse) ly_awake();
         if (ly.browse && !ly.down &&
             (int)(now - ly.touch_at) >= LY_IDLE_MS) { /* the user let go: back to the current line, eased */
             ly.browse = 0;
@@ -784,6 +789,7 @@ static int ly_on_touch(void *ctx, void *e) {
     x = *(int *)((char *)e + PE_X), y = *(int *)((char *)e + PE_Y);
     now = time_now_ms();
     ly.touch_at = now;
+    ly_awake();
     if (type == EVT_POINTER_DOWN) {
         ly.down = 1, ly.moved = 0, ly.sx = x, ly.sy = y, ly.ly = y;
         ly.tapok = !(ly_busy(now) &&

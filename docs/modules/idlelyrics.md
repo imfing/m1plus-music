@@ -28,7 +28,7 @@ album-cache / `/tmp` file / placeholder-disc source and settle ticks as the Home
 
 ## Behaviour
 
-- **Opened by** `bc_timed_open` ([bigcover](bigcover.md) "Idle view", payload hook 24) when Idle Display is Lyrics and the track has lyric rows now (`ly_has_rows()`, the child count of Now Playing's `scroll_lrc`); else stock's Album Cover page opens. There is no other way in (no More-sheet entry).
+- **Opened by** `bc_timed_open` ([bigcover](bigcover.md) "Idle view", payload hook 24) when Idle Display is Lyrics and the track has lyric rows now (`ly_has_rows()`, the child count of Now Playing's `scroll_lrc`); else stock's Album Cover page opens. And by a tap on **Lyrics Mode** on the More sheet's Display Mode page (`pm_on_lyr`, [playmore](playmore.md)): the same `idlelyrics_open_idle()`, the page first and the sheet closed once it is up; the row is dimmed for a track without lyric rows (no Album Cover fallback there). The page is the same either way (a tap closes it).
 - **`idlelyrics_open_idle()`**: 0 once the page is up or
   already open (nothing opened twice); -1 when it could not open, with nothing left behind and Now Playing's lyrics as they were. Failures: no Now Playing
   window (`np_window`), Now Playing's engine not running, the window or one of its widgets missing, the destroy listener refused, the engine's labels

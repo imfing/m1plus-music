@@ -1,6 +1,6 @@
 # Cassette Mode
 
-A fullscreen 480 × 320 cassette-style Now Playing page, opened from page 1 of the More sheet.
+A fullscreen 480 × 320 cassette-style Now Playing page, opened from the More sheet's Display Mode page.
 Tap the cassette to pause/resume; tap the top-left screw to close. It adds no hook or boot work
 and owns one page timer. Art is generic, without brand names or logos. The visual references
 are Sony's NW-A100/NW-ZX500 cassette screen and FiiO Tape mode.

@@ -18,6 +18,43 @@ __attribute__((noinline)) int m1_scan_dir(const char *name, const char *dot) {
     return name[0] == '.' ? 0 : strcmp(name, dot);
 }
 
+static int m1_lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+
+/* An artist field's names (docs/modules/artists.md "Separators"): the separators carry their own spaces, so a name that only looks
+ * like a list ("Tom;Jerry") is left whole, and the earliest separator in the field wins over any later one. Parts are slices of the
+ * caller's string: nothing is copied, nothing is allocated, and the empty part a trailing separator leaves is dropped by the trim. */
+static const char *const m1_artist_seps[] = {" feat. ", " ft. ", " featuring ", " & ", " x ", ", ", "; "};
+
+int m1_artist_split(const char *field, m1_artist_span *out, int max) {
+    unsigned len, start = 0, n = 0;
+    if (!field || !out || max <= 0) return 0;
+    len = (unsigned)strlen(field);
+    while (n < (unsigned)max) {
+        unsigned cut = len, seplen = 0, i, k, s, a, b;
+        for (s = 0; s < sizeof m1_artist_seps / sizeof *m1_artist_seps; ++s) {
+            unsigned l = (unsigned)strlen(m1_artist_seps[s]);
+            for (i = start; i + l <= len && i < cut; ++i) {
+                for (k = 0; k < l && m1_lower((unsigned char)field[i + k]) == (unsigned char)m1_artist_seps[s][k]; ++k);
+                if (k == l) {
+                    cut = i;
+                    seplen = l;
+                    break;
+                }
+            }
+        }
+        for (a = start, b = cut; a < b && (field[a] == ' ' || field[a] == '\t'); ++a);
+        while (b > a && (field[b - 1] == ' ' || field[b - 1] == '\t')) --b;
+        if (b > a) {
+            out[n].p = field + a;
+            out[n].n = b - a;
+            ++n;
+        }
+        if (cut >= len) break;
+        start = cut + seplen;
+    }
+    return (int)n;
+}
+
 /* A widget's text as UTF-8 in buf (size bytes, never written past): stock widget_get_text_utf8 ignores its size for a wide text (tk_utf8_from_utf16 at 0x70e790 overwrites
  * its out_size argument before reading it, counts the whole encoding and writes all of it), so a long lyric line or tag overran the caller's stack buffer. This reads the wide
  * text (widget_get_text) and encodes it here: a text that does not fit is cut at a character boundary, buf is always NUL terminated (size >= 1). Returns the length the whole
@@ -191,6 +228,9 @@ int m1_open_stock(const char *path, const char *window) {
     if (window && m1_restack_window(window)) return RET_OK;
     return navigator_to(path);
 }
+
+/* The stock Settings > Power page (the Sleep Timer switch and its selectors), the one Now Playing's More sheet row and the pull-down's Sleep Timer tile open (docs/modules/playmore.md). */
+int m1_open_sleep(void) { return m1_open_stock("systemset/powermanager_page", "powermanager_page"); }
 
 /* The navbar's small title of a page with a large heading: shown once the heading has scrolled away, i.e. the scroll offset has reached SG_COLLAPSE, or, on a page whose
  * heading is a header's name (a playlist, a podcast show), `head` (the offset the name has gone at). The page ORs in its own conditions (select mode, no scroll events ...). */

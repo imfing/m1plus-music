@@ -48,7 +48,7 @@ for commands, [UI](ui.md) for layout/assets, and [history](history.md) for recor
 | [Timed cover page](modules/bigcover.md) | The ten-second enlarged cover gets its own 320 px picture |
 | [Charge Limit](modules/charging.md) | Settings > System > Battery: charging pauses at 80-95 % while the player runs, on the status bar's battery hook |
 | [Lyrics page](modules/lyrics.md) | Our own lyrics lines over the stock rows: anchor, opacity falloff, eased scroll |
-| [More sheet](modules/playmore.md) | Playback options, Cassette Mode, Vinyl Mode and Find Cover & Lyrics entries |
+| [More sheet](modules/playmore.md) | Playback options, Display Mode (Cassette, Vinyl and Lyrics Mode) and Find Cover & Lyrics entries |
 | [Find Cover & Lyrics](modules/onlineart.md) | Online album covers (iTunes, Deezer) and lyrics (LRCLIB) for the playing track: page, worker, storage |
 | [Software Update](modules/update.md) | Settings > System > About > Software Update: the newest GitHub release downloaded to the card, then stock's TF card update (a pinned call); version rules, checks, page, popup |
 | [Mini player](modules/minibar.md) | Home overlay, controls, blur and timer |

@@ -1,6 +1,6 @@
 # Vinyl Mode
 
-A fullscreen portrait turntable Now Playing page, opened from page 1 of the More sheet (the row under Cassette Mode). The record lies off the left edge,
+A fullscreen portrait turntable Now Playing page, opened from the More sheet's Display Mode page (the row under Cassette Mode). The record lies off the left edge,
 its label is the playing track's cover and turns at 33 1/3 rpm while playing; a tonearm on a raised plate rests on the groove (outer to inner as the track
 plays) and is parked straight down beside the record when paused. Three round keys at the bottom right: previous, play / pause, next. Tap the record to pause
 or resume; tap the top-left chevron to close. No hook, no boot work, one page timer. Neutral greys only; no brand marks.

@@ -475,7 +475,7 @@ def asset_tests(ctx):
     expect(all(word(stock, a) == w for a, w, _ in pod.LYRICS_PINS) and all(word(built, a) == w for a, w, _ in pod.LYRICS_PINS), 'the stock words patch/lyrics.c relies on are pinned and untouched (get_playtime, the rows\' "lrc_time", the timer)')
     expect(pod.FUNCTIONS['get_playtime'][2] == 0x4e02e4, 'get_playtime is the stock position call the lyric timer compares "lrc_time" with')
     expect(not any(a for a in (MANIFEST.get('hook_lyrics'),)), 'no new hook: the manifest has none for the lyrics')
-    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_format_lamp', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_loadclass', 'hook_loadclass_assign', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
+    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_pulldown_dialog', 'hook_tsdown', 'hook_format_lamp', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_loadclass', 'hook_loadclass_assign', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
 
 
 def start_tests(ctx):
@@ -817,6 +817,32 @@ def touch_tests(ctx):
     expect({k: v[0] for k, v in m.shown().items() if k in pos} == pos, 'a touch restarts the 3 s: 4 s after the drag, 2 s after the touch, the lines still stay')
     m.clock += 1100; t = len(m.timers); m.at(5)
     expect(len(m.timers) == t + 1, 'and 3 s after it they start back')
+    # Now Playing's idle countdown (stock restarts it from its buttons only): every touch on the lines and every tick with the finger down or the lines scrolled away stores 20
+    IDLE_N = pod.DATA['NP_IDLE_COUNT'][0]
+    count = lambda m: struct.unpack('<i', bytes(m.u.mem_read(IDLE_N, 4)))[0]
+    def ran_down(m, n=1): m.setword(IDLE_N, n)
+    pins = {a: w for a, w, _ in pod.IDLE_PINS}
+    expect(IDLE_N == 0x97ccd0 and O['NP_IDLE_TICKS'] == 20 and pins.get(0x53d0d4) == 0x8e22ccd0 and pins.get(0x53d0f4) == 0x24020014,
+           'the countdown word and its start, 20 ticks (IDLE_PINS, checked against stock by bigcover/idle_tests: lw v0, 0x97ccd0 @0x53d0d4, addiu v0, zero, 0x14 @0x53d0f4)')
+    m = LyMachine(SONG); m.init(); m.at(5); m.frame(10000)
+    ran_down(m, 7); m.at(5)
+    expect(count(m) == 7, 'no touch: the tick leaves the countdown to stock')
+    got = []
+    for ev in (lambda: m.down(100, 150), lambda: m.move(100, 145), lambda: m.move(100, 120), lambda: m.up(100, 120)):
+        ran_down(m); ev(); got.append(count(m))
+    expect(got == [20] * 4, f'DOWN, a small MOVE, a dragging MOVE and UP each restart it ({got})')
+    ran_down(m); m.clock += 2000; m.at(5)
+    expect(count(m) == 20, 'scrolled away, the finger up: the tick restarts it')
+    ran_down(m); m.clock += 1100; m.at(5); m.frame(10000)
+    expect(count(m) == 20, 'the tick that sends the lines back (3 s) restarts it a last time: the ten seconds run from here')
+    ran_down(m); m.at(5)
+    expect(count(m) == 1, 'the ticks after it leave the countdown alone')
+    ran_down(m); m.down(100, 150); ran_down(m); m.clock += 5000; m.at(5)
+    expect(count(m) == 20, 'a finger held still on the lines (no event for 5 s): the tick restarts it')
+    m.up(100, 150); m.clock += 1000; ran_down(m); m.at(5)
+    expect(count(m) == 1 and m.seeks, 'after a tap (a seek, nothing scrolled) the tick leaves it alone')
+    ran_down(m); m.down(100, 150); m.ptr(AB, 100, 150)
+    expect(count(m) == 20, 'ABORT restarts it as well')
     # the bounds: the first line stops at the anchor, the last too
     m = LyMachine(SONG); m.init()
     m.down(100, 100); m.move(100, 120); m.move(100, 250)

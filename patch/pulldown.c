@@ -11,7 +11,7 @@
  * known characters only, no id twice, '-' at most once, a file shorter than PD_FILE_MAX; anything else, or no file, is the default.
  * Every tile the shown part does not list is hidden.
  *
- * One hook, dialog_dropdown_dialog_init (0x475f04, tools/pod.py PULLDOWN_INIT): run when the dialog is built (never at boot or in the
+ * Two hooks: on_wm_tsdown_fun (0x4cd6e8, tools/pod.py TSDOWN, the swipe's gates, below) and dialog_dropdown_dialog_init (0x475f04, tools/pod.py PULLDOWN_INIT): run when the dialog is built (never at boot or in the
  * main loop; the navigator's dialog-init dispatcher is its only caller). m1plus_pulldown_init runs the stock init to completion (it
  * binds the dialog's pointer handlers and, through its widget_foreach visitor, every tile's click: we move tiles, we do not replace
  * behaviour) and returns its result; then, if every tile and caption is found,
@@ -28,19 +28,47 @@
  */
 #include "offsets.inc"
 #include "stock.h"
+#include "i18n.h"
 #include "home.h"
 #include "common.h"
 #include "entries.h"
 
-#define PD_N 8
-#define PD_FILE_MAX 12 /* tools/pod_pages.py PULLDOWN_FILE_MAX */
+#define PD_N 14 /* every tile: the eight stock ones, then ours (ids '8', '9', 'a', 'b', 'c', 'd') */
+#define PD_STOCK 8 /* ids 0-7 are the stock tiles: the default shows them in this order */
+#define PD_SLOTS 8 /* the pull-down has room for eight tiles: a file that shows more is invalid */
+#define PD_FILE_MAX 20 /* tools/pod_pages.py PULLDOWN_FILE_MAX */
+#define PD_QUIT \
+    0xd /* dialog_quit's result the stock tile handlers use: on_wm_tsmove_fun goes on to open a page only for it */
 
-static const char *const PD_IMG[PD_N] = {"img_wifiswitch", "img_btswitch",     "img_keylockswitch", "img_gainswitch",
-                                         "img_usbmode",    "img_outputswitch", "img_playset",       "img_sysset"};
-static const char *const PD_LAB[PD_N] = {"label_wifi",    "label_bt",        "label_lock",    "label_gain",
-                                         "label_usbmode", "label_outputway", "label_playset", "label_sysset"};
+enum {
+    PD_SLEEP = PD_STOCK,
+    PD_SETTINGS,
+    PD_EQ,
+    PD_POWER,
+    PD_AIRPLAY,
+    PD_DLNA
+}; /* the ids of our tiles (the last two are switches, not actions) */
 
-/* The shown tiles in order (ord, at least PD_N long) from the saved file; the count. The default: all eight in stock order. */
+/* Our tiles' widgets are in the asset (tools/mod_pulldown.py), hidden and insensitive, named pod_tile_* / pod_cap_*. */
+static const char *const PD_IMG[PD_N] = {"img_wifiswitch",   "img_btswitch",      "img_keylockswitch", "img_gainswitch",
+                                         "img_usbmode",      "img_outputswitch",  "img_playset",       "img_sysset",
+                                         "pod_tile_sleep",   "pod_tile_settings", "pod_tile_eq",       "pod_tile_power",
+                                         "pod_tile_airplay", "pod_tile_dlna"};
+static const char *const PD_LAB[PD_N] = {"label_wifi",      "label_bt",         "label_lock",    "label_gain",
+                                         "label_usbmode",   "label_outputway",  "label_playset", "label_sysset",
+                                         "pod_cap_sleep",   "pod_cap_settings", "pod_cap_eq",    "pod_cap_power",
+                                         "pod_cap_airplay", "pod_cap_dlna"};
+
+static const char *pd_name(void *w);
+static void pd_close_subpages(const char *name);
+
+/* The id of a file character ('0'-'9', 'a'-'d'), or PD_N. */
+static unsigned pd_id(char c) {
+    return c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'd' ? (unsigned)(c - 'a') + 10u : PD_N;
+}
+
+/* The shown tiles in order (ord, at least PD_N long) from the saved file; the count. The default: the eight stock tiles in stock order
+ * (ord is then every id in order). */
 static unsigned pd_load(unsigned char *ord) {
     char buf[PD_FILE_MAX];
     unsigned char tmp[PD_N];
@@ -48,28 +76,143 @@ static unsigned pd_load(unsigned char *ord) {
     unsigned i, len, part = 0, k = 0, seen = 0;
     for (i = 0; i < PD_N; i++) ord[i] = (unsigned char)i;
     fd = open(PULLDOWN_FILE, 0, 0);
-    if (fd < 0) return PD_N;
+    if (fd < 0) return PD_STOCK;
     n = read(fd, buf, sizeof buf);
     close(fd);
-    if (n <= 0 || n >= (int)sizeof buf) return PD_N; /* empty, or too long to be a list */
+    if (n <= 0 || n >= (int)sizeof buf) return PD_STOCK; /* empty, or too long to be a list */
     len = (unsigned)n - (buf[n - 1] == '\n');
     for (i = 0; i < len; i++) {
         unsigned id;
         if (buf[i] == '-') { /* the hidden part starts: once */
-            if (part) return PD_N;
+            if (part) return PD_STOCK;
             part = 1;
             continue;
         }
-        id = (unsigned char)buf[i] - '0';
-        if (id >= PD_N || (seen >> id & 1)) return PD_N;
+        id = pd_id(buf[i]);
+        if (id >= PD_N || (seen >> id & 1)) return PD_STOCK;
         seen |= 1u << id;
-        if (!part) tmp[k++] = (unsigned char)id;
+        if (!part) {
+            if (k >= PD_SLOTS) return PD_STOCK; /* more than the pull-down holds */
+            tmp[k++] = (unsigned char)id;
+        }
     }
     for (i = 0; i < k; i++) ord[i] = tmp[i];
     return k;
 }
 
 /* ---- the pull-down */
+
+/* What a tap on one of our tiles does. Stock's Playback and System tiles never open a page from their click handler: they quit the dialog with PD_QUIT and set a flag, and on_wm_tsmove_fun
+ * (the status bar swipe, which opened the dialog MODALLY with navigator_to and carries on when it returns) opens the page after it. Ours do the same: the click handler checks what the stock
+ * handlers check, stores which tile it was in pd_pending and quits the dialog; pd_open_dialog (the hook at that navigator_to call) runs the action once the dialog is gone. The Power Off
+ * tile is the case that opens no page: pd_poweroff. */
+static struct {
+    void *dlg, *img;
+    unsigned id;
+} pd_tile[PD_N - PD_STOCK] __attribute__((section(".scratch")));
+static unsigned pd_pending
+    __attribute__((section(".scratch"))); /* tile id + 1 of the tap the dialog was quit for, 0: none */
+
+/* The AirPlay and DLNA tiles are switches: the tap calls stock's own switch (airplay_switch 0x5076a8, dlna_switch 0x507674: flip the setting byte and write [SYSSET] AIRPLAY / DLNA to the settings ini, what
+ * the Network Service page's rows do), and the tile's picture follows the byte: the lit disc when it is on, the ring when off, as stock's Wi-Fi tile (the visitor 0x473f30 sets drop_wifiopen / drop_wifi
+ * from its flag when the dialog is built). The service itself is not touched: stock's network-status timer (on_wm_timer_networkstatus 0x4cfd94: airplay_start, dmr_serverstart) starts or stops it to
+ * match the byte within a second, and only while Wi-Fi is connected. The dialog stays open (nothing is pending, nothing quits). Switching on with no Wi-Fi keeps the preference and says so. */
+static int pd_is_switch(unsigned id) { return id == PD_AIRPLAY || id == PD_DLNA; }
+
+static int pd_switch_on(unsigned id) {
+    return *(volatile unsigned char *)(id == PD_AIRPLAY ? AIRPLAY_FLAG : DLNA_FLAG) != 0;
+}
+
+static void pd_switch_art(unsigned id, void *img) {
+    int on = pd_switch_on(id);
+    image_base_set_image(img, id == PD_AIRPLAY ? (on ? "drop_airplayopen" : "drop_airplay")
+                                               : (on ? "drop_dlnaopen" : "drop_dlna"));
+    widget_invalidate_force(img, (void *)0);
+}
+
+static void pd_switch(unsigned id, void *img) {
+    if (id == PD_AIRPLAY)
+        airplay_switch();
+    else
+        dlna_switch();
+    pd_switch_art(id, img);
+    if (pd_switch_on(id) && networkGetConnectStatus() <= 0) pod_toast(TR("Connect to Wi-Fi first"));
+}
+
+static int pd_on_tile(void *ctx, void *e) {
+    unsigned k = (unsigned)((char *)ctx - (char *)pd_tile) / (unsigned)sizeof pd_tile[0];
+    (void)e;
+    /* the three conditions of the stock tile handlers (0x4754c8): a tile does nothing while they hold */
+    if (k >= PD_N - PD_STOCK || !pd_tile[k].dlg || *(int *)DROPDOWN_BUSY == 2 || *(int *)POWER_USBSTATE == 2 ||
+        airplayGetFlag() == 2)
+        return RET_OK;
+    if (pd_is_switch(pd_tile[k].id)) { /* stays open */
+        pd_switch(pd_tile[k].id, pd_tile[k].img);
+        return RET_OK;
+    }
+    pd_pending = pd_tile[k].id + 1;
+    if (dialog_quit(pd_tile[k].dlg, PD_QUIT) != RET_OK) pd_pending = 0; /* the dialog stays as it was */
+    return RET_OK;
+}
+
+/* The window in front is the one called name: it is left alone (window_manager_switch_to with the window itself is not what stock ever does). */
+static int pd_front(const char *name) {
+    void *wm = window_manager();
+    const char *top = wm ? pd_name(window_manager_get_top_window(wm)) : (const char *)0;
+    return top && !strcmp(top, name);
+}
+
+/* Our own page: when its window is already in the stack its sub-pages are closed and it is brought to the front, else it is opened afresh (a page of ours keeps one window, see pd_close_subpages);
+ * a page already in front is left alone. */
+static int pd_open_own(const char *window, int (*open_it)(void)) {
+    if (pd_front(window)) return 1;
+    pd_close_subpages(window);
+    return m1_restack_window(window) || open_it() == 0;
+}
+
+/* Power Off: what the power key's long press does (on_wm_keylong_fun 0x4cdd9c), without the key: ignored while standby_mode is nonzero (a confirm is up, or poweroff_page has run) or the key's own
+ * block word is 2; then the screen is lit, standby_mode = 1, the stock confirm (kind 1, the text of "msg_poweroff", modal, over the page like our confirms); Yes (CONFIRM_YES) opens poweroff_page,
+ * whose init does the whole stock shutdown (resume record, stop, DAC off, splash, poweroff after ~2 s); any other answer sets standby_mode back to 0. This code never calls system() or reboots
+ * (that would skip the resume save); the key-only byte stock also sets (0xa041b8) is not needed. */
+static void pd_poweroff(void) {
+    struct {
+        int kind, ms;
+        char text[MSGINFO_TEXT], text2[MSGINFO_TEXT];
+    } info;
+    if (*(int *)STANDBY_MODE != 0 || *(int *)POWERKEY_BLOCK == 2) return;
+    awake_screen();
+    *(int *)STANDBY_MODE = 1;
+    memset(&info, 0, sizeof info);
+    info.kind = MSGINFO_KIND;
+    getFormatString("msg_poweroff", info.text, sizeof info.text);
+    if (pod_confirm_dialog(&info) == CONFIRM_YES && navigator_to("poweroff_page") == RET_OK) return;
+    *(int *)STANDBY_MODE = 0; /* No, Back, or a page that will not open */
+}
+
+/* The action of tile id (PD_SLEEP ..): the same pages as Now Playing's Sleep Timer row (m1_open_sleep), the Settings root and the Equalizer page the All Playback Settings row opens, or the Power Off
+ * confirm. A page that will not open leaves nothing to show (the dialog is gone by now, as stock's own tile when navigator_to fails). */
+static void pd_run(unsigned id) {
+    if (id == PD_POWER)
+        pd_poweroff();
+    else if (id == PD_SLEEP) {
+        if (!pd_front("powermanager_page")) m1_open_sleep();
+    } else if (id == PD_SETTINGS)
+        pd_open_own("m1plus_settings_page", pod_open_settings);
+    else if (id == PD_EQ)
+        pd_open_own("m1plus_peq_page", pod_open_peq);
+}
+
+/* The hook at on_wm_tsmove_fun's navigator_to("dialog/dropdown_dialog") (tools/pod.py PULLDOWN_DIALOG_SITE): the stock call, then, when the dialog was quit by one of our tiles (its result is
+ * PD_QUIT, as for stock's tiles), the tile's action. Stock's own code that follows (the two flag tests) sees the result unchanged. */
+int pd_open_dialog(const char *name) {
+    int ret;
+    unsigned act;
+    ret = navigator_to(name);
+    act = pd_pending;
+    pd_pending = 0;
+    if (ret == PD_QUIT && act) pd_run(act - 1);
+    return ret;
+}
 
 static void pd_start(void *dlg) {
     void *img[PD_N], *lab[PD_N];
@@ -89,10 +232,22 @@ static void pd_start(void *dlg) {
     for (i = 0; i < n; i++) shown |= 1u << ord[i];
     for (i = 0; i < n; i++)
         if (ord[i] != i) break;
-    if (n == PD_N && i == n) return; /* the stock layout */
+    if (n == PD_STOCK && i == n) return; /* the stock layout (ours stay as the asset has them: hidden) */
     for (i = 0; i < n; i++) { /* shown tile ord[i] takes tile i's place (the places were read above) */
-        widget_move(img[ord[i]], px[i], py[i]);
-        widget_move(lab[ord[i]], px[i] + dx[ord[i]], py[i] + dy[ord[i]]);
+        unsigned id = ord[i];
+        widget_move(img[id], px[i], py[i]);
+        widget_move(lab[id], px[i] + dx[id], py[i] + dy[id]);
+        if (id >= PD_STOCK) { /* ours: bound to a tap, then shown (one that cannot be bound stays hidden) */
+            pd_tile[id - PD_STOCK].dlg = dlg;
+            pd_tile[id - PD_STOCK].img = img[id];
+            pd_tile[id - PD_STOCK].id = id;
+            if (widget_on(img[id], EVT_CLICK, pd_on_tile, &pd_tile[id - PD_STOCK])) {
+                if (pd_is_switch(id)) pd_switch_art(id, img[id]);
+                m1_show(img[id], 1);
+                m1_show(lab[id], 1);
+            } else
+                shown &= ~(1u << id);
+        }
     }
     for (i = 0; i < PD_N; i++)
         if (!(shown >> i & 1)) {
@@ -191,13 +346,67 @@ int pd_open_settings(const char *name) {
     return ret;
 }
 
+/* The dialog's EVT_WINDOW_CLOSE, after stock's own handler (0x4750ec: dropdown_menu_state = 0, the 500 ms refresh timer removed, nothing else): the 10 ms slide timer (callback 0x47535c, its id in the property
+ * "timer_idex", 0xffffffff for none) is cancelled as stock's pointer-down handler 0x47514c cancels it. Widget destruction is deferred to an idle, so a tick after the close would store state 3 (0x4754c4) with no
+ * dialog and the swipe would be refused for ever. Writes no global; the state is stock's handler's. */
+static int pd_on_close(void *dlg, void *evt) {
+    unsigned v[4]; /* value_t: type at 0, the uint32 at 8 */
+    (void)evt;
+    if (!dlg || widget_get_prop(dlg, "timer_idex", v) != RET_OK) return RET_OK;
+    if (value_uint32(v) == 0xffffffffu || !timer_count()) return RET_OK;
+    widget_remove_timer(dlg, value_uint32(v));
+    value_set_uint32(v, 0xffffffffu);
+    widget_set_prop(dlg, "timer_idex", v);
+    return RET_OK;
+}
+
 /* The hook (tools/pod.py PULLDOWN_INIT): the flags, then stock, then ours. */
 int m1plus_pulldown_init(void *dlg, void *ctx) {
     int ret;
     pd_reconcile();
     ret = stock_pulldown_init_trampoline(dlg, ctx);
-    if (ret == RET_OK && dlg) pd_start(dlg);
+    if (ret == RET_OK && dlg) {
+        widget_on(dlg, EVT_WINDOW_CLOSE, pd_on_close, dlg); /* a refused bind leaves stock's behaviour */
+        pd_start(dlg);
+    }
     return ret;
+}
+
+/* ---- the swipe's two gates (docs/modules/pulldown.md "Swipe gates and the window stack")
+ *
+ * on_wm_tsmove_fun opens the pull-down only while lockscreen_pageflag is not 1 (set by the lock page's init, cleared by its EVT_WINDOW_CLOSE) and dropdown_menu_state is 0 (its 0 is the dialog's own
+ * EVT_WINDOW_CLOSE). A window that goes away without that event (stock's window manager can drop a close that arrives during an animation) leaves the word set for ever and the swipe dead until a reboot.
+ * The hook runs before stock's on_wm_tsdown_fun and only clears: a flag is zeroed when no window of its name is in the window stack (a window under another page keeps its flag); nothing is closed, destroyed or opened, and
+ * a flag is never set. With both words 0 (always, but for a lock screen or a pull-down on the way) it is two loads and the stock call. */
+static int pd_off_state __attribute__((section(".scratch"))); /* 0 not read yet, 1 on, 2 kill switch */
+
+static int pd_off(void) {
+    if (!pd_off_state) pd_off_state = home_off() ? 2 : 1;
+    return pd_off_state != 1;
+}
+
+/* true: a window of that name is in the stack, wherever. A window under another page keeps its word: its init does not run again when the page above closes, so a word cleared now would be wrong then (the
+ * pull-down over the lock screen, a second pull-down). */
+static int pd_present(void *wm, const char *name) {
+    unsigned n = widget_count_children(wm);
+    while (n--) {
+        const char *nm = pd_name(widget_get_child(wm, n));
+        if (nm && !strcmp(nm, name)) return 1;
+    }
+    return 0;
+}
+
+/* The hook (tools/pod.py TSDOWN): the two words made true, then stock. */
+int m1plus_tsdown(void *ctx, void *e) {
+    volatile int *lock = (volatile int *)LOCK_PAGEFLAG, *state = (volatile int *)DROPDOWN_STATE;
+    if ((*lock || *state) && !pd_off()) {
+        void *wm = window_manager();
+        if (wm) {
+            if (*lock && !pd_present(wm, "screensaver_page")) *lock = 0;
+            if (*state && !pd_present(wm, "dropdown_dialog")) *state = 0;
+        }
+    }
+    return stock_tsdown_trampoline(ctx, e);
 }
 
 /* ---- the Control Center page */
@@ -224,13 +433,15 @@ static void pg_rebuild(void) { /* the shown tiles stay, the hidden ones follow i
         if (!pg_shown(i)) pg.order[k++] = (unsigned char)i;
 }
 
+static char pg_char(unsigned id) { return (char)(id < 10 ? '0' + id : 'a' + id - 10); }
+
 static int pg_save(void) {
     char buf[PD_N + 4];
     unsigned i, k = 0;
-    for (i = 0; i < pg.n; i++) buf[k++] = (char)('0' + pg.order[i]);
+    for (i = 0; i < pg.n; i++) buf[k++] = pg_char(pg.order[i]);
     if (pg.n < PD_N) {
         buf[k++] = '-';
-        for (i = pg.n; i < PD_N; i++) buf[k++] = (char)('0' + pg.order[i]);
+        for (i = pg.n; i < PD_N; i++) buf[k++] = pg_char(pg.order[i]);
     }
     buf[k++] = '\n';
     buf[k] = 0;
@@ -306,8 +517,11 @@ static void pg_toggle(unsigned id) {
         for (i = 0; i < old_n; i++)
             if (old[i] != id) pg.order[k++] = old[i];
         pg.n = k;
-    } else if (pg.n < PD_N) { /* shown again at the end */
+    } else if (pg.n < PD_SLOTS) { /* shown again at the end */
         pg.order[pg.n++] = (unsigned char)id;
+    } else { /* the pull-down holds eight: nothing changes */
+        pod_toast(TR("Up to 8 controls"));
+        return;
     }
     pg_rebuild();
     pg_commit(old, old_n, id);

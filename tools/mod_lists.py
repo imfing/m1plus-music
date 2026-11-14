@@ -82,7 +82,7 @@ PM_SPEED = {'scrlabel1': ((48, 8, 60, 20), (48, 8, 96, 20)),          # Playback
             'img_1_25x': ((172, 0, 36, 50), (188, 0, 36, 50)),        # note under them may use the whole row
             'img_1_5x': ((222, 0, 36, 50), (228, 0, 36, 50)),
             'img_2x': ((272, 0, 36, 50), (268, 0, 36, 50))}
-PM_SHEET = 'pc_sheet5'                               # the glass image of page 2 (320 x 250, five rows, top corners r 18; tools/mod_icons.py GLASS_SHEET); page 1's is pc_sheet6 (320 x 300, GLASS_SHEET6): the payload sets the one the page needs on the dialog's first child, the insensitive image pod_glass
+PM_SHEET = 'pc_sheet5'                               # the glass image of page 2 (320 x 250, five rows, top corners r 18; tools/mod_icons.py GLASS_SHEET); the payload sets the one the page needs (pc_sheet5 page 1, pc_sheet6 page 2, pc_sheet4 the Display Mode page) on the dialog's first child, the insensitive image pod_glass
 PM_GLASS = 'pod_glass'
 PM_PRESSED, PM_HAIR = '#FFFFFD10', '#FFFFFF22'      # the rows over it: transparent, pressed 6 % white (palette.ROLE_SHEET_PRESS, one blue level off so an accent maps it; a 20 % band, as the album page's, takes the red under 3:1), hairline 13 % white
 PM_RED = '#FF6B6B'                                 # the Delete label: >= 4.5:1 on the glass at rest (test/pod/playmore.py; a label in a pressed row stays in its normal state)
@@ -271,7 +271,7 @@ def edit_playmore(root, pal):
     has none, A-B repeat is no longer first, the back header has none); Playback speed's row with room for its label. Stock
     widgets keep their names, order and rectangles, but the speed row's (PM_SPEED)."""
     sv, add, first, ab = root.find('playmore_scrollview'), root.find('listitem2'), root.find('listitem4'), root.find('listitem0')
-    assert sv and add and first and ab and add in sv.children and root.find('pod_more') is None and root.find('pod_back') is None and root.find('pod_tape') is None and root.find('pod_vinyl') is None and root.find('pod_goep') is None and root.find('pod_art') is None and root.find('pod_sleep') is None, 'unexpected playmore_dialog'
+    assert sv and add and first and ab and add in sv.children and root.find('pod_more') is None and root.find('pod_back') is None and root.find('pod_tape') is None and root.find('pod_vinyl') is None and root.find('pod_goep') is None and root.find('pod_art') is None and root.find('pod_sleep') is None and root.find('pod_mode') is None and root.find('pod_lyr') is None, 'unexpected playmore_dialog'
     assert root.type == 'dialog' and root.get('highlight') is None
     root.set('highlight', PM_HIGHLIGHT)
     for name, (stock, ours) in PM_SPEED.items():
@@ -309,6 +309,13 @@ def edit_playmore(root, pal):
         awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_sleep_icon'), ('draw_type', 'default'), ('image', 'pod_ic_sleep'), ('sensitive', 'false')]),
         awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_sleep_label'), ('style', 'srlabel_item_white_style')]),
         awtk_ui.Widget('image', 285, 14, 13, 22, [('name', 'pod_sleep_chev'), ('draw_type', 'default'), ('image', 'right_arrow'), ('sensitive', 'false')])])
+    row('pod_mode', [   # page 1, above More: opens the Display Mode page (Cassette Mode, Vinyl Mode, Lyrics Mode); a top hairline, the grey chevron-right of a row that opens a page
+        awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_mode_icon'), ('draw_type', 'default'), ('image', 'pod_ic_mode'), ('sensitive', 'false')]),
+        awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_mode_label'), ('style', 'srlabel_item_white_style')]),
+        awtk_ui.Widget('image', 285, 14, 13, 22, [('name', 'pod_mode_chev'), ('draw_type', 'default'), ('image', 'right_arrow'), ('sensitive', 'false')])])
+    row('pod_lyr', [   # the Display Mode page's last row: the full-screen lyrics page (patch/idlelyrics.c); the glyph is the Lucide mic-vocal (the Artists row's image); the payload dims it and takes its touches away while the track has no lyrics
+        awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_lyr_icon'), ('draw_type', 'default'), ('image', 'pod_ic_artists'), ('sensitive', 'false')]),
+        awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_lyr_label'), ('style', 'srlabel_item_white_style')])])
     assert first.get('style:normal:border') == 'top' and ab.get('style:normal:border') == 'none'
     goep.set('style:normal:border', 'none')
     first.set('style:normal:border', 'none')
@@ -382,7 +389,7 @@ def build_ui(work):
         old, new, _ = edit_ui(path, lambda root, rel=rel: ui_edit(rel, root, pal))
         shape = lambda d: [(w.type, w.name, w.x, w.y, w.w, w.h) for w in awtk_ui.parse(d).walk()]
         if rel in ADD_EDITS:
-            ours = lambda s: s[1] in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', PM_GLASS) or s[1].startswith(('pod_more_', 'pod_back_', 'pod_tape_', 'pod_vinyl_', 'pod_goep_', 'pod_art_', 'pod_sleep_'))
+            ours = lambda s: s[1] in ('pod_more', 'pod_back', 'pod_tape', 'pod_vinyl', 'pod_goep', 'pod_art', 'pod_sleep', 'pod_mode', 'pod_lyr', PM_GLASS) or s[1].startswith(('pod_more_', 'pod_back_', 'pod_tape_', 'pod_vinyl_', 'pod_goep_', 'pod_art_', 'pod_sleep_', 'pod_mode_', 'pod_lyr_'))
             other = lambda s: s[:2] if s[1] in PM_SPEED else s   # the speed row's rectangles are ours (PM_SPEED)
             assert [other(s) for s in shape(new) if not ours(s)] == [other(s) for s in shape(old)], f'{rel}: a stock widget was removed, renamed or moved'
         elif rel in GEOMETRY_EDITS:

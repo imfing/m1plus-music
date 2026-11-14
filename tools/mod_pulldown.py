@@ -7,6 +7,8 @@ dropdown_dialog.bin) carries its own copy of the status bar (view_sysbar) and th
   view_sysbar    laid out from the table the real bar (ui/system_bar.bin) uses, tools/statusbar.py: left group
                  at x 10, 4 px spacing, the volume number 16 px middle in 30 px, the clock 104..194 at 18 px, the
                  right group 4 px spacing and clear of the battery; the bar black as the real one
+  pod_tile_*,    the six tiles of ours (Sleep Timer, Settings, Equalizer, Power Off, AirPlay, DLNA: patch/pulldown.c shows them in the slots the saved file names): an
+  pod_cap_*      image and a caption in view_switchs, added hidden and insensitive, the caption a copy of label_playset with the tile's text
   label_*        the eight tile captions (Wi-Fi, Bluetooth, Buttons lock, gain, USB mode, output,
                  Playback / System Setting), word-wrapped in 57 x 40 boxes  18 -> 16 (normal),
                                                                             16 -> 14 (disable, focused)
@@ -30,7 +32,7 @@ Usage: mod_pulldown.py SRC_WORKDIR OUT_WORKDIR     (OUT == SRC edits in place)
 """
 import argparse, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import statusbar
+import statusbar, pod_i18n, awtk_strings
 from modlib import clone_workdir, edit_ui
 from awtk_text import Ttf, awtk_width
 
@@ -45,6 +47,10 @@ TILES = ('label_wifi', 'label_bt', 'label_lock', 'label_gain', 'label_usbmode', 
 # the tile captions' string keys (demo @0x4743c8..0x474b70: widget_set_tr_text on the labels above)
 TILE_KEYS = ('wifiset_wifi', 'wifiset_bt', 'system_keylock', 'gain_high', 'gain_low', 'sset_outputway',
              'playset', 'sysset', 'usbmode_audio', 'usbmode_dac', 'usbmode_storge')
+# the tiles of ours: (image, caption, the image's picture, the caption's English text), after the stock tile it follows (the places are patch/pulldown.c's: a shown tile takes a slot)
+OWN = (('pod_tile_sleep', 'pod_cap_sleep', 'drop_sleep', 'Sleep Timer'), ('pod_tile_settings', 'pod_cap_settings', 'drop_settings', 'Settings'),
+       ('pod_tile_eq', 'pod_cap_eq', 'drop_equalizer', 'Equalizer'), ('pod_tile_power', 'pod_cap_power', 'drop_power', 'Power Off'),
+       ('pod_tile_airplay', 'pod_cap_airplay', 'drop_airplay', 'AirPlay'), ('pod_tile_dlna', 'pod_cap_dlna', 'drop_dlna', 'DLNA'))
 MUST_FIT = ('en_US', 'zh_CN')
 VOLUME_MAX, CLOCK_MAX = '100', '12:59 PM'
 TILE_W, TILE_DX = 71, -7                 # caption box width and x shift (stock 57; the box centre stays)
@@ -107,6 +113,20 @@ def resize(w, table, states=STATES):
     return done
 
 
+def add_own(root):
+    """Our six tiles in view_switchs after the stock widgets: the image (50 x 50, the stock tile's size, picture of the ring style, clickable) and its caption (a copy of label_playset
+    with the tile's text), at the first slot and its caption offset; hidden and insensitive. A tile not shown stays so; patch/pulldown.c moves, shows and binds the shown ones."""
+    from awtk_ui import Widget
+    view, img, cap = root.find('view_switchs'), root.find('img_wifiswitch'), root.find('label_playset')
+    check(view is not None and img is not None and cap is not None and cap in view.children and img in view.children, 'view_switchs / the first tile / label_playset missing')
+    for name, capname, image, english in OWN:
+        tile = Widget('image', img.x, img.y, img.w, img.h, [('name', name), ('draw_type', 'default'), ('image', image), ('clickable', 'true')])
+        label = Widget('label', img.x + cap.x - root.find('img_playset').x, img.y + cap.y - root.find('img_playset').y, cap.w, cap.h,
+                       [('name', capname)] + [p for p in cap.props if p[0] != 'name'] + [pod_i18n.text_prop(english)])
+        for w in (tile, label):
+            w.set('visible', 'false'); w.set('sensitive', 'false'); view.children.append(w)
+
+
 def edit(root, ttf, texts, report):
     shape = [(w.type, w.name, w.x, w.y, w.w, w.h) for w in root.walk()]
     sysbar = root.find('view_sysbar')
@@ -138,7 +158,8 @@ def edit(root, ttf, texts, report):
             report.append(f'tile captions over 40 px: {len(over(spx, 57))} at {spx} px x 57 (stock), {len(over(tpx, w.w))} at {tpx} px x {w.w} '
                           f'(none in {"/".join(MUST_FIT)}); still over: {", ".join(over(tpx, w.w))}')
     report.append(f'tiles {changed}')
-    after = [(w.type, w.name, w.x, w.y, w.w, w.h) for w in root.walk() if w.name not in (statusbar.LO_WIDGET, statusbar.SYNC_WIDGET, statusbar.EQ_WIDGET)]   # (the Line Out pill, the sync icon and the EQ mark statusbar.apply adds are the new widgets)
+    add_own(root)
+    after = [(w.type, w.name, w.x, w.y, w.w, w.h) for w in root.walk() if w.name not in (statusbar.LO_WIDGET, statusbar.SYNC_WIDGET, statusbar.EQ_WIDGET) and not w.name.startswith(('pod_tile_', 'pod_cap_'))]   # (the Line Out pill, the sync icon and the EQ mark statusbar.apply adds are the new widgets)
     bar_names = {w.name for w in sysbar.walk()}
     moved = [a for a, b in zip(shape, after) if a != b and a[1] not in bar_names and a[1] not in TILES]   # the bar's own widgets and the caption boxes
     check(len(shape) == len(after) and not moved, f'widgets moved: {moved}')
@@ -149,6 +170,14 @@ def apply(work):
     langs = os.path.join(work, RAW, 'strings')
     texts = {f[:-4]: strings(os.path.join(langs, f), TILE_KEYS) for f in sorted(os.listdir(langs)) if f.endswith('.bin')}
     check(all(len(texts[l]) == len(TILE_KEYS) for l in MUST_FIT), 'tile caption strings missing')
+    for lang, kv in texts.items():   # the captions of ours (keys of ours: the English text is the key, the table is the language's own; a stock key's text is the stock table's, Sleep Timer's powerm_sleep)
+        for _, _, _, english in OWN:
+            key = pod_i18n.key_for(english)
+            if key is None: kv[english] = english   # a brand (AirPlay, DLNA): the same text in every language, measured as it is
+            elif key == english: kv[english] = pod_i18n.TEXT[english][pod_i18n.table_for(lang)]
+            else:   # (de_DE, es_ES and pl_PL are 11-string stubs the strings step does not use as a table)
+                stock = dict(awtk_strings.load(os.path.join(langs, lang + '.bin'))).get(key)
+                if stock is not None: kv[key] = stock
     out = []
     path = os.path.join(work, RAW, DIALOG)
     report = []

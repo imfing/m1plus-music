@@ -728,10 +728,10 @@ def accent_image_tests(ctx):
     m.call(PSYMS['m1plus_image_add'], a0=1, a1=0, a2=b, count=40000)
     m.call(PSYMS['m1plus_image_add'], a0=1, a1=m.cstr('pod_check'), a2=0, count=40000)
     expect('bitmap_lock_buffer_for_write' not in [c[0] for c in m.calls], 'a bitmap that is not 32 bit, a null name and a null bitmap are left alone')
-    # the cost of the hook on a name it does not tint (3600: the Equalizer's tall card pieces pod_cdl_* joined the lists, ~3500)
+    # the cost of the hook on a name it does not tint (3700: the Equalizer's tall card pieces pod_cdl_* joined the lists, ~3500; the AirPlay and DLNA lit tiles ~3650)
     m = LM(acc=b'1\n').count()
     n0 = m.icount; m.image('np_play', 2, 2, [(0, 0, 0, 0)] * 4); c = m.icount - n0
-    expect(c < 3600, f'an image the accent does not tint costs {c} instructions through the hook (the name lists)')
+    expect(c < 3700, f'an image the accent does not tint costs {c} instructions through the hook (the name lists)')
     print(f'  hook on an untinted image: {c} instructions')
 
 

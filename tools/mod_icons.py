@@ -142,7 +142,7 @@ CARD_GLYPHS = {'Wi-Fi': 'wifi', 'Bluetooth': 'bluetooth', 'Home Screen': 'house'
                'Control Center': 'layout-grid', 'Lock Screen': 'lock', 'Wallpaper': 'image', 'Enable': 'lock', 'Show Time': 'clock', 'Player Style': 'square-play', 'Custom Wallpaper': 'info',
                'Keyboards': '+keyboard', 'About': 'info', 'All System Settings': 'settings', 'Developer': 'code', 'Main Menu': 'list-checks', 'Extras': 'ellipsis',
                'Recent Albums': 'history', 'Daily Mix': 'shuffle', 'Regenerate Daily Mix': 'refresh-cw', 'Update Library': 'refresh-cw',
-               'Landscape': 'rotate-cw-square', 'Volume Buttons': 'volume-2', 'Rebuild Covers': 'image-up', 'Rebuild Artist Photos': 'mic-vocal', 'Idle Display': 'timer', 'Lyrics Text Size': 'mic-vocal', 'Theme': '+cassette-tape', 'Record': '+turntable', 'Base': 'palette', 'Boot to M1+ Music': 'power', 'Open Shanling Home': '@shanling', 'Equalizer': 'sliders-vertical',
+               'Landscape': 'rotate-cw-square', 'Volume Buttons': 'volume-2', 'Rebuild Covers': 'image-up', 'Rebuild Artist Photos': 'mic-vocal', 'Idle Display': 'timer', 'Lyrics Text Size': 'a-large-small', 'Theme': '+cassette-tape', 'Record': '+turntable', 'Base': 'palette', 'Boot to M1+ Music': 'power', 'Open Shanling Home': '@shanling', 'Equalizer': 'sliders-vertical',
                'Screenshot': 'camera', 'Clear Cover Cache': 'trash', 'Clear Track Durations': 'trash', 'Delete Unsupported Files': 'trash', 'Reset All Settings': 'rotate-ccw', 'Cache': 'hard-drive','Settings Files': 'file-cog', 'Download from AutoEq': 'download', 'Podcast Discover': 'compass', 'Podcasts': 'podcast', 'Scrobbling': 'list-music', 'ListenBrainz': '+musicbrainz:filled', 'Upload Scrobbles': 'upload', 'Last.fm': '+lastdotfm:filled', 'Auto Upload': 'clock', 'English': 'languages', 'Chinese (Pinyin)': 'languages', 'Battery Percentage': 'battery-charging', 'Battery': 'battery-full', 'Charge Limit': 'battery-medium',
                'Index Rail': 'list', 'Section Headers': 'list-start', 'Continue Playing': 'skip-forward'}
 
@@ -196,7 +196,7 @@ def wifi_spinner(i, px=WIFI_SPIN_PX, ss=8):
     im = Image.new('RGBA', (px,) * 2, WIFI_GREY + (0,)); im.putalpha(big.resize((px,) * 2, Image.LANCZOS)); return im
 
 
-DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + ['pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_art', 'pod_ic_sleep'] + sorted(ES_ICONS)   # (pod_ic_tape, pod_ic_vinyl: Now Playing's More sheet's Cassette Mode and Vinyl Mode rows, tools/mod_lists.py: no row page uses them)
+DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + ['drop_sleep', 'drop_settings', 'drop_equalizer', 'drop_power', 'drop_airplay', 'drop_airplayopen', 'drop_dlna', 'drop_dlnaopen', 'pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_art', 'pod_ic_mode'] + sorted(ES_ICONS)   # (pod_ic_sleep is not here: the Sleep Timer row is also a row of the Control Center page, so apply_pod_rows adds it; pod_ic_tape, pod_ic_vinyl: Now Playing's More sheet's Cassette Mode and Vinyl Mode rows, tools/mod_lists.py: no row page uses them)
 # M1+ Music menu and Shuffle page rows: label -> (added image, glyph). A bare white glyph (BARE_PX canvas) left of the title.
 # '@shanling' = the brand mark cut out of a stock image (shanling_mark below), not a glyph.
 POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': ('pod_ic_coverflow', '+coverflow'),   # audio-lines: the wave of the navbar's Now Playing button
@@ -212,10 +212,19 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'Composers': ('pod_ic_composers', 'feather'), 'Hi-Res': ('pod_ic_hires', '+badge-hr'),
             'Update Library': ('pod_ic_update', 'refresh-cw'), 'Tidal': ('pod_ic_tidal', 'T:brand-tidal'),
             'CD Ripper': ('pod_ic_cdripper', 'disc'), 'Pod': ('pod_ic_ipod', '+ipod'), 'Podcasts': ('pod_ic_podcasts', 'podcast'), 'Search': ('pod_ic_search', 'search'), 'Radio': ('pod_ic_radio', 'radio'),
-            'Cassette Mode': ('pod_ic_tape', '+cassette-tape'), 'Vinyl Mode': ('pod_ic_vinyl', '+turntable'), 'Cover & Lyrics': ('pod_ic_art', '+cover-lyrics'), 'Sleep Timer': ('pod_ic_sleep', 'moon'),   # Now Playing's More sheet rows (tools/mod_lists.py)
+            'Cassette Mode': ('pod_ic_tape', '+cassette-tape'), 'Vinyl Mode': ('pod_ic_vinyl', '+turntable'), 'Cover & Lyrics': ('pod_ic_art', '+cover-lyrics'), 'Sleep Timer': ('pod_ic_sleep', 'moon'), 'Display Mode': ('pod_ic_mode', 'smartphone'),   # Now Playing's More sheet rows (tools/mod_lists.py)
             # the Control Center page (pod_pages.PULLDOWN_TILES): each tile's own glyph (PULLDOWN below); Output's tile shows the text PO / LO, so its row has stock's Output glyph (sset_outputway)
             'Wi-Fi': ('pod_ic_wifi', 'wifi'), 'Bluetooth': ('pod_ic_bt', 'bluetooth'), 'Button Lock': ('pod_ic_lock', 'lock'), 'Gain': ('pod_ic_gain', '+gain-high'),
-            'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_prefs', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings')}
+            'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_prefs', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings'),
+            # the Control Center's own tiles (docs/modules/pulldown.md "Tiles of ours"): Sleep Timer is the More sheet's row above; Equalizer and Settings have glyphs the other tiles do not (Playback is sliders-horizontal, System the gear)
+            'Equalizer': ('pod_ic_eq', 'sliders-vertical'), 'Control Center Settings': ('pod_ic_ccsettings', 'layout-grid'), 'Power Off': ('pod_ic_poweroff', 'power'),
+            'AirPlay': ('pod_ic_airplay', 'airplay'), 'DLNA': ('pod_ic_dlna', '+dlna:filled')}
+# a row label that has another glyph on one page: (page, label) -> the POD_ROWS key (the Control Center's Settings tile is not the Pod menu's Settings row, which shares Playback's glyph)
+ROW_ALIAS = {('m1plus_pulldown', 'Settings'): 'Control Center Settings'}
+# the pull-down tiles of ours (tools/mod_pulldown.py adds their widgets to the dialog, patch/pulldown.c shows them): the same ring as the stock tiles, in the off look (an action, no on state)
+PD_OWN = {'drop_sleep': 'moon', 'drop_settings': 'layout-grid', 'drop_equalizer': 'sliders-vertical', 'drop_power': 'power', 'drop_airplay': 'airplay', 'drop_dlna': '+dlna:filled'}
+# the two switch tiles of ours (AirPlay, DLNA) are lit like the stock Wi-Fi tile when their setting is on: the white disc and dark glyph (ACCENT_DISC takes the accent)
+PD_OWN_ON = {'drop_airplayopen': 'airplay', 'drop_dlnaopen': '+dlna:filled'}
 # The Folders page's row glyphs (patch/folders.c): the menu rows' bare white 24 px glyph for what POD_ROWS has no row for: an audio file, the SD card, a USB drive (folders, playlist files, the CD Library and the wave are pod_ic_folders, pod_ic_playlists, pod_ic_cdripper, pod_ic_nowplaying)
 FOLDER_ROWS = {'fo_ic_file': 'file-music', 'fo_ic_sd': 'memory-stick'}   # a USB drive's row uses the USB Mode row's pod_ic_usbmode
 # The Navidrome pages' glyphs (patch/sbsrc.c row marks, tools/pod_nd.py): the Downloaded row and the downloaded-song disc.
@@ -762,6 +771,8 @@ def generate_all(sizes):
     f[POD_HOME[1]] = on_disc(glyph(POD_HOME_GLYPH, HOME_GLYPH, 'disc'), 66, DISC_DOWN)
     # pull-down tiles: one ring style, off / on / disabled (docs/ui.md)
     for n, (g, st) in TILES.items(): f[n] = ring_tile(g, st)
+    for n, g in PD_OWN.items(): f[n] = ring_tile(g, 'off')
+    for n, g in PD_OWN_ON.items(): f[n] = ring_tile(g, 'on')
     for n in ('drop_lighticon0', 'drop_lighticon1'):
         f[n] = fit(lambda p, g=PULLDOWN[n]: glyph(g, p, 'small'), 20, 20, 20)
     # status bar
@@ -1839,10 +1850,10 @@ def apply_pod_rows(out, rows):
     if not any(os.path.exists(os.path.join(out, UI_DIR, k + '.bin')) for k in POD_UI): return 0
     used = {}
     def edit(root):
-        for row in [w for w in root.walk() if w.type == 'list_item' and w.name.startswith('pod_row')]:
+        for row in [w for w in root.walk() if w.type == 'list_item' and w.name.startswith('pod_row')]:   # (page_key: the page being edited, below)
             lab = next(c for c in row.children if c.type == 'hscroll_label')
             assert not any(c.name == 'pod_icon' for c in row.children), 'already has icons'
-            text = pod_i18n.shown_english(lab); assert text in rows, f'no icon for the row {text!r}'
+            text = pod_i18n.shown_english(lab); text = ROW_ALIAS.get((page_key, text), text); assert text in rows, f'no icon for the row {text!r}'
             img = rows[text][0]; used[img] = 1
             right = min([c.x - 7 if c.get('image') == 'right_arrow' else c.x for c in row.children if c.type in ('image', 'button') or c.name.startswith('pod_value')] or [row.w - 12])   # the chevron, switch, up arrow or value
             lab.x, lab.w = POD_TEXT_X, right - POD_TEXT_X
@@ -1856,6 +1867,7 @@ def apply_pod_rows(out, rows):
     for k in POD_UI:
         p = os.path.join(out, UI_DIR, k + '.bin')
         if os.path.exists(p):
+            page_key = k
             edit_ui(p, edit); os.utime(p, (IMG_MTIME, IMG_MTIME))   # an added file: keep the build deterministic
     d = os.path.join(out, IMG)
     for n in used:

@@ -1803,8 +1803,8 @@ def build_menucfg_page(page):
     root.children.append(navbar(page.title))
     lv = stock_list([], True)
     sv = lv.children[0]
-    if page.kind == 'pdcfg':   # the Pull-down page (patch/pulldown.c): the same rows for the eight tiles, all shown by default
-        sv.children += cfg_rows(sv.w, pod_pages.PULLDOWN_TILES, range(len(pod_pages.PULLDOWN_TILES)))
+    if page.kind == 'pdcfg':   # the Pull-down page (patch/pulldown.c): the same rows for the twelve tiles, the eight stock ones shown by default
+        sv.children += cfg_rows(sv.w, pod_pages.PULLDOWN_TILES, range(pod_pages.PULLDOWN_STOCK))
     else:
         sv.children += cfg_rows(sv.w, [r.label for r in pod_pages.ITEMS], pod_pages.DEFAULT_MENU)
     root.children.append(lv)

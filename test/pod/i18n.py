@@ -264,10 +264,10 @@ def run(ctx):
             for english, room in keys:
                 k = pod_i18n.key_for(english)
                 if k and width(tr_text(loc, k), row_px) > room: over.append((page.key, english, loc, width(tr_text(loc, k), row_px), room))
-    # the one accepted overflow (the user's choice): the Control Center page's Playback row in Russian (Воспроизведение, the Settings header's word) ends in an ellipsis and scrolls when focused
-    cut = [o for o in over if o[:3] == (pod_pages.PULLDOWN_PAGE.key, 'Playback', 'ru_RU')]
+    # the accepted overflows (the user's choice): the Control Center page's Playback row in Russian (Воспроизведение, the Settings header's word), and its Sleep Timer row (the stock text) in the languages where it is too long (the user's choice, 2026-11-13): each ends in an ellipsis and scrolls when focused
+    cut = [o for o in over if o[:3] == (pod_pages.PULLDOWN_PAGE.key, 'Playback', 'ru_RU') or o[:2] == (pod_pages.PULLDOWN_PAGE.key, 'Sleep Timer')]
     over = [o for o in over if o not in cut]
-    expect(len(cut) == 1, f'the Russian Playback row of Control Center is the one label cut with an ellipsis ({cut})')
+    expect(sorted(o[1:3] for o in cut) == sorted([('Playback', 'ru_RU'), ('Sleep Timer', 'ja_JP'), ('Sleep Timer', 'fr_FR'), ('Sleep Timer', 'sp_ES'), ('Sleep Timer', 'po_PL'), ('Sleep Timer', 'ru_RU')]), f'the Russian Playback row and the Sleep Timer row in ja, fr, es, pl and ru of Control Center are the labels cut with an ellipsis ({cut})')
     expect(not over, f'every menu, Extras, Shuffle, Settings and Main Menu row and every page title fits its label in all 13 languages ({over[:40]})')
     hdr_over = []   # the section headers of the Extras and Settings > Extras pages: 16 px grey captions in labels of 274 px
     for page in (pod_pages.EXTRAS_PAGE, pod_pages.EXTRASCFG_PAGE):

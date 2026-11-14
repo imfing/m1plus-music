@@ -1047,6 +1047,12 @@ TEXT = dict([
     # Now Playing's More sheet: the row that opens the turntable page (patch/vinyl.c, docs/modules/vinyl.md); the page's own name is the same text
     _t('Vinyl Mode', '黑胶模式', '黑膠模式', 'レコードモード', '바이닐 모드', 'Mode vinyle', 'Vinylmodus',
        'Modo vinilo', 'Modalità vinile', 'โหมดแผ่นเสียง', 'Tryb winylu', 'Режим винила', 'Режим вінілу'),
+    # Now Playing's More sheet: the row that opens the Display Mode page (Cassette Mode, Vinyl Mode, Lyrics Mode) and that page's back header
+    _t('Display Mode', '显示模式', '顯示模式', '表示モード', '디스플레이 모드', "Mode d'affichage", 'Anzeigemodus',
+       'Modo de pantalla', 'Modalità schermo', 'โหมดแสดงผล', 'Tryb wyświetlania', 'Режим экрана', 'Режим екрана'),
+    # the Display Mode page's row that opens the full-screen lyrics page (patch/idlelyrics.c, docs/modules/idlelyrics.md)
+    _t('Lyrics Mode', '歌词模式', '歌詞模式', '歌詞モード', '가사 모드', 'Mode paroles', 'Songtextmodus',
+       'Modo letra', 'Modalità testo', 'โหมดเนื้อเพลง', 'Tryb tekstu', 'Режим текста', 'Режим тексту'),
     # Now Playing's More sheet while an episode plays: the row that opens the Podcasts page (patch/podcasts.c podcasts_go)
     _t('Go to Podcasts', '前往播客', '前往 Podcast', 'ポッドキャストへ移動', '팟캐스트로 이동', 'Aller aux podcasts', 'Zu Podcasts',
        'Ir a pódcasts', 'Vai ai podcast', 'ไปที่พอดแคสต์', 'Przejdź do podcastów', 'К подкастам', 'До подкастів'),
@@ -1446,6 +1452,12 @@ TEXT = dict([
     # presets, the message box of a file the parser refuses and of a failed save.
     _t('Equalizer', '均衡器', '等化器', 'イコライザー', '이퀄라이저', 'Égaliseur', 'Equalizer',
        'Ecualizador', 'Equalizzatore', 'อีควอไลเซอร์', 'Korektor', 'Эквалайзер', 'Еквалайзер'),
+    # Control Center (docs/modules/pulldown.md "Tiles of ours"): the toast of a ninth tile turned on (the pull-down holds eight; written by hand, not reviewed by a speaker)
+
+    _t('Power Off', '关机', '關機', '電源オフ', '전원 끄기', 'Éteindre', 'Strom aus',
+       'Apagar', 'Spegni', 'ปิดเครื่อง', 'Wyłącz', 'Выкл. питание', 'Вимкнути'),
+    _t('Up to 8 controls', '最多 8 个控制项', '最多 8 個控制項', 'コントロールは最大8個', '컨트롤은 최대 8개', '8 commandes au maximum', 'Höchstens 8 Steuerelemente',
+       'Máximo 8 controles', 'Massimo 8 controlli', 'สูงสุด 8 รายการ', 'Maksymalnie 8 elementów', 'Не более 8 элементов', 'Не більше 8 елементів'),
     _t('10-Band EQ', '10 段均衡器', '10 段等化器', '10バンドEQ', '10밴드 EQ', 'EQ 10 bandes', '10-Band-EQ',
        'EQ 10 bandas', 'EQ a 10 bande', 'อีคิว 10 แบนด์', 'EQ 10 pasm.', 'EQ 10 полос', 'EQ 10 смуг'),
     _t('Edit 10-Band EQ', '编辑 10 段均衡器', '編輯 10 段等化器', '10バンドEQ編集', '10밴드 EQ 편집', 'Éditer 10 bandes', 'EQ bearbeiten',
@@ -1779,7 +1791,7 @@ def english(key):
 
 
 import pod_pages
-BRANDS = ('M1+ Music', 'Tidal', 'Pod') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',) + tuple(f'{p}%' for p in pod_pages.CHGLIMIT_VALUES) + pod_pages.LIGHTTIME_VALUES[1:] + pod_pages.SHUTDOWN_VALUES[1:] + ('−',)   # shown as they are, no key (the Settings Files labels are file names; the minus is the loudness pages' - button)
+BRANDS = ('M1+ Music', 'Tidal', 'Pod', 'AirPlay', 'DLNA') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',) + tuple(f'{p}%' for p in pod_pages.CHGLIMIT_VALUES) + pod_pages.LIGHTTIME_VALUES[1:] + pod_pages.SHUTDOWN_VALUES[1:] + ('−',)   # shown as they are, no key (the Settings Files labels are file names; the minus is the loudness pages' - button)
 
 
 def key_for(english):

@@ -33,6 +33,15 @@ int m1_scan_dir(
     const char *name,
     const char *
         dot); /* the library scan's strcmp(name, ".") replacement: 0 for any name starting with '.' (docs/modules/payload.md hook 5) */
+/* One artist of an artist field: a slice of the caller's string, never a copy. */
+typedef struct {
+    const char *p;
+    unsigned n;
+} m1_artist_span;
+/* The names in an artist field, in the order they appear: split on " feat. ", " ft. ", " featuring ", " & ", " x ", ", " and "; " (ASCII case folded; each separator
+ * carries the spaces it is written with, so a bare "Tom;Jerry" stays one name), parts trimmed and empty ones dropped, at most max into out. Returns the count (1 for a
+ * field with no separator, 0 when there is nothing to share). Reads `field` only: the span must not outlive it. docs/modules/artists.md "Separators". */
+int m1_artist_split(const char *field, m1_artist_span *out, int max);
 int m1_card_mounted(
     void); /* the SD card is mounted (statfs: /mnt/mmc is another file system than /mnt); never write under /mnt/mmc otherwise */
 /* a (na bytes) then b (nb) into path in dir (CARD_DIR or a folder in it) on the card, atomically (tmp, fsync, rename, fsync of dir);
@@ -54,6 +63,7 @@ int m1_free_kb(const char *path, unsigned *kb);
 void *m1_restack_window(const char *name);
 /* A stock page: its opened window called window (the asset's root name; NULL: none) restacked as m1_restack_window does, else stock's navigator_to(path) (always, for NULL: a page whose init a restack would not redo). RET_OK, or navigator_to's result. */
 int m1_open_stock(const char *path, const char *window);
+int m1_open_sleep(void); /* m1_open_stock of the stock Power page (Sleep Timer): RET_OK, or navigator_to's result */
 int m1_is_type(void *w, const char *type); /* w is a widget of exactly this type name */
 /* The navbar's small title (docs/modules/navbar.md "Small titles"): m1_title_gone(off, head) is 1 once the page's heading has scrolled away (head 0: the large title, SG_COLLAPSE;
  * else the offset a header's name is gone at); m1_title_set shows or hides w when on differs from *cur. */

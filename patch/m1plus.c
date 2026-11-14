@@ -1129,6 +1129,9 @@ int pod_open_peqpage(void) { return open_page(POD_PEQP_PAGE, 0); }
 /* The Playback Settings page, for the pull-down's Playback tile (patch/pulldown.c): the normal instance, with Back. */
 int pod_open_playset(void) { return open_page(POD_PLAYSET_PAGE, 0); }
 
+/* The Settings root page, for the pull-down's Settings tile (patch/pulldown.c): the normal instance, with Back. */
+int pod_open_settings(void) { return open_page(POD_SETTINGS_PAGE, 0); }
+
 /* The Equalizer page, for the All Playback Settings Equalizer row (patch/peq_ui.c peq_open): the normal instance, with Back. */
 int pod_open_peq(void) { return open_page(POD_PEQ_PAGE, 0); }
 

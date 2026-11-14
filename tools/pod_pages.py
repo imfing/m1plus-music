@@ -710,32 +710,35 @@ HOMESET_PAGE = Page('m1plus_homeset', 'm1plus_homeset_page', 'Home Screen', layo
 MENUCFG_PAGE = Page('m1plus_mainmenu', 'm1plus_mainmenu_page', 'Main Menu', kind='menucfg')
 
 # Pull-down (patch/pulldown.c, docs/modules/pulldown.md): the eight tiles of the stock pull-down (ui/dialog/dropdown_dialog.bin, view_switchs) in the stock slot order, which is the
-# id of a tile ('0'..'7'). The page is the Main Menu page's twin (a row per tile with a switch and, on the shown rows but the first, an up arrow). The row labels are short texts of
-# ours, not the tiles' stock captions: those ("Playback Setting", "Output Options"; far longer in Russian or Italian) do not fit the row's label beside the arrow.
-PULLDOWN_TILES = ('Wi-Fi', 'Bluetooth', 'Button Lock', 'Gain', 'USB Mode', 'Output', 'Playback', 'System')
-PULLDOWN_CHARS = '01234567'
-PULLDOWN_FILE_MAX = 12   # patch/pulldown.c reads at most this many bytes (8 ids, the '-' and a newline are 10); longer is invalid
+# id of a tile ('0'..'7'), then the three tiles of ours: Sleep ('8', the Sleep Timer), Settings ('9') and Equalizer ('a') Power Off ('b', with a confirmation) and the two switches AirPlay ('c') and DLNA ('d'). The pull-down shows at most eight
+# (PULLDOWN_SLOTS); ours are hidden by default. The page is the Main Menu page's twin (a row per tile with a switch and, on the shown rows but the first, an up arrow). The row labels are
+# short texts of ours, not the tiles' stock captions: those ("Playback Setting", "Output Options"; far longer in Russian or Italian) do not fit the row's label beside the arrow.
+PULLDOWN_TILES = ('Wi-Fi', 'Bluetooth', 'Button Lock', 'Gain', 'USB Mode', 'Output', 'Playback', 'System', 'Sleep Timer', 'Settings', 'Equalizer', 'Power Off', 'AirPlay', 'DLNA')
+PULLDOWN_STOCK = 8       # the first eight ids are the stock tiles: the default file shows them in this order
+PULLDOWN_SLOTS = 8       # the pull-down has room for eight tiles: a file that shows more is invalid
+PULLDOWN_CHARS = '0123456789abcd'
+PULLDOWN_FILE_MAX = 20   # patch/pulldown.c reads at most this many bytes (14 ids, the '-' and a newline are 16); longer is invalid
 PULLDOWN_PAGE = Page('m1plus_pulldown', 'm1plus_pulldown_page', 'Control Center', kind='pdcfg')
 
 
 def parse_pulldown(data):
-    """The shown tile ids in order from the saved file (patch/pulldown.c pd_load's model), or the default (all eight, stock order).
+    """The shown tile ids in order from the saved file (patch/pulldown.c pd_load's model), or the default (the eight stock tiles in stock order).
     `<shown ids>[-<hidden ids>]` and an optional newline, 1 .. PULLDOWN_FILE_MAX - 1 bytes; every other tile is hidden (the part after
     the '-' only says in what order the editor lists them). Invalid, giving the default: an unknown character, an id twice (in either
-    part or across them), a second '-'. A bare newline or '-' hides all eight."""
+    part or across them), a second '-', more than PULLDOWN_SLOTS shown. A bare newline or '-' hides every tile."""
     if isinstance(data, str): data = data.encode('latin-1')
-    default = list(range(len(PULLDOWN_TILES)))
+    default = list(range(PULLDOWN_STOCK))
     if data is None or not 0 < len(data) < PULLDOWN_FILE_MAX: return default
     body = (data[:-1] if data.endswith(b'\n') else data).decode('latin-1')
     shown, sep, hidden = body.partition('-')
     if '-' in hidden or any(c not in PULLDOWN_CHARS for c in shown + hidden): return default
     ids = [PULLDOWN_CHARS.index(c) for c in shown + hidden]
-    if len(set(ids)) != len(ids): return default
+    if len(set(ids)) != len(ids) or len(shown) > PULLDOWN_SLOTS: return default
     return ids[:len(shown)]
 
 
 def format_pulldown(shown):
-    """The saved file for the shown tiles (patch/pulldown.c pd_save): the ids, then '-' and the hidden ones in stock order, if any, and a newline."""
+    """The saved file for the shown tiles (patch/pulldown.c pd_save): the ids, then '-' and the hidden ones in id order, if any, and a newline."""
     hidden = [i for i in range(len(PULLDOWN_TILES)) if i not in shown]
     return ''.join(PULLDOWN_CHARS[i] for i in shown) + ('-' + ''.join(PULLDOWN_CHARS[i] for i in hidden) if hidden else '') + '\n'
 

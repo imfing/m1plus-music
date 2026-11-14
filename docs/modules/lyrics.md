@@ -138,6 +138,15 @@ Labels are insensitive. A vertical move over 10 px starts browsing; after 3 seco
 touches (checked by the page tick), the lines return to the current position.
 The highlight continues following playback during browsing.
 
+**Idle countdown.** Stock restarts Now Playing's ten idle seconds (`NP_IDLE_COUNT` `0x97ccd0`,
+20 ticks of 500 ms, [bigcover](bigcover.md) "Idle view") only from its button handlers
+(`0x53b174`, `0x53b4a4`, `0x53b624`, `0x53b6e0`, `0x53b818`, `0x53c164`, `0x53c1d0`, `0x53c858`),
+never for a touch, so the Idle Display view opened in the middle of a drag over the lyrics.
+`ly_awake` stores 20 for every pointer event on the lines, and `ly_tick` does while the finger is
+down or the lines are scrolled away: the ten seconds run from the tick that sends the lines back
+(or from a tap). Touches elsewhere on Now Playing are still stock's (they do not restart it).
+Tests: `lyrics/touch_tests`.
+
 A tap seeks with stock `seek_time(seconds)` at `0x4e0544`; it is ignored while stopped
 or within the first 200 ms of an animation. A 1 second hold lets the player catch up.
 The stock seek can block the UI thread for up to 2 seconds. Stock row taps only toggled
@@ -166,8 +175,9 @@ at `0x6667a8`, and the WILL_OPEN stage store and recursive style update at `0x67
 `0x676bc8` / `0x676bd4`.
 Called functions are also checked against `FUNCTIONS`; consult `tools/pod.py` for the full set.
 
-All work runs on the UI thread from page timers and listeners. No stock words are written,
-no stock widget is renamed or removed, and no thread or lock is added.
+All work runs on the UI thread from page timers and listeners. No stock code word is
+written; the one stock data word written is Now Playing's idle countdown (`NP_IDLE_COUNT`, the
+value stock's own handlers store, "Idle countdown" above). No stock widget is renamed or removed, and no thread or lock is added.
 Startup failures preserve the stock list; animation failures snap.
 Destroy removes timers and ignores stray events.
 

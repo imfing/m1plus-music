@@ -3,12 +3,14 @@
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  *
- * The sheet is as high as its page's rows (page 1: PM_PAGE_N = 6 x 50 = 300 px, page 2: PM_PAGE2_N = 6 x 50 = 300 px) and sits on the bottom of the screen; the page
+ * The sheet is as high as its page's rows (page 1: PM_PAGE_N = 5 x 50 = 250 px, page 2: PM_PAGE2_N = 6 x 50 = 300 px, the Display Mode page: PM_PAGE_MODE_N = 4 x 50 = 200 px) and sits on the bottom of the screen; the page
  * above it is dimmed by the asset's own dialog highlight (highlight="default(alpha=..)", the AWTK dialog highlighter the window
  * manager sets up when the dialog opens). The glass is the dialog's first child, an insensitive image (pod_glass) that gets the page's own picture and height
- * (pc_sheet6, 300 px, both pages): never a crop of a taller one. Page 1 (when it opens): Look up album (listitem4), Look up artist (5), Add to playlist
- * (2), Cassette Mode (pod_tape, the asset's: it opens the landscape cassette page, patch/tape.c), Vinyl Mode (pod_vinyl: the turntable page, patch/vinyl.c) and "More" (pod_more, a row the asset adds, hidden until now; a chevron
- * at its right). A tap on More switches to page 2: a header row "< More" (pod_back, also the asset's; a tap returns to page 1), Playback speed (1), Sleep Timer (pod_sleep: a link to the stock Power page), A-B repeat (0), Find Cover & Lyrics (pod_art) and
+ * (pc_sheet5, pc_sheet6, pc_sheet4): never a crop of a taller one. Page 1 (when it opens): Look up album (listitem4), Look up artist (5), Add to playlist
+ * (2), Display Mode (pod_mode: a chevron at its right) and "More" (pod_more, a row the asset adds, hidden until now; a chevron
+ * at its right). A tap on Display Mode switches to the Display Mode page: the header row "< Display Mode" (pod_back; a tap returns to page 1), Cassette Mode (pod_tape: it opens the landscape cassette page, patch/tape.c), Vinyl Mode
+ * (pod_vinyl: the turntable page, patch/vinyl.c) and Lyrics Mode (pod_lyr: the full-screen lyrics page, patch/idlelyrics.c; dimmed for a track without lyrics).
+ * A tap on More switches to page 2: the same header row reading "< More" (a tap returns to page 1), Playback speed (1), Sleep Timer (pod_sleep: a link to the stock Power page), A-B repeat (0), Find Cover & Lyrics (pod_art) and
  * Delete (6, its label red in the asset). Online search (3) is never shown. A switch only hides one row set and shows the other and sets the sheet to the page's height;
  * there is no slide. A tap above the sheet closes it: that is the stock handler's (pointer y < dialog y), which works unchanged with the new y.
  *
@@ -17,7 +19,7 @@
  * speed / A-B widgets, which keep their stock handlers: we move rows, we do not replace behaviour; it also pins the sheet at
  * y 130) and then, if every widget of the asset is there, arranges page 1
  * and anchors the sheet. Everything fallible (the widget lookups, the handlers, the labels' texts) is done before the first
- * row moves, so any failure leaves the stock seven rows (pod_more, pod_back, pod_tape and pod_vinyl stay hidden and insensitive in the asset).
+ * row moves, so any failure leaves the stock seven rows (the asset's added rows stay hidden and insensitive).
  *
  * The stock to-background handler (0x4789f0, bound by the stock init to the dialog's EVT_WINDOW_TO_BG) moves the dialog back to
  * y 130 when another dialog (the Delete confirm) opens over it. Ours puts the sheet back on the bottom, so it has to run after the
@@ -41,8 +43,10 @@
 #include "albums.h"
 #include "coverflow.h"
 #include "entries.h"
+#include "lyrics.h"
 
-#define PM_ROWS 14 /* listitem0..6, then pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art, pod_sleep */
+#define PM_ROWS \
+    16 /* listitem0..6, then pod_more, pod_back, pod_tape, pod_vinyl, pod_goep, pod_art, pod_sleep, pod_mode, pod_lyr */
 #define PM_MORE 7
 #define PM_BACK 8
 #define PM_TAPE 9
@@ -50,6 +54,8 @@
 #define PM_GOEP 11 /* Go to Podcasts: page 1 of a podcast episode */
 #define PM_ART 12
 #define PM_SLEEP 13 /* Sleep Timer: a link to the stock Power page, page 2 */
+#define PM_MODE 14 /* Display Mode: opens the Display Mode page, page 1 */
+#define PM_LYR 15 /* Lyrics Mode: the full-screen lyrics page, the Display Mode page */
 #define PM_ART_DIM \
     100 /* the Find Cover & Lyrics row's opacity (of 255) while the Wi-Fi is off: dimmed, and it takes no tap */
 #define GO_ALBUM 4 /* listitem4, Look up album */
@@ -61,30 +67,32 @@
 #define PM_ALBUMS_WINDOW "m1plus_albums_page" /* our Albums page's window (tools/pod_pages.py ALBUMS) */
 
 /* what each page shows, top to bottom, as indices into pm.row[]; the sheet is as high as its page's rows (PM_PAGE_N, PM_PAGE2_N) */
-static const unsigned char pm_page[3][PM_PAGE_N] = {
-    {4, 5, 2, PM_TAPE, PM_VINYL,
-     PM_MORE}, /* Look up album, Look up artist, Add to playlist, Cassette Mode, Vinyl Mode, More */
+static const unsigned char pm_page[4][PM_PAGE_MAX] = {
+    {4, 5, 2, PM_MODE, PM_MORE}, /* Look up album, Look up artist, Add to playlist, Display Mode, More */
     {PM_BACK, 1, PM_SLEEP, 0, PM_ART,
      6}, /* the back header, Playback speed, Sleep Timer, A-B repeat, Find Cover & Lyrics, Delete */
     {PM_GOEP,
      PM_MORE}, /* page 1 of a podcast episode: Go to Podcasts, More (the rows that mean nothing for an episode are hidden) */
+    {PM_BACK, PM_TAPE, PM_VINYL,
+     PM_LYR}, /* the Display Mode page: the back header, Cassette Mode, Vinyl Mode, Lyrics Mode */
 };
-static const unsigned char pm_rows[3] = {PM_PAGE_N, PM_PAGE2_N, PM_PAGE_EP_N};
-static const char *const pm_glass[3] = {
-    "pc_sheet6", "pc_sheet6",
-    "pc_sheet2"}; /* each set's own picture (pc_sheet2: the Podcasts page's 100 px glass, the same pane) */
+static const unsigned char pm_rows[4] = {PM_PAGE_N, PM_PAGE2_N, PM_PAGE_EP_N, PM_PAGE_MODE_N};
+static const char *const pm_glass[4] = {
+    "pc_sheet5", "pc_sheet6", "pc_sheet2",
+    "pc_sheet4"}; /* each set's own picture, as high as its rows (the bottom sheets' one family of panes, tools/mod_icons.py PC_SHEETS) */
 
 static struct {
     void *dlg, *lv, *sv, *bar,
         *glass; /* the dialog, its list_view, scroll_view and scroll bar, and the glass image under them */
     void *row[PM_ROWS];
-    int page; /* 0: the first page, 1: the More page */
+    void *back_label; /* the back header's label: "More" on page 2, "Display Mode" on the Display Mode page */
+    int page; /* 0: the first page, 1: the More page, 2: the Display Mode page */
     int ep; /* the playing track is a podcast episode: the first page is the episode's (set 2) */
     int srv; /* the playing track is a server track (streamed or downloaded): Find Cover & Lyrics is not for it (its cover and lyrics have no local album or file to be saved under) */
 } pm __attribute__((section(".scratch")));
 
-/* The row set shown: 0 the first page, 1 the More page, 2 the first page of an episode. */
-static int pm_set(void) { return pm.page ? 1 : pm.ep ? 2 : 0; }
+/* The row set shown: 0 the first page, 1 the More page, 2 the first page of an episode, 3 the Display Mode page. */
+static int pm_set(void) { return pm.page == 2 ? 3 : pm.page ? 1 : pm.ep ? 2 : 0; }
 
 /* The rows as pm.page says: the shown ones at y = position x PM_ROW_H, the others hidden and parked under the sheet; the
  * children stacked in that order; the sheet PM_PAGE_N rows high on the bottom of the screen. */
@@ -122,6 +130,15 @@ static void pm_arrange(void) {
         widget_set_sensitive(pm.row[PM_ART], online);
     } else
         widget_set_opacity(pm.row[PM_ART], 255);
+    if (pm.page ==
+        2) { /* Lyrics Mode needs lyric rows on Now Playing (ly_has_rows, the idle timer's test): looked at each time the page shows */
+        int rows = ly_has_rows();
+        widget_set_opacity(pm.row[PM_LYR], rows ? 255 : PM_ART_DIM);
+        widget_set_sensitive(pm.row[PM_LYR], rows);
+    } else
+        widget_set_opacity(pm.row[PM_LYR], 255);
+    if (pm.page) /* the one back header serves both pages: it names the page it heads */
+        widget_set_tr_text(pm.back_label, pm.page == 2 ? "Display Mode" : "More");
     /* a Subsonic stream (sbs_playing_stream: no file on the card) takes neither Add to playlist nor Delete: stock's Add to playlist would copy the record, whose path is the stream address with the login
      * token, into a card playlist; stock's Delete would drop it from the queue and report a deleted song. Dimmed and insensitive; a downloaded track is a file and keeps both. The track is the one playing
      * when the rows are laid out, and the handlers ask again at the tap (pm_stream_now): the sheet can stay open while the queue moves on to a stream. */
@@ -163,6 +180,15 @@ static int pm_on_back(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* Display Mode (the row is pod_mode, page 1): the page of the three Now Playing looks (Cassette Mode, Vinyl Mode, Lyrics Mode); its back header returns to page 1 (pm_on_back). */
+static int pm_on_mode(void *ctx, void *e) {
+    (void)e;
+    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
+    pm.page = 2;
+    pm_arrange();
+    return RET_OK;
+}
+
 /* Cassette Mode (the row is pod_tape): the landscape cassette page (patch/tape.c) over Now Playing. The page opens first and the sheet closes once it is up (a window below the top one, as Settings >
  * Shanling Home closes the menu under the Settings page): a page that cannot open leaves the sheet as it was. */
 
@@ -179,6 +205,22 @@ static int pm_on_vinyl(void *ctx, void *e) {
     (void)e;
     if (!pm.dlg || ctx != pm.dlg) return RET_OK;
     if (vinyl_open() == 0) window_close(ctx);
+    return RET_OK;
+}
+
+/* Lyrics Mode (the row is pod_lyr): the full-screen lyrics page (patch/idlelyrics.c, the page the Idle Display timer opens), opened the same way: the page first, the sheet closed once it is up. Not for a
+ * track without lyric rows (the row is dimmed and insensitive then; this is the second look, and the rows are laid out again so that a track that changed under the open sheet shows it): the Album
+ * Cover fallback is the idle timer's, not this row's. Closing the sheet under the page sends stock's EVT_WINDOW_TO_FG to the window then on top, the lyrics page (stock's close, 0x6929c8..0x692a44:
+ * window_manager_get_top_window after the removal), not to Now Playing, whose handler would take the lyrics engine back (ly_refresh). */
+
+static int pm_on_lyr(void *ctx, void *e) {
+    (void)e;
+    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
+    if (!ly_has_rows()) {
+        pm_arrange();
+        return RET_OK;
+    }
+    if (idlelyrics_open_idle() == 0) window_close(ctx);
     return RET_OK;
 }
 
@@ -210,7 +252,7 @@ static int pm_on_art(void *ctx, void *e) {
 static int pm_on_sleep(void *ctx, void *e) {
     (void)e;
     if (!pm.dlg || ctx != pm.dlg) return RET_OK;
-    if (m1_open_stock("systemset/powermanager_page", "powermanager_page") != RET_OK) return RET_OK;
+    if (m1_open_sleep() != RET_OK) return RET_OK;
     window_close(ctx);
     return RET_OK;
 }
@@ -534,11 +576,11 @@ static int pm_on_addpl(void *ctx, void *e) {
 }
 
 static void pm_start(void *dlg) {
-    static const char *const names[PM_ROWS] = {"listitem0", "listitem1", "listitem2", "listitem3", "listitem4",
-                                               "listitem5", "listitem6", "pod_more",  "pod_back",  "pod_tape",
-                                               "pod_vinyl", "pod_goep",  "pod_art",   "pod_sleep"};
+    static const char *const names[PM_ROWS] = {
+        "listitem0", "listitem1", "listitem2", "listitem3", "listitem4", "listitem5", "listitem6", "pod_more",
+        "pod_back",  "pod_tape",  "pod_vinyl", "pod_goep",  "pod_art",   "pod_sleep", "pod_mode",  "pod_lyr"};
     void *more_label, *back_label, *speed_label, *note_label, *tape_label, *vinyl_label, *goep_label, *art_label,
-        *sleep_label, *track;
+        *sleep_label, *mode_label, *lyr_label, *track;
     unsigned i;
     if (pm.dlg) memset(&pm, 0, sizeof pm); /* an earlier dialog that never said it was gone */
     pm.dlg = dlg;
@@ -555,16 +597,22 @@ static void pm_start(void *dlg) {
     goep_label = widget_lookup(dlg, "pod_goep_label", 1);
     art_label = widget_lookup(dlg, "pod_art_label", 1);
     sleep_label = widget_lookup(dlg, "pod_sleep_label", 1);
+    mode_label = widget_lookup(dlg, "pod_mode_label", 1);
+    lyr_label = widget_lookup(dlg, "pod_lyr_label", 1);
     if (!pm.lv || !pm.sv || !pm.bar || !pm.glass || !more_label || !back_label || !speed_label || !note_label ||
-        !tape_label || !vinyl_label || !goep_label || !art_label || !sleep_label)
+        !tape_label || !vinyl_label || !goep_label || !art_label || !sleep_label || !mode_label || !lyr_label)
         goto fail;
-    for (i = 0; i < PM_ROWS; i++) { /* exactly the asset: fourteen rows in the scroll_view */
+    for (i = 0; i < PM_ROWS; i++) { /* exactly the asset: sixteen rows in the scroll_view */
         pm.row[i] = widget_lookup(dlg, names[i], 1);
         if (!pm.row[i] || *(void **)((char *)pm.row[i] + W_PARENT) != pm.sv) goto fail;
     }
     if (widget_count_children(pm.sv) != PM_ROWS) goto fail;
     if (widget_set_tr_text(more_label, "More") != RET_OK) goto fail;
+    if (widget_set_tr_text(back_label, "Display Mode") != RET_OK)
+        goto fail; /* the Display Mode page's header text, tried here: pm_arrange sets the shown page's */
     if (widget_set_tr_text(back_label, "More") != RET_OK) goto fail;
+    if (widget_set_tr_text(mode_label, "Display Mode") != RET_OK) goto fail;
+    if (widget_set_tr_text(lyr_label, "Lyrics Mode") != RET_OK) goto fail;
     if (widget_set_tr_text(speed_label, "Speed") != RET_OK)
         goto fail; /* the stock "Multiple Speed" is wider than the room before the badges */
     if (widget_set_tr_text(note_label, "Files below 48 kHz only") != RET_OK) goto fail;
@@ -584,6 +632,9 @@ static void pm_start(void *dlg) {
     if (!widget_on(pm.row[PM_GOEP], EVT_CLICK, pm_on_goep, dlg)) goto fail;
     if (!widget_on(pm.row[PM_ART], EVT_CLICK, pm_on_art, dlg)) goto fail;
     if (!widget_on(pm.row[PM_SLEEP], EVT_CLICK, pm_on_sleep, dlg)) goto fail;
+    if (!widget_on(pm.row[PM_MODE], EVT_CLICK, pm_on_mode, dlg)) goto fail;
+    if (!widget_on(pm.row[PM_LYR], EVT_CLICK, pm_on_lyr, dlg)) goto fail;
+    pm.back_label = back_label;
     if (!widget_on(pm.row[GO_ALBUM], EVT_CLICK, pm_on_lookup_album, dlg)) goto fail;
     if (!widget_on(pm.row[GO_ARTIST], EVT_CLICK, pm_on_lookup_artist, dlg)) goto fail;
     if (!widget_on(pm.row[PM_DELETE], EVT_CLICK, pm_on_delete, dlg)) goto fail;

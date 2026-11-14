@@ -217,6 +217,12 @@ FUNCTIONS = {
     'label_set_line_wrap':     ('int', 'void *, int', 0x62e068),
     'slide_indicator_set_max': ('int', 'void *, unsigned', 0x616b70),
     'widget_destroy':          ('int', 'void *', 0x66e544),
+    'dialog_quit':             ('int', 'void *, int', 0x64f378),   # the pull-down's tile handlers (0x4754c8): dialog_quit(dialog, 0xd); the modal navigator_to of the dialog then returns that result
+    'airplayGetFlag':          ('int', 'void', 0x5cfc4c),
+    'airplay_switch':          ('int', 'void', 0x5076a8),   # the AirPlay / DLNA tiles' tap: stock's own switch flips the setting byte (AIRPLAY_FLAG / DLNA_FLAG) and writes [SYSSET] AIRPLAY / DLNA to the settings ini; the network-status timer (on_wm_timer_networkstatus 0x4cfd94) starts or stops the service to match
+    'dlna_switch':             ('int', 'void', 0x507674),
+    'awake_screen':            ('int', 'void', 0x4e721c),   # the power key's long press lights the screen first (on_wm_keylong_fun 0x4cdd9c); the Power Off tile does the same
+    'getFormatString':         ('int', 'const char *, char *, int', 0x4ccc18),   # key, buffer, size: the app's-language text of a stock string key
     'window_close':            ('int', 'void *', 0x675b70),   # "Shanling Home" closes the menu under the Settings page
     # The album view (patch/covercache.c, patch/songops.c): the stock play sequence, and the cover-task list the stock
     # album page builds before albuminfo_page opens
@@ -230,6 +236,12 @@ FUNCTIONS = {
 FUNCTIONS.update({
     'widget_set_style':        ('int', 'void *, const char *, const void *', 0x66c448),
     'value_set_uint32':        ('void *', 'void *, unsigned', 0x711858),
+    # The pull-down's close handler (patch/pulldown.c pd_on_close): stock's own cancel of the slide timer, as 0x47514c does it
+    'widget_get_prop':         ('int', 'void *, const char *, void *', 0x6676bc),
+    'widget_set_prop':         ('int', 'void *, const char *, const void *', 0x66e934),
+    'value_uint32':            ('unsigned', 'const void *', 0x712380),
+    'timer_count':             ('unsigned', 'void', 0x6638cc),
+    'widget_remove_timer':     ('int', 'void *, unsigned', 0x668cb0),
     # The album page's Play pill (patch/albumpage.c): the translated text (a wchar_t string) and its width
     # in the widget's own style, as widget_measure_text @0x66c7e0 gets it (widget_get_canvas, widget_prepare_text_style,
     # canvas_measure_text @0x644544; 0 when there is no canvas or no text)
@@ -307,7 +319,7 @@ FUNCTIONS.update({
     'mclGetInfo':              ('int', 'void *', 0x5d3518),
 })
 
-# Sample Rate (patch/tracklamp.c, payload hook 30): the hook replaces only the player status query in the existing idle callback. It returns stock's status unchanged and, with the
+# Sample Rate (patch/tracklamp.c, payload hook 31): the hook replaces only the player status query in the existing idle callback. It returns stock's status unchanged and, with the
 # setting on, keeps the lamp's timer alive; nothing else runs on that path.
 FORMAT_LAMP_SITE = 0x4ce968
 FORMAT_LAMP_PINS = (
@@ -449,7 +461,8 @@ EQ_ROW_RESUME = 0x4a0070
 # Continue with Next Album, hook 26 (patch/nextalbum.c na_end, docs/modules/nextalbum.md "The hook"): mclNextSong's List play branch (raw mode word 0) tests `pos < size - 1` at 0x5d5950..0x5d5974;
 # when it fails, 0x5d5988 / 0x5d598c (`lw v0, GOT; lw v1, class word`) start the end-of-queue handling (the folder callback check, mclStop at 0x5d59d8, then {mcl-orderstop} for the automatic call or a restart of the last
 # song for a manual Next). The two words become `j pod_na_site; nop`; the stub calls na_end and, when it appended the next album, jumps back to the end test 0x5d5950 (which now finds the queue longer and plays
-# pos + 1 through mclStartPlayer), else re-executes the two words and resumes at 0x5d5990. $s1 (the call's argument), $s2 (the queue's global), the frame and $gp survive the C call. Reachable on the main loop's idle path
+# pos + 1 through mclStartPlayer), else re-executes the two words and resumes at 0x5d5990. $s1 (the call's argument), $s2 (the queue's global), the frame and $gp survive the C call; $a1 (the position, read at 0x5d596c and
+# passed to deque_at at 0x5d59b4 by the Folder Skip branch) is kept by the stub in $s0. Reachable on the main loop's idle path
 # (the automatic call) and from a key press; not at boot. na_end's stock queries (the album page's own getters, left without their last step into *pdeq_showlist) are pinned below with the dispatcher words that choose them.
 NEXTALBUM_SITE, NEXTALBUM_AGAIN, NEXTALBUM_RESUME = 0x5d5988, 0x5d5950, 0x5d5990
 NEXTALBUM_DISPLACED = (0x8f8280b4, 0x8c43abd8)   # lw v0, -0x7f4c(gp); lw v1, -0x5428(v0): re-executed by the stub when na_end answers 0
@@ -513,6 +526,9 @@ DATA = {
     'COVER_PARSED':       (0xa04c3c, 'savecover_path'),
     # stock's Cover mode switch (Playback Settings > Cover mode; the timed Now Playing view runs only while it is on): a byte, 0 / 1, toggled by xori and saved as [SYSSET] COVERMODE (IDLE_PINS, patch/bigcover.c)
     'COVER_MODE':         (0xa05aa5, None),
+    # Now Playing's idle countdown, an int: the 500 ms tick 0x53cf48 decrements it while playing_page is on top and opens the timed view at 0 (IDLE_PINS); stock stores 20 (ten seconds) from its button handlers only
+    # (0x53b174, 0x53b4a4, 0x53b624, 0x53b6e0, 0x53b818, 0x53c164, 0x53c1d0, 0x53c858) and after the open (0x53d0fc), never for a touch. patch/lyrics.c stores 20 for a touch on the lyrics
+    'NP_IDLE_COUNT':      (0x97ccd0, None),
     # the play queue: a deque_t * (stSongInfo rows, the queue start_player copied). Every reader pairs it with
     # mclGetPlayPos: get_playtimeandlength `lw s1, 0xa0394c; deque_size(*s1)` then `deque_at(*s1, pos)` (@0x4e01cc..0x4e0268),
     # the lock screen refresh (@0x53f73c, "queued" = 0 <= pos < size), the queue drawer (@0x47a8f0)
@@ -549,6 +565,11 @@ DATA = {
     # the four words show_sysbar_face tests (0x54510c..0x545148) to decide whether the low / normal picture is chosen (not the charging one); BATTERY_PINS
     'POWER_EXT':          (0xa059f8, None),
     'POWER_USBSTATE':     (0xa059f4, None),
+    'STANDBY_MODE':       (0xa059e0, None),   # standby_mode: 1 while the power key's shutdown confirm is up, 2 once poweroff_page runs; the key (on_wm_keylong_fun 0x4cdd9c) and the Power Off tile ignore a nonzero value
+    'POWERKEY_BLOCK':     (0xa059dc, None),   # the key's long press does nothing while it is 2 (the same function)
+    'AIRPLAY_FLAG':       (0xa05abd, None),   # byte: the AirPlay setting ([SYSSET] AIRPLAY, 1 = on; Network Service page); airplay_switch (0x5076a8) flips it
+    'DLNA_FLAG':          (0xa05abe, None),   # byte: the DLNA setting ([SYSSET] DLNA); dlna_switch (0x507674) flips it
+    'DROPDOWN_BUSY':      (0xa05a00, None),   # the pull-down tile handlers (0x4754c8, 0x475558) do nothing while it is 2, as for POWER_USBSTATE and airplayGetFlag
     'POWER_FLAG':         (0xa05aa8, None),
     'USBDAC_CHARGEFLAG':  (0x97cae8, 'usbdac_chargeflag'),
     # Podcasts (patch/pcmodel.c): the stock speed mode, 0..3 (see the PODCAST_PINS note)
@@ -769,6 +790,8 @@ def patch_playmore(image, ps, payload_len):
 # the widget_foreach visitor 0x473f30), then lays the eight tiles out as the saved file says; any mismatch leaves the stock grid.
 PULLDOWN_INIT = 0x475f04
 PULLDOWN_INIT_PROLOGUE = (0x3c1c0059, 0x279cdfcc, 0x0399e021)
+# on_wm_tsdown_fun (a touch down on the status bar area of every screen): m1plus_tsdown clears a stale lockscreen_pageflag / dropdown_menu_state before stock's own code runs (payload hook 30, docs/modules/pulldown.md "Swipe gates and the window stack").
+TSDOWN = 0x4cd6e8
 # The "inside settings" flags: stock's System Settings / Playback Settings page inits store 1 (0x4ada78 / 0x4a0c88), their Back handlers clear a positive flag, the Home foreground callback clears both, and nothing else does: the
 # Now Playing button (on_backtoplayer_onclick) leaves the page in the window stack behind the player with its flag set. The pull-down's tile visitor (0x473f30) disables a tile and skips its click bind while the flag is
 # positive, its click handlers (0x4754c8 System, 0x475558 Playback) do nothing for a nonzero flag and otherwise store 2 and quit the dialog; on_wm_tsmove_fun then opens the page by navigator_to for a flag of 2. m1plus_pulldown_init
@@ -776,10 +799,12 @@ PULLDOWN_INIT_PROLOGUE = (0x3c1c0059, 0x279cdfcc, 0x0399e021)
 DATA.update({
     'SYSSET_FLAG':        (0xa05a48, 'syssetinto_flag'),     # int: 1 while System Settings is open, 2 for a moment after its tile is tapped
     'PLAYSET_FLAG':       (0xa05a4c, 'playsetinto_flag'),    # int: the same for Playback Settings
+    'LOCK_PAGEFLAG':      (0xa059fc, 'lockscreen_pageflag'),   # int: 1 from the lock page's init until its EVT_WINDOW_CLOSE; on_wm_tsmove_fun opens no pull-down while it is 1 (m1plus_tsdown)
+    'DROPDOWN_STATE':     (0xa05a2c, 'dropdown_menu_state'),   # int: 0 idle; 1 / 2 / 3 while the pull-down opens, is open, is closing; its dialog's EVT_WINDOW_CLOSE stores 0 (m1plus_tsdown)
 })
 FUNCTIONS['window_manager_switch_to'] = ('int', 'void *, void *, void *, int', 0x67891c)   # (wm, current window, target window, close current): stock's own restack of a window already in the stack
-PULLDOWN_PINS += PULLDOWN_FLAG_PINS
-PULLDOWN_SITE_WORDS = ((PULLDOWN_OPEN_SITES[0], 0x0411113a), (PULLDOWN_OPEN_SITES[1], 0x04111130))   # the two `bal navigator_to` (0x4d1d80) words the hook replaces
+PULLDOWN_PINS += PULLDOWN_FLAG_PINS + TSDOWN_PINS
+PULLDOWN_SITE_WORDS = ((PULLDOWN_OPEN_SITES[0], 0x0411113a), (PULLDOWN_OPEN_SITES[1], 0x04111130), (PULLDOWN_DIALOG_SITE, 0x04111146))   # the two `bal navigator_to` (0x4d1d80) words the hook replaces
 
 
 def patch_pulldown(image, ps, payload_len):
@@ -788,7 +813,11 @@ def patch_pulldown(image, ps, payload_len):
     check_pins(image, PULLDOWN_PINS)
     check_pins(image, [(a, old, 'on_wm_tsmove_fun: bal navigator_to') for a, old in PULLDOWN_SITE_WORDS])
     hook(image, PULLDOWN_INIT, PULLDOWN_INIT_PROLOGUE, target, 'dialog_dropdown_dialog_init')
+    check(BASE <= ps['m1plus_tsdown'] < BASE + payload_len, 'tsdown entry symbol outside payload')
+    hook(image, TSDOWN, TSDOWN_PROLOGUE, ps['m1plus_tsdown'], 'on_wm_tsdown_fun')
     check(BASE <= ps['pd_open_settings'] < BASE + payload_len, 'pull-down page open symbol outside payload')
+    check(BASE <= ps['pd_open_dialog'] < BASE + payload_len, 'pull-down dialog open symbol outside payload')
+    struct.pack_into('<I', image, fileoff(image, PULLDOWN_DIALOG_SITE), jal(ps['pd_open_dialog'], PULLDOWN_DIALOG_SITE))   # (the pending action of a tile of ours runs after the modal dialog returns)
     for a in PULLDOWN_OPEN_SITES: struct.pack_into('<I', image, fileoff(image, a), jal(ps['pd_open_settings'], a))   # (PULLDOWN_PINS checked each site's word and its delay slot)
 
 
@@ -933,6 +962,7 @@ def gen_stock_h(out, demo_path):
     h.append('extern int stock_lockscreen_init_trampoline(void *, void *);')
     h.append('extern int stock_playmore_init_trampoline(void *, void *);')
     h.append('extern int stock_pulldown_init_trampoline(void *, void *);')
+    h.append('extern int stock_tsdown_trampoline(void *, void *);')
     h.append('extern int stock_start_player_trampoline(void);')
     h.append('extern void stock_save_stop_trampoline(void);')
     h.append('extern void stock_save_start_trampoline(int);')
@@ -1032,6 +1062,8 @@ def gen_asm(out, slots):
     # and for the pull-down's init
     asm += ['.globl stock_pulldown_init_trampoline', 'stock_pulldown_init_trampoline:',
             f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{PULLDOWN_INIT + 12:x}', 'nop']
+    asm += ['.globl stock_tsdown_trampoline', 'stock_tsdown_trampoline:',
+            f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{TSDOWN + 12:x}', 'nop']
     # and for mclStartPlayer (Internet Radio's hand-over)
     asm += ['.globl stock_start_player_trampoline', 'stock_start_player_trampoline:',
             f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{START_PLAYER + 12:x}', 'nop']
@@ -1058,7 +1090,9 @@ def gen_asm(out, slots):
             'lw $a0, -0x58f8($gp)', f'j 0x{LOCKROW_NAV:x}', 'addiu $a0, $a0, 0x7d24', f'1: j 0x{LOCKROW_DONE:x}', 'nop']   # (the fallback is stock's own two words: a0 = "systemset/screensaver_page", then its navigator_to call)
     asm += ['.globl pod_eq_site', 'pod_eq_site:', 'jal peq_open', 'nop', f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{EQ_ROW_RESUME:x}', 'nop']
     # Continue with Next Album (patch/nextalbum.c na_end): mclNextSong's List play end branch. Appended: back to the end test (the queue is longer now); not: the two displaced words, then stock's own end.
-    asm += ['.globl pod_na_site', 'pod_na_site:', 'jal na_end', 'nop', f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', 'bnez $v0, 1f', 'nop',
+    # $a1 is live at the site: stock reads the position into it at 0x5d596c and passes it to deque_at(queue, pos) at 0x5d59b4 (the Folder Skip branch) without a reload, so it is kept across the C call in $s0,
+    # which is dead here (every path from the site writes $s0 before it reads it: 0x5d59a8, 0x5d59ec, 0x5d5928).
+    asm += ['.globl pod_na_site', 'pod_na_site:', 'jal na_end', 'move $s0, $a1', f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', 'bnez $v0, 1f', 'move $a1, $s0',
             'lw $v0, -0x7f4c($gp)', 'lw $v1, -0x5428($v0)', f'j 0x{NEXTALBUM_RESUME:x}', 'nop', '1:', f'j 0x{NEXTALBUM_AGAIN:x}', 'nop']
     # libc GOT-slot stubs (load the resolved pointer from demo's own GOT, tail-call it).
     for name, addr in slots.items():
@@ -1104,7 +1138,7 @@ def compile_payload(out, demo_path, tag=TAG):
     keep = ['--undefined=compact_set_row_layout', '--undefined=m1plus_home_init',
             '--undefined=stock_home_init_trampoline', '--undefined=m1plus_playing_init',
             '--undefined=stock_playing_init_trampoline', '--undefined=m1plus_bigcover_init', '--undefined=stock_bigcover_init_trampoline', '--undefined=m1plus_lockscreen_init', '--undefined=stock_lockscreen_init_trampoline', '--undefined=m1plus_scroll_event',
-            '--undefined=m1plus_playmore_init', '--undefined=stock_playmore_init_trampoline', '--undefined=m1plus_pulldown_init', '--undefined=pd_open_settings', '--undefined=stock_pulldown_init_trampoline', '--undefined=rd_start_player', '--undefined=rd_step', '--undefined=stock_start_player_trampoline', '--undefined=rd_save_stop', '--undefined=rd_save_start', '--undefined=stock_save_stop_trampoline', '--undefined=stock_save_start_trampoline', '--undefined=rn_backtoplayer', '--undefined=stock_backtoplayer_trampoline', '--undefined=pc_id3_path', '--undefined=pc_library_query', '--undefined=pc_sorted_query', '--undefined=stock_dbquery_trampoline', '--undefined=stock_sorted_query_trampoline',
+            '--undefined=m1plus_playmore_init', '--undefined=stock_playmore_init_trampoline', '--undefined=m1plus_pulldown_init', '--undefined=pd_open_settings', '--undefined=pd_open_dialog', '--undefined=m1plus_tsdown', '--undefined=stock_tsdown_trampoline', '--undefined=stock_pulldown_init_trampoline', '--undefined=rd_start_player', '--undefined=rd_step', '--undefined=stock_start_player_trampoline', '--undefined=rd_save_stop', '--undefined=rd_save_start', '--undefined=stock_save_stop_trampoline', '--undefined=stock_save_start_trampoline', '--undefined=rn_backtoplayer', '--undefined=stock_backtoplayer_trampoline', '--undefined=pc_id3_path', '--undefined=pc_library_query', '--undefined=pc_sorted_query', '--undefined=stock_dbquery_trampoline', '--undefined=stock_sorted_query_trampoline',
             '--undefined=sba_parse_tracks', '--undefined=sba_parse_albums', '--undefined=sba_parse_artists', '--undefined=sba_parse_playlists', '--undefined=sba_parse_ping',   # (sbparse.c until sbapi.c calls them)
             '--undefined=m1plus_style_color', '--undefined=m1plus_style_gradient', '--undefined=m1plus_image_add', '--undefined=stock_style_color_trampoline', '--undefined=stock_image_add_trampoline', '--undefined=pal_map', '--undefined=pal_active', '--undefined=pal_background', '--undefined=pal_accent', '--undefined=pal_accent_saved', '--undefined=pal_accent_set', '--undefined=pal_accent_color', '--undefined=pal_fill',
             '--undefined=bc_timed_open', '--undefined=m1_scan_dir', '--undefined=sh_set_mode', '--undefined=sbs_play_record', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=pod_na_site', '--undefined=na_next_key', '--undefined=na_set_cur', '--undefined=na_cur', '--undefined=na_active', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=ll_load', '--undefined=ll_assign', '--undefined=stock_loadclass_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=tidal_kb_focus', '--undefined=pod_eq_site', '--undefined=pod_lock_site', '--undefined=pf_items', '--undefined=pf_seen', '--undefined=so_play_src', '--undefined=lib_navidrome', '--undefined=sba_songs_window', '--undefined=sbs_playing', '--undefined=sbs_track']   # (pf_items, pf_seen: accessors of the parser the tests read; so_play_src, albums_open_src: the library seam, no caller yet)
@@ -1337,7 +1371,7 @@ def patch_demo(raw, payload, ps, demo_path):
     check(dynsym(demo_path).get('playsong_id3info') == 0xa0d88c, 'playsong_id3info moved')
     edits = patch_rows(patched, ps)
     # no row edit may touch a PIC prologue (the hooks are the only ones) or a hook site
-    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, PLAYMORE_INIT, PULLDOWN_INIT, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, LCL, timezones.SELECT)) and int(a, 16) != LCL_ASSIGN_SITE and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8
+    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, PLAYMORE_INIT, PULLDOWN_INIT, TSDOWN, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, LCL, timezones.SELECT)) and int(a, 16) != LCL_ASSIGN_SITE and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and int(a, 16) != PULLDOWN_DIALOG_SITE and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8
               for a, *_ in edits), 'row edit on a hook')
     check(all(not (SCROLL_SLOT <= int(a, 16) < SCROLL_SLOT + 4 or a in {hex(p[0]) for p in SCROLL_PINS}) for a, *_ in edits),
           'row edit on a list gesture word')
@@ -1376,7 +1410,9 @@ def main():
         'hook_lockscreen': {'addr': LOCKSCREEN_INIT, 'target': ps['m1plus_lockscreen_init']},
         'hook_playmore': {'addr': PLAYMORE_INIT, 'target': ps['m1plus_playmore_init']},
         'hook_pulldown': {'addr': PULLDOWN_INIT, 'target': ps['m1plus_pulldown_init']},
+        'hook_tsdown': {'addr': TSDOWN, 'target': ps['m1plus_tsdown']},
         'hook_pulldown_open': {'sites': [hex(a) for a in PULLDOWN_OPEN_SITES], 'target': ps['pd_open_settings']},
+        'hook_pulldown_dialog': {'site': hex(PULLDOWN_DIALOG_SITE), 'target': ps['pd_open_dialog']},
         'hook_start_player': {'addr': START_PLAYER, 'target': ps['rd_start_player']},
         'hook_save_stop': {'addr': SAVE_STOP, 'target': ps['rd_save_stop']}, 'hook_save_start': {'addr': SAVE_START, 'target': ps['rd_save_start']},
         'hook_backtoplayer': {'addr': BACKTOPLAYER, 'target': ps['rn_backtoplayer']},
