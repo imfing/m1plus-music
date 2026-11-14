@@ -90,31 +90,34 @@ static int tl_save(int value) {
 static unsigned tl_rgb(unsigned red, unsigned green, unsigned blue) { return (red << 16) | (green << 8) | blue; }
 
 /* Levels 0 .. TL_LEVEL, written the way stock's config_atmosphere_light (0x4e6fec) writes them, and stock's own state follows: light_state is
- * [red, blue, green, pending], and its 100 ms timer (0x4cff40) writes the state again only while pending is 1. */
-static void tl_output(unsigned red, unsigned green, unsigned blue) {
+ * [red, blue, green, pending], and its 100 ms timer (0x4cff40) writes the state again only while pending is 1.
+ * 0 when the lamp shows the levels, -1 when the write failed. */
+static int tl_output(unsigned red, unsigned green, unsigned blue) {
     volatile unsigned char *rgb = (volatile unsigned char *)ATMOSPHERE_RGB_STATE;
     char text[16];
     int length, fd, written;
-    if (rgb[0] == red && rgb[1] == blue && rgb[2] == green) return;
+    if (rgb[0] == red && rgb[1] == blue && rgb[2] == green) return 0;
     length = snprintf(text, sizeof text, "%u\n", tl_rgb(red, green, blue));
     fd = open(TL_LAMP, O_WRONLY, 0);
-    if (fd < 0) return;
+    if (fd < 0) return -1;
     written = write(fd, text, (unsigned)length);
     close(fd);
-    if (written != length) return;
+    if (written != length) return -1;
     rgb[0] = (unsigned char)red;
     rgb[1] = (unsigned char)blue;
     rgb[2] = (unsigned char)green;
     rgb[3] = 0;
+    return 0;
 }
 
 /* The lamp goes back to what stock shows with its mode Off (reset_atmosphereled_rgb 0x4e6b9c): red while external power charges the battery,
- * dark otherwise. (Stock's function is not called: it also saves three config values every time.) */
+ * dark otherwise. (Stock's function is not called: it also saves three config values every time.) A write that failed leaves tl.active set, so
+ * the release is tried again: by every poll while the setting is on, by the timer after it was turned off. */
 static void tl_release(void) {
     tl.mode = TL_NONE;
     if (!tl.active) return;
-    tl.active = 0;
-    tl_output(*(volatile int *)POWER_EXT == 1 && *(volatile int *)PMUCHARGE_STATUS != 2 ? TL_LEVEL : 0, 0, 0);
+    if (tl_output(*(volatile int *)POWER_EXT == 1 && *(volatile int *)PMUCHARGE_STATUS != 2 ? TL_LEVEL : 0, 0, 0) == 0)
+        tl.active = 0;
 }
 
 /* A colour (each channel 0 .. 100) at a brightness (0 .. 100), rounded to the lamp's levels. */
@@ -317,7 +320,9 @@ static unsigned tl_period(unsigned now) {
 static int tl_tick(const void *timer) {
     unsigned now = (unsigned)time_now_ms(), want;
     (void)timer;
-    if (!tl_setting()) { /* turned off: tl_led_set gave the lamp back */
+    if (!tl_setting()) { /* turned off: tl_led_set gave the lamp back, or this timer does (it lives until the lamp is back) */
+        tl_release();
+        if (tl.active) return RET_REPEAT;
         tl.timer = 0;
         return RET_OK;
     }
@@ -359,6 +364,8 @@ int tl_led_set(int mode) {
     }
     if (mode < 0 || mode > 2 || tl_save(0) != 0) return -1;
     tl_release(); /* (the timer ends on its next tick) */
+    if (mode)
+        tl.active = 0; /* Green, Blue: stock lights the lamp itself now, a release still owed must not darken it */
     return disp_led_set(mode);
 }
 
