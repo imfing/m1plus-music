@@ -65,7 +65,7 @@ def status_bar(s, im, y0=0, bg=(0, 0, 0), vol='50', pct='86%'):
     im.alpha_composite(s.img('bar_btcon'), (173, y0 + 5)); im.alpha_composite(s.img('bar_wifi3'), (224, y0 + 7))
     s.text(im, 292, y0 + BAR / 2, pct, 16, anchor='r'); im.alpha_composite(s.img('bar_power'), (296, y0 + 8))
 
-def asset_bar(s, bar, im, y0=0, vol='100', clock='12:59 PM', lo=False):
+def asset_bar(s, bar, im, y0=0, vol='100', clock='12:59 PM', lo=False, eq=False):
     """A status bar drawn from its asset widgets (the system_bar window or the pull-down's view_sysbar): the left group
     stacked from its children_layout, the clock centred in its box, the right group right-aligned to its view's edge, the
     battery outline over its fill; the bar's own bg_color (black when it has none). Same images, fonts and offsets as the
@@ -75,13 +75,15 @@ def asset_bar(s, bar, im, y0=0, vol='100', clock='12:59 PM', lo=False):
     ImageDraw.Draw(im).rectangle((0, y0, W - 1, y0 + BAR - 1), fill=tuple(int(bg[i:i + 2], 16) for i in (0, 2, 4)))
     def group(view, right):
         m = re.search(r'x=(\d+)', view.get('children_layout') or ''); sp = int(re.search(r's=(\d+)', view.get('children_layout')).group(1))
-        kids = [c for c in view.children if c.name not in ('img_synclink', 'pod_shot', 'pod_pct', 'pod_pct_dd', 'pod_sync', 'pod_lo' if not lo else 'label_volume')]      # SyncLink is only drawn while connected; the Screenshot camera while it counts down, the Battery Percentage when it is on (preview.shot_bars), the sync icon while a build runs
+        kids = [c for c in view.children if c.name not in ('img_synclink', 'pod_shot', 'pod_pct', 'pod_pct_dd', 'pod_sync', 'img_digital' if eq else 'pod_eq', 'pod_lo' if not lo else 'label_volume')]      # SyncLink is only drawn while connected; the Screenshot camera while it counts down, the Battery Percentage when it is on (preview.shot_bars), the sync icon while a build runs
         total = sum(c.w for c in kids) + sp * (len(kids) - 1)
         x = view.x + view.w - total if right else view.x + int(m.group(1)) if m else view.x
         for c in kids:
             if c.type == 'image':
                 name = {'pod_lo': 'pod_bar_lo', 'img_playstate': 'bar_play', 'img_volume': 'bar_vol3', 'img_digital': 'bar_digital', 'img_btclass': 'bar_btcon', 'img_wifi': 'bar_wifi3'}[c.name]
                 ic = s.img(name); im.alpha_composite(ic, (x + (c.w - ic.width) // 2 if c.get('draw_type') in ('icon', 'center') else x, y0 + (BAR - ic.height) // 2))
+            elif c.name == 'pod_eq':   # the EQ mark (patch/lineout.c lo_eq): shown while the Equalizer is on, the digital-out glyph hidden
+                s.text(im, x + c.w / 2, y0 + BAR / 2, c.get('text'), int(c.get('style:normal:font_size')), anchor='m')
             else:   # label_volume
                 s.text(im, x, y0 + BAR / 2, vol, int(c.get('style:normal:font_size')))
             x += c.w + sp
@@ -99,6 +101,18 @@ def lineout_bars(s):
     rows = []
     for b, lo in ((sysbar, False), (sysbar, True), (dd, True)):
         one = Image.new('RGBA', (W, BAR), (0, 0, 0, 255)); asset_bar(s, b, one, lo=lo, vol='50'); rows.append(one)
+    out = Image.new('RGB', (W, len(rows) * BAR + 6 * (len(rows) - 1)), (0x2A, 0x2A, 0x2A))
+    for i, one in enumerate(rows): out.paste(one.convert('RGB'), (0, i * (BAR + 6)))
+    return out.resize((out.width * 3, out.height * 3), Image.NEAREST)
+
+def eq_bars(s):
+    """The EQ mark (patch/lineout.c lo_eq), 3x: the real bar with the Equalizer off, on, and on with Line Out, then the pull-down's bar copy with it on."""
+    import awtk_ui
+    sysbar = awtk_ui.parse(open(os.path.join(s.tree, RAW, 'ui', 'system_bar.bin'), 'rb').read())
+    dd = awtk_ui.parse(open(os.path.join(s.tree, RAW, 'ui/dialog/dropdown_dialog.bin'), 'rb').read()).find('view_sysbar')
+    rows = []
+    for b, lo, eq in ((sysbar, False, False), (sysbar, False, True), (sysbar, True, True), (dd, False, True)):
+        one = Image.new('RGBA', (W, BAR), (0, 0, 0, 255)); asset_bar(s, b, one, lo=lo, eq=eq, vol='50'); rows.append(one)
     out = Image.new('RGB', (W, len(rows) * BAR + 6 * (len(rows) - 1)), (0x2A, 0x2A, 0x2A))
     for i, one in enumerate(rows): out.paste(one.convert('RGB'), (0, i * (BAR + 6)))
     return out.resize((out.width * 3, out.height * 3), Image.NEAREST)

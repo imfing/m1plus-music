@@ -1,6 +1,6 @@
 # Find Cover & Lyrics (`patch/onlineart.c`, `patch/pcnet.c` "Find Cover & Lyrics", `patch/pcjson.c`, `test/pod/onlineart.py`, `test/pod/onlineartpage.py`)
 
-An online lookup for the playing track: the album's cover from the **iTunes Search API**, then **Deezer**, and the lyrics from **LRCLIB**. It is a row on page 2 of Now Playing's More
+An online lookup for the playing track (and, from an artist's page, for that artist's photo: "Artist photos" below): the album's cover from the **iTunes Search API**, then **Deezer**, and the lyrics from **LRCLIB**. It is a row on page 2 of Now Playing's More
 sheet (`docs/modules/playmore.md`) and a page of our own. Stock has a hidden "Online search" row (`listitem3`, Baidu / Kugou / NetEase over plain HTTP); it stays hidden and is not used.
 No new hook and no new patched stock word: the row is the existing More dialog hook's, the page a new window asset, the network the Podcasts worker's libcurl client.
 
@@ -33,12 +33,12 @@ Preview: `uv run python -I tools/preview/preview_onlineart.py work/mod-release o
   | certificate | lock | Certificate problem | The server's certificate was not accepted. | yes |
   | no certificates | lock | Certificates missing | This device has no certificate bundle. | no |
   | server error | info | Server error | The server could not answer. Try again later. | yes |
-  | no Wi-Fi | wifi-low | No Wi-Fi | Turn on Wi-Fi to search online. | yes |
+  | no Wi-Fi | wifi-off | No Wi-Fi | Turn on Wi-Fi to search online. | yes |
   | no date | calendar | Set the date first | Secure connections need the right date. | yes |
   | no card | memory-stick | Storage unavailable | The SD card could not be used. | yes |
   | no memory | hard-drive | Not enough memory | There is not enough memory to search. | yes |
 
-  **Try Again** restarts only the selected tab's lookup (`pn_art_again(part)`: `PN_PART_COVERS` or `PN_PART_LYRICS`, the query of the last `pn_art`); the other tab keeps its results, scroll position and decoded thumbnails. It follows the job-slot rules: while another job runs (the other lookup, a podcast search, a download being paused) the tab shows "Searching…" without the pill (`oa.want` bit set) and the 250 ms tick starts it when the slot is free; a guard that fails on the retry (Wi-Fi lost) says its state on that tab only.
+  **Try Again** restarts only the selected tab's lookup (`pn_art_again(part)`: `PN_PART_COVERS` or `PN_PART_LYRICS`, the query of the last `pn_art`); the other tab keeps its results, scroll position and decoded thumbnails. It follows the job-slot rules: while another job runs (the other lookup, a podcast search or refresh) the tab shows "Searching…" without the pill (`oa.want` bit set) and the 250 ms tick starts it when the slot is free; a guard that fails on the retry (Wi-Fi lost) says its state on that tab only.
 - **Busy services** (finding of 2026-11-01 from the first device test, SPARKLE by RADWIMPS): LRCLIB under load answers uncached queries (`api/get` and `api/search`) with HTTP **503** `{"message":"The server is busy, please retry in a moment","name":"ServerOverloaded"}` after about 0.65 s while cached ones answer 200 quickly; the page said "Server error". The lookup now **fails fast**: no request is repeated. A single HTTP 503 or 429 of LRCLIB, iTunes or Deezer is `PN_OVERLOAD` (`pn_fetch_json_api`; a distinct code, `PN_BUSY` is the job slot), shown at once as the busy state of its tab with the Try Again pill. A busy LRCLIB `get` skips `search` (the same service is busy; `PN_OVERLOAD` is reported at once), so the worst case to the busy state is one request, about 0.7 s; a 404, plain-only or good `get` still runs `search`. For covers a busy iTunes still lets Deezer run (another service); busy is reported only when neither answered (two requests). Automatic retries (1 s / 3 s waits, `Retry-After`) were built first and removed on 2026-11-01 because the user preferred a fast failure plus the manual Try Again to waiting 8 to 10 s.
 - **The lyrics detail wraps every line** onto as many lines as it needs (`OA_LY_WRAP` 40, a source line of at most `OA_LY_SRC` 400 characters; break at spaces, between CJK characters, anywhere for a word longer than a line): the wrapper's closing ellipsis can no longer happen (before, a line over six lines was cut with "…").
 - The lookup runs once, on open. Back (or Now Playing) cancels what is running; the page can be opened again for a fresh lookup. Back inside a detail returns to the tabs first.
@@ -55,7 +55,7 @@ Preview: `uv run python -I tools/preview/preview_onlineart.py work/mod-release o
 | Lyrics 2 | always (unless `get` failed on the network): `https://lrclib.net/api/search?track_name=&artist_name=`. Every record of either answer that has synced or plain lyrics is a candidate (`pj_lrc_each`: `trackName`, `artistName`, `albumName`, `duration`, the text; a record `api/search` repeats from `get` is dropped); up to `PN_LYR_MAX` 20, each text in `l<slot>.txt`, the display order a table (`lslot`) |
 
 The term is `artist album` (the title when the track has no album tag), each field cut at 95 bytes on a character boundary, URL-encoded UTF-8 (`pn_urlenc`: letters, digits and `-_.~` as they are, every other byte `%XX`: a space is `%20`,
-`&` is `%26`, CJK is three escapes a character). The user agent is `M1PlusMusic/1.0 (https://github.com/imfing/m1plus-mod)` for every request of `pn_easy` (LRCLIB asks for the app and its address; the Podcasts requests carry it too).
+`&` is `%26`, CJK is three escapes a character). The user agent is `M1PlusMusic/1.0 (https://github.com/imfing/m1plus-mod)` for every request of the payload (`patch/net.c`; LRCLIB asks for the app and its address).
 The track's length (`get_playtimeandlength`, seconds) is the `duration`. iTunes is not given a country: its default storefront.
 
 Answers are collected in the 96 KB buffer of the Podcasts search (`PN_JSON_CAP`) and taken apart by the bounded extractors of `patch/pcjson.c` (no recursion, no allocation, every read and write bounded; `pj_deezer` and `pj_lrc_each` are new,
@@ -64,8 +64,8 @@ Answers are collected in the 96 KB buffer of the Podcasts search (`PN_JSON_CAP`)
 ## The worker
 
 `pn_art` (UI thread: the guards of `pn_guard` (card, Wi-Fi, clock, CA bundle), the old files removed, one detached pthread), `pn_art_fetch` and `pn_art_pick` (one worker, `pkmode` 0 fetch / 1 save) use the **one job slot** of `patch/pcnet.c` (`PN_KIND_ART`, `PN_KIND_PICK` beside the Podcasts
-refresh, download, search and preview kinds: `pn_busy` is the refresh only, `pn_job_busy` every other job): never two at once, `PN_BUSY` from the second. The page pauses a running Podcasts download first (`pn_dl_pause`; its queue stays) and starts the lookup
-from its 250 ms timer once the download thread has stopped; once the lookup has ended, and nothing is being saved, the timer starts the queued downloads again (`pn_dl_start`), and so does the destroy handler. The thread touches no widget and no stock
+refresh, download, search and preview kinds: `pn_busy` is the refresh only, `pn_job_busy` every other job): never two at once, `PN_BUSY` from the second. A running Podcasts download is no job: it has a thread of its own and goes on beside the lookup; the page starts the lookup
+from its 250 ms timer once the job slot is free. The thread touches no widget and no stock
 function: it writes the record the page reads (`pn_art_state` / `_code` / `_count` / `_gen` / `_thumb`, `pn_art_name` / `_artist` / `_source`, `pn_lyr_state` / `_code` / `_count` / `_get` / `_text`, `pn_pick_state` / `_code`; a store barrier before every counter). Cancel is `pn_cancel` (the transfer-info
 callback stops the transfer in progress, no later request is made); on destroy a running worker is cancelled and left to end, its scratch files go with the next lookup. Standby turns the Wi-Fi off when nothing plays: a lookup that cannot connect ends at
 libcurl's time-outs (connect 20 s, 30 s under 1 kB/s, 120 s total) with `Can't connect`; the page never waits on the thread, so the UI cannot hang.
@@ -88,6 +88,39 @@ libcurl's time-outs (connect 20 s, 30 s under 1 kB/s, 120 s total) with `Can't c
 - Scratch, in `/mnt/mmc/.m1plus/art/`: `a<n>.jpg|png` (thumbnails), `pick.src`, `full.jpg|png` (the larger picture of the confirmation), `l<n>.txt` (the lyrics candidates, until one is saved), `lyrics.tmp`; removed by the next lookup and by the page's destroy when no worker runs.
 
 Not done (a stock limit, no hook): tracks **with embedded art** keep it on stock Now Playing, the lock screen and the stock album pages; only our pages (and the Cover Flow cache users above) show the picked cover.
+
+## Artist photos (Find Artist Photo)
+
+The same page, worker and scratch files for **an artist of the library**: `onlineart_open_artist(name)` (`oa.ar`, `oa.akey` = `ap_key(name)`; a blank name opens nothing), reached from the "..." card of a library artist's page
+(`patch/albums.c`, `docs/modules/albums.md` "Scoped artist page"; not on a composer's, a source's or Unknown Artist's page). It needs no playing track and never touches the track's cover, folder or lyrics.
+
+- **The page**: the navbar's title is **Artist Photo**; there are no chips (`oa_chips` hidden and insensitive): the artist's name (`oa_dh_title`) and the services asked (`oa_dh_sub`, `oa_ar_sub`: always `Deezer, NetEase`; NetEase's name is a translated key, 网易云音乐 in Chinese), the lyrics detail's header labels, stand in the chip row's place over the
+  same line and list. The list is the Covers grid (88 px tiles, three a row) of the photos found; the states are the Covers tab's, with two of its own (`pod_ui.OA_ES_STATES` `no photos`: No Photos Found / No photos online for this artist.;
+  `photos busy`: Photo Service Busy / The photo service is busy. Try again in a moment., with Try Again). A tap opens the same **confirmation** (the 500 px picture, the service's name of that artist, `Deezer` or NetEase) with the pill **Use This Photo**
+  (**Replace Photo** when the artist already has a picked photo, `ap_picked`); nothing is written before the pill; afterwards the grid with that photo framed.
+- **The lookup**, `pn_artist(name)` (`pn.aartist`; the covers part only, `pn_art_again` refuses the lyrics part): Deezer's request (NetEase's is below), `https://api.deezer.com/search/artist?limit=25&q=<name>` (`PN_ART_DEEZER_ARTIST`, the name cut and URL-encoded as any query
+  field), taken apart by `pj_deezer_artists` (`name`, `picture_medium` 250 px as the thumbnail, `nb_fan`). Offered (`pn_artist_covers`): the artists whose picture is their own (Deezer gives an artist without one a blank whose address has an empty
+  picture id, `.../images/artist//250x250-...`: left out), a picture once, **the artists of that very name first** (`ap_key` of Deezer's name equals the asked name's: the case, the white space around it and a leading "The " do not count; both keys are of the whole names, `pn.akey` taken before the query is cut to 95 bytes and Deezer's name as `pj_deezer_artists` keeps it uncut in `feed`, since the `name` shown holds 79), then
+  at most `PN_ARTIST_OTHER` 4 of the others, `PN_ARTIST_MAX` 6 in all; in each group **the most followed first** (a name often has several entries, most of them empty shells with few followers; equal counts keep the service's order).
+  The search is a loose one: it answers with other artists of a like name, some more followed than the one asked for, so by followers alone the grid was mostly other people. The others are not dropped: the same artist under another
+  spelling or script (`Eason Chan` for `陈奕迅`, an accented letter) is among them, and with no entry of the very name they are all there is. The larger picture is `pn_art_full`'s `500x500-` address, fetched by `pn_art_fetch` as for a cover. A busy answer (503 / 429) is `PN_OVERLOAD`.
+- **NetEase Cloud Music**, the second service: `https://music.163.com/api/search/get?type=100&limit=10&s=<name>` (`PN_ART_NETEASE_ARTIST`), asked after Deezer in the same job and taken apart by `pj_netease_artists` (the `artists` array of the
+  `result` object: `name`, `img1v1Url` the square picture, `picUrl`, `fansSize`; a `result` with no `artists` is the answer for nothing found, 0; an answer with no `result`, such as `{"code":-460,...}`, is not one). It is the site's own
+  search, **not a documented service**: it may change or refuse without notice, so everything about it is written to fail quietly. Offered (`pn_netease_take`): its artists of the very name that have a picture of their own (an artist
+  without one is given the blank `.../5639395138885805.jpg`, `PN_NETEASE_BLANK`; the square picture, else `picUrl`), at most `PN_ARTIST_NETEASE` 2 in its order; with none of that name, its first entry alone (the best match: the name in
+  another script or with a suffix, `BTS (防弹少年团)`; the entries after it are other people, fan accounts mostly). The thumbnail is the picture with `?param=250y250` (`PN_NETEASE_THUMB`), the larger one `500y500` (`pn_art_full`); both are square crops made by
+  the service. **Order on the page**: Deezer's of the very name (room is kept for NetEase's), NetEase's, then Deezer's others, `PN_ARTIST_MAX` 6 in all. **A service that fails while the other answers is left out without a word**; the
+  lookup's code is the first failure only when no service answered. Why it is there: of 20 names checked live (14 Chinese, Japanese or Korean) Deezer had 18 (not 草东没有派对; another person for 坂本龍一) and NetEase all 20; TheAudioDB had 12 and none
+  that Deezer lacked, Wikidata's pictures are stage shots of any shape behind two requests and a rate limit.
+- **No setting**: both services are always asked (a picker of Deezer / NetEase / both was built and dropped, 2026-11-12: nothing to choose when a failing service is skipped anyway).
+- **The save**, `pn_artist_pick(i, key)` (the pick worker, `pkmode` 2): `ap_pick(src, key)` of `patch/artistphoto.c` makes the artist's two cache files (`a<key>-168.jpg`, `a<key>-44.jpg`, cropped square by `pv_square` as a local `artist.jpg` is) and
+  the `a<key>.pick` marker in `/mnt/mmc/.m1plus/artists`, and bumps `ap_epoch`, so the artist's page (`al_on_fg`) and the Artists list (`ar_on_fg`) show it when they come back to the front. A photo that cannot be made, or whose marker cannot be written, is `PN_STORAGE` (the save is whole or nothing, under `ap_mutex` against the cover worker's automatic builds) and the
+  artist's files stay as they were. The marker keeps every automatic build off the artist (`docs/modules/artists.md` "Cache"). The photo is filed under the name as the library has it ("A feat. B" gets its own photo; its lead artist's is untouched).
+- **Why Deezer first**: no key, one request, and its artist search matches names across scripts (周杰伦 finds Jay Chou). fanart.tv's pictures need a MusicBrainz id first (a second service, one request a second) and an API key in the firmware,
+  and cover few CJK artists; the iTunes Search API has no artist pictures.
+- Tests: `test/pod/onlineart.py` `source_tests` (NetEase's extractor against `json.loads` on `test/data/onlineart/netease_artist.json`, the two requests and the order, the blank picture, one service failing), `artist_tests` (Deezer's side, NetEase finding nothing: the extractor against `json.loads` on `test/data/onlineart/deezer_artist.json`, Deezer's request, the order and what is left out, Try Again, the 500 px picture, the cache files and marker, a failed
+  publish, an album lookup afterwards, nothing found, busy, no connection), `test/pod/onlineartpage.py` `artist_tests` (the header in the chips' place, the title, the grid, the confirmation, nothing written before the pill, Use / Replace This
+  Photo, the frame, the two states in 13 languages, Try Again, a failed save, destroy), `test/pod/artists.py` `find_photo_tests` (the card's row and what the artist's page does when it comes back). Not seen on the device.
 
 ## Pins and hooks
 

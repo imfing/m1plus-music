@@ -238,7 +238,7 @@ def rows_tests(expect):
     allowed |= {pod.fileoff(built, pod.ID3_SITE)}                                                            # the tag reader's call (Podcasts)
     allowed |= {pod.fileoff(built, pod.QUERY_DB), pod.fileoff(built, pod.QUERY_DB) + 4, pod.fileoff(built, pod.QUERY_SORT), pod.fileoff(built, pod.QUERY_SORT) + 4}   # the Library query hooks (patch/pcmodel.c)
     allowed.add(pod.fileoff(built, pod.SCAN_SITE))                                                       # the library scan's folder test (patch/common.c m1_scan_dir)
-    allowed |= {pod.fileoff(built, h) + k for h in (pod.SETMODE, pod.LOADPL, pod.FILETIME) for k in (0, 4)}               # the Shuffle hooks (patch/shuffle.c)
+    allowed |= {pod.fileoff(built, h) + k for h in (pod.SETMODE, pod.LOADPL, pod.FILETIME, pod.LCL) for k in (0, 4)} | {pod.fileoff(built, pod.LCL_ASSIGN_SITE)}               # the Shuffle hooks (patch/shuffle.c)
     allowed |= {pod.fileoff(built, a) for a, _ in pod.MODE_SITES}                                           # the 19 play mode display sites (jal sh_display_mode)
     allowed |= {pod.fileoff(built, pod.LOCKROW), pod.fileoff(built, pod.LOCKROW) + 4}                                  # the Display page's Lock Screen row: its jump to our Lock Screen page (patch/lockscreen.c lk_redirect)
     allowed |= {pod.fileoff(built, pod.EQ_ROW), pod.fileoff(built, pod.EQ_ROW) + 4}                                  # the Play Settings Equalizer row's jump to the 10-Band editor (patch/tenband.c)

@@ -203,7 +203,7 @@ static int pj_nested_name(pj_t *p, char *dst, unsigned cap) {
     }
 }
 
-/* The object whose '{' is at p->s into r. dz 0: the store's (collectionId, collectionName, artistName, feedUrl, artworkUrl100, artworkUrl600); 1: Deezer's album (id, title, artist.name, cover_medium as art).
+/* The object whose '{' is at p->s into r. dz 0: the store's (collectionId, collectionName, artistName, feedUrl, artworkUrl100, artworkUrl600); 1: Deezer's album (id, title, artist.name, cover_medium as art); 2: Deezer's artist (name, whole in feed too, picture_medium as art, nb_fan as id); 3: NetEase's artist (name likewise, img1v1Url as art, picUrl as art6, fansSize as id).
  * 1 when its '}' was reached, 0 when the text ended (or it was not an object): then r is not an answer. */
 static int pj_obj(pj_t *p, pj_result_t *r, int dz) {
     r->id = 0;
@@ -225,7 +225,15 @@ static int pj_obj(pj_t *p, pj_result_t *r, int dz) {
             continue;
         }
         if (c != '"' || !pj_key(p, key, sizeof key)) return 0;
-        if (dz)
+        if (dz == 2)
+            which = pj_is("nb_fan", key) ? 1 : pj_is("name", key) ? 4 : pj_is("picture_medium", key) ? 5 : 0;
+        else if (dz == 3)
+            which = pj_is("fansSize", key)    ? 1
+                    : pj_is("name", key)      ? 4
+                    : pj_is("img1v1Url", key) ? 5
+                    : pj_is("picUrl", key)    ? 6
+                                              : 0;
+        else if (dz)
             which = pj_is("id", key)             ? 1
                     : pj_is("title", key)        ? 2
                     : pj_is("artist", key)       ? 3
@@ -241,9 +249,9 @@ static int pj_obj(pj_t *p, pj_result_t *r, int dz) {
                                                    : 0;
         if (which == 1 && *p->s >= '0' && *p->s <= '9')
             r->id = pj_num(p);
-        else if (dz && which == 3 && *p->s == '{') {
+        else if (dz == 1 && which == 3 && *p->s == '{') {
             if (!pj_nested_name(p, r->author, PJ_AUTHOR)) return 0;
-        } else if (which >= 2 && *p->s == '"' && !(dz && which == 3)) {
+        } else if (which >= 2 && *p->s == '"' && !(dz == 1 && which == 3)) {
             char *dst = which == 2   ? r->name
                         : which == 3 ? r->author
                         : which == 4 ? r->feed
@@ -252,6 +260,14 @@ static int pj_obj(pj_t *p, pj_result_t *r, int dz) {
             if (!pj_val(p, dst, which == 2 ? PJ_NAME : which == 3 ? PJ_AUTHOR : which == 4 ? PC_URL : PJ_ART, &cut))
                 return 0;
             if (cut && which >= 4) dst[0] = 0; /* a cut address is no address */
+            if (dz >= 2 && which == 4) { /* (an artist's name: whole in feed, cut as any name in name) */
+                unsigned k = 0, j;
+                while (dst[k] && k < PJ_NAME - 1) ++k;
+                if (dst[k])
+                    while (k && ((unsigned char)dst[k] & 0xc0) == 0x80) --k;
+                for (j = 0; j < k; ++j) r->name[j] = dst[j];
+                r->name[k] = 0;
+            }
         } else if (!pj_skip(p))
             return 0;
     }
@@ -282,6 +298,29 @@ static int pj_array(pj_t *p, pj_result_t *out, int max, int dz) {
     }
 }
 
+/* The members of the object whose '{' has been passed, up to the one called want whose value opens with open ('[' or '{'): 1 with p after that character, 0 when the object ends without it, -1 when it is not well
+ * formed or the text ends. */
+static int pj_find(pj_t *p, const char *want, unsigned open) {
+    for (;;) {
+        char key[16];
+        unsigned c;
+        pj_ws(p);
+        if (p->s >= p->e) return -1;
+        c = *p->s;
+        if (c == '}') return 0;
+        if (c == ',') {
+            ++p->s;
+            continue;
+        }
+        if (c != '"' || !pj_key(p, key, sizeof key)) return -1;
+        if (*p->s == open && pj_is(want, key)) {
+            ++p->s;
+            return 1;
+        }
+        if (!pj_skip(p)) return -1;
+    }
+}
+
 /* The members of the top-level object, up to the array called want: its objects. -1 when there is none. */
 static int pj_top(const char *json, unsigned n, pj_result_t *out, int max, const char *want, int dz) {
     pj_t p;
@@ -289,24 +328,7 @@ static int pj_top(const char *json, unsigned n, pj_result_t *out, int max, const
     pj_ws(&p);
     if (p.s >= p.e || *p.s != '{' || max <= 0) return -1;
     ++p.s;
-    for (;;) {
-        char key[16];
-        unsigned c;
-        pj_ws(&p);
-        if (p.s >= p.e) return -1;
-        c = *p.s;
-        if (c == '}') return -1;
-        if (c == ',') {
-            ++p.s;
-            continue;
-        }
-        if (c != '"' || !pj_key(&p, key, sizeof key)) return -1;
-        if (*p.s == '[' && pj_is(want, key)) {
-            ++p.s;
-            return pj_array(&p, out, max, dz);
-        }
-        if (!pj_skip(&p)) return -1;
-    }
+    return pj_find(&p, want, '[') == 1 ? pj_array(&p, out, max, dz) : -1;
 }
 
 int pj_results(const char *json, unsigned n, pj_result_t *out, int max) {
@@ -314,6 +336,22 @@ int pj_results(const char *json, unsigned n, pj_result_t *out, int max) {
 }
 
 int pj_deezer(const char *json, unsigned n, pj_result_t *out, int max) { return pj_top(json, n, out, max, "data", 1); }
+
+int pj_deezer_artists(const char *json, unsigned n, pj_result_t *out, int max) {
+    return pj_top(json, n, out, max, "data", 2);
+}
+
+int pj_netease_artists(const char *json, unsigned n, pj_result_t *out, int max) {
+    pj_t p;
+    int r;
+    p.s = (const unsigned char *)json, p.e = p.s + n;
+    pj_ws(&p);
+    if (p.s >= p.e || *p.s != '{' || max <= 0) return -1;
+    ++p.s;
+    if (pj_find(&p, "result", '{') != 1) return -1;
+    r = pj_find(&p, "artists", '[');
+    return r == 1 ? pj_array(&p, out, max, 3) : r; /* (a "result" with no "artists": nothing was found) */
+}
 
 /* The digits of s, nothing else in it, 1 to 15 of them and not all zeros, into out (16 bytes); 1 when they are an Apple id. */
 static int pj_digits(const char *s, char *out) {
@@ -646,4 +684,69 @@ int pj_lrc_each(const char *json, unsigned n, unsigned cap, char *a, char *b,
             return -1;
     }
     return count;
+}
+
+int pj_member(const char *json, unsigned n, const char *want, char *dst, unsigned cap) {
+    return pj_span(json, n, want, dst, cap, (const char **)0, (unsigned *)0);
+}
+
+int pj_next(const char *json, unsigned n, unsigned *at, const char **val, unsigned *len) {
+    pj_t p;
+    p.s = (const unsigned char *)json + *at, p.e = (const unsigned char *)json + n;
+    if (*at >= n) return 0;
+    if (!*at) {
+        pj_ws(&p);
+        if (p.s >= p.e || *p.s != '[') return 0;
+        ++p.s;
+    }
+    pj_ws(&p);
+    if (p.s < p.e && *p.s == ',') ++p.s;
+    pj_ws(&p);
+    if (p.s >= p.e || *p.s == ']') return 0;
+    *val = (const char *)p.s;
+    if (!pj_skip(&p)) return 0;
+    *len = (unsigned)((const char *)p.s - *val);
+    *at = (unsigned)(p.s - (const unsigned char *)json);
+    return 1;
+}
+
+int pj_span(const char *json, unsigned n, const char *want, char *dst, unsigned cap, const char **val, unsigned *len) {
+    pj_t p;
+    int got = PJ_M_NONE;
+    char none[1];
+    p.s = (const unsigned char *)json, p.e = p.s + n;
+    if (!dst) dst = none, cap = 1;
+    if (!cap) return PJ_M_NONE;
+    dst[0] = 0;
+    pj_ws(&p);
+    if (p.s >= p.e || *p.s != '{') return PJ_M_NONE;
+    ++p.s;
+    for (;;) {
+        char key[16];
+        const unsigned char *v;
+        unsigned c;
+        pj_ws(&p);
+        if (p.s >= p.e) return PJ_M_NONE;
+        c = *p.s;
+        if (c == '}') return got;
+        if (c == ',') {
+            ++p.s;
+            continue;
+        }
+        if (c != '"' || !pj_key(&p, key, sizeof key)) return PJ_M_NONE;
+        v = p.s;
+        if (got != PJ_M_NONE || !pj_is(want, key)) {
+            if (!pj_skip(&p)) return PJ_M_NONE;
+        } else if (*v == '"') {
+            if (!pj_val(&p, dst, cap, (int *)0)) return PJ_M_NONE;
+            got = PJ_M_STRING;
+        } else {
+            if (!pj_skip(&p)) return PJ_M_NONE;
+            got = p.s - v == 4 && v[0] == 't' && v[1] == 'r' && v[2] == 'u' && v[3] == 'e' ? PJ_M_TRUE
+                  : p.s - v == 5 && v[0] == 'f' && v[1] == 'a' && v[2] == 'l' && v[3] == 's' && v[4] == 'e'
+                      ? PJ_M_FALSE
+                      : PJ_M_OTHER;
+        }
+        if (got != PJ_M_NONE && val && v) *val = (const char *)v, *len = (unsigned)(p.s - v), val = (const char **)0;
+    }
 }

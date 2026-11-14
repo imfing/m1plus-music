@@ -15,8 +15,10 @@ for commands, [UI](ui.md) for layout/assets, and [history](history.md) for recor
 | [Pipeline](modules/pipeline.md) | Build stages, ordering and package validation |
 | [Payload](modules/payload.md) | Segment layout, trampolines, stock calls and hooks |
 | [Addresses](modules/addresses.md) | Stock symbols, offsets and record layouts |
+| [Library list loading](modules/libload.md) | List ownership transfer and memory peaks |
 | [Home and boot guard](modules/home-guard.md) | Startup marker, grid entry, window stack and fallback |
 | [Settings](modules/settings.md) | Settings pages and persisted choices |
+| [Display](modules/display.md) | Settings > System > Display: brightness, Screen Timeout, LED Light, Follow Screen (stock's state) |
 | [Accent and palette](modules/accent.md) | The colour-mapping layer: three paint-time hooks, background (Black, Light), accent, image rules, exempt pages |
 | [Updater version compare](modules/version.md) | Why the official V2.1 package installs over the mod |
 | [Automatic time](modules/autotime.md) | RTC kept as UTC for stock's NTP sync (`hwclock -su` / `-wu`) |
@@ -51,13 +53,16 @@ for commands, [UI](ui.md) for layout/assets, and [history](history.md) for recor
 | [Software Update](modules/update.md) | Settings > System > About > Software Update: the newest GitHub release downloaded to the card, then stock's TF card update (a pinned call); version rules, checks, page, popup |
 | [Mini player](modules/minibar.md) | Home overlay, controls, blur and timer |
 | [Recently Played](modules/recent.md) | History file, covers and shelf layout |
+| [Scrobbling](modules/scrobble.md) | Offline .scrobbler.log of listens; the upload to ListenBrainz and Last.fm (manual, and automatic from the poll while music plays), the accounts (the card's scrobble.ini only, written on a computer: no entry and no sign-out on the device, nothing on flash) and settings (Library > ListenBrainz, Last.fm, Upload Scrobbles, Auto Upload) |
 | [Daily Mix](modules/dailymix.md) | Selection job, stored mix, card and page |
 | [Home cover build](modules/homecover.md) | Background cover cache build and its progress line |
 | [Podcasts](modules/podcasts.md) | Local episodes, feeds, covers, resume and speed |
+| [Network](modules/network.md) | One HTTP request: the shared libcurl layer under Podcasts, the radio and Subsonic |
 | [Radio](modules/radio.md) | Internet radio: stations page, directory worker, playback through stock's hciplayer, Now Playing |
 | [Virtual iPod](modules/ipod.md) | Touch wheel, navigation and playback |
 | [iPod Cover Flow](modules/ipod-coverflow.md) | Embedded carousel and album navigation |
 | [Cassette Mode](modules/tape.md) | Landscape rendering, themes and timer |
+| [Idle lyrics page](modules/idlelyrics.md) | Header and lyrics page over Now Playing; the lyrics engine's second view |
 | [Vinyl Mode](modules/vinyl.md) | Portrait turntable page: turning cover label, tonearm, keys |
 | [Parametric EQ](modules/peq.md) | hciplayer's equalizer replaced, APO / AutoEQ presets, the Equalizer page |
 | [Menu](modules/menu.md) | Home/normal instances, Extras and customization |

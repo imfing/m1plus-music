@@ -728,6 +728,8 @@ static void pl_load(void) {
         m1_show(pl.view,
                 pl.count != 0 ||
                     pl.src != (const lib_src_t *)0); /* (a source's page keeps the large title when it has no rows) */
+        ls_room(pl.status, pl.spin,
+                LS_ROOM_NAV + (pl.src ? SG_TITLE_H : 0)); /* (under the title the source's page keeps) */
         m1_show(pl.status, pl.count == 0 && !(st == LS_ST_LOADING && pl.spin));
         ls_spin(pl.spin, st == LS_ST_LOADING && pl.count == 0 && pl.spin != (void *)0);
         if (!pl.count) widget_set_tr_text(pl.status, pl.src ? ls_empty_key(st, "No playlists") : "No playlists");

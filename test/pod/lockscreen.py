@@ -444,9 +444,9 @@ def setting_tests(ctx):
     expect, P = ctx.expect, pod_pages
     A_, L = P.DISPLAY_PAGE, P.LOCK_PAGE
     ai = next(i for i, r in enumerate(A_.rows) if r.label == 'Lock Screen')
-    expect(P.ACT_LOCKSET == 88 and not hasattr(P, 'ACT_LOCK') and P.ACT_LOCKSET in P.CHECK_ACTIONS and P.LOCK_PAGE_INDEX == 62 and P.PAGES[62] is L
+    expect(P.ACT_LOCKSET == 88 and not hasattr(P, 'ACT_LOCK') and P.ACT_LOCKSET in P.CHECK_ACTIONS and P.PAGES[P.LOCK_PAGE_INDEX] is L
            and A_.rows[ai].action == P.ACT_PAGE and A_.rows[ai].arg == P.LOCK_PAGE_INDEX and P.row_kind(A_.rows[ai]) == 'link' and A_.rows[ai - 1].label == 'Screen Timeout',
-           'the Lock Screen link row (Display, a plain page row under Screen Timeout, no value) opens the Lock Screen page 62')
+           'the Lock Screen link row (Display, a plain page row under Screen Timeout, no value) opens the Lock Screen page')
     lay = [x.label if hasattr(x, 'label') else x for x in P.APPEARANCE_PAGE.layout]
     expect(lay == ['Background', 'Accent', P.GAP, 'Control Center'], f'Appearance cards: Background + Accent, Control Center; Lock Screen is on Display ({lay})')
     expect(mod_icons.CARD_GLYPHS['Lock Screen'] == 'lock' and mod_icons.card_name('lock') in mod_icons.CARD_IMAGES, 'the Lock Screen row has the lock glyph')
@@ -459,13 +459,13 @@ def setting_tests(ctx):
     expect(lay == ['Enable', P.GAP, 'Wallpaper', 'Show Time', P.GAP, 'Player Style', P.GAP, 'Custom Wallpaper'], f'four cards: Enable; Wallpaper + Show Time; Player Style; the instructions ({lay})')
     expect(not [r for r in L.rows if r.label == 'More Settings'] and 'More Settings' not in pod_i18n.TEXT and all(r.action != P.ACT_LOCKSET for r in L.rows), 'More Settings is gone, and the layout rows are no longer on the Lock Screen page')
     expect([(r.label, r.action, r.arg) for r in SP.rows] == [('Large Cover', P.ACT_LOCKSET, 0), ('Mini Player', P.ACT_LOCKSET, 1)] and [x.text for x in SP.layout if hasattr(x, 'text')] == ['Applies the next time the lock screen opens.']
-           and SP.title == 'Player Style' and SP.key == 'm1plus_lockstyle' and P.LOCKSTYLE_PAGE_INDEX == 64 and P.PAGES[64] is SP and P.LOCKSTYLE_PAGE_INDEX == P.NEXTALBUM_PAGE_INDEX - 2 and [P.row_kind(r) for r in SP.rows] == ['check', 'check'],
-           'the Player Style picker (page 64): Large Cover, Mini Player (checks) and the note')
+           and SP.title == 'Player Style' and SP.key == 'm1plus_lockstyle' and P.PAGES[P.LOCKSTYLE_PAGE_INDEX] is SP and [P.row_kind(r) for r in SP.rows] == ['check', 'check'],
+           'the Player Style picker: Large Cover, Mini Player (checks) and the note')
     expect((P.ACT_LOCKSTYLE, P.ACT_LOCKTIME) == (85, 86) and P.ACT_LOCKSTYLE in P.VALUE_ACTIONS and P.ACT_LOCKTIME in P.SWITCH_ACTIONS and P.VALUE_INIT[P.ACT_LOCKSTYLE] == 'Large Cover', 'Player Style is action 85 (a value row), Show Time 86 (a switch row)')
     IP = P.LOCKINFO_PAGE
-    expect(len(P.STOCK_PAGES) == 2 and not any('screensaverabout' in n for n, *_ in P.STOCK_PAGES) and not hasattr(P, 'STOCK_LOCKINFO') and P.LOCKINFO_PAGE_INDEX == 65 and P.PAGES[65] is IP and P.LOCKINFO_PAGE_INDEX == P.NEXTALBUM_PAGE_INDEX - 1
+    expect(len(P.STOCK_PAGES) == 2 and not any('screensaverabout' in n for n, *_ in P.STOCK_PAGES) and not hasattr(P, 'STOCK_LOCKINFO') and P.PAGES[P.LOCKINFO_PAGE_INDEX] is IP
            and IP.key == 'm1plus_lockinfo' and IP.title == 'Custom Wallpaper' and IP.kind == 'relnotes' and P.row_kind(L.rows[4]) == 'link',
-           'the instructions row is a link (ACT_LOCKINFO 87) to our own Release Notes page 65 (just before the Continue Playing picker, titled like the row); stock\'s screensaverabout_page is no longer a stock row')
+           'the instructions row is a link (ACT_LOCKINFO 87) to our own Release Notes page (titled like the row); stock\'s screensaverabout_page is no longer a stock row')
     expect([mod_icons.CARD_GLYPHS[k] for k in ('Show Time', 'Player Style', 'Custom Wallpaper')] == ['clock', 'square-play', 'info'] and all(mod_icons.card_name(g) in mod_icons.CARD_IMAGES for g in ('clock', 'square-play', 'info')),
            'glyphs: clock, square-play, info')
     expect(pod_i18n.key_for('Show Time') == 'Show Time' and pod_i18n.key_for('Custom Wallpaper') == 'Custom Wallpaper' and pod_i18n.key_for('Player Style') == 'Player Style' and 'screenlock_about' not in pod_i18n.STOCK, 'Show Time and Custom Wallpaper are our own short keys (stock\'s texts did not fit)')
@@ -716,9 +716,9 @@ def wallpaper_tests(ctx):
     imm = lambda a: pins[a] & 0xffff
     # -- the row, the page, its asset (geometry equal to the stock page's, which the pins hold)
     L = P.LOCK_PAGE
-    expect(P.ACT_LOCKWP == 84 and P.LOCKWALL_PAGE_INDEX == 63 and P.PAGES[63] is P.LOCKWALL_PAGE and P.LOCKWALL_PAGE_INDEX == P.NEXTALBUM_PAGE_INDEX - 3 and P.LOCK_PAGE_INDEX == 62 and P.LOCKWALL_PAGE.kind == 'lockwall'
+    expect(P.ACT_LOCKWP == 84 and P.PAGES[P.LOCKWALL_PAGE_INDEX] is P.LOCKWALL_PAGE and P.LOCKWALL_PAGE.kind == 'lockwall'
            and P.LOCKWALL_PAGE.key == 'm1plus_lockwall' and P.LOCKWALL_PAGE.title == 'Wallpaper' and (L.rows[1].label, L.rows[1].action) == ('Wallpaper', P.ACT_LOCKWP) and P.row_kind(L.rows[1]) == 'link'
-           and mod_icons.CARD_GLYPHS['Wallpaper'] == 'image', 'the Wallpaper row (a link row with the image glyph, action 84) opens page 63, kind lockwall')
+           and mod_icons.CARD_GLYPHS['Wallpaper'] == 'image', 'the Wallpaper row (a link row with the image glyph, action 84) opens the Wallpaper page, kind lockwall')
     root = pod_ui.build_page(P.LOCKWALL_PAGE)
     nav, covers = root.find('navigationbar_view'), root.find('view_covers')
     expect([c.name for c in root.children] == ['navigationbar_view', 'view_covers'] and root.name == 'm1plus_lockwall_page' and nav.find('label_title').get('tr_text') == 'Wallpaper'

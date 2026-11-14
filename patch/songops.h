@@ -34,6 +34,26 @@ int so_selection(unsigned count, const unsigned char *sel);
  * the page's any more). The caller leaves select mode and reads the list again for 1 and -1. */
 int so_delete(int cls, void *list, unsigned count, const unsigned char *sel, unsigned nsel, int valid);
 
+/* The card is in (/tmp/mmc_add, as the stock About page reads it). */
+int so_card(void);
+/* The translated message for a song whose file is not found: "File not found" with the card in, "Storage unavailable" without it. */
+const char *so_missing(void);
+/* Clean Up Playlist, the check: marks in sel ((count + 7) / 8 bytes, cleared first) the rows of list whose path is under /mnt/mmc/ and whose file is not there. Returns
+ * how many; *checked is how many rows had a path on the card (the others are never marked). */
+unsigned so_gone_mark(void *list, unsigned count, unsigned char *sel, unsigned *checked);
+/* Clean Up Playlist, what the user is asked about: the row ids of the n marked rows (calloc'd, the caller frees; 0 for a row that is not a song row), and, after the
+ * dialog and a new so_gone_mark, the marks cut down to the rows whose id is among them (so_keep_ids; returns how many stay): a row that went missing under the dialog
+ * was not asked about and is not removed. */
+int *so_marked_ids(void *list, unsigned count, const unsigned char *sel, unsigned n);
+unsigned so_keep_ids(void *list, unsigned count, unsigned char *sel, const int *ids, unsigned n);
+/* Clean Up Playlist, the repair: for each marked row of a playlist's list (CLASS_PLAYLIST_SONGS: a record's id is its row's id in the playlist table), the library's song
+ * with the same file name, CUE range, title, album and artist whose path is under /mnt/mmc/ and whose file is there (the first when several are); the row's fileurl becomes that song's path
+ * (toolsUpdateDbTable, one row by its id). Returns how many rows were rewritten; the list in memory is not changed (the caller reads it again). */
+unsigned so_relink(void *list, unsigned count, const unsigned char *sel);
+/* Clean Up Playlist, the removal: each marked row leaves the playlist table by its own id (toolsDeleteItemById: this playlist's row only, never a file, never another
+ * playlist's copy of the song). Returns how many rows went. */
+unsigned so_clean(void *list, unsigned count, const unsigned char *sel);
+
 /* The Add button: our picker (patch/picker.h) over the page, or where it cannot open the stock one (@0x5280c0: playlist_page with PICKER_ADD | cls). Either adds the selection to the playlist that is tapped and closes
  * itself. title_save (0x200 bytes) takes nagvation_title, which the picker may overwrite; *picker is set before the picker opens. 0: nothing marked; 1: the picker is open;
  * -1: the selection could not be made. */

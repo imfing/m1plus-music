@@ -53,16 +53,17 @@ void rowmenu_close(rowmenu_t *rm) {
     rm->src = (const lib_src_t *)0;
 }
 
-/* The toast of each refusal (UPNEXT_*, docs/modules/queue.md); keys in tools/pod_i18n.py. */
+/* The toast of each refusal, translated (UPNEXT_*, docs/modules/queue.md); keys in tools/pod_i18n.py. A row whose file is not found: "File not found" with the card
+ * in, "Storage unavailable" without it (so_missing). */
 static const char *rm_refusal(int r) {
-    return r == UPNEXT_STREAM    ? "Not available while streaming"
-           : r == UPNEXT_FOLDER  ? "Not available for folder playback"
-           : r == UPNEXT_PODCAST ? "Not available for podcasts"
-           : r == UPNEXT_MISSING ? "Storage unavailable"
-           : r == UPNEXT_FULL    ? "Queue is full"
-           : r == UPNEXT_MEMORY  ? "Not enough memory"
-           : r == UPNEXT_DLNA    ? "Not available while DLNA is on"
-                                 : "msg_addfailed"; /* UPNEXT_EMPTY: nothing to add (the stock "Adding Failed") */
+    if (r == UPNEXT_MISSING) return so_missing();
+    return TR(r == UPNEXT_STREAM    ? "Not available while streaming"
+              : r == UPNEXT_FOLDER  ? "Not available for folder playback"
+              : r == UPNEXT_PODCAST ? "Not available for podcasts"
+              : r == UPNEXT_FULL    ? "Queue is full"
+              : r == UPNEXT_MEMORY  ? "Not enough memory"
+              : r == UPNEXT_DLNA    ? "Not available while DLNA is on"
+                                    : "msg_addfailed"); /* UPNEXT_EMPTY: nothing to add (the stock "Adding Failed") */
 }
 
 static int rm_on_scrim(void *ctx, void *e) {
@@ -139,7 +140,7 @@ static void rm_queue_src(rowmenu_t *rm, int after) {
     if (r == UPNEXT_ADDED)
         pod_toast(TR(after ? "Added to Queue" : "Playing Next"));
     else if (r < 0)
-        pod_toast(TR(rm_refusal(r)));
+        pod_toast(rm_refusal(r));
 }
 
 /* Get Info: the page opens on the row's copy (it copies what it shows), then the copy goes. */
@@ -179,7 +180,7 @@ static int rm_on_item(void *ctx, void *e) {
         if (r == UPNEXT_ADDED)
             pod_toast(TR(s->k ? "Added to Queue" : "Playing Next"));
         else if (r < 0)
-            pod_toast(TR(rm_refusal(r))); /* (UPNEXT_STARTED: playback started, nothing to say and nothing to open) */
+            pod_toast(rm_refusal(r)); /* (UPNEXT_STARTED: playback started, nothing to say and nothing to open) */
     }
     return RET_OK;
 }

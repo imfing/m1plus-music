@@ -1,14 +1,14 @@
 # Lyrics page
 
 Now Playing shows synchronized lyrics with a highlighted current line, staggered spring
-scrolling, drag-to-browse, tap-to-seek and intro dots. Latin lines use 30 px Inter Bold;
-other scripts use the default font. Stock still loads and parses local and online lyrics.
+scrolling, drag-to-browse, tap-to-seek and intro dots. Latin lines use Inter Bold and
+other scripts the default font, at 22, 26 or 30 px (Settings > Now Playing > Lyrics Text Size; Large, 30 px, is the default). Stock still loads and parses local and online lyrics.
 
 **Sources:** `patch/lyrics.c`, `patch/lyrics.h`, `patch/nowplaying.c`,
-`tools/mod_nowplaying.py`, `tools/mod_font.py`, `tools/font_inter.py`.
+`tools/mod_nowplaying.py`, `tools/mod_font.py`, `tools/font_inter.py`, `tools/pod_pages.py`; the idle page's second view: [idlelyrics](idlelyrics.md).
 **Validation:** `test/pod/lyrics.py`, `LYRICS_PINS` in `tools/pod.py`,
 `tools/preview/preview_lyrics.py` (pass `--shot PATH` for the background screenshot;
-`--mode scrim` and `--mode intro` select those previews).
+`--mode scrim` and `--mode intro` select those previews; `--mode size` writes one image a text size, `OUT_small.png`, `OUT_medium.png`, `OUT_large.png`).
 Previews use the shared layout model and real fonts; the tests draw the label text the way
 stock's wrap does (`stock_rows`, a model of the inspected path).
 
@@ -31,12 +31,13 @@ tick calls `ly_tick`, and `np_stop` calls `ly_stop`. A row signature (count,
 first and last handles and times) detects replacement lyrics; at most 400 rows are read.
 
 A row's text is read with `m1_text_utf8` (`patch/common.c`) into `LY_BUF` (256) bytes: a longer line is cut at a character, and at most `LY_LINES_MAX` (6) rows of it are drawn anyway.
+Leading blanks are then dropped (`ly_lead`: space, tab, U+00A0, U+2000..U+200B, U+202F, U+3000, U+FEFF); blanks inside and at the end stay. Why: stock's loader keeps everything after the time stamp's `]` (`0x5d3f28`), so a file written `[00:12.34] text` (LRCLIB's form) gave every line a leading space: the first row was indented by a space and the rows the page breaks were not.
 Stock `widget_get_text_utf8` ignores its size for a wide text and wrote a ~350 byte line over this stack buffer (the player rebooted; see [payload](payload.md)), so the payload never calls it.
 
 ## Layout and appearance
 
 - The current line's top is anchored at 85 px (0.35 of the 244 px view).
-  Labels have up to six wrapped rows (`LY_LINES_MAX`), 34 px per row and a 12 px gap.
+  Labels have up to six wrapped rows (`LY_LINES_MAX`), `LYH` px per row and a `LYG` px gap (34 and 12 at Large; see "Text size").
 - A line of more than three rows is anchored higher (`ly_anchor`): its top sits where the next
   line's first row still ends 8 px (`LY_ANCHOR_ROOM`) above the view's bottom, but not above
   20 px (`LY_ANCHOR_MIN`): 85 px up to three rows, 54 for four, 20 for five and six (six rows end
@@ -49,8 +50,8 @@ Stock `widget_get_text_utf8` ignores its size for a wide text and wrote a ~350 b
   view laid out: the longest move that does not snap, four lines of six rows, is 929 px, and a
   line that was on the screen must stay laid out until its spring has taken it out (with the
   former 400 px the old current line vanished at the start of such a move). With the intro dots a
-  first line of six rows starts 46 px lower and its last row is clipped until the dots go.
-- Row height follows AWTK's font size plus `spacer`: 30 + 4 px. The page breaks lines itself
+  first line of six rows starts one pitch (`LYH + LYG`, 46 px at Large) lower and its last row is clipped until the dots go.
+- Row height follows AWTK's font size plus `spacer`: 30 + 4 px at Large. The page breaks lines itself
   (`ly_break`) and sets the label's text with explicit `\n`s, and the rows, the label height and the
   breaks come from that one result (cached per line, `ly.brk`). Why: the style sets no margin, so
   stock `widget_get_content_area` (`0x672978`) gives the 264 px label a 260 px content width, and
@@ -97,6 +98,33 @@ Stock `widget_get_text_utf8` ignores its size for a wide text and wrote a ~350 b
   Contrast floors over the tested cover tones are 4.5 / 2.3 / 1.8 / 1.55 / 1.4.
   See [Now Playing](nowplaying.md) for the tint and scrim assets.
 
+## Text size
+
+Settings > Now Playing > **Lyrics Text Size** (a value row of its own card, [settings](settings.md); picker `m1plus_lyrsize`: Small / Medium / Large) is saved in `/mnt/data/m1plus/nowplaying-lyrics-size` (`0\n`, `1\n`, `2\n`, written atomically by `ly_size_set`; a missing or invalid file is Large, which is the original 30 px layout; a Settings Files row). `ly_size` reads it.
+
+| Size | Font | Row pitch `LYH` (font + `spacer`) | Gap `LYG` | Intro pad `LYH + LYG` | Styles |
+|---|---|---|---|---|---|
+| Small | 22 | 25 (3) | 9 | 34 | `np_lyric_style_s`, `np_lyric_cjk_style_s` (both the default font) |
+| Medium | 26 | 29 (3) | 10 | 39 | `np_lyric_style_m`, `np_lyric_cjk_style_m` |
+| Large | 30 | 34 (4) | 12 | 46 | `np_lyric_style`, `np_lyric_cjk_style` |
+
+- **Face by size.** Large and Medium draw a line of Latin, Greek and Cyrillic in the bold face (`np_lyric_style[_m]` names `lyrics.ttf`). Small has no bold face: `np_lyric_style_s` names no font, like the CJK style, so every line is in the default font (the bold look is too heavy at 22 px). `ly_latin` and `ly.fc` still pick the style per line, and the probe still measures in the chosen style (`LYSTYLE`), so the wrap is measured in the face drawn: the two Small styles are identical, no code path differs. `LYR_BOLD_SIZES` in `tools/mod_nowplaying.py` lists the sizes with the bold face; the preview (`preview_lyrics.sized`, `latin_bold`) follows it.
+- **Styles, not a runtime override.** The size reaches the labels as a style pair per size (`LYRIC_SIZE_STYLES`, `LYR_SIZES`, `LYR_GAPS` in `tools/mod_nowplaying.py`; `ly_sizes` in `patch/lyrics.c` is the same table). Every `widget_use_style` call (the labels, the measuring label) takes the name from `LYSTYLE(face)`, so the probe measures in the size it is drawn in; no new stock address or pin is used. The row pitch is each style's font plus `spacer`, which AWTK's label paint uses (pins above), and `LYH` is that sum, so layout and paint agree.
+- **What follows the size:** the row pitch, the gap, the intro pad and the dot centring, the anchor rule (`ly_anchor`), the edge fade's row centres, the tap map and the label heights. Not changed: the 85 px anchor (`LY_ANCHOR`), the 6-row cap, `LY_ANCHOR_MIN`/`LY_ANCHOR_ROOM`, `LY_OFF_MAX` (976, a bound that the smaller pitches stay under: a move of `LY_SNAP_LINES` six-row lines is at most 929 px at Large), the pool of 20 labels (at the smallest pitch, 34 px with the gap, a view holds at most 8 one-row lines), the 259 / 260 px row widths (width is not a size). At 22 px six rows end at 52 + 150 = 202 of 244, so all six show with the next line's first row.
+- **When it is read.** `ly_start` reads the file when the page starts. `ly_refresh` (called from `np_on_foreground`, one file read) takes a changed size when Now Playing is in front again, e.g. after Settings: it resets every label's style, height and place and the probe's style, clears the signature so the next tick drops the break cache (`ly.ht`, `ly.brk`) like new lyrics and lays the lines out again from the current line. No label is made again. A size that did not change does nothing.
+- **Vertical margins.** Stock's label paint draws a row of a wrapped label only while `y + font size` is at most the content area's bottom (`0x62eb4c`); the first row is at the top margin and the content area is the label less `margin_top` / `margin_bottom` (default 2 each, `0x672978`). A label of n rows is n x (font + spacer) high, so its last row is drawn only when the two margins are at most the spacer. Large (spacer 4) fits the default 2 + 2; Medium and Small (spacer 3) set `margin_top` and `margin_bottom` to 1 (`lyr_vmargin` in `tools/mod_nowplaying.py`). Why: with the default margins every wrapped line at Medium and Small lost its last row (device screenshot of the idle Lyrics page; also the earlier "dreams" report at Small). The side margins stay 2 (the 260 px content width); a one-row label is painted by another path and does not move.
+
+- Tests: `test/pod/lyrics.py` `size_tests` (the paint rule above for 2..6 rows at each size, the six styles, `ly_size` / `ly_size_set`, each size's layout, anchors, taps, intro pad, refresh), `size_setting_tests` (the row, the picker, the file). `preview_lyrics.py --mode size`. Not verified without a device: AWTK's real wrap and baseline at 22 and 26 px, the gap's look, the refresh on return from Settings.
+
+## A second view (the idle lyrics page)
+
+The engine is one static state, bound to one view at a time. `ly_start(win)` binds it to Now Playing's `np_lyrics` (264 x 244, `LY_VIEW_H`); the [idle lyrics page](idlelyrics.md) takes it with `ly_retarget(win, box, h)` and gives it back with `ly_release()`. **Design: a rebind, not two live instances.** Only one view is ever in front, so the engine is stopped on one target and started on the other: `ly_retarget` makes the 20 labels, the probe and the three dots in the page's box first (a refused label returns -1 with the engine untouched), then parks Now Playing's widget pointers (`lyp`: window, box, probe, pool, dots, height, anchor, size; the widgets stay alive, hidden) and restarts the engine's state on the new box, keeping `src` (Now Playing's `scroll_lrc`) and the stock list `view`. `ly_release` stops the timers, puts the parked widgets back, hides them and forgets every cached fact about them (line, style, rows, opacity, visibility), so the next tick lays the lines out from the stock rows as for new lyrics. Chosen over two instances because the state is large (several KB of scratch plus the pool) and the lines, the clock and the timers would all need an owner; the rebind adds about 130 lines and one 200 byte struct and leaves Now Playing's own code path unchanged. `ly_release` is idempotent and also runs at the top of `ly_refresh` (Now Playing's foreground), so an engine bound to a closing page is never ticked by Now Playing; `ly_stop` (Now Playing's end) clears the parked widgets too.
+
+- **What follows the view's height:** `ly.vh` (`LYVH`: `LY_VIEW_H` for Now Playing, 372 for the page), the anchor `ly.anc` (`LYANC`: `LY_ANCHOR` 85 = 0.35 x 244; 0.35 x 372 = 130), `ly_anchor`'s limit (`LYVH - LY_ANCHOR_ROOM - ...`), `ly_edge`'s bottom, the layout's visible and laid-out windows, `ly_rebase`, and the offset bound `LYOFF` = 4 x the height (`LY_OFF_MAX` 976 for Now Playing; 1488 on the page, still inside a `short`). A stopped engine reads as Now Playing's numbers. Not changed: the 20 label pool (at the smallest pitch a 372 px view holds about 12 one-row lines of which about 11 are visible, inside the pool's window round the anchor), the width, the row widths.
+- **Touch.** The pointer listeners carry their view as context and ignore events when it is not the engine's current one, so Now Playing's listeners (kept registered while parked) do nothing and are never added twice. `ly.noseek` (set by `ly_retarget`) makes a tap on a line seek nothing; dragging and the 3 s return are unchanged.
+- **Source rows.** The page reads Now Playing's `scroll_lrc` while another window covers it; Now Playing's own `np_tick` does no work then (`np.fg`), so the page's timer calls `ly_tick` itself. Stock's rebuild of the rows under another window: [idlelyrics](idlelyrics.md) "Stock facts".
+- Tests: `test/pod/lyrics.py` `retarget_tests` (the take-over and return, the 372 px layout and edge fade at the three sizes, a six-row line's anchor, taps and drags, a touch for the parked view, release / refresh / stop, every refusal), `test/pod/idlelyrics.py`.
+
 ## Motion and touch
 
 The motion is inspired by amll-dev/applemusic-like-lyrics (anchor, falloff and staggered
@@ -118,7 +146,7 @@ the lyric display flag; those rows are hidden and receive no touches.
 ## Intro dots
 
 Three 10 px image dots appear at the anchor when the first line starts at 4 seconds or later.
-The upcoming lines sit one 46 px pitch lower. The dots fill by thirds, breathe over 2.4 seconds
+The upcoming lines sit one pitch (`LYH + LYG`, 46 px at Large) lower; the dots keep their 18 px spacing and are centred on the anchor row's `LYH`. The dots fill by thirds, breathe over 2.4 seconds
 and fade over the final 500 ms; the lines then spring into the anchor.
 An 80 ms timer runs only while the dots show and playback is active.
 

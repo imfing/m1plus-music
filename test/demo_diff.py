@@ -40,7 +40,7 @@ PULLDOWN_OPEN = tuple(pod.PULLDOWN_OPEN_SITES)  # on_wm_tsmove_fun: the two `bal
 BATTERY_SITE = (0x5450f8, 4)  # show_sysbar_face: the jalr get_battery_capacity, now jal bp_capacity (patch/battery.c, docs/modules/payload.md hook 8)
 LINEOUT_SITES = tuple(a for a, _ in pod.LINEOUT_SITES)   # show_sysbar_face and dropdown_showface: the jalr widget_set_text_utf8 of label_volume, now jal lo_set_text (patch/lineout.c, docs/modules/payload.md hook 16)
 LIGHT = (0x659fcc, 0x655638, 0x659f9c)   # Light Mode's hooks (patch/palette.c, docs/modules/payload.md hooks 10 - 12): style_get_color and image_manager_add (PIC prologues: `j` and a nop) and the style_get_gradient leaf (the same two words)
-SHUFFLE_HOOKS = (pod.SETMODE, pod.LOADPL, pod.FILETIME)   # (FILETIME: toolsGetFileCreateTime, patch/filetime.c, hook 19) mclSetPlayMode, mclLoadPlayList: the PIC prologue's first two words, now `j` into the payload and a nop (patch/shuffle.c, docs/modules/payload.md hooks 13, 14)
+SHUFFLE_HOOKS = (pod.SETMODE, pod.LOADPL, pod.FILETIME, pod.LCL)   # (FILETIME: toolsGetFileCreateTime, patch/filetime.c, hook 19) mclSetPlayMode, mclLoadPlayList: the PIC prologue's first two words, now `j` into the payload and a nop (patch/shuffle.c, docs/modules/payload.md hooks 13, 14)
 MODE_SITES = tuple(a for a, _ in pod.MODE_SITES)   # the 19 `jalr mclGetPlayMode` call sites, now `jal sh_display_mode`
 SCROLL_SLOT =(0x97a330, 4) # g_scroll_view_vtable.on_event_before_children: 0 in stock, the payload's m1plus_scroll_event (patch/scroll.c)
 COVER = 264                 # the cover size demo writes (tools/mod_lockscreen.py, Now Playing's art)
@@ -102,6 +102,7 @@ def main():
     allow(va_to_off(s, ID3_SITE[0]), ID3_SITE[1], 'tag reader hook')
     allow(va_to_off(s, SCAN_SITE[0]), SCAN_SITE[1], 'library scan hook')
     allow(va_to_off(s, BATTERY_SITE[0]), BATTERY_SITE[1], 'battery percentage hook')
+    allow(va_to_off(s, pod.LCL_ASSIGN_SITE), 4, 'library list hand-over (the jalr deque_assign of loadLocalClassList, now jal ll_assign: patch/libload.c, docs/modules/payload.md hook 29)')
     for q in PULLDOWN_OPEN: allow(va_to_off(s, q), 4, 'pull-down settings tile hook')
     allow(va_to_off(s, WIFIHUB_SITE[0]), WIFIHUB_SITE[1], 'Wi-Fi hub row hook')
     allow(va_to_off(s, IDLE_SITE[0]), IDLE_SITE[1], 'idle view hook (the timed open)')
@@ -248,7 +249,7 @@ def main():
         good = mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12] and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
         print(f'shuffle hook {q:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'ok' if good else 'WRONG')
         ok = ok and good
-    for q in MODE_SITES + (pod.CLEAR_SITE,):   # the clear site is the same shape: jalr -> jal into the payload (dmr_serverstart's deque_clear, sh_clear_queue)
+    for q in MODE_SITES + (pod.CLEAR_SITE, pod.LCL_ASSIGN_SITE):   # (LCL_ASSIGN_SITE: loadLocalClassList's jalr deque_assign -> jal ll_assign) the clear site is the same shape: jalr -> jal into the payload (dmr_serverstart's deque_clear, sh_clear_queue)
         o = va_to_off(s, q); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
         good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
         print(f'play mode display site {q:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')

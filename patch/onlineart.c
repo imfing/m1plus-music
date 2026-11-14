@@ -32,6 +32,7 @@
 #include "search.h"
 #include "sbapi.h"
 #include "entries.h"
+#include "artistphoto.h"
 
 #define OA_TILE 88
 #define OA_GAP 12
@@ -103,6 +104,8 @@ static struct {
     unsigned saved; /* lyrics rows (display index) written as the .lrc */
     int save_failed, exists; /* the lyrics could not be written; the .lrc is already there */
     int replace; /* the album already has a picked cover */
+    int ar; /* Find Artist Photo (onlineart_open_artist): the artist's photos in the Covers tab's place, no chips (the artist's name is the header there), no lyrics */
+    unsigned akey; /* that artist's key (ap_key) */
     int fail[2]; /* the covers' / the lyrics' lookup could not start: its PN_* */
     int down, down_x, down_y, press;
     int drop; /* the larger picture is to be removed once no worker runs */
@@ -230,9 +233,10 @@ static void oa_es_fail(oa_es_t *s, int code, int lyr) {
     switch (code) {
     case PN_OVERLOAD:
         s->glyph = "pod_es_timer";
-        s->title = lyr ? TR("Lyrics Service Busy") : TR("Cover Service Busy");
-        s->text = lyr ? TR("LRCLIB is under heavy load. Try again in a moment.")
-                      : TR("iTunes and Deezer are busy. Try again in a moment.");
+        s->title = lyr ? TR("Lyrics Service Busy") : oa.ar ? TR("Photo Service Busy") : TR("Cover Service Busy");
+        s->text = lyr     ? TR("LRCLIB is under heavy load. Try again in a moment.")
+                  : oa.ar ? TR("The photo service is busy. Try again in a moment.")
+                          : TR("iTunes and Deezer are busy. Try again in a moment.");
         break;
     case PN_NOWIFI:
         s->glyph = "pod_es_wifi", s->title = TR("No Wi-Fi"), s->text = TR("Turn on Wi-Fi to search online.");
@@ -290,8 +294,8 @@ static int oa_es_state(oa_es_t *s) {
             return 1;
         }
         if (pn_art_count() > 0) return 0;
-        s->glyph = "pod_es_image", s->title = TR("No Covers Found"),
-        s->text = TR("Nothing on iTunes or Deezer for this album.");
+        s->glyph = "pod_es_image", s->title = oa.ar ? TR("No Photos Found") : TR("No Covers Found"),
+        s->text = oa.ar ? TR("No photos online for this artist.") : TR("Nothing on iTunes or Deezer for this album.");
         return 1;
     }
     if ((oa.want & PN_PART_LYRICS) || pn_lyr_state() == 0) {
@@ -370,12 +374,12 @@ static void oa_resize(void) {
 /* The widgets of the mode. */
 static void oa_modes(void) {
     int m = oa.mode;
-    m1_show(oa.chips, m == 0);
+    m1_show(oa.chips, m == 0 && !oa.ar);
     m1_show(oa.sep, m != 1);
     m1_show(oa.list, m != 1);
     m1_show(oa.dc, m == 1);
-    m1_show(oa.l_head, m == 2);
-    m1_show(oa.l_sub, m == 2);
+    m1_show(oa.l_head, m == 2 || (oa.ar && m == 0)); /* (an artist's page: the name where the chips are) */
+    m1_show(oa.l_sub, m == 2 || (oa.ar && m == 0));
     if (m != 2) m1_show(oa.lpill, 0);
     if (m != 0) oa_es_apply((const oa_es_t *)0);
 }
@@ -392,8 +396,9 @@ static void oa_sync(void) {
         widget_set_text_utf8(oa.l_hint, hint);
         m1_show(oa.l_hint, *hint != 0);
         widget_set_text_utf8(oa.pill, oa.saving || oa.pend >= 0 ? TR("Saving…")
-                                      : oa.replace              ? TR("Replace Cover")
-                                                                : TR("Use This Cover"));
+                                      : oa.ar      ? (oa.replace ? TR("Replace Photo") : TR("Use This Photo"))
+                                      : oa.replace ? TR("Replace Cover")
+                                                   : TR("Use This Cover"));
         m1_show(oa.pill, on);
     } else {
         const char *err = oa.save_failed ? oa_word(PN_STORAGE) : (const char *)0;
@@ -405,16 +410,13 @@ static void oa_sync(void) {
     oa_redraw();
 }
 
-/* The lookup, once no other job (a refresh, a download, a search) is running: downloads are asked to pause first, as a Podcasts search does. */
+/* The lookup, once no other job (a refresh, a search) is running; a Podcasts download goes on beside it. */
 static void oa_start(void) {
     int rc, part = oa.want;
     if (!part) return;
-    if (pn_dl_running()) {
-        pn_dl_pause();
-        return;
-    }
     if (pn_busy() || pn_job_busy()) return;
-    rc = part == (PN_PART_COVERS | PN_PART_LYRICS)
+    rc = oa.ar ? pn_artist(oa.artist)
+         : part == (PN_PART_COVERS | PN_PART_LYRICS)
              ? pn_art(oa.artist, oa.album, oa.title, oa.secs)
              : pn_art_again(part); /* (one tab's Try Again: the other's results stay) */
     if (rc == PN_BUSY) return;
@@ -477,8 +479,7 @@ static grid_tile_t *oa_dtile(void) {
 /* Ask for the larger picture, or wait for the worker (the lookup may still be on its lyrics) to end. */
 static void oa_fetch_start(void) {
     int rc;
-    if (pn_dl_running()) pn_dl_pause(); /* downloads give way, as they do to the lookup */
-    if (pn_job_busy() || pn_dl_running() || pn_busy()) {
+    if (pn_job_busy() || pn_busy()) {
         oa.fpend = 1;
         return;
     }
@@ -521,10 +522,13 @@ static void oa_cover_open(int i) {
     oa.ready = oa.saving = oa.fetching = oa.fpend = 0;
     oa.pend = -1;
     oa.hint_code = 0;
-    oa.replace = oa_has_pick();
+    oa.replace = oa.ar ? ap_picked(oa.akey) : oa_has_pick();
     widget_set_text_utf8(oa.l_name, name);
     widget_set_text_utf8(oa.l_artist, artist);
-    widget_set_text_utf8(oa.l_source, pn_art_source(i) == PN_SRC_DEEZER ? "Deezer" : "iTunes");
+    if (pn_art_source(i) == PN_SRC_NETEASE)
+        widget_set_tr_text(oa.l_source, "NetEase");
+    else
+        widget_set_text_utf8(oa.l_source, pn_art_source(i) == PN_SRC_DEEZER ? "Deezer" : "iTunes");
     m1_show(oa.pill, 0);
     m1_show(oa.l_hint, 0);
     grid_drop(&oa.gd);
@@ -539,8 +543,12 @@ static void oa_cover_open(int i) {
 static void oa_pick_start(void) {
     unsigned k0, k1;
     int rc;
-    oa_keys(&k0, &k1);
-    rc = pn_art_pick(oa.di, oa.dir[0] ? oa.dir : (const char *)0, k0, k1);
+    if (oa.ar)
+        rc = pn_artist_pick(oa.di, oa.akey);
+    else {
+        oa_keys(&k0, &k1);
+        rc = pn_art_pick(oa.di, oa.dir[0] ? oa.dir : (const char *)0, k0, k1);
+    }
     if (rc == PN_BUSY) {
         oa.pend = oa.di;
         return;
@@ -652,7 +660,7 @@ static void oa_leave(void) {
     if (was == 0) return;
     oa.mode = 0;
     if (was == 1) {
-        if (oa.fetching || oa.saving) pn_cancel(); /* (it ends by itself) */
+        if (oa.fetching || oa.saving) pn_cancel(PN_K_ART); /* (it ends by itself) */
         oa.fetching = oa.fpend = oa.saving = oa.ready = 0;
         oa.pend = -1;
         oa.hint_code = 0;
@@ -721,9 +729,6 @@ static int oa_tick(const void *timer) {
     }
     if (oa.loaded < pn_art_count() && !(oa.want & PN_PART_COVERS)) oa_load_one();
     if (changed) oa_sync();
-    if (!oa.want && !oa.fetching && !oa.fpend && oa.pend < 0 && !oa.saving && !pn_job_busy() && pn_dl_waiting() &&
-        !pn_dl_running())
-        pn_dl_start();
     return RET_REPEAT;
 }
 
@@ -1007,7 +1012,6 @@ static int oa_on_use(void *ctx, void *e) {
     (void)e;
     if (oa.mode != 1 || !oa.ready || oa.saving || oa.pend >= 0) return RET_OK;
     oa.hint_code = 0;
-    if (pn_dl_running()) pn_dl_pause();
     oa_pick_start();
     oa_sync();
     return RET_OK;
@@ -1033,10 +1037,9 @@ static int oa_on_destroy(void *ctx, void *e) {
     if (ctx != oa.win) return RET_OK; /* an earlier window's end leaves a newer page alone */
     m1_timer_stop(&oa.timer);
     if (pn_job_busy())
-        pn_cancel(); /* the worker ends by itself; its scratch files are removed by the next lookup */
+        pn_cancel(PN_K_ART); /* the worker ends by itself; its scratch files are removed by the next lookup */
     else
         pn_art_clean();
-    if (!pn_job_busy() && pn_dl_waiting() && !pn_dl_running()) pn_dl_start();
     oa_ly_free();
     grid_free(&oa.g);
     grid_free(&oa.gl);
@@ -1100,14 +1103,15 @@ static void oa_badge_width(void) {
     oa.bw = w + 2 * OA_BADGE_PAD;
 }
 
-/* Open: the More sheet's Find Cover & Lyrics row. 0 once the page is up (or already open); -1 when it could not open (nothing is left of it). */
-int onlineart_open(void) {
-    if (oa.win) return 0;
-    memset(&oa, 0, sizeof oa);
-    if (!oa_track()) {
-        memset(&oa, 0, sizeof oa);
-        return -1;
-    }
+/* The line under the artist's name: the services asked. */
+static void oa_ar_sub(void) {
+    char text[96];
+    snprintf(text, sizeof text, "Deezer, %s", TR("NetEase"));
+    widget_set_text_utf8(oa.l_sub, text);
+}
+
+/* The page for what oa holds (the playing track's fields, or oa.ar and the artist). 0 once it is up; -1 when it could not open (nothing is left of it). */
+static int oa_open(void) {
     oa.win = window_open("m1plus_onlineart");
     if (!oa.win) {
         memset(&oa, 0, sizeof oa);
@@ -1155,7 +1159,14 @@ int onlineart_open(void) {
     label_set_line_wrap(oa.es_text, 1);
     widget_set_prop_bool(oa.es_text, "word_wrap", 1); /* (as the lyrics page's lines: break at spaces) */
     oa.down = -1, oa.pend = -1, oa.picked = -1;
-    oa.want = PN_PART_COVERS | PN_PART_LYRICS;
+    oa.want = oa.ar ? PN_PART_COVERS : PN_PART_COVERS | PN_PART_LYRICS;
+    if (oa.ar) { /* the artist's name and the service where the chips are; the navbar says what the page finds */
+        void *title = widget_lookup(oa.win, "label_title", 1);
+        if (title) widget_set_text_utf8(title, TR("Artist Photo"));
+        widget_set_text_utf8(oa.l_head, oa.artist);
+        oa_ar_sub();
+        oa.g.person = oa.gd.person = 1;
+    }
     widget_on(oa.view, EVT_POINTER_DOWN, oa_on_down, (void *)0);
     widget_on(oa.view, EVT_POINTER_UP, oa_on_up, (void *)0);
     widget_on(oa.view, EVT_POINTER_ABORT, oa_on_abort, (void *)0);
@@ -1181,4 +1192,27 @@ int onlineart_open(void) {
     oa_start();
     oa_sync();
     return 0;
+}
+
+/* Open: the More sheet's Find Cover & Lyrics row. 0 once the page is up (or already open); -1 when it could not open. */
+int onlineart_open(void) {
+    if (oa.win) return 0;
+    memset(&oa, 0, sizeof oa);
+    if (!oa_track()) {
+        memset(&oa, 0, sizeof oa);
+        return -1;
+    }
+    return oa_open();
+}
+
+/* Open for an artist of the library (the artist page's "..." card, Find Artist Photo): the photos Deezer has under that name; the one picked becomes the artist's photo (patch/artistphoto.c ap_pick). 0 once the
+ * page is up (or already open); -1 when it could not open or the name has no key (blank). */
+int onlineart_open_artist(const char *name) {
+    unsigned key = ap_key(name);
+    if (oa.win) return 0;
+    memset(&oa, 0, sizeof oa);
+    if (!key) return -1;
+    oa.ar = 1, oa.akey = key;
+    snprintf(oa.artist, sizeof oa.artist, "%s", name);
+    return oa_open();
 }

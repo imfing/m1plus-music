@@ -326,6 +326,7 @@ static struct {
     int album[CF_SLOTS]; /* each slot's album + 1; 0 is empty */
     const unsigned *art[CF_SLOTS]; /* its texture: the slot's own, or the placeholder (the album has no art) */
     int c, frac, drawn; /* the position the frame holds, once drawn */
+    unsigned bg; /* and the background it was drawn over (the accent or the background can change under an open page) */
     int dir; /* the way the shelf last went: 1 towards later albums, -1 back */
     int seen; /* the centre album the last paint saw + 1; 0 none yet */
     unsigned load_timer; /* the texture loader's timer (the page's own) */
@@ -386,16 +387,16 @@ static void fx_close(void) {
     memset(&fx, 0, sizeof fx);
 }
 
-/* The page's shelf now: the portrait one, or the landscape one turned a quarter; in Light Mode the same over paper (bg: the covers fade towards it, as on the Pod's white
- * Cover Flow). */
+/* The page's shelf now: the portrait one, or the landscape one turned a quarter; over a background that is not black (Light's paper, Tinted's washed black) the same over that
+ * colour (bg: the covers fade towards it, as on the Pod's white Cover Flow). The colour is the palette's own for the page's black, so the frame has no edge on the page. */
 static const cfg_t *shelf(void) {
     static cfg_t lit __attribute__((section(".scratch")));
     const cfg_t *g = cf.land ? &cf_land : &cf_portrait;
-    unsigned i;
-    if (!pal_light()) return g;
+    unsigned i, bg = pal_light() ? LIGHT_PAPER * 0x010101u : pal_map(0xff000000u) & 0xffffffu;
+    if (!bg) return g;
     for (i = 0; i < sizeof lit / sizeof(int); ++i)
         ((int *)&lit)[i] = ((const int *)g)[i]; /* (a struct copy would call memcpy) */
-    lit.bg = LIGHT_PAPER * 0x010101u;
+    lit.bg = bg;
     return &lit;
 }
 
@@ -668,14 +669,14 @@ static int on_paint(void *ctx, void *e) {
     if (fx.seen && c != fx.seen - 1) fx.dir = c < fx.seen - 1 ? -1 : 1; /* the way it went, for the prefetch */
     fx.seen = c + 1;
     if (fx_ring(c, n, ring) && !fx.load_timer) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
-    if (!fx.drawn || c != fx.c || frac != fx.frac) {
+    if (!fx.drawn || c != fx.c || frac != fx.frac || g->bg != fx.bg) {
         unsigned *d = (unsigned *)bitmap_lock_buffer_for_write(fx.frame);
         int pitch = (int)(bitmap_get_line_length(fx.frame) / 4);
         if (!d) return RET_OK;
         coverflow_render(g, d, pitch, frac, ring);
         if (cf.land) captions_land(d, pitch, canvas);
         bitmap_unlock_buffer(fx.frame);
-        fx.c = c, fx.frac = frac, fx.drawn = 1;
+        fx.c = c, fx.frac = frac, fx.bg = g->bg, fx.drawn = 1;
     }
     r[0] = 0, r[1] = 0, r[2] = g->rot ? g->h : g->w, r[3] = g->rot ? g->w : g->h;
     canvas_draw_image(canvas, fx.frame, r, r);

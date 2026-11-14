@@ -179,7 +179,7 @@ runs one table delete per marked row and then `remove_file` `0x4e1264` (`access`
 | `0xf00a` Favourites | `0x4e1710` | `0x4ede88` (`myfav`: unfavourite) |
 | `0xf008` Most played | `0x4e17b4` | `0x4edf10` (`oftenplay`) |
 | `0xf007` Recently played | `0x4e1858` | `0x4edecc` (`recentplay`) |
-| `0xff13` a playlist's songs | `0x4e18fc` | `deleteMusicFromPlaylist` `0x4edf54` (`playlist`) |
+| `0xff13` a playlist's songs | `0x4e18fc` | `deleteMusicFromPlaylist` `0x4edf54` (`playlist`; WHERE `filename`, `fileurl`, `time`, `time_end`, no id / cd_num: every playlist's row of that song, docs/modules/playlists.md) |
 | `0xff04..0xff08`, `0xff0a..0xff0f` | none | nothing |
 
 Screen state: exported byte `backlight_status` at `0x97cae4` is pinned in `tools/pod.py`. Stock `awake_screen` sets it to 1 before enabling the framebuffer; zero means off. Existing page-owned timers use it to defer visual work.
@@ -207,6 +207,16 @@ Screen state: exported byte `backlight_status` at `0x97cae4` is pinned in `tools
 | `power_capacity` | `0xa059ec` | int, `lw s0, GOT` `0x8f90a9dc` @`0x4e6e88` and `0x545120`; read by `show_sysbar_face` (`0x545154` the fill / low picture, `0x54536c` the charging value), `dropdown_showface` `0x475c5c` (the pull-down's own timer), `poweroff_page_init` `0x53f5dc` / `0x53f670`, `on_poweroff_keyup_fun` `0x53eec0` / `0x53efb8`, `check_updatefw_exist` `0x4d8c1c` and `check_otginfo` `0x4d91dc` (only `capacity \| charge_status != 0`) |
 | `widget_t` fields | `+8` w, `+0xc` h, `+0x44` parent | `widget_resize` `lw v0, 8(s0)` @`0x66d194`, `lw v1, 0xc(s0)` @`0x66d1a0`; `widget_set_visible` hands `lw a0, 0x44(s0)` @`0x66c428` to `widget_set_need_relayout_children` `0x66c338` |
 | the gauge | `/sys/class/power_supply/battery/capacity` | AXP2101 (`axp2101_charger`), an integer 0..100 and a newline (read 100 on a charged device); stock never opens it |
+
+## Library list hand-over (patch/libload.c, `LCL_PINS` / `LCL_TABLES` in tools/pod_pins.py; docs/modules/libload.md)
+
+| What | Address | Evidence |
+|---|---|---|
+| `loadLocalClassList(cls)` | `0x4ee504` (size `0x3d4`) | prologue `(0x3c1c0051, 0x279c59cc, 0x0399e021)`, `addiu sp, sp, -0x28` `0x27bdffd8` @`0x4ee510`; `lw s0, GOT tools_pdeq_directory` `0x8f90b7d8` @`0x4ee530`; `0xf001` falls through to `getAllMusic` @`0x4ee5bc`; jump tables `0x74c5b8` (`0xf002`..`0xf00b`) and `0x74c5e0` (`0xff01`..`0xff24`), `$gp`-relative words |
+| the tail | `0x4ee638`..`0x4ee684` | `deque_clear(*s1)` (`lw t9` `0x8f99f494`, `jalr`, `lw a0, (s1)` `0x8e240000`), `lw a1, (s0)` `0x8e050000` @`0x4ee648`, `lw t9, GOT deque_assign` `0x8f99f718`, `jalr` @`0x4ee650` (the site, now `jal ll_assign`), `deque_clear(*s0)` @`0x4ee660`, tail call `deque_size(*s1)` |
+| the destinations (`s1`) | `0x4ee5b8`, `0x4ee7a0` / `0x4ee634` / `0x4ee7c8` | `&pdeq_showlist` `0xa045d8` (`0x8f91ac08`) / `&pdeq_playlist` `0xa045d0` (`0x8f91baa0`, class `0xf00b`) / `0xa05fb4` (`0x8f91abfc`, class `0xff23` and `get_hifi_download_end`) |
+| libcstl `deque_swap` | lib `0x3ac1c` (size `0x148`) | `deque_equal` first (equal lists: nothing done); then 0x14c bytes each way through a stack copy and `sw s1, 0x124(s1)`, `sw s1, 0x140(s1)`, `sw s0, 0x140(s0)`, `sw s0, 0x124(s0)`; `_create_deque_auxiliary` `0x3dae0` and `deque_init_n` `0x39320` set the same two fields to the deque |
+| libcstl allocator | lib `0x2d670`..`0x2d6b0` | `_alloc_init` is `jr ra`; `_alloc_allocate` tail-calls `_alloc_malloc(n * size)`, `_alloc_deallocate` tail-calls `_alloc_free`: no pool, no state in the deque |
 
 ## Song dates (patch/filetime.c, `FILETIME_PINS` in tools/pod.py; docs/modules/songs.md "Recently Added dates")
 

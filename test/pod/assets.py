@@ -179,14 +179,14 @@ def run(ctx):
     expect(mod_icons.POD_ROWS['Cover Flow'][1] == '+coverflow' and mod_icons.NAV_VIEW['pod_nav_coverflow'] == '+coverflow',
            'the custom Cover Flow glyph on the menu row and the navbar button')
     cg = mod_icons.CARD_GLYPHS
-    expect(cg['Home Screen'] == 'house' and cg['Boot to M1+ Music'] == 'power' and cg['Developer'] == 'code' and cg['All Playback Settings'] == 'headphones'
+    expect(cg['Home Screen'] == 'house' and cg['Boot to M1+ Music'] == 'power' and cg['Developer'] == 'code' and cg['Playback Settings'] == 'headphones'
            and cg['Landscape'] == 'rotate-cw-square' and cg['Wi-Fi'] == 'wifi' and cg['Bluetooth'] == 'bluetooth',
            'card rows: Home Screen house, Boot to power, Playback headphones, Developer code, Landscape rotate, Wi-Fi, Bluetooth')
     import pod_pages
     for page in pod_pages.PAGES:   # every Settings row but the pickers' has a glyph, drawn at 20 px in a 24 px image
         if page.kind == 'cards':
             for r in page.rows:
-                if pod_pages.row_kind(r) not in ('check', 'info') and r.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION): expect(r.label in cg, f'{page.key}: {r.label} has a card glyph')
+                if pod_pages.row_kind(r) not in ('check', 'info', 'delete') and r.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PCDIR): expect(r.label in cg, f'{page.key}: {r.label} has a card glyph')
     for n in mod_icons.CARD_IMAGES:
         im = Image.open(os.path.join(mod_icons.PNG, n + '.png')).convert('RGBA')
         expect(im.size == {'pod_chev': (mod_icons.CARD_CHEVRON[1], mod_icons.CARD_CHEVRON[2]), 'pod_check': (20, 20), mod_icons.SLIDER_THUMB[0]: mod_icons.SLIDER_THUMB[3:], **{p: (320, 52) for p in mod_icons.CARD_PIECE_IMAGES}, **{p: (320, mod_icons.CARD_TALL) for p in mod_icons.CARD_TALL_IMAGES}}.get(n, (24, 24)) and im.getchannel('A').getbbox(), f'{n} is a drawn image of its size')

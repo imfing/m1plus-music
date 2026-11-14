@@ -108,8 +108,13 @@ def shows_layout(n_shows, has_line, n_cont, discover=True):
     L['y_shows'] = y
     y += o['PP_HEAD_PITCH']
     L['y_grid'] = y
-    y += (n_shows + o['GRID_COLS'] - 1) // o['GRID_COLS'] * grid_pitch()
-    y += o['PP_LIB_GAP'] if n_shows else 0
+    y += (min(n_shows, o['PP_SHOWS_MAX']) + o['GRID_COLS'] - 1) // o['GRID_COLS'] * grid_pitch()
+    L['y_all'] = 0
+    if n_shows > o['PP_SHOWS_MAX']:   # the See All row (the All Shows page) in place of the gap
+        L['y_all'] = y
+        y += o['PS_MORE_H']
+    else:
+        y += o['PP_LIB_GAP'] if n_shows else 0
     if discover:
         L['y_srch'] = y
         y += o['PC_ROW_H']
@@ -170,12 +175,26 @@ def shelf_item(i, y_shelf):
     return x, y, y + o['PP_SHELF_TITLE_Y'], y + o['PP_SHELF_LEFT_Y']
 
 
+def hint_layout(top, widths, busy=False, more=False):
+    """An empty page's hint and the Discover / search status line (patch/podcasts.c pg_hint_at, pg_paint_hint; docs/modules/podcasts.md "The hint"): the wrapped lines (widths: each line's px, at most four)
+    are centred as a block in the room under the header (content y top): down to the view's bottom (GRID_VIEW_H) when the header leaves more than the four lines' room (PG_HINT_H = 8 + 4 lines), else that
+    room; with the See All row under the hint (more) always that room. Each line is centred across the page; a busy line (Loading…, Searching…) has the 14 px spinner and its gap before the first line,
+    the two centred as one group. h: the content's height without the See All row, lines: [(x, y)], spin: (x, y) or None."""
+    o = O
+    pitch, room = o['PS_TITLE_PITCH'], 8 + 4 * o['PS_TITLE_PITCH']
+    bottom = top + room if more else max(top + room, o['GRID_VIEW_H'])
+    y0 = top + (bottom - top - len(widths) * pitch) // 2
+    sx = o['PS_SPIN_PX'] + o['PS_SPIN_GAP'] if busy else 0
+    lines = [((pod_ui.SCREEN_W - sx - w) // 2 + sx, y0 + k * pitch) for k, w in enumerate(widths)]
+    return dict(h=bottom, lines=lines, spin=(lines[0][0] - sx, y0 + (pitch - o['PS_SPIN_PX']) // 2) if busy and lines else None)
+
+
 def search_layout(n):
     """The search level of the Podcasts page (docs/modules/podcasts.md "Search") with n result rows: the field's rectangle, where the rows start, each row's top, the content's height."""
     o = O
     top = o['PQ_TOP']
     return dict(field=(o['PQ_FIELD_X'], o['PQ_FIELD_Y'], o['PQ_FIELD_W'], o['PQ_FIELD_H']), top=top,
-                rows=[top + i * o['PC_ROW_H'] for i in range(n)], h=top + n * o['PC_ROW_H'] + o['PQ_BOTTOM'] if n else top + 8 + 4 * o['PS_TITLE_PITCH'], hint_y=top + 8)
+                rows=[top + i * o['PC_ROW_H'] for i in range(n)], h=top + n * o['PC_ROW_H'] + o['PQ_BOTTOM'] if n else hint_layout(top, [0])['h'], hint_y=hint_layout(top, [0])['lines'][0][1])
 
 
 def capsule(x, y, w, h, r, c):
@@ -211,12 +230,12 @@ def segmented(x, y, w, h, n, sel):
 
 def discover_layout(n):
     """The Discover level of the Podcasts page (docs/modules/podcasts.md "Discover") with n chart rows: the grey line's top, the Shows | Episodes control's rectangle (segmented(): the track and the thumb of each selection), where the rows
-    start, each row's top, the content's height (with no rows: the status text's room, top + 8 + four lines), and the rank / cover / text columns (the list painter shifted DC_SHIFT right)."""
+    start, each row's top, the content's height (with no rows: the status text's room, hint_layout), and the rank / cover / text columns (the list painter shifted DC_SHIFT right)."""
     o = O
     seg = (o['DC_SEG_X'], o['DC_SEG_Y'], o['DC_SEG_W'], o['DC_SEG_H'])
     top = o['DC_TOP']
     return dict(line_y=o['PDL_LINE_Y'], seg=seg, sel=[segmented(*seg, 2, k) for k in range(2)], top=top, rows=[top + i * o['PC_ROW_H'] for i in range(n)],
-                h=top + n * o['PC_ROW_H'] + o['DC_BOTTOM'] if n else top + 8 + 4 * o['PS_TITLE_PITCH'], hint_y=top + 8, rank_end=o['DC_RANK_END'],
+                h=top + n * o['PC_ROW_H'] + o['DC_BOTTOM'] if n else hint_layout(top, [0])['h'], hint_y=hint_layout(top, [0])['lines'][0][1], rank_end=o['DC_RANK_END'],
                 art_x=o['LIST_ART_X'] + o['DC_SHIFT'], text_x=o['LIST_TEXT_X'] + o['DC_SHIFT'], text_end=o['LIST_TEXT_X'] + o['LIST_TEXT_W_CHEV'], chev_x=o['LIST_CHEV_X'])
 
 

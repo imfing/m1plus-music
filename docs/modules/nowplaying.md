@@ -14,7 +14,8 @@ stock services. [Lyrics](lyrics.md), [Queue](queue.md), [More](playmore.md) and
 The init hook calls `playing_page_init` (`0x53d1e4`) through its trampoline and returns
 the stock result. After successful initialization, with a window,
 `np_start` attaches page listeners and a repeating timer: 500 ms lit, 1000 ms dark.
-A refused timer or listener leaves stock behavior.
+A refused timer or listener leaves stock behavior. Every tick, lit or dark, also notes the
+seconds heard for [scrobbling](scrobble.md) (one `get_playtimeandlength`).
 
 A replacement page stops the previous timer. Destroy acts only on the current window,
 restores its status bar, removes timers and clears state; stale callbacks end without

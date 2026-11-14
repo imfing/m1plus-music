@@ -18,6 +18,7 @@
 #include "common.h"
 #include "home.h"
 #include "curlopts.h"
+#include "net.h"
 #include "podcasts.h"
 #include "pcfeed.h"
 #include "pcjson.h"
@@ -972,24 +973,20 @@ static void rd_log(const char *path) {
     close(fd);
 }
 
-/* One attempt on a fresh libcurl handle (so the round-robin name can resolve to another mirror): libcurl's code, fx.code the HTTP status (0 on a failure; an answer cut at the cap is used). */
+/* One attempt, a request of its own (a fresh libcurl handle, so the round-robin name can resolve to another mirror): libcurl's code, fx.code the HTTP status (0 on a failure; an answer cut at the cap is used). */
 static int rd_fetch_once(void) {
-    void *h = curl_easy_init();
-    int rc = 2; /* CURLE_FAILED_INIT */
+    net_req_t r;
+    int rc;
     if (fx.n) memset(fx.body, 0, fx.n); /* a failed try's bytes are gone (the parser wants a NUL after the answer) */
     fx.n = 0, fx.code = fx.http = 0;
-    if (!h) return rc;
-    curl_easy_setopt(h, CURLOPT_URL, fx.url);
-    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, rd_fetch_write);
-    curl_easy_setopt(h, CURLOPT_WRITEDATA, (void *)0);
-    curl_easy_setopt(h, CURLOPT_NOPROGRESS, 0);
-    curl_easy_setopt(h, CURLOPT_XFERINFOFUNCTION, rd_fetch_xfer);
-    pn_easy_net(h, 5, 10, 30); /* (verification stays on) */
-    rc = curl_easy_perform(h);
-    curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &fx.http);
-    fx.code = fx.http;
+    memset(&r, 0, sizeof r);
+    r.url = fx.url, r.write = rd_fetch_write, r.xfer = rd_fetch_xfer;
+    r.redirs = 5, r.connect_s = 10,
+    r.total_s = 30; /* (an HTTP error's page is handed over: its status is the answer) */
+    rc = net_perform(&r);
+    if (rc == NET_NOHANDLE) return CURLE_FAILED_INIT;
+    fx.code = fx.http = r.http;
     if (rc && !(rc == CURLE_WRITE_ERROR && fx.n)) fx.code = 0; /* an answer cut at the cap is used as it is */
-    curl_easy_cleanup(h);
     return rc;
 }
 
@@ -1022,7 +1019,8 @@ int rd_fetch(const char *path, int kind) {
     rd_logo_cancel(); /* the directory goes before the radio's own logo job: it is asked to end (within a transfer callback) and the page asks again */
     if (rd_logo_running()) return RD_E_BUSY;
     if (fx.state == RD_F_DONE) free(fx.body), fx.body = (char *)0, fx.state = RD_F_NONE; /* an answer nobody took */
-    if (pn_busy() || pn_dl_running() || pn_job_busy()) return RD_E_PODBUSY; /* a podcast job is never cut short */
+    if (pn_busy() || pn_job_busy())
+        return RD_E_PODBUSY; /* a podcast job is never cut short (a podcast download is no job: it goes on beside this) */
     fx.body = calloc(RD_FETCH_MAX + 1, 1);
     if (!fx.body) return RD_E_FAIL;
     snprintf(fx.url, sizeof fx.url, RD_API "%s", path);
@@ -1146,22 +1144,17 @@ static void rd_logo_trim(void) {
 }
 
 static void *rd_logo_worker(void *unused) {
-    void *h;
+    net_req_t r;
     int rc = -1;
     (void)unused;
     lg.n = 0;
     lg.fd = open(RD_LOGO_SRC, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    h = lg.fd >= 0 ? curl_easy_init() : (void *)0;
-    if (h) {
-        curl_easy_setopt(h, CURLOPT_URL, lg.url);
-        curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, rd_logo_write);
-        curl_easy_setopt(h, CURLOPT_WRITEDATA, (void *)0);
-        curl_easy_setopt(h, CURLOPT_NOPROGRESS, 0);
-        curl_easy_setopt(h, CURLOPT_XFERINFOFUNCTION, rd_logo_xfer);
-        curl_easy_setopt(h, CURLOPT_FAILONERROR, 1);
-        pn_easy_net(h, 3, 5, 10);
-        rc = curl_easy_perform(h);
-        curl_easy_cleanup(h);
+    if (lg.fd >= 0) {
+        memset(&r, 0, sizeof r);
+        r.url = lg.url, r.write = rd_logo_write, r.xfer = rd_logo_xfer;
+        r.flags = NET_FAIL;
+        r.redirs = 3, r.connect_s = 5, r.total_s = 10;
+        rc = net_perform(&r); /* (NET_NOHANDLE is -1: a failure tried again) */
     }
     if (lg.fd >= 0) close(lg.fd);
     /* 0: a network failure (tried again next session); 1: made; 2: the answer is no picture we can use */
@@ -1228,8 +1221,8 @@ int rd_logo_start(const char *url) {
         return 0;
     hash = rd_logo_hash(url);
     if (rd_logo_file(hash, path, sizeof path) != 0 || !m1_card_mounted()) return 0;
-    if (pn_busy() || pn_dl_running() || pn_job_busy() || get_wifisignal() <= 0 ||
-        (unsigned)time((long *)0) < PN_MIN_EPOCH || access(PN_CA, F_OK))
+    if (pn_busy() || pn_job_busy() || get_wifisignal() <= 0 || (unsigned)time((long *)0) < PN_MIN_EPOCH ||
+        access(PN_CA, F_OK))
         return 0;
     memcpy(lg.url, url, strlen(url) + 1);
     lg.hash = hash, lg.cancel = lg.done = 0, lg.result = 0;

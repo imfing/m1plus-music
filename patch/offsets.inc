@@ -494,6 +494,9 @@
  * to the one it uncovers, @0x69182c / @0x691b3c), the stock black, and the largest weighted square sum (2126 r^2 + 7152 g^2
  * + 722 b^2, channels 0..255) the bar colour may have: gamma 2 is above the sRGB luminance, so L <= 0.183 and white text
  * keeps 4.5:1 (test/pod/nowplaying.py checks the true figure). */
+/* (EVT_WINDOW_WILL_OPEN: see WINDOW_STAGE_CREATED; a handler bound on the window runs after stock has resolved the styles, widget_dispatch calls the widget's
+ * on_event @0x66cf38 before the emitter @0x66cf6c) */
+#define EVT_WINDOW_WILL_OPEN 0x12a
 #define EVT_WINDOW_TO_BG 0x12c
 #define EVT_WINDOW_TO_FG 0x12d
 #define NP_BAR_STOCK 0xff000000u
@@ -526,6 +529,31 @@
 #define LY_DELAY_MS 50
 #define LY_SNAP_LINES 4
 #define LY_OFF_MAX 976
+/* The idle lyrics page (patch/idlelyrics.c, docs/modules/idlelyrics.md; tools/pod_ui.py build_idlelyrics_page reads these): a fullscreen 320 x 480 window (no status bar). Header IL_HEAD_H high: the cover IL_ART px at
+ * (IL_ART_X, IL_ART_Y) with IL_ART_R px corners (the mini bar's mb_art_* machinery at another size), the title (IL_TITLE_PX) and the artist (IL_ARTIST_PX) IL_TEXT_W wide from IL_TEXT_X, centred on the cover
+ * with a 23 px line pitch (a size up from the mini bar's 17 / 16 px at 21). The lyrics view np-lyrics-like: IL_BOX_X, IL_BOX_Y, LY_W x IL_BOX_H (the engine's anchor is 0.35 of it, ly_retarget); the hint IL_HINT_PX px
+ * when there are no lyrics. IL_TICK_MS: the page timer; IL_FIRST_MS: its first tick. */
+#define IL_W 320
+#define IL_H 480
+#define IL_HEAD_H 88
+#define IL_ART 56
+#define IL_ART_R 8
+#define IL_ART_X 28
+#define IL_ART_Y 20
+#define IL_TEXT_X 96
+#define IL_TEXT_W 196
+#define IL_TITLE_Y 25
+#define IL_TITLE_H 24
+#define IL_TITLE_PX 19
+#define IL_ARTIST_Y 49
+#define IL_ARTIST_H 22
+#define IL_ARTIST_PX 17
+#define IL_BOX_X 28
+#define IL_BOX_Y 96
+#define IL_BOX_H 372
+#define IL_HINT_PX 20
+#define IL_TICK_MS 500
+#define IL_FIRST_MS 50
 #define LY_IDLE_MS 3000
 #define LY_TAP_PX 10
 #define LY_COAST_MS 200
@@ -668,6 +696,36 @@
 #define RC_TICK_MS 30
 #define RC_TAP_PX 10
 #define RC_RESOLVE_MS 5000   /* the menu's to-foreground resolves an album's cover key (loads the stock album list) only this long after the menu opened */
+
+/* Scrobbling (patch/scrobble.c, docs/modules/scrobble.md): a listen is LISTEN_MAX_S heard, or half the length, of a track longer than LISTEN_MIN_S (q2-pod's play counts, Last.fm's rule) */
+#define SC_MIN_S 30
+#define SC_MAX_S 240
+#define SC_POLL_MS 500       /* the player is asked at most this often (a caller may tick faster: the iPod page's animation timer, a main-loop poll) */
+#define SC_SLACK_S 2         /* a position step counts when it is at most the wall time since the last look plus this: seeks add nothing, pauses add nothing */
+#define SC_CLOCK_MIN 1577836800u   /* 2020-01-01 UTC: a clock before it was never set, and nothing is logged */
+#define SC_STR 256           /* artist, album (the id3 struct's fields) */
+#define SC_TITLE 512         /* title (the id3 struct's field) */
+#define SC_LINE 1200         /* one log line, the header with it */
+/* The upload (patch/scrobup.c) */
+#define SU_BATCH 50          /* listens a request (ListenBrainz takes more; Last.fm's limit is 50) */
+#define SU_LINE 2560         /* a longer log line is junk (Rockbox's own scrobbler writes up to about 2.2 KB; ours are under SC_LINE) */
+#define SU_RAW 16384         /* log bytes a request holds at most: the body is then under SU_BODY whatever the escaping (JSON: 6 bytes a byte at worst; Last.fm's form: 9, a byte that is not UTF-8 as %EF%BF%BD) */
+#define SU_BODY 196608       /* the request body, and Last.fm's answer to a batch (it repeats every tag) */
+#define SU_WIN 65536         /* the log is read, and copied, this much at a time */
+#define SU_TOKEN 128         /* the longest token (ListenBrainz's is a UUID, 36 bytes) */
+#define SU_TIME_MIN 1033430400u   /* 2002-10-01 UTC: ListenBrainz refuses a listen before it, and with it the whole request */
+#define SU_CONNECT_S 15
+#define SU_TOTAL_S 60
+#define SU_NAME 64           /* the account's user name as kept and shown, bytes with the NUL (cut on a character boundary) */
+#define SU_ANS 2048          /* the validate-token answer (about 80 bytes); a longer one ends the transfer */
+#define SU_LF_PASS 128       /* the longest Last.fm password, bytes */
+#define SU_LF_KEY 64         /* the longest Last.fm API key or secret (they are 32 hex digits), and the longest session key */
+#define SU_REJ 128           /* runs of refused listens (HTTP 400) one upload remembers; listens refused in a row (whole batches too) are one run, and one more run ends the upload */
+#define SU_INI_MAX 4096      /* the card's scrobble.ini: a longer file is never rewritten (a token typed on the device, a user name and Sign Out are refused), and only the whole lines of its first 4096 bytes are read */
+/* The automatic upload (patch/scrobble.c sa_*): seconds */
+#define SA_EVAL 60            /* the conditions are looked at once a minute at most */
+#define SA_WAIT 600           /* the oldest listen not uploaded yet must be this old: one upload for a run of tracks, not one a track */
+#define SA_RETRY 1800         /* after an upload that failed (or could not start) the next one waits this long */
 
 
 /* ---------------------------------------------------------------------------
@@ -1093,7 +1151,7 @@
 #define PC_TITLE 96               /* a title, UTF-8 bytes with the NUL (cut before a continuation byte) */
 #define PC_URL 320                /* a feed or image url of the show file (the feed url the refresh fetches: a longer one is refused at import) */
 #define PC_MAX_EPS 300            /* episodes of one show the model holds (newest kept) */
-#define PC_MAX_SHOWS 40           /* shows the page lists */
+#define PC_MAX_SHOWS 100          /* shows the page holds: the Shows grid has the first PP_SHOWS_MAX, the All Shows page every one */
 #define PC_DESC 208               /* a description: at most PC_DESC_CUT bytes of UTF-8 (cut before a continuation byte) and the NUL, with room */
 #define PC_DESC_CUT 200           /* the bytes of a description the feed reader keeps (HTML stripped, entities decoded, white space collapsed) */
 #define PC_AUTHOR 64              /* a show's author (itunes:author), UTF-8 bytes with the NUL */
@@ -1134,7 +1192,7 @@
 #define PC_SEEK_WAIT_MS 15000     /* a seek that has not happened this long after the episode started is dropped */
 #define PC_COVER_MAX_PX 2100000   /* a cover picture is decoded only when width * height is at most this (the stock loader holds the whole bitmap) */
 #define PC_ROW_H 64               /* the page's rows (LIST_ROW_H) */
-#define PC_TILES 44               /* text / cover tiles: every show (PC_MAX_SHOWS) and a few spare */
+#define PC_TILES 44               /* text / cover tiles: the rows and cells in view and spare (a ring: the least recently used leaves) */
 #define PC_SPEEDS 4               /* playspeed_mode 0..3: 1x, 1.25x, 1.5x, 2x (stock "Multiple Speed", images p_1_25 / p_1_5 / p_2) */
 /* The Podcasts Show page (patch/podcasts.c, docs/modules/podcasts.md "The Show page"; tools/preview/preview_podcasts_revamp.py reads these). Content y is from the list's top (window row
  * PG_LIST_Y = the navbar's bottom), x is the window's. HEADER, in the album page's and the playlist header's manner: the PS_ART px cover at x PS_ART_X with PS_ART_R px corners (flush with
@@ -1281,6 +1339,7 @@
 #define PP_DL_TEXT_W 206 /* the text ends at x 278 (72 + 206), 10 px before the shared chevron */
 #define PP_DL_CHEV_X 288 /* = LIST_CHEV_X: the shared chevron (m1_make_chevron), centred on the row above its hairline */
 #define PP_SEC_GAP 12
+#define PP_SHOWS_MAX 10 /* the grid's shows (the most recently updated); with more, a See All (N) row (PS_MORE_H high, its text at PP_SHOWS_X) is under the grid in place of PP_LIB_GAP and opens the All Shows page */
 #define PP_LIB_GAP 24 /* the air between the grid's last row and the Library rows (Search, Downloads, Subscriptions, Saved) that close the Shows page */
 #define PP_BOTTOM 10
 /* The Downloads page (patch/podcasts.c, docs/modules/podcasts.md "The Downloaded page"; tools/pod_show.py downloads_layout is the model): content y from the list's top. The storage line (15 px grey, PP_LINE_H high) at PDL_LINE_Y, x PP_LINE_X;
@@ -1523,7 +1582,7 @@
 #define VS_VIEWS 2
 #define VS_SEARCH (VS_SORTS + VS_VIEWS) /* slot 6: the optional Search row, the card's first (a glyph, no tick) */
 #define VS_SELECT (VS_SEARCH + 1) /* slot 7: the optional Select row, second in the card (a check-circle glyph, no tick) */
-#define VS_ACT2 (VS_SELECT + 1) /* slot 8: an optional third action row (only the Playlists asset has it: New Playlist, Import, Export, Delete Playlists are slots 6..9), a glyph, no tick */
+#define VS_ACT2 (VS_SELECT + 1) /* slot 8: an optional third action row (the Songs asset has it for a playlist's Clean Up Playlist; the Playlists asset has it and slot 9: New Playlist, Import, Export, Delete Playlists are slots 6..9), a glyph, no tick */
 #define VS_ACT3 (VS_ACT2 + 1) /* slot 9: the fourth */
 #define VS_ROWS (VS_ACT3 + 1)
 #define VS_ALL_SORTS ((1u << VS_SORTS) - 1)

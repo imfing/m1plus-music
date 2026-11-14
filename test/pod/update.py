@@ -13,7 +13,7 @@ from harness import sibling
 
 PCS = sibling('pcsearch')
 PCN, fn, work = PCS.PCN, PCS.fn, PCS.PCN.work
-PN = dict(PCN.PN, CANCELLED=12, CARDFULL=13, NOFEED=17, NOLYRICS=18, OVERLOAD=19, UPCHECK=20, UPBAD=21)
+PN = dict(PCN.PN, CANCELLED=12, CARDFULL=13, NOFEED=16, NOLYRICS=17, OVERLOAD=18, UPCHECK=19, UPBAD=20)
 U = dict(IDLE=0, CHECKING=1, CHECKED=2, DOWNLOADING=3, DOWNLOADED=4, FAILED=5)
 REPO = build.REPO
 LATEST = f'https://github.com/{REPO}/releases/latest'
@@ -258,7 +258,7 @@ def check_tests(ctx):
     expect(check(m) == PN['MEM'] and st(m)[:3] == (U['FAILED'], PN['MEM'], 1) and fn(m, 'pn_job_busy') == 0, 'no thread: PN_MEM, the slot is free')
     # Cancel: a running check forgets itself
     site = Site()
-    site.latest = {'code': 302, 'redirect_url': TAGURL + '1.0.1', 'xfer': lambda url, sent, total: m.nested(PSYMS['pn_cancel'])}
+    site.latest = {'code': 302, 'redirect_url': TAGURL + '1.0.1', 'xfer': lambda url, sent, total: m.nested(PSYMS['pn_cancel'], 1 << 7)}
     m = machine(site, own='1.0.0', dev=0); check(m)
     expect(st(m)[:2] == (U['IDLE'], PN['CANCELLED']) and st(m)[3] == 0 and fn(m, 'pn_job_busy') == 0, f'Cancel during a check: back to idle, nothing offered ({st(m)})')
     # a new check forgets an earlier offer; a failed one keeps none
@@ -478,7 +478,7 @@ def download_tests(ctx):
     expect(download(m) == 0 and st(m)[0] == U['DOWNLOADED'], 'and with Wi-Fi back it downloads')
     # Cancel
     site = Site('1.0.1', pkg=pkg_ok, asset={'chunk': 100})
-    site.asset['xfer'] = lambda url, sent, total: m.nested(PSYMS['pn_cancel']) if sent >= 300 else None
+    site.asset['xfer'] = lambda url, sent, total: m.nested(PSYMS['pn_cancel'], 1 << 7) if sent >= 300 else None
     m = machine(site, own='1.0.0', dev=0); check(m)
     download(m)
     expect(st(m)[:3] == (U['FAILED'], PN['CANCELLED'], 2) and m.fs.get(FILE) == OLD and PART not in m.fs and fn(m, 'pn_job_busy') == 0 and st(m)[3] == 2, f'Cancel: stopped through the progress callback, the .part deleted, the old update.bin kept ({st(m)})')
@@ -649,7 +649,7 @@ def notes_check_tests(ctx):
     expect(st(m)[0] == U['DOWNLOADED'] and notes_of(m) == want, 'and so does a finished one (the page shows the notes in the offered state only)')
     # Cancel while the notes arrive: the check is cancelled, nothing is kept
     site = Site('1.0.1', notes={'body': raw, 'chunk': 500})
-    site.notes['xfer'] = lambda url, sent, total: m.nested(PSYMS['pn_cancel']) if sent >= 1000 else None
+    site.notes['xfer'] = lambda url, sent, total: m.nested(PSYMS['pn_cancel'], 1 << 7) if sent >= 1000 else None
     m = machine(site, own='1.0.0', dev=0); check(m)
     expect(st(m)[:2] == (U['IDLE'], PN['CANCELLED']) and st(m)[3] == 0 and notes_of(m) == '' and fn(m, 'pn_job_busy') == 0, f'Cancel during the notes request: back to idle, no offer, no notes ({st(m)})')
     # memory: no thread run leaves a notes buffer behind a failed or cancelled check, and a second check frees the first's

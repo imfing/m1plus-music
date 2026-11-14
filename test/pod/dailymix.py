@@ -540,6 +540,11 @@ def job_tests(ctx):
            'the card had no mix directory: the writer made the card folder, then daily-mix in it (mkdir), and the job committed into it')
     rows_art, _ = D.art(want_tones, aseed)
     expect(m.fs.get(ART) == X.dump_art(words_of(rows_art), aseed), 'the art file is the model\'s art for the mix\'s tones and art seed')
+    flat = [c for log in m.tick_log for c in log if c[0] in ('loadLocalClassList', 'deque_clear')]
+    lib_at = flat.index(('loadLocalClassList', CLS_LIB)); alb_at = flat.index(('loadLocalClassList', CLS_ALB))
+    expect(flat.count(('loadLocalClassList', CLS_LIB)) == 1 and [c[0] for c in flat[lib_at + 1:alb_at]] == ['deque_clear'],
+           f'the library is read once: the picks are copied from the list the candidates were read from, which is then freed before the albums are read ({flat})')
+    expect(m.deques[m.word(pod.DATA['PDEQ_SHOWLIST'][0])] == [], 'and no list is left in *pdeq_showlist when the job is done')
     expect(m.up() and not [c for c in m.calls if c[0] == 'deletePlaylist'], 'the card is shown with the new mix')
     if PERF:
         expect(len(costs) < 120 and max(costs) < 5_000_000, f'the job: {len(costs)} ticks, the most expensive {max(costs)} instructions, {sum(costs)} in all (30 ms apart)')
@@ -714,6 +719,21 @@ def card_tests(ctx):
     m = fresh(wd); put_tones(m, songs, picks, mdl); run_job(m)    # the same day, another card: no mix file there
     expect(not written(m, [m.tick_log[0]]) and X.parse_mix(m.fs[MIX])[0] == day and m.up() and mix_paths(m) == [mdl[i]['path'] for i in picks],
            'a card swap, same day: the new card has no mix file, so a new mix is made after DM_START_MS and written to it')
+    # another query between the library's read and the picks' copy (the show list is no longer the one read): the library is read a second time, and the mix is the same
+    made = []
+    for k in range(1, 9):
+        m = fresh(wd, mixfile=ymix); m.clock = START_MS + 1000
+        for _ in range(200):
+            m.call(PSYMS['dm_tick'], a0=0, count=60000000)
+            if ('loadLocalClassList', CLS_LIB) in m.calls: break
+        for _ in range(k): m.call(PSYMS['dm_tick'], a0=0, count=60000000)
+        m.setword(pod.DATA['PDEQ_SHOWLIST'][0], m.new_deque([]))
+        m.tick_log = []; m.ticks()
+        again = sum(1 for log in m.tick_log for c in log if c == ('loadLocalClassList', CLS_LIB))
+        if m.fs.get(MIX) != ymix: made.append((k, again, m.fs.get(MIX)))
+    ref = fresh(wd, mixfile=ymix); run_job(ref)
+    expect(made and all(again == 1 and mix == ref.fs.get(MIX) for _, again, mix in made),
+           f'a show list replaced after the library was read: the job reads the library again for the picks and writes the same mix ({[(k, a) for k, a, _ in made]})')
     # the library changes under the job (another list was loaded, or it grew)
     big = [dict(path=f'/mnt/mmc/B/{i // 12}/{i}.flac', artist=f'Band {i // 60}', album=f'Disc {i // 12}', title=f'T{i}', name=f'{i}.flac') for i in range(1700)]
     m = fresh(wd, songs_=big, plays_={}, rec__=(), fav_=(), mixfile=ymix); m.clock = START_MS + 1000

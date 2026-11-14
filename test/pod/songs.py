@@ -18,7 +18,7 @@ TEXT_X, TEXT_END, SEL = O['LIST_TEXT_X'], O['LIST_HAIR_END'] - O['SG_RAIL_INSET'
 RAIL_X, RAIL_W = O['SG_RAIL_X'], O['SG_RAIL_W']
 WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_spin', 'sg_hname', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del',
            'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'label_row_dim', 'label_row_subdim', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'sg_bubble_letter', 'sg_bar',
-           *VS_WIDGETS)
+           *VS_WIDGETS, 'vs_item8', 'vs_label8', 'vs_glyph8')   # (slot 8: a playlist's Clean Up Playlist row, only in this asset and the Playlists page's)
 
 
 def colour(i): return 0xff000000 | (i * 37 % 256) | (i * 59 % 256) << 8 | (i * 83 % 256) << 16
@@ -1447,13 +1447,15 @@ def lists_tests(ctx):
     expect(m.wtext[big] == fitted(name, O['SG_TITLE_W']) == fitted('A very long playlist name for the ro…', O['SG_TITLE_W']) and m.wtext[m.widgets['label_title']] == fitted(name, 156),
            f'the name is the title, cut with an ellipsis (no space before it) to the large title\'s full width and the small one\'s 156 (a playlist has no Search: the title runs to 214) ({m.wtext[big]!r})')
     lt = m.widgets['label_title']
-    expect(not is_shown(m, 'btn_search') and not is_shown(m, 'btn_coverflow') and vis(m, 'btn_select') == (1, 1) and vis(m, 'btn_more') == (0, 0) and ('widget_resize', lt, O['NAV_VIEW_X'] - 58, 22) in m.calls
-           and (m.widgets['btn_select'], 'style:normal:icon') not in m.props,
-           'a playlist\'s songs: no Search button, Select alone as the capsule\'s left cap at 214 (no "..."), the small title runs from 58 to 214')
-    m.click('btn_select', count=900000000)
-    expect(vis(m, 'sg_bar') == (1, 1) and vis(m, 'vs_card') == (0, 0) and vis(m, 'btn_select') == (0, 0) and m.props[(lt, 'w')] == O['SG_SELALL_X'] - 58, 'its Select button enters select mode at once')
+    expect(not is_shown(m, 'btn_search') and not is_shown(m, 'btn_coverflow') and not is_shown(m, 'btn_select') and vis(m, 'btn_more') == (1, 1) and ('widget_resize', lt, O['NAV_VIEW_X'] - 58, 22) in m.calls
+           and (m.widgets['btn_more'], 'style:normal:icon') not in m.props,
+           'a playlist\'s songs: no Search button, the "..." as the capsule\'s left cap at 214 (the asset\'s image; its card holds Select and Clean Up Playlist: clean_tests), the small title runs from 58 to 214')
+    m.click('btn_more', count=900000000)
+    expect(vis(m, 'vs_card') == (1, 1) and not is_shown(m, 'sg_bar'), 'the "..." opens the card, not select mode')
+    m.click('vs_item7', count=900000000)
+    expect(vis(m, 'sg_bar') == (1, 1) and vis(m, 'vs_card') == (0, 0) and vis(m, 'btn_more') == (0, 0) and m.props[(lt, 'w')] == O['SG_SELALL_X'] - 58, 'its Select row enters select mode')
     click(m, 'btn_return')
-    expect(vis(m, 'btn_select') == (1, 1) and m.props[(lt, 'w')] == O['NAV_VIEW_X'] - 58, 'and leaving it brings Select back, the title to 214 again')
+    expect(vis(m, 'btn_more') == (1, 1) and m.props[(lt, 'w')] == O['NAV_VIEW_X'] - 58, 'and leaving it brings the "..." back, the title to 214 again')
     foot = m.widgets['sg_foot']
     expect(m.wtext[foot] == '5 songs' and m.props.get((foot, 'y')) == O['PH_TOP'] + 5 * ROW + O['SG_FOOT_GAP'], f'the playlist\'s count under its last row: "5 songs" ({m.wtext.get(foot)!r})')
     m.setword(ci, 3)
@@ -2000,6 +2002,8 @@ def src_tests(ctx):
         m.call(OPEN, a0=src, a1=which, a2=m.cstr(title), count=900000000)
         expect(m.fake['states'][:1] == [(which, 0)] and vis(m, 'sg_spin')[0] == 1 and vis(m, 'label_status')[0] == 0 and vis(m, 'btn_play')[0] == 0 and vis(m, 'btn_shuffle')[0] == 0 and vis(m, 'sg_foot')[0] == 0,
                f'{title} loading: asked src->state({which}, NULL), one spinner, no pills, no footer ({m.fake["states"][:2]})')
+        mv = [c[2:] for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets['sg_spin']]
+        expect(mv[-1:] == [(153, 219)], f'{title} loading: the spinner is centred in the room under the large title, in view_grid\'s coordinates (window y 50 + 219 + 7 = 276) ({mv[-1:]})')
         m.fake['lists'][which] = src_records(m, titles); m.fake['state'] = 0; m.fake['gen'] = 2
         m.call(PSYMS['sg_on_gen'], count=900000000)
         settle(m)
@@ -2357,4 +2361,235 @@ def src_dlqueue_tests(ctx):
     m.call(PSYMS['sg_on_destroy'], count=4000000)
 
 
-SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests, src_tests, src_marks_tests, src_ring_accent_tests, src_dsd_tests, src_dlqueue_tests]   # tools/check.py runs each as its own task
+def clean_tests(ctx):
+    """A playlist's "..." card and Clean Up Playlist (docs/modules/playlists.md "Clean Up Playlist"; patch/songs.c sg_clean, patch/songops.c so_gone_mark / so_clean): the asset's
+    third action row, the card of two rows, the check against the card (only paths under /mnt/mmc/), the guards (no card, a card that is not mounted, nothing missing), the repair
+    (a missing row whose song the library has under another path gets that path: one UPDATE by the row's id; the twin by file name, CUE range and tags, its file on the card), the
+    confirm text by count, No, Yes (toolsDeleteItemById on this playlist's rows alone: never a file, never another playlist), the list read again, and the toast of a row whose file
+    is not found (File not found with the card in, Storage unavailable without it) on a row tap."""
+    expect = ctx.expect
+    pls, name, DB = O['CLASS_PLAYLIST_SONGS'], 'Road', '/mnt/data/database.db'
+    titles = ['Zed', 'Alpha', 'Mike', 'Bravo', 'Echo', 'Yankee', 'Delta', 'Kilo']
+    path = lambda i: f'/mnt/mmc/m/{i + 1}.flac'   # the library's path of song i (its file there unless `gone`)
+    old = lambda i: f'/mnt/mmc/old/{i + 1}.flac'   # where a moved song was when it went into the playlist
+    rid = lambda i: 201 + i                         # playlist 7's row ids (a song row's id is over 100); playlist 3 holds the same songs as rows 301 ..
+
+    def page(gone=(), card=True, mounted=True, n=5, paths=None, retitle=None, titles=titles):
+        """The library's songs (ids 1 ..), playlist 7 with rows of its first n (paths: a row's own path where it is not the library's; retitle: its own title) and playlist 3 with
+        the same n songs at the library's paths."""
+        m = list_machine(titles)
+        row = lambda i, r, p: m.record(album=f'Album {i % 5}', artist=f'Artist {i % 5}', path=p, title=(retitle or {}).get(i, titles[i]) if r < 300 else titles[i], name=f'{i + 1}.flac', rid=r)
+        m.playlist_songs = {7: [row(i, rid(i), (paths or {}).get(i, path(i))) for i in range(n)], 3: [row(i, 301 + i, path(i)) for i in range(n)]}
+        for i in gone: m.present.discard(path(i))
+        if card: m.present.add('/tmp/mmc_add')
+        m.card_mounted = mounted
+        r = m.call(PSYMS['songs_open_playlist'], a0=7, a1=m.cstr(name), count=900000000)
+        assert r == 0, r
+        m.calls = []
+        return m
+
+    def clean(m):
+        m.click('btn_more', count=900000000); m.calls = []
+        m.click('vs_item8', count=900000000)
+        return list(m.calls)
+
+    deleted = lambda calls: [c for c in calls if c[0] in ('toolsDeleteItemById', 'toolsUpdateDbTable', 'batch_delete_file', 'select_recordinit', 'set_selectindex')]   # anything written
+    asked = lambda calls: [c[1] for c in calls if c[0] == 'confirm']
+    gone_ids = lambda calls: [c[3] for c in calls if c[0] == 'toolsDeleteItemById' and c[1:3] == ('playlist', DB)]
+    updates = lambda calls: [c[2] for c in calls if c[0] == 'toolsUpdateDbTable' and c[1] == DB]
+    said = lambda calls: [c[1] for c in calls if c[0] == 'toast']
+    paths_of = lambda m, pl: [m.read_cstr(m.word(r + O['REC_PATH'])) for r in m.playlist_songs[pl]]
+
+    # the asset: slot 8 under Select, its glyph; the Playlists list page's own card is unchanged
+    f = ui().find
+    import mod_icons
+    xx = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx')
+    expect(f('vs_label8').get('tr_text') == 'Clean Up Playlist' and f('vs_glyph8').get('image') == 'pod_ic_vsclean' and f('vs_label7').get('tr_text') == 'Select' and f('vs_item9') is None
+           and f('vs_item8').get('enable') == 'true' and f('vs_label8').get('sensitive') == 'false' and f('vs_glyph8').get('sensitive') == 'false' and f('vs_tick8') is None,
+           'the Songs asset\'s card has a third action row, slot 8: Clean Up Playlist with the list-x glyph, no tick (no slot 9)')
+    expect(mod_icons.SONGS_IMAGES['pod_ic_vsclean'] == ('list-x', mod_icons.WHITE, None, 20)
+           and open(os.path.join(xx, 'pod_ic_vsclean.png'), 'rb').read() == open(os.path.join(mod_icons.PNG, 'pod_ic_vsclean.png'), 'rb').read(),
+           'pod_ic_vsclean is Lucide list-x on the cards\' 20 px canvas, the committed PNG in the package')
+    expect('Clean Up Playlist' not in pod_pages.PLAYLIST_MENU and len(pod_pages.PLAYLIST_MENU) == 4, 'the Playlists list page\'s actions card has no clean-up row (the action is the playlist\'s own)')
+
+    # the card: Select, Clean Up Playlist, in the two-row glass; other lists do not offer slot 8
+    m = page()
+    m.click('btn_more', count=900000000)
+    card = m.widgets['vs_card']
+    expect(vis(m, 'vs_card') == (1, 1) and [vis(m, f'vs_item{i}') for i in range(9)] == [(0, 0)] * 7 + [(1, 1)] * 2
+           and all(m.props.get((card, f'style:{st}:bg_image')) == 'vs_glass2' for st in ('normal', 'pressed', 'over'))
+           and ('widget_move', m.widgets['vs_item7'], 0, 0) in m.calls and ('widget_move', m.widgets['vs_item8'], 0, 50) in m.calls,
+           'a playlist\'s card: Select then Clean Up Playlist, two rows in vs_glass2')
+    m.click('vs_scrim', count=900000000)
+    expect(vis(m, 'vs_card') == (0, 0), 'the scrim closes it')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+    fav = O['CLASS_FAV']
+    m = list_machine(titles, fav); m.call(PSYMS['songs_open_list'], a0=O['HOME_FAV'], count=900000000)
+    expect(vis(m, 'vs_item8') == (0, 0) and vis(m, 'btn_more') == (0, 0), 'Favorites keeps its Select button: no card, slot 8 hidden and insensitive')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
+
+    # nothing missing; no card; a card that is in but not mounted
+    calls = clean(page())
+    expect([c[1] for c in calls if c[0] == 'toast'] == ['All songs are on the card'] and not asked(calls) and not deleted(calls)
+           and [c[1] for c in calls if c[0] == 'access' and c[1].startswith('/mnt/mmc/m/')] == [path(i) for i in range(5)],
+           'every file is there: each of the playlist\'s five paths is checked once, "All songs are on the card", no dialog, nothing removed')
+    calls = clean(page(gone=(1, 3), card=False))
+    expect([c[1] for c in calls if c[0] == 'toast'] == ['msg_nottf'] and not asked(calls) and not deleted(calls) and not any(c[0] == 'access' and c[1].startswith('/mnt/mmc/') for c in calls),
+           'no card (/tmp/mmc_add): the stock "No TF Card Found", nothing checked, nothing removed')
+    calls = clean(page(gone=(0, 1, 2, 3, 4), mounted=False))
+    expect([c[1] for c in calls if c[0] == 'toast'] == ['Card not readable, nothing removed'] and not asked(calls) and not deleted(calls),
+           'the card is in but /mnt/mmc is not its file system (every path looks missing): "Card not readable, nothing removed", no dialog')
+
+    # missing rows: the confirm text by count; No removes nothing
+    m = page(gone=(3,)); m.confirm_yes = False
+    calls = clean(m)
+    expect(asked(calls) == ['Remove 1 missing song from this playlist?'] and not deleted(calls) and not [c for c in calls if c[0] == 'toast'] and not any(c[0] == 'loadLocalClassList' for c in calls),
+           f'one missing song: the confirm dialog in the singular; No removes nothing and reads nothing again ({asked(calls)})')
+    m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000)
+    expect(vis(m, 'sg_bar') == (1, 1), 'after a No the page still enters select mode')
+    calls = click(m, 'sg_del')
+    expect(any(c[0] == 'toast' and c[1] == 'msg_delsongfailed' for c in calls), 'with no row marked (the check\'s marks are cleared: Delete finds nothing selected)')
+
+    # Yes: the missing rows leave this playlist by their own ids, the message, the list read again; the other playlist keeps its rows of the same songs
+    m = page(gone=(1, 3)); m.confirm_yes = True
+    flag = pod.DATA['DELETE_FLAG'][0]
+    m.u.mem_write(flag, b'\0')
+    calls = clean(m)
+    foot = m.widgets['sg_foot']
+    last = max(i for i, c in enumerate(calls) if c[0] == 'toolsDeleteItemById')
+    expect(asked(calls) == ['Remove 2 missing songs from this playlist?'] and gone_ids(calls) == [rid(1), rid(3)] and not updates(calls) and 'batch_delete_file' not in [c[0] for c in calls],
+           f'two missing songs whose file is nowhere, Yes: toolsDeleteItemById("playlist", the database, id) for rows 1 and 3, nothing rewritten, no batch delete ({gone_ids(calls)})')
+    expect(last < next(i for i, c in enumerate(calls) if c[0] == 'toast' and c[1] == 'Playlist cleaned up') and said(calls) == ['Playlist cleaned up']
+           and [c[1] for c in calls[last:] if c[0] == 'loadLocalClassList'] == [pls] and m.wtext[foot] == '3 songs' and not is_shown(m, 'sg_bar') and m.u.mem_read(flag, 1) == b'\x01',
+           f'then "Playlist cleaned up", the list is read again ("3 songs") and stock\'s delete_flag is set as its own delete leaves it ({m.wtext.get(foot)!r})')
+    expect(len(m.playlist_songs[3]) == 5 and not any(c[0] in ('remove', 'unlink') for c in calls), 'the other playlist still has its five rows (the same songs), and no file is removed')
+
+    # every song of a small playlist missing on a mounted card: asked, not refused
+    m = page(gone=(0, 1), n=2); m.confirm_yes = True
+    calls = clean(m)
+    expect(asked(calls) == ['Remove 2 missing songs from this playlist?'] and gone_ids(calls) == [rid(0), rid(1)] and vis(m, 'label_status')[0] == 1,
+           'both songs of a playlist missing on a mounted card: the dialog, then the empty playlist\'s line')
+
+    # a path that is not on the card is never checked or marked
+    m = page(gone=(2,), paths={1: '/mnt/usb/a.flac', 4: ''}); m.confirm_yes = True
+    calls = clean(m)
+    expect(not any(c[0] == 'access' and c[1] in ('/mnt/usb/a.flac', '') for c in calls) and asked(calls) == ['Remove 1 missing song from this playlist?'] and gone_ids(calls) == [rid(2)],
+           'a USB path and an empty path are not tested, counted or marked: only the card\'s missing row goes')
+
+    # a row with a playlist's own id (100 or less) is never written
+    m = page(gone=(1,)); m.setword(m.playlist_songs[7][1] + O['REC_ID'], 7); m.confirm_yes = True
+    calls = clean(m)
+    expect(asked(calls) and not gone_ids(calls) and not updates(calls) and said(calls) == [], 'a missing row whose id is not a song row\'s (<= 100): asked about, but nothing is deleted or rewritten')
+
+    # The repair. The folder was renamed: the playlist's rows 1 and 3 have the old paths, the library has the same songs (file name, tags) at new ones
+    m = page(paths={1: old(1), 3: old(3)})
+    calls = clean(m)
+    q = [c[2] for c in calls if c[0] == 'toolsQueryDbTable']
+    expect(q == ["select * from songtable where filename in ('2.flac','4.flac')"] and all(c[3] == 0x4e9058 and c[1] == DB for c in calls if c[0] == 'toolsQueryDbTable'),
+           f'the library is asked once for the missing rows\' file names, with stock\'s song row callback ({q})')
+    expect(updates(calls) == [f"update playlist set fileurl='{path(1)}' where id={rid(1)}", f"update playlist set fileurl='{path(3)}' where id={rid(3)}"] and not gone_ids(calls) and not asked(calls),
+           f'each moved row gets the library\'s path by its own row id; nothing is asked or removed ({updates(calls)})')
+    expect(said(calls) == ['2 songs updated'] and paths_of(m, 7) == [path(i) for i in range(5)] and m.wtext[m.widgets['sg_foot']] == '5 songs',
+           f'"2 songs updated", the playlist\'s rows all at the library\'s paths ({said(calls)})')
+    expect([c[1] for c in calls if c[0] == 'loadLocalClassList'] == [pls] and ('deque_clear', m.word(pod.DATA['PDEQ_TOOLS_TMP'][0])) in calls,
+           'the list is read again after the repair, and the query\'s rows are cleared (as stock clears them after a list)')
+    settle(m)
+    lay = Layout(['A'] * 5, sections=False, top=O['PH_TOP'])
+    tap(m, 150, lay.row_y(1) + 30)
+    expect(m.played and m.played[1] == 1, 'and the repaired row plays')
+    calls = clean(m)
+    expect(said(calls) == ['All songs are on the card'] and not deleted(calls), 'a second clean-up finds nothing to do')
+    m = page(paths={1: old(1)}); calls = clean(m)
+    expect(said(calls) == ['1 song updated'], 'one row repaired: the singular')
+
+    # repaired and missing together: the repair first, then the question for what is left; No keeps the repair
+    for yes in (True, False):
+        m = page(paths={1: old(1)}, gone=(3,)); m.confirm_yes = yes
+        calls = clean(m)
+        expect(updates(calls) == [f"update playlist set fileurl='{path(1)}' where id={rid(1)}"] and asked(calls) == ['Remove 1 missing song from this playlist?']
+               and calls.index(next(c for c in calls if c[0] == 'toolsUpdateDbTable')) < calls.index(next(c for c in calls if c[0] == 'confirm'))
+               and gone_ids(calls) == ([rid(3)] if yes else []) and said(calls) == (['Playlist cleaned up'] if yes else ['1 song updated']),
+               f'one moved, one gone, {"Yes" if yes else "No"}: the path is rewritten before the dialog; {"the gone row leaves, one message" if yes else "nothing leaves, the repair is reported"} ({said(calls)})')
+
+    # not the same song: another title, a twin whose file is not on the card, the same path
+    m = page(paths={1: old(1)}, retitle={1: 'Another take'}); m.confirm_yes = False
+    calls = clean(m)
+    expect(not updates(calls) and asked(calls) == ['Remove 1 missing song from this playlist?'], 'a library song with that file name but another title is not taken for it: no repair, the row is asked about')
+    m = page(paths={1: old(1)}, gone=(1,)); m.confirm_yes = False
+    calls = clean(m)
+    expect(not updates(calls) and asked(calls), 'a library row whose own file is not on the card is no twin')
+    m = page(gone=(1,)); m.confirm_yes = False
+    calls = clean(m)
+    expect(not updates(calls) and asked(calls), 'the library\'s row at the row\'s own (missing) path is no twin')
+    m = page(paths={1: old(1)}); m.setword(m.playlist_songs[7][1] + O['REC_CUE_START'], 5000); m.confirm_yes = False
+    calls = clean(m)
+    expect(not updates(calls) and asked(calls), 'a CUE track (its start set) is not the plain file of that name')
+
+    # quotes in the file name and in the new path are doubled in both statements
+    m = list_machine(titles)
+    quoted = "/mnt/mmc/it's/Don't.flac"
+    m.setword(m.songs[1] + O['REC_PATH'], m.cstr(quoted)); m.setword(m.songs[1] + O['REC_NAME'], m.cstr("Don't.flac")); m.present.add(quoted)
+    m.playlist_songs = {7: [m.record(album='Album 1', artist='Artist 1', path="/mnt/mmc/old/Don't.flac", title=titles[1], name="Don't.flac", rid=rid(1))]}
+    m.present.add('/tmp/mmc_add'); m.call(PSYMS['songs_open_playlist'], a0=7, a1=m.cstr(name), count=900000000); m.calls = []
+    calls = clean(m)
+    expect([c[2] for c in calls if c[0] == 'toolsQueryDbTable'] == ["select * from songtable where filename in ('Don''t.flac')"]
+           and updates(calls) == [f"update playlist set fileurl='/mnt/mmc/it''s/Don''t.flac' where id={rid(1)}"] and paths_of(m, 7) == [quoted],
+           f'a quote in the name and the path is doubled ({updates(calls)})')
+
+    # a write that fails repairs nothing: the row is still missing and is asked about
+    m = page(paths={1: old(1)}); m.update_fails = True; m.confirm_yes = False
+    calls = clean(m)
+    expect(len(updates(calls)) == 1 and asked(calls) and said(calls) == [] and paths_of(m, 7)[1] == old(1), 'an UPDATE that fails: no "updated" message, the row stays as it was')
+
+    # many rows: the library is asked in chunks of 40 names
+    many = [f'Song {i:03d}' for i in range(90)]
+    m = page(n=90, paths={i: old(i) for i in range(90)}, titles=many)
+    calls = clean(m)
+    q = [c[2] for c in calls if c[0] == 'toolsQueryDbTable']
+    expect([s.count(',') + 1 for s in q] == [40, 40, 10] and len(updates(calls)) == 90 and said(calls) == ['90 songs updated'] and paths_of(m, 7) == [path(i) for i in range(90)],
+           f'90 moved rows: three queries (40, 40, 10 names), 90 rows rewritten ({[s.count(",") + 1 for s in q]}, {len(updates(calls))})')
+
+    # the card pulled while the dialog is up: nothing removed
+    m = page(gone=(1,)); m.confirm_yes = True
+    m.on_confirm = lambda mm: mm.present.discard('/tmp/mmc_add')
+    calls = clean(m)
+    expect(asked(calls) and not deleted(calls) and not any(c[0] == 'toast' for c in calls), 'the card taken out under the dialog: Yes removes nothing')
+
+    # more files gone while the dialog is up: only the row that was asked about is removed; one that came back stays
+    m = page(gone=(1,)); m.confirm_yes = True
+    m.on_confirm = lambda mm: [mm.present.discard(path(i)) for i in (0, 3)]
+    calls = clean(m)
+    expect(asked(calls) == ['Remove 1 missing song from this playlist?'] and gone_ids(calls) == [rid(1)] and len(m.playlist_songs[7]) == 4,
+           f'two more files gone under a dialog that asked about one song: that one row is removed, the others are left for the next clean-up ({gone_ids(calls)})')
+    m = page(gone=(1, 3)); m.confirm_yes = True
+    m.on_confirm = lambda mm: (mm.present.add(path(1)), mm.present.discard(path(0)))
+    calls = clean(m)
+    expect(gone_ids(calls) == [rid(3)], f'a file back under the dialog keeps its row, and a newly missing one is not removed in its place ({gone_ids(calls)})')
+
+    # a twin on USB is no twin: the row is not moved off the card
+    m = list_machine(titles)
+    m.setword(m.songs[1] + O['REC_PATH'], m.cstr('/mnt/usb/2.flac')); m.present.add('/mnt/usb/2.flac'); m.present.add('/tmp/mmc_add'); m.card_mounted = True
+    m.playlist_songs = {7: [m.record(album='Album 1', artist='Artist 1', path=old(1), title=titles[1], name='2.flac', rid=rid(1))]}
+    assert m.call(PSYMS['songs_open_playlist'], a0=7, a1=m.cstr(name), count=900000000) == 0
+    m.confirm_yes = False
+    calls = clean(m)
+    expect(not updates(calls) and asked(calls) == ['Remove 1 missing song from this playlist?'],
+           'the library has the song only under /mnt/usb/ (its file there): the row is not rewritten to a path the check never looks at; it is asked about')
+
+    # select mode: the row does nothing
+    m = page(gone=(1,)); m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); m.calls = []
+    m.call(PSYMS['sg_on_item'], a0=O['VS_ACT2'], a1=0, count=900000000)
+    expect(not asked(m.calls) and not any(c[0] == 'toast' for c in m.calls), 'in select mode the clean-up does nothing')
+
+    # a row whose file is not found: the toast by the card's state (patch/songops.c so_missing)
+    lay = Layout(['A'] * 5, sections=False, top=O['PH_TOP'])
+    for card, want in ((True, 'File not found'), (False, 'Storage unavailable')):
+        m = page(gone=(1,), card=card); settle(m)
+        calls = tap(m, 150, lay.row_y(1) + 30)
+        expect([c[1] for c in calls if c[0] == 'toast'] == [want] and not m.played, f'a tap on a row whose file is gone, the card {"in" if card else "out"}: "{want}", nothing plays')
+    m = page(gone=(1,)); settle(m)
+    tap(m, 150, lay.row_y(0) + 30)
+    expect(m.played and m.played[1] == 0, 'a row whose file is there plays as before')
+
+
+SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests, clean_tests, src_tests, src_marks_tests, src_ring_accent_tests, src_dsd_tests, src_dlqueue_tests]   # tools/check.py runs each as its own task

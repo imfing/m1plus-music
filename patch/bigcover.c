@@ -27,6 +27,7 @@
 #include "common.h"
 #include "sbapi.h"
 #include "entries.h"
+#include "lyrics.h"
 
 #define BC_SIZE 320 /* the widget's size and the picture's */
 #define BC_TICK_MS 250
@@ -263,20 +264,21 @@ int m1plus_bigcover_init(void *win, void *ctx) {
  * Idle view (docs/modules/bigcover.md "Idle view"): where Now Playing's timed view goes. Stock's callback 0x53cf48 calls navigator_to("bigcover_page") at 0x53d0ec once the ten second
  * countdown ends, and only while its Cover mode byte (COVER_MODE) is on; that call becomes bc_timed_open (tools/pod.py IDLE_SITE, payload hook 24).
  *
- * The choice is two things: stock's Cover mode byte is the switch (Off), and /mnt/data/m1plus/nowplaying-idle says where it goes when on (IDLE_FILE: Album Cover, Cassette, Vinyl).
+ * The choice is two things: stock's Cover mode byte is the switch (Off), and /mnt/data/m1plus/nowplaying-idle says where it goes when on (IDLE_FILE: Album Cover, Cassette, Vinyl, Lyrics).
  * Settings > Now Playing > Idle Display shows and changes both (idle_choice, idle_set), so stock's own Cover mode row stays in step either way.
  */
-#define IDLE_COVER 0 /* the saved destinations, the file's "0", "1", "2" */
+#define IDLE_COVER 0 /* the saved destinations, the file's "0", "1", "2", "3" */
 #define IDLE_TAPE 1
 #define IDLE_VINYL 2
+#define IDLE_LYRICS 3
 
-/* The saved destination: IDLE_COVER (default, also for a missing or invalid file), IDLE_TAPE, IDLE_VINYL. Reading never writes. */
+/* The saved destination: IDLE_COVER (default, also for a missing or invalid file), IDLE_TAPE, IDLE_VINYL, IDLE_LYRICS. Reading never writes. */
 int idle_view(void) {
     int c = set_read(IDLE_FILE, 0);
-    return c == '1' ? IDLE_TAPE : c == '2' ? IDLE_VINYL : IDLE_COVER;
+    return c == '1' ? IDLE_TAPE : c == '2' ? IDLE_VINYL : c == '3' ? IDLE_LYRICS : IDLE_COVER;
 }
 
-/* What the row and the picker show: 0 Off (stock's Cover mode byte is off), else 1 + the destination (1 Album Cover, 2 Cassette, 3 Vinyl). Read live, each time. */
+/* What the row and the picker show: 0 Off (stock's Cover mode byte is off), else 1 + the destination (1 Album Cover, 2 Cassette, 3 Vinyl, 4 Lyrics). Read live, each time. */
 int idle_choice(void) { return *(volatile unsigned char *)COVER_MODE ? 1 + idle_view() : 0; }
 
 /* Stock's Cover mode toggle, as its row's handler does (0x4a0098: [SYSSET] COVERMODE saved with write_int_config, the byte stored), but saved first: -1 when the save failed (write_int_config
@@ -287,20 +289,21 @@ static int idle_cover_mode(int on) {
     return 0;
 }
 
-/* The picker's rows (0 Off, 1 Album Cover, 2 Cassette, 3 Vinyl), saved: the choice, or -1 with the file, the byte and so the label unchanged. Off only turns stock's byte off (the destination
+/* The picker's rows (0 Off, 1 Album Cover, 2 Cassette, 3 Vinyl, 4 Lyrics), saved: the choice, or -1 with the file, the byte and so the label unchanged. Off only turns stock's byte off (the destination
  * is kept for when it is turned on again); a destination is saved first and turns the byte on when it is off, and the file goes back if that fails. */
 int idle_set(int choice) {
     int dest = choice - 1, was = idle_view(), had, changed;
-    if (choice < 0 || choice > 3) return -1;
+    if (choice < 0 || choice > 4) return -1;
     if (choice == 0) return !*(volatile unsigned char *)COVER_MODE || idle_cover_mode(0) == 0 ? 0 : -1;
     had = access(IDLE_FILE, F_OK) == 0;
     changed = !had || dest != was;
-    if (changed && home_set_digit(IDLE_FILE, IDLE_TMP, dest, 2) < 0) return -1;
+    if (changed && home_set_digit(IDLE_FILE, IDLE_TMP, dest, IDLE_LYRICS) < 0) return -1;
     if (!*(volatile unsigned char *)COVER_MODE && idle_cover_mode(1) != 0) {
         if (changed) {
             if (had)
-                home_set_digit(IDLE_FILE, IDLE_TMP, was,
-                               2); /* (best effort: a file that cannot be put back still reads as a destination) */
+                home_set_digit(
+                    IDLE_FILE, IDLE_TMP, was,
+                    IDLE_LYRICS); /* (best effort: a file that cannot be put back still reads as a destination) */
             else
                 unlink(IDLE_FILE);
         }
@@ -309,15 +312,18 @@ int idle_set(int choice) {
     return choice;
 }
 
-/* The hook (tools/pod.py IDLE_SITE): stock's `navigator_to(name)` with name = "bigcover_page" (the delay slot still loads it). Cassette and Vinyl open their own page over Now Playing, which stays
+/* The hook (tools/pod.py IDLE_SITE): stock's `navigator_to(name)` with name = "bigcover_page" (the delay slot still loads it). Cassette, Vinyl and Lyrics open their own page over Now Playing, which stays
  * under it (the page's back/close returns to it); the stock countdown (reset to 20 by stock after the call), its gating and Now Playing are untouched. Anything else is stock's call, once: the kill
- * switch, a missing or invalid file (Album Cover, whose page the bigcover_page_init hook sharpens), another name, or a page that will not open (-1).
+ * switch, a track with no lyric rows for Lyrics (ly_has_rows), a missing or invalid file (Album Cover, whose page the bigcover_page_init hook sharpens), another name, or a page that will not open (-1).
  * A destination whose page is already up (the open functions return 0 for it and open nothing) is left as it is: no second window, no timer, and no stock cover page over the user's view; the
  * countdown restarts as after any open. Not on the boot path; no state of its own. */
 int bc_timed_open(const char *name) {
     int v;
     if (!name || strcmp(name, "bigcover_page") != 0 || access(KILL_SD, F_OK) == 0) return navigator_to(name);
     v = idle_view();
-    if (v == IDLE_TAPE ? tape_open_idle() == 0 : v == IDLE_VINYL && vinyl_open_idle() == 0) return 0;
+    if (v == IDLE_TAPE    ? tape_open_idle() == 0
+        : v == IDLE_VINYL ? vinyl_open_idle() == 0
+                          : v == IDLE_LYRICS && (idlelyrics_up() || ly_has_rows()) && idlelyrics_open_idle() == 0)
+        return 0;
     return navigator_to(name);
 }

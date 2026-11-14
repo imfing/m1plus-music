@@ -12,12 +12,12 @@
  * LY_POOL labels made here. The stock list view_lrc is hidden (visible=false and sensitive=false, re-checked every tick); its widgets keep
  * their names and stock keeps filling and scrolling them. label_lyricmsg ("No lyrics") stays stock's.
  *
- * Layout: line i has LY_LINE_H pixels a text row (1..LY_LINES_MAX rows, estimated from the line's measured width) and LY_GAP below.
+ * Layout: line i has LYH pixels a text row (1..LY_LINES_MAX rows, estimated from the line's measured width) and LYG below (the chosen text size, ly_sizes; Large is LY_LINE_H / LY_GAP).
  * The anchored line's top sits at LY_ANCHOR (0.35 of the view) plus `man`, the manual scroll; the other lines follow from it up and down. A line of more
  * than three rows is anchored higher (ly_anchor), so that it and, while there is room, the next line's first row stay in the view.
  * Opacity by distance from the current line: 1.0, 0.45, 0.32, 0.24, 0.18 (ly_opacity) times an edge factor that takes a line to 0 over the last LY_FADE px at the top and bottom
  * of the view (ly_edge); while the user has scrolled, every other line is LY_BROWSE_OP. Every line is white; the current one is only the most opaque. Face: a line of
- * Latin, Greek and Cyrillic only is drawn in the bold font file lyrics.ttf (style np_lyric_style), any other in the default font (np_lyric_cjk_style): AWTK picks a glyph from one font.
+ * Latin, Greek and Cyrillic only is drawn in the bold font file lyrics.ttf (style np_lyric_style, Large and Medium), any other in the default font (np_lyric_cjk_style): AWTK picks a glyph from one font. At Small (22 px) both styles name the default font, so every line is in it.
  *
  * Motion: when the anchored line changes by D pixels every line keeps its place on the screen and gets an offset of D that a damped spring
  * (ly_spring: a 65 entry table of 1024 x e^(-zt)(cos + sin), z 0.72, a few percent of overshoot, LY_SPRING_MS long) brings to 0, each line
@@ -45,7 +45,33 @@
 #include "textgamma.h"
 #include "fnv.h"
 
+/* The text size (Settings > Now Playing > Lyrics Text Size, the file LYRSIZE_FILE: "0" Small, "1" Medium, "2" Large, also for a missing or invalid file): the font px, the text row pitch LYH (the font plus the
+ * style's `spacer`: 3 for Small and Medium, 4 for Large, tools/mod_nowplaying.py LYR_SIZES) and the gap LYG between lines (about 0.4 of the font); the intro dots push the lines down by LYH + LYG. Large is the
+ * original 30 / 34 / 12 (offsets.inc). The face styles are np_lyric_style[_m|_s] and np_lyric_cjk_style[_m|_s]. */
+#define LY_SIZES 3
+static const struct {
+    unsigned char font, lh, gap;
+    const char
+        *style[2]; /* the face's style: [0] the bold Latin face (Small: the default font too), [1] the default font */
+} ly_sizes[LY_SIZES] = {
+    {LY_FONT,
+     LY_LINE_H,
+     LY_GAP,
+     {"np_lyric_style", "np_lyric_cjk_style"}}, /* Large first: a cleared state is the original layout */
+    {26, 29, 10, {"np_lyric_style_m", "np_lyric_cjk_style_m"}},
+    {22, 25, 9, {"np_lyric_style_s", "np_lyric_cjk_style_s"}}};
+#define LYH (ly_sizes[ly.sz].lh)
+#define LYG (ly_sizes[ly.sz].gap)
+#define LYSTYLE(face) (ly_sizes[ly.sz].style[(face) ? 1 : 0])
+/* The view the engine drives: its height (LY_VIEW_H for Now Playing's np_lyrics, the idle page's box otherwise), the anchor (0.35 of it, LY_ANCHOR for np_lyrics) and the offset bound (4 x the height, LY_OFF_MAX). */
+#define LYVH (ly.vh ? ly.vh : LY_VIEW_H) /* (a stopped engine is Now Playing's geometry) */
+#define LYANC (ly.vh ? ly.anc : LY_ANCHOR)
+#define LYOFF (4 * LYVH)
+
 static struct {
+    int vh, anc; /* the view's height and the anchor's place in it (ly_target) */
+    int noseek; /* a tap seeks nothing (the idle page: a tap there closes it) */
+    int sz; /* the text size: an index of ly_sizes (0 Large, 1 Medium, 2 Small: 2 - the saved digit), read when the page starts (ly_start) and when it is in front again (ly_refresh) */
     void *win, *src, *view, *box,
         *probe; /* the window, scroll_lrc (stock rows), view_lrc (stock list), np_lyrics (ours), the measuring label */
     void *lab[LY_POOL];
@@ -124,15 +150,39 @@ static int ly_time(int i) {
     return c ? widget_get_prop_int(c, "lrc_time", 0x7fffffff) : 0x7fffffff;
 }
 
-/* The text of stock row i into buf (LY_BUF bytes); 0 when the row or its text is missing. */
+/* The bytes of blank characters s starts with: space, tab, U+00A0, U+2000..U+200B, U+202F, U+3000 and U+FEFF. */
+static int ly_lead(const char *s) {
+    const unsigned char *u = (const unsigned char *)s;
+    int p = 0;
+    for (;;) {
+        if (u[p] == ' ' || u[p] == '\t')
+            p += 1;
+        else if (u[p] == 0xc2 && u[p + 1] == 0xa0)
+            p += 2;
+        else if (u[p] == 0xe2 && u[p + 1] == 0x80 && ((u[p + 2] >= 0x80 && u[p + 2] <= 0x8b) || u[p + 2] == 0xaf))
+            p += 3;
+        else if (u[p] == 0xe3 && u[p + 1] == 0x80 && u[p + 2] == 0x80)
+            p += 3;
+        else if (u[p] == 0xef && u[p + 1] == 0xbb && u[p + 2] == 0xbf)
+            p += 3;
+        else
+            return p;
+    }
+}
+
+/* The text of stock row i into buf (LY_BUF bytes), without its leading blanks (ly_lead); 0 when the row or its text is missing. Stock's loader keeps everything after
+ * the time stamp's ']' (0x5d3f28), so a file written "[00:12.34] text" gave every line a space: its first row was indented and the rows we break were not. */
 static int ly_text(int i, char *buf) {
     void *c = widget_get_child(ly.src, (unsigned)i);
+    int p, k = 0;
     buf[0] = 0;
     /* (a line over LY_BUF - 1 bytes is cut: at most LY_LINES_MAX rows of it are drawn anyway) */
     if (!c || m1_text_utf8(c, buf, LY_BUF) < 0) {
         buf[0] = 0;
         return 0;
     }
+    if ((p = ly_lead(buf)) != 0)
+        while ((buf[k] = buf[p + k]) != 0) ++k;
     return 1;
 }
 
@@ -189,7 +239,7 @@ __attribute__((noinline)) int ly_latin(const char *s) {
  * the probe's style is resolved here (widget_update_style, which does nothing once it is), as stock label_resize_to_content does before it measures. */
 static int ly_probe_face(int face) {
     if (ly.pface != face) {
-        widget_use_style(ly.probe, face ? "np_lyric_cjk_style" : "np_lyric_style");
+        widget_use_style(ly.probe, LYSTYLE(face));
         ly.pface = (unsigned char)face;
     }
     if (widget_get_prop_int(ly.win, "stage", 0) < WINDOW_STAGE_CREATED) return 0;
@@ -315,13 +365,13 @@ static void ly_wrapped(int i, int rows, char *out) {
 }
 
 /* The pixels line i occupies, its gap included. */
-static int ly_pitch(int i) { return ly_rows(i) * LY_LINE_H + LY_GAP; }
+static int ly_pitch(int i) { return ly_rows(i) * LYH + LYG; }
 
 /* Where line i's top sits when it is the anchored one: LY_ANCHOR for up to three rows; a taller line higher, so that the next line's first row still ends
  * LY_ANCHOR_ROOM px above the view's bottom, but not above LY_ANCHOR_MIN (LY_LINES_MAX rows from there end inside the view). */
 __attribute__((noinline)) int ly_anchor(int i) {
-    int a = LY_VIEW_H - LY_ANCHOR_ROOM - LY_LINE_H - ly_pitch(i);
-    return a >= LY_ANCHOR ? LY_ANCHOR : a < LY_ANCHOR_MIN ? LY_ANCHOR_MIN : a;
+    int a = LYVH - LY_ANCHOR_ROOM - LYH - ly_pitch(i);
+    return a >= LYANC ? LYANC : a < LY_ANCHOR_MIN ? LY_ANCHOR_MIN : a;
 }
 
 /* Opacity (0..255) of a line `dist` lines from the current one: 1.0, 0.45, 0.32, 0.24, then 0.18. */
@@ -333,7 +383,7 @@ __attribute__((noinline)) unsigned ly_opacity(int dist) {
 
 /* The edge factor (0..255) of a label of `rows` rows at y: its row nearest an edge, by the row's centre, over the last LY_FADE px of the view (0 with the centre on the edge). */
 __attribute__((noinline)) unsigned ly_edge(int y, int rows) {
-    int top = y + rows * LY_LINE_H - LY_LINE_H / 2, bot = LY_VIEW_H - (y + LY_LINE_H / 2), e = top < bot ? top : bot;
+    int top = y + rows * LYH - LYH / 2, bot = LYVH - (y + LYH / 2), e = top < bot ? top : bot;
     if (e <= 0) return 0;
     if (e >= LY_FADE) return 255;
     return (unsigned)(e * 255 / LY_FADE);
@@ -369,7 +419,7 @@ static int ly_gap_len(void) {
     return t >= LY_DOT_MIN_S && t < 10000 ? t * 1000 : 0;
 }
 
-static int ly_want_pad(void) { return ly_gap_len() ? LY_DOT_PAD : 0; }
+static int ly_want_pad(void) { return ly_gap_len() ? (LYH + LYG) : 0; }
 
 /* The player's position in ms from get_playtime's whole seconds: a first read or a seek is taken as the middle of the second; a second that has just turned is its
  * start; between turns the monotonic clock adds the time that passed while playing (not across a pause), never past the end of the second. */
@@ -389,7 +439,7 @@ static void ly_clock(int pos, unsigned now, int playing) {
 
 /* The dots of the gap, riding with line 0 (whose top is at d0): hidden when no gap is on, line 0 is not laid out, or the opacity is 0. */
 static void ly_dots(int have0, int d0) {
-    int k, y = d0 - LY_DOT_PAD, on = have0 && ly_gap_len() > 0;
+    int k, y = d0 - (LYH + LYG), on = have0 && ly_gap_len() > 0;
     for (k = 0; k < 3; ++k) {
         unsigned op = on ? ly.dop[k] * ly_edge(y, 1) / 255 : 0;
         void *w = ly.dot[k];
@@ -405,14 +455,14 @@ static void ly_dots(int have0, int d0) {
             widget_set_opacity(w, (int)op);
             ly.dlast[k] = (unsigned char)op;
         }
-        if (ly.dy != y + (LY_LINE_H - LY_DOT) / 2 || !ly.dvis[k])
-            widget_move(w, LY_DOT_X + k * LY_DOT_PITCH, y + (LY_LINE_H - LY_DOT) / 2);
+        if (ly.dy != y + (LYH - LY_DOT) / 2 || !ly.dvis[k])
+            widget_move(w, LY_DOT_X + k * LY_DOT_PITCH, y + (LYH - LY_DOT) / 2);
         if (!ly.dvis[k]) {
             widget_set_visible(w, 1, 0);
             ly.dvis[k] = 1;
         }
     }
-    ly.dy = (short)(y + (LY_LINE_H - LY_DOT) / 2);
+    ly.dy = (short)(y + (LYH - LY_DOT) / 2);
 }
 
 static int ly_off(int slot, unsigned now) { return ly_spring(ly.o0[slot], (int)(now - ly.ts[slot])); }
@@ -449,11 +499,11 @@ static void ly_place(int i, int y) {
         ly.line[slot] = i;
     }
     if (ly.rows[slot] != rows) {
-        widget_resize(w, LY_W, rows * LY_LINE_H);
+        widget_resize(w, LY_W, rows * LYH);
         ly.rows[slot] = (unsigned char)rows;
     }
     if (ly.sel[slot] != face) {
-        widget_use_style(w, face ? "np_lyric_cjk_style" : "np_lyric_style");
+        widget_use_style(w, LYSTYLE(face));
         ly.sel[slot] = (unsigned char)face;
     }
     if (ly.op[slot] != op) {
@@ -486,7 +536,7 @@ static void ly_layout(void) {
         np[ly.base - lo0] = y;
         for (i = ly.base; i < hi; ++i) {
             y += ly_pitch(i);
-            if (y > LY_VIEW_H + LY_OFF_MAX) {
+            if (y > LYVH + LYOFF) {
                 hi = i;
                 break;
             }
@@ -495,7 +545,7 @@ static void ly_layout(void) {
         y = ly_anchor(ly.base) + ly.man + ly.pad;
         for (i = ly.base - 1; i >= lo0; --i) {
             y -= ly_pitch(i);
-            if (y < -LY_OFF_MAX - LY_LINES_MAX * LY_LINE_H) {
+            if (y < -LYOFF - LY_LINES_MAX * LYH) {
                 lo = i + 1;
                 break;
             }
@@ -511,7 +561,7 @@ static void ly_layout(void) {
             }
             disp = np[i - lo0] + ly_off(slot, now);
             if (i == 0) have0 = 1, d0 = disp;
-            if (disp + ly_rows(i) * LY_LINE_H > 0 && disp < LY_VIEW_H) {
+            if (disp + ly_rows(i) * LYH > 0 && disp < LYVH) {
                 ly_place(i, disp);
                 used[slot] = 1;
             }
@@ -559,8 +609,8 @@ static void ly_move(int nb) {
         for (s = 0; s < LY_POOL; ++s)
             if (ly.mv[s] >= 0) {
                 int o = ly_off(s, now) + d;
-                if (o > LY_OFF_MAX) o = LY_OFF_MAX; /* (what the layout keeps laid out) */
-                if (o < -LY_OFF_MAX) o = -LY_OFF_MAX;
+                if (o > LYOFF) o = LYOFF; /* (what the layout keeps laid out) */
+                if (o < -LYOFF) o = -LYOFF;
                 ly.o0[s] = (short)o;
                 ly.ts[s] = now + (unsigned)ly_delay(ly.mv[s], nb);
             }
@@ -579,7 +629,7 @@ static void ly_follow(void) { ly_move(ly.cur < 0 ? 0 : ly.cur); }
 /* After a manual move: the anchored line is the one nearest LY_ANCHOR again (its top under half a pitch from it), and the first / last line stop at their anchor.
  * t is the anchored line's top from LY_ANCHOR; man is counted from the line's own anchor (ly_anchor), so nothing jumps when the anchored line changes. */
 static void ly_rebase(void) {
-    int t = ly.man + ly_anchor(ly.base) - LY_ANCHOR;
+    int t = ly.man + ly_anchor(ly.base) - LYANC;
     while (ly.base > 0 && t > ly_pitch(ly.base - 1) / 2) {
         ly.base -= 1;
         t -= ly_pitch(ly.base);
@@ -588,7 +638,7 @@ static void ly_rebase(void) {
         t += ly_pitch(ly.base);
         ly.base += 1;
     }
-    ly.man = t - (ly_anchor(ly.base) - LY_ANCHOR);
+    ly.man = t - (ly_anchor(ly.base) - LYANC);
     if (ly.base == 0 && ly.man > 0) ly.man = 0;
     if (ly.base >= ly.n - 1 && ly.man < 0) ly.man = 0;
 }
@@ -658,7 +708,7 @@ void ly_tick(void) {
     unsigned now;
     if (!ly.box) return;
     now = time_now_ms();
-    if (widget_get_visible(ly.view)) { /* stock shows it again for its own purposes: ours is the page */
+    if (ly.view && widget_get_visible(ly.view)) { /* stock shows it again for its own purposes: ours is the page */
         widget_set_visible(ly.view, 0, 0);
         widget_set_sensitive(ly.view, 0);
     }
@@ -714,11 +764,12 @@ static void ly_goto(int line) {
 
 static void ly_tap(int x, int y) {
     int pt[2], s;
+    if (ly.noseek) return;
     pt[0] = x, pt[1] = y;
     widget_to_local(ly.box, pt);
     for (s = 0; s < LY_POOL; ++s)
-        if (ly.vis[s] && ly.line[s] >= 0 && pt[1] >= ly.y[s] - LY_GAP / 2 &&
-            pt[1] < ly.y[s] + ly.rows[s] * LY_LINE_H + LY_GAP / 2) {
+        if (ly.vis[s] && ly.line[s] >= 0 && pt[1] >= ly.y[s] - LYG / 2 &&
+            pt[1] < ly.y[s] + ly.rows[s] * LYH + LYG / 2) {
             ly_goto(ly.line[s]);
             return;
         }
@@ -728,8 +779,7 @@ static void ly_tap(int x, int y) {
 static int ly_on_touch(void *ctx, void *e) {
     int type, x, y;
     unsigned now;
-    (void)ctx;
-    if (!e || !ly.box) return RET_OK;
+    if (!e || !ly.box || ctx != ly.box) return RET_OK; /* (a view that does not have the engine) */
     type = *(int *)e;
     x = *(int *)((char *)e + PE_X), y = *(int *)((char *)e + PE_Y);
     now = time_now_ms();
@@ -760,63 +810,177 @@ static int ly_on_touch(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The saved size: 0 Small, 1 Medium, 2 Large (the default, also for a missing or invalid file). Reading never writes. */
+int ly_size(void) {
+    int c = set_read(LYRSIZE_FILE, '2');
+    return c == '0' ? 0 : c == '1' ? 1 : 2;
+}
+
+/* The picker's rows: save the size atomically; the size or -1. */
+int ly_size_set(int size) { return home_set_digit(LYRSIZE_FILE, LYRSIZE_TMP, size, LY_SIZES - 1); }
+
+/* The page is in front again (np_on_foreground): a size changed in Settings is taken now. The labels' style, height and place, the probe's style and the break cache all follow the size, so
+ * everything is laid out again as for new lyrics (ly_tick sees the cleared signature: the lines go back to the current one, as when the page starts). */
+void ly_refresh(void) {
+    int s, i;
+    ly_release(); /* Now Playing is in front: the idle page, if it had the engine, is over */
+    if (!ly.box) return;
+    s = 2 - ly_size();
+    if (s == ly.sz) return;
+    ly.sz = s;
+    ly.pface = 0xff;
+    ly.sig = 0;
+    for (i = 0; i < LY_POOL; ++i) {
+        ly.line[i] = ly.mv[i] = -1, ly.sel[i] = 0xff, ly.rows[i] = 0, ly.o0[i] = 0;
+        ly_hide(i);
+    }
+    ly.dirty = 1;
+}
+
 static void ly_label(void *w) {
-    widget_use_style(w, "np_lyric_style");
+    widget_use_style(w, LYSTYLE(0));
     widget_set_sensitive(w, 0);
     widget_set_visible(w, 0, 0);
     label_set_line_wrap(w, 1);
     widget_set_prop_bool(w, "word_wrap", 1);
 }
 
+/* The 20 labels, the measuring label and the three dots as children of box (the page's pool); -1 when a label cannot be made (the caller drops box's children: they are ours only). Dots that cannot be made
+ * leave the page without them (ly_gap_len is 0 while dot 0 is missing). */
+static int ly_make(void *box, void **lab, void **probe, void **dot) {
+    int i;
+    for (i = 0; i < LY_POOL; ++i) {
+        lab[i] = label_create(box, 0, 0, LY_W, LYH);
+        if (!lab[i]) return -1;
+        ly_label(lab[i]);
+    }
+    *probe = label_create(box, 0, 0, LY_W, LYH);
+    if (!*probe) return -1;
+    ly_label(*probe);
+    for (i = 0; i < 3; ++i) {
+        dot[i] = image_create(box, LY_DOT_X + i * LY_DOT_PITCH, 0, LY_DOT, LY_DOT);
+        if (!dot[i]) {
+            dot[0] = (void *)0;
+            break;
+        }
+        image_base_set_image(dot[i], "np_dot");
+        widget_set_sensitive(dot[i], 0);
+        widget_set_visible(dot[i], 0, 0);
+    }
+    return 0;
+}
+
+/* The pool's per-label state of fresh labels (ly_make's): every line unset, the style the first face, opacity 255. */
+static void ly_fresh_pool(void) {
+    int i;
+    for (i = 0; i < LY_POOL; ++i) ly.line[i] = ly.mv[i] = -1, ly.sel[i] = 0, ly.op[i] = 255;
+}
+
+static void ly_listen(void *box) {
+    widget_on(box, EVT_POINTER_DOWN, ly_on_touch, box); /* a refusal leaves the lines without touch, nothing else */
+    widget_on(box, EVT_POINTER_MOVE, ly_on_touch, box);
+    widget_on(box, EVT_POINTER_UP, ly_on_touch, box);
+    widget_on(box, EVT_POINTER_ABORT, ly_on_touch, box);
+}
+
+/* Now Playing's pool, parked while another view (the idle page) has the engine: the widgets only. Everything else of the engine is rebuilt from the stock rows. */
+static struct {
+    void *win, *box, *probe, *lab[LY_POOL], *dot[3];
+    int vh, anc, sz;
+} lyp __attribute__((section(".scratch")));
+
 void ly_stop(void) {
     m1_timer_stop(&ly.timer);
     m1_timer_stop(&ly.dtimer);
     memset(&ly, 0, sizeof ly);
+    memset(&lyp, 0, sizeof lyp); /* (Now Playing is over: its parked widgets go with it) */
 }
 
 void ly_start(void *win) {
-    int i;
     void *fm;
     if (ly.win) ly_stop();
     memset(&ly, 0, sizeof ly);
+    memset(&lyp, 0, sizeof lyp);
+    ly.sz = 2 - ly_size();
+    ly.vh = LY_VIEW_H, ly.anc = LY_ANCHOR;
     ly.src = widget_lookup(win, "scroll_lrc", 1);
     ly.view = widget_lookup(win, "view_lrc", 1);
     ly.box = widget_lookup(win, "np_lyrics", 1);
     if (!ly.src || !ly.view || !ly.box) goto fail;
     fm = font_manager(); /* the coverage gamma on the lyrics face (patch/textgamma.c; a no-op once installed) */
     if (fm) tg_apply(fm, font_manager_get_font(fm, "lyrics", 0));
-    for (i = 0; i < LY_POOL; ++i) {
-        ly.lab[i] = label_create(ly.box, 0, 0, LY_W, LY_LINE_H);
-        if (!ly.lab[i]) goto fail;
-        ly_label(ly.lab[i]);
-        ly.line[i] = ly.mv[i] = -1, ly.sel[i] = 0, ly.op[i] = 255;
-    }
-    ly.probe = label_create(ly.box, 0, 0, LY_W, LY_LINE_H);
-    if (!ly.probe) goto fail;
-    ly_label(ly.probe);
-    for (
-        i = 0; i < 3;
-        ++i) { /* the interlude dots: a refusal leaves the page without them (ly_gap_len is 0 while dot 0 is missing) */
-        ly.dot[i] = image_create(ly.box, LY_DOT_X + i * LY_DOT_PITCH, 0, LY_DOT, LY_DOT);
-        if (!ly.dot[i]) {
-            ly.dot[0] = (void *)0;
-            break;
-        }
-        image_base_set_image(ly.dot[i], "np_dot");
-        widget_set_sensitive(ly.dot[i], 0);
-        widget_set_visible(ly.dot[i], 0, 0);
-    }
+    if (ly_make(ly.box, ly.lab, &ly.probe, ly.dot) < 0) goto fail;
+    ly_fresh_pool();
     ly.win = win;
     ly.cur = -1;
-    widget_on(ly.box, EVT_POINTER_DOWN, ly_on_touch,
-              (void *)0); /* a refusal leaves the lines without touch, nothing else */
-    widget_on(ly.box, EVT_POINTER_MOVE, ly_on_touch, (void *)0);
-    widget_on(ly.box, EVT_POINTER_UP, ly_on_touch, (void *)0);
-    widget_on(ly.box, EVT_POINTER_ABORT, ly_on_touch, (void *)0);
+    ly_listen(ly.box);
     widget_set_visible(ly.view, 0, 0);
     widget_set_sensitive(ly.view, 0);
     return;
 fail: /* nothing of ours is shown; the stock list stays */
     if (ly.box) widget_destroy_children(ly.box);
     memset(&ly, 0, sizeof ly);
+}
+
+/* The engine's current view (0 when it is stopped): the idle page asks whether it still has it. */
+void *ly_target(void) { return ly.box; }
+
+/* The stock lyric rows the engine reads (0 for none): the idle page shows its hint with none. */
+int ly_lines(void) { return ly.n; }
+
+/* Whether Now Playing's stock rows hold a lyric line right now (the widget's child count, read live; the engine's own count lags until its tick): the idle dispatcher opens the lyrics page only
+ * then. 0 with the engine stopped or the rows not built yet. */
+int ly_has_rows(void) { return ly.src && widget_count_children(ly.src) > 0; }
+
+/* The idle page takes the engine from Now Playing: the page's box (a scroll_view of its own, h px high, in the window win) gets the pool, the probe and the dots, the engine drives it
+ * (anchor 0.35 of h, offset bound 4 h) and a tap on a line seeks nothing. The lines are still read from Now Playing's scroll_lrc, which stock keeps building under another window. Now
+ * Playing's own pool is parked, untouched (its widgets are alive and hidden), until ly_release. 0, or -1 with the engine as it was: Now Playing not running its engine, the engine already
+ * taken, or a label that cannot be made (the page then drops its box's children and itself). */
+int ly_retarget(void *win, void *box, int h) {
+    int i, sz;
+    void *nl[LY_POOL], *np, *nd[3], *src, *view;
+    if (!ly.box || !ly.src || lyp.box || !win || !box || h < 3 * LY_LINE_H) return -1;
+    if (ly_make(box, nl, &np, nd) < 0) return -1; /* (nothing of Now Playing's is touched) */
+    src = ly.src, view = ly.view, sz = ly.sz;
+    lyp.win = ly.win, lyp.box = ly.box, lyp.probe = ly.probe, lyp.vh = ly.vh, lyp.anc = ly.anc, lyp.sz = sz;
+    for (i = 0; i < LY_POOL; ++i) lyp.lab[i] = ly.lab[i];
+    for (i = 0; i < 3; ++i) lyp.dot[i] = ly.dot[i];
+    m1_timer_stop(&ly.timer);
+    m1_timer_stop(&ly.dtimer);
+    memset(&ly, 0, sizeof ly);
+    ly.src = src, ly.view = view;
+    ly.sz = sz; /* (the setting cannot change while the page is up) */
+    ly.vh = h, ly.anc = h * 35 / 100, ly.noseek = 1;
+    for (i = 0; i < LY_POOL; ++i) ly.lab[i] = nl[i];
+    ly.probe = np;
+    for (i = 0; i < 3; ++i) ly.dot[i] = nd[i];
+    ly.win = win, ly.box = box, ly.cur = -1;
+    ly_fresh_pool();
+    ly_listen(box);
+    return 0;
+}
+
+/* The page is over (or Now Playing is back in front): Now Playing's pool and view are the engine's again. Its labels are hidden and every cached fact about them forgotten, so the next tick
+ * lays the lines out from the stock rows as for new lyrics; the idle page's widgets are not touched (they may be gone). Nothing parked: nothing to do. */
+void ly_release(void) {
+    int i;
+    void *src, *view;
+    if (!lyp.box) return;
+    m1_timer_stop(&ly.timer);
+    m1_timer_stop(&ly.dtimer);
+    src = ly.src, view = ly.view;
+    memset(&ly, 0, sizeof ly);
+    ly.src = src, ly.view = view;
+    ly.win = lyp.win, ly.box = lyp.box, ly.probe = lyp.probe, ly.vh = lyp.vh, ly.anc = lyp.anc, ly.sz = lyp.sz;
+    for (i = 0; i < LY_POOL; ++i) ly.lab[i] = lyp.lab[i], widget_set_visible(ly.lab[i], 0, 0);
+    for (i = 0; i < 3; ++i) {
+        ly.dot[i] = lyp.dot[i];
+        if (ly.dot[i]) widget_set_visible(ly.dot[i], 0, 0);
+    }
+    memset(&lyp, 0, sizeof lyp);
+    for (i = 0; i < LY_POOL; ++i) ly.line[i] = ly.mv[i] = -1, ly.sel[i] = 0xff, ly.op[i] = 0, ly.rows[i] = 0;
+    ly.pface = 0xff;
+    ly.cur = -1;
+    ly.dirty = 1;
+    ly_refresh(); /* a size changed since (it cannot while the page is up, but the file is the truth) */
 }

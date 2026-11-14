@@ -31,6 +31,7 @@
 #include "wifictl.h"
 #include "keyboard.h"
 #include "fnv.h"
+#include "utf8.h"
 #include "entries.h"
 
 #define WP_CUR \
@@ -39,6 +40,7 @@
 #define WP_OTH WF_MAX
 #define WP_ROWS (WP_CUR + WP_MY + WP_OTH)
 #define WP_ROW_H 52 /* the Settings pages' numbers (tools/pod_settings.py) */
+#define WP_NAME_MARGIN 2 /* the stock hscroll_label's default margin_left / margin_right (its paint, 0x609cbc) */
 #define WP_HDR_H 40
 #define WP_TOP 10
 #define WP_END 10
@@ -223,7 +225,8 @@ static int wp_bars(int level) { return level >= 4 ? 3 : level == 3 ? 2 : level >
 static void wp_fill(int s, const wf_net *w, int joining) {
     char u[WF_SSID_MAX * 4 + 1], sig[12];
     wf_utf8(w->ssid, w->len, u, sizeof u);
-    widget_set_text_utf8(wp.r[s].name, u);
+    /* cut to the label's text room, so the stock hscroll_label never scrolls it (it scrolled the tapped row's name only, in 5 s with a 3 s lull) */
+    az_fit_room(wp.r[s].name, u, I(wp.r[s].name, W_W) - 2 * WP_NAME_MARGIN);
     snprintf(sig, sizeof sig, "wf_sig%d", wp_bars(w->level));
     image_base_set_image(wp.r[s].sig, sig);
     wp_vis(wp.r[s].lock, w->sec != WF_OPEN && w->sec != WF_OWE);
@@ -650,10 +653,14 @@ static int wp_on_other(void *ctx, void *e) {
 #define WI_FIELDS \
     4 /* the info card's rows: Security, IP Address, Router; one more is room for the enterprise rows (username, password, certificate) of a later stage */
 #define WI_GAP_H 20 /* tools/pod_settings.py GAP_H: the space between two cards */
+#define WI_NAME_H 20 /* a line of the whole name (tools/pod_ui.py WI_NAME_H) */
+#define WI_NAME_GAP 8 /* under the name's lines, before the first card */
 #define WI_ROUTE "/proc/net/route"
 
 static struct {
     void *win, *sv, *fade, *title;
+    void *nm[2], *name[2]; /* the whole name's lines above the cards: the views wi_layout places and their labels */
+    int lines; /* 0: the title holds the name; else the lines shown (1 or 2) */
     void *forget, *auto_row, *auto_img, *join, *gap[3];
     struct {
         void *row, *label, *val, *hair;
@@ -691,9 +698,56 @@ static void wi_field(int i, const char *label, const char *val) {
     widget_set_text_utf8(wi.f[i].val, val);
 }
 
-/* The rows as the network's state says: a saved network has Forget, the info card and Auto-Join; any other the info card and Join. */
+/* The whole name above the cards, for a title that could not hold it: one line, or two when one is too short (the first ends at a space when its second half has one, else at the last character
+ * that fits; the second is cut with an ellipsis, which 32 bytes at 15 px do not need). */
+static void wi_name(const char *u) {
+    unsigned s[WF_SSID_MAX + 1], len = 0, lo, hi, i, k, o = 0;
+    char out[4 * WF_SSID_MAX + 1];
+    const unsigned *t;
+    int room = I(wi.name[0], W_W);
+    wi.lines = 1;
+    widget_set_text_utf8(wi.name[0], u);
+    t = widget_get_text(wi.name[0]);
+    if (!t || m1_text_w(wi.name[0], t) <= room) return;
+    while (t[len] && len < WF_SSID_MAX) s[len] = t[len], ++len;
+    s[len] = 0;
+    lo = 1, hi = len - 1; /* the first line's characters */
+    while (lo < hi) {
+        unsigned mid = (lo + hi + 1) / 2, k0 = s[mid];
+        s[mid] = 0;
+        if (m1_text_w(wi.name[0], s) <= room)
+            lo = mid;
+        else
+            hi = mid - 1;
+        s[mid] = k0;
+    }
+    for (k = lo; k > lo / 2 && s[k] != ' '; --k) {
+    }
+    if (s[k] == ' ')
+        lo = k++;
+    else
+        k = lo;
+    for (i = 0; i < lo; ++i) o += m1_utf8_put(out + o, s[i]);
+    out[o] = 0;
+    widget_set_text_utf8(wi.name[0], out);
+    for (o = 0, i = k; s[i]; ++i) o += m1_utf8_put(out + o, s[i]);
+    out[o] = 0;
+    az_fit(wi.name[1], out);
+    wi.lines = 2;
+}
+
+/* The rows as the network's state says: the name's lines when the title is cut; a saved network has Forget, the info card and Auto-Join; any other the info card and Join. */
 static void wi_layout(void) {
     int y = WP_TOP, n = 0, i, saved = wi.net.known;
+    for (i = 0; i < 2; i++) {
+        if (i <
+            wi.lines) { /* the last line holds the gap in its height: the stock layouter stacks the shown children by their heights */
+            int h = WI_NAME_H + (i == wi.lines - 1 ? WI_NAME_GAP : 0);
+            widget_resize(wi.nm[i], I(wi.nm[i], W_W), h);
+            wp_put(wi.nm[i], &y, h, 0);
+        } else
+            wp_vis(wi.nm[i], 0);
+    }
     if (saved) {
         wp_piece(wi.forget, &wi.piece[WI_FIELDS], WP_P_SINGLE);
         wp_put(wi.forget, &y, WP_ROW_H, 1);
@@ -837,6 +891,13 @@ static void wi_open(const wf_net *w) {
         snprintf(n, sizeof n, "wi_gap%d", i);
         wi.gap[i] = widget_lookup(wi.win, n, 1);
     }
+    for (i = 0; i < 2; i++) {
+        snprintf(n, sizeof n, "wi_nm%d", i);
+        wi.nm[i] = widget_lookup(wi.win, n, 1);
+        snprintf(n, sizeof n, "wi_name%d", i);
+        wi.name[i] = widget_lookup(wi.win, n, 1);
+        if (!wi.nm[i] || !wi.name[i]) wi.sv = (void *)0;
+    }
     for (i = 0; i < WI_FIELDS; i++) {
         snprintf(n, sizeof n, "wi_f%d", i);
         wi.f[i].row = widget_lookup(wi.win, n, 1);
@@ -854,7 +915,7 @@ static void wi_open(const wf_net *w) {
         return;
     }
     wf_utf8(wi.net.ssid, wi.net.len, u, sizeof u);
-    az_fit(wi.title, u);
+    if (az_fit(wi.title, u)) wi_name(u);
     widget_on(wi.sv, EVT_SCROLL, wf_on_scroll, &wi);
     widget_on(wi.sv, EVT_SCROLL_END, wf_on_scroll, &wi);
     wi.sig = 0;
@@ -1299,6 +1360,16 @@ static int wp_tick(const void *timer) {
     return RET_REPEAT;
 }
 
+/* The window is about to open: stock has just resolved every widget's style (offsets.inc WINDOW_STAGE_CREATED). The rows wifipage_open filled (the supplicant's
+ * table as it was) were cut in the label's default style, a smaller font than the row's 21 px, so a long name was left too long and the label clipped it, ellipsis
+ * and all, until the list changed. The names are cut again in the row's style. */
+static int wp_on_will_open(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (wp.win) wp_layout();
+    return RET_OK;
+}
+
 static int wp_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
@@ -1352,6 +1423,7 @@ int wifipage_open(void) {
         return -1;
     }
     widget_on(wp.win, EVT_DESTROY, wp_on_destroy, wp.win);
+    widget_on(wp.win, EVT_WINDOW_WILL_OPEN, wp_on_will_open, (void *)0);
     widget_on(wp.win, EVT_WINDOW_TO_FG, wp_on_fg, (void *)0);
     widget_on(wp.win, EVT_WINDOW_TO_BG, wp_on_bg, (void *)0);
     m1_bind(wp.win, "btn_return", m1_on_back, (void *)0);

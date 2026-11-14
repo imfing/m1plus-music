@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'tools')
 
 
 PCS, SEL, DL = sibling('pcshows'), sibling('pcsel'), sibling('pcdl')
-import pod_i18n, pod_show   # noqa: E402
+import mod_icons, pod_i18n, pod_show, pod_ui   # noqa: E402
 PCP, PCN = PCS.PCP, PCS.PCN
 RP, NOW, DAY, PN = PCS.RP, PCS.NOW, PCS.DAY, PCS.PN
 ROW, TY, SY = O['PC_ROW_H'], O['LIST_TITLE_Y'], O['LIST_SUB_Y']
@@ -33,7 +33,19 @@ def card(m):
     m.free_mb = 18 * 1024
 
 
-def marks_images(mm): mm.images.update({'unselect': (26, 26, struct.pack('<I', 0xff111111) * 676), 'selected': (26, 26, struct.pack('<I', 0xff2222ee) * 676)})
+_ATLAS = []
+
+
+def atlas():
+    """The committed pc_atlas as the page's image loader gives it (the download ring's cells are cut from it)."""
+    if not _ATLAS:
+        from PIL import Image
+        im = Image.open(os.path.join(mod_icons.PNG, 'pc_atlas.png')).convert('RGBA')
+        _ATLAS.append((im.width, im.height, im.tobytes()))
+    return _ATLAS[0]
+
+
+def marks_images(mm): mm.images.update({'pc_atlas': atlas(),'unselect': (26, 26, struct.pack('<I', 0xff111111) * 676), 'selected': (26, 26, struct.pack('<I', 0xff2222ee) * 676)})
 
 
 def page(extra=None, cardf=card):
@@ -203,15 +215,15 @@ def inprogress_tests(ctx):
     m = page(ip_state)
     to_page(m)
     got = rows(m)
-    expect(got[:4] == [('Ep E', 'Downloading 42%'), ('Ep C', 'Waiting'), ('Ep F', "Failed: Can't connect"), ('Ep D', 'Paused')] and [t for t, _ in got[4:]] == TITLES,
+    expect(got[:4] == [('Ep E', '42%'), ('Ep C', 'Waiting'), ('Ep F', "Failed: Can't connect"), ('Ep D', 'Paused')] and [t for t, _ in got[4:]] == TITLES,
            f'In Progress: the running and waiting ones in queue order, the failed one, the paused .part; then the Downloaded rows ({got[:5]})')
     L = lay(4, 7)
     expect(m.props.get((m.sv, 'virtual_h')) == L['h'] and sorted(rows_y(m)) == L['rows'], 'the rows are at the model\'s places: In Progress, PP_SEC_GAP, Downloaded')
     # taps: the running one is paused, the waiting one leaves, the failed one is tried again, the paused one resumes
     m.calls = []; m.thread = None
     tap_row(m, 0, 4, 7)
-    expect(m.word(DL.pn_at(DL.DCANCEL)) == DL.key_of('Sub One', 'e.mp3') and toasts_fixed(m) == [], 'a tap on the running one pauses it (the worker is told to cancel it; the .part stays)')
-    m.setword(DL.pn_at(DL.DCANCEL), 0)
+    expect(DL.run_state(m, DL.key_of('Sub One', 'e.mp3')) == DL.QS['STOPPING'] and toasts_fixed(m) == [], 'a tap on the running one pauses it (the worker is told to cancel it; the .part stays)')
+    DL.unstop(m)
     tap_row(m, 1, 4, 7)
     expect(DL.fn(m, 'pn_dl_count') == 1 and DL.state(m, 'c.mp3', 'Sub One')[0] == 0, 'a tap on a waiting one takes it out of the queue')
     got = rows(m)
@@ -228,7 +240,7 @@ def inprogress_tests(ctx):
     SEL_E = f'{RP}/Sub One/e.mp3'
     m.put(SEL_E, b'done', NOW - 5); m.sizes[SEL_E] = 3 << 20
     DL.poke_slot(m, 0, 'Sub One', 'e.mp3', 0)
-    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(0), 0); m.setword(DL.pn_at(DL.KIND), 0)
+    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(DL.DBUSY), 0)
     m.setword(DL.pn_at(12), 500)
     m.calls = []
     PCS.tick(m)
@@ -243,7 +255,7 @@ def inprogress_tests(ctx):
     m.put(f'{RP}/Sub One/e.mp3.part', b'x' * 10)
     to_page(m)
     DL.poke_slot(m, 0, 'Sub One', 'e.mp3', 0)
-    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(0), 0); m.setword(DL.pn_at(DL.KIND), 0)
+    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(DL.DBUSY), 0)
     m.setword(DL.pn_at(12), 501)
     PCS.tick(m)
     got = rows(m)
@@ -257,11 +269,124 @@ def inprogress_tests(ctx):
     # progress changes a line, not the rows
     m = page(lambda mm: SEL.running(mm, got=100000))
     to_page(m)
-    expect(rows(m)[0][1] == 'Downloading 9%', f'{rows(m)[0]}')
+    expect(rows(m)[0][1] == '9%', f'{rows(m)[0]}')
     m.setword(DL.pn_at(DL.DGOT), 500000); m.setword(DL.pn_at(DL.DGEN), 9)
     m.calls = []
     PCS.tick(m)
-    expect(rows(m)[0][1] == 'Downloading 50%' and not [c for c in m.calls if c[0] in ('opendir', '__xstat')], 'a step of progress: the line is made again, the card is not read')
+    expect(rows(m)[0][1] == '50%' and not [c for c in m.calls if c[0] in ('opendir', '__xstat')], 'a step of progress: the line is made again, the card is not read')
+
+
+def ip_marks(m, n_ip, n_dl, off=0):
+    """{row: [atlas cells]} of the download ring blits (a 14 px square at the grey line's middle), {row: dst x} of the "..." glyph blits, from a frame at scroll off."""
+    L = lay(n_ip, n_dl)['rows']
+    px, dots = O['PA_DL_PX'], (O['PA_DOTS_PX'],) * 2
+    rings, dts = {}, {}
+    for b in PCP.paint(m, off)[0]:
+        for i, y in enumerate(L):
+            if tuple(b[2][2:]) == (px, px) and b[2][1] == y - off + SY + O['LIST_SUB_H'] // 2 - px // 2:
+                rings.setdefault(i, []).append((b[1][0] // px + (b[1][1] - O['PA_DSD_H']) // px * O['PA_DL_COLS'], b[2][0]))
+            if tuple(b[2][2:]) == dots and tuple(b[1]) == (0, O['PA_DOTS_Y'], *dots) and b[2][1] == y - off + (ROW - 1) // 2 - dots[0] // 2:
+                dts[i] = b[2][0]
+    return rings, dts
+
+
+def sheet_rows(m): return [r for r in PCP.SHEET_ROWS if flags(m, f'pg_sh_{r}') == (1, 1)]
+
+
+def tap_dots(m, i, n_ip, n_dl):
+    y = lay(n_ip, n_dl)['rows'][i] + (ROW - 1) // 2
+    PCP.tap(m, O['PS_DOTS_CX'], y, off=max(0, y - 150))
+
+
+def ring_tests(ctx):
+    """The In Progress rows' download ring and "...": the ring (the Subscription pages' cells: step, stop square or arrow) before the grey line of a running or waiting download, none on a failed or paused one or a Downloaded row;
+    the text without "Downloading"; the "..." on the four states and its sheet (Pause / Resume / Retry, Cancel Download); none in select mode."""
+    expect = ctx.expect
+    STOP, ARROW = O['PA_DL_STOP'], O['PA_DL_ARROW']
+    m = page(ip_state)
+    to_page(m)
+    L = lay(4, 7)['rows']
+    rings, dts = ip_marks(m, 4, 7)
+    x0 = O['LIST_TEXT_X']
+    expect(rings == {0: [(5, x0), (STOP, x0)], 1: [(0, x0), (ARROW, x0)]}, f'a running download (42% = step 5, the stop square over it) and a waiting one (the empty ring, the arrow) have the ring at the text column; the failed, the paused and the Downloaded rows none ({rings})')
+    expect(sorted(dts) == [0, 1, 2, 3] and set(dts.values()) == {O['PS_DOTS_CX'] - O['PA_DOTS_PX'] // 2}, f'the "..." on each of the four In Progress rows, none on a Downloaded row ({dts})')
+    fr = [(off, PCP.paint(m, off)[1:3]) for off in (0, 200)]
+    sub = {r[1] + off: (t, (r[0], r[1] + off, *r[2:])) for off, (tx, st) in fr for (t, r), s in zip(tx, st) if s == 'label_row_sub'}
+    ttl = {r[1] + off: (r[0], r[1] + off, *r[2:]) for off, (tx, st) in fr for (t, r), s in zip(tx, st) if s == 'label_row_title'}
+    w = O['LIST_TEXT_W_CHEV']
+    expect(sub[L[0] + SY] == ('42%', (x0 + 20, L[0] + SY, w - 20, O['LIST_SUB_H'])) and sub[L[1] + SY][1][0] == x0 + 20 and sub[L[1] + SY][0] == 'Waiting'
+           and sub[L[2] + SY][1][:3] == (x0, L[2] + SY, w) and sub[L[3] + SY][1][:3] == (x0, L[3] + SY, w) and sub[L[4] + SY][1][2] == O['LIST_TEXT_W']
+           and all(ttl[L[i] + TY][2] == w for i in range(4)) and ttl[L[4] + TY][2] == O['LIST_TEXT_W'],
+           f'the grey line of a ring row starts a ring and a gap right (42%, no "Downloading"); every In Progress row\'s lines stop short of the "..."; the Downloaded rows keep their width ({sub[L[0] + SY]})')
+    # the ring follows the progress, read at paint
+    m.setword(DL.pn_at(DL.DGOT), 500000); m.setword(DL.pn_at(DL.DGEN), 9)
+    PCS.tick(m)
+    rings, _ = ip_marks(m, 4, 7)
+    expect(rings[0] == [(6, x0), (STOP, x0)] and rows(m)[0][1] == '50%', f'50% = step 6 ({rings.get(0)}, {rows(m)[0]})')
+    m = page(lambda mm: SEL.running(mm, got=5 << 20, total=0))
+    to_page(m)
+    rings, _ = ip_marks(m, 1, 7)
+    expect(rows(m)[0][1] == '5 MB' and rings.get(0) == [(0, x0), (STOP, x0)], f'a length that is not known: "5 MB", the empty ring with the stop square ({rows(m)[0]}, {rings})')
+    # the sheet: the first row by the state, then Cancel Download (the labels are the asset's)
+    lab = {r[0]: r[2] for r in pod_ui.PS_SHEET_ROWS}
+    expect([lab[r] for r in ('dlpause', 'dlresume', 'dlretry', 'dlcancel')] == ['Pause', 'Resume', 'Retry', 'Cancel Download'], 'the sheet rows\' labels')
+    m = page(ip_state)
+    to_page(m)
+    for i, want in ((0, ['dlpause', 'dlcancel']), (1, ['dlpause', 'dlcancel']), (2, ['dlretry', 'dlcancel']), (3, ['dlresume', 'dlcancel'])):
+        tap_dots(m, i, 4, 7)
+        expect(sheet_rows(m) == want and m.props.get((m.widgets['pg_sh_card'], 'style:normal:bg_image')) == 'pc_sheet2' and title(m) == 'Downloaded', f'row {i}: the sheet has {want} ({sheet_rows(m)})')
+        PCP.click(m, 'pg_sh_scrim')
+    tap_row(m, 0, 4, 7)
+    expect(flags(m, 'pg_sh_card') == (0, 0), 'a tap on the row body opens no sheet (it pauses)')
+    tap_dots(m, 4, 4, 7)
+    expect(flags(m, 'pg_sh_card') == (0, 0) and title(m) != 'Downloaded', f'a Downloaded row has no "...": the same place opens its episode ({title(m)})')
+    # Pause, Retry, Resume
+    m = page(ip_state)
+    to_page(m)
+    key = DL.key_of('Sub One', 'e.mp3')
+    m.calls = []
+    tap_dots(m, 0, 4, 7)
+    PCP.click(m, 'pg_sh_dlpause')
+    u = unlinks(m)
+    expect(DL.run_state(m, key) == DL.QS['STOPPING'] and flags(m, 'pg_sh_card') == (0, 0) and u == [], 'Pause on the running one: the worker is told to cancel it, the .part stays, the sheet closes')
+    tap_dots(m, 2, 4, 7)
+    PCP.click(m, 'pg_sh_dlretry')
+    expect(DL.state(m, 'f.mp3', 'Sub One')[0] == 1 and dict(rows(m)).get('Ep F') == 'Waiting', 'Retry on the failed one queues it')
+    tap_dots(m, 3, 4, 7)
+    PCP.click(m, 'pg_sh_dlresume')
+    expect(DL.state(m, 'd.mp3', 'Sub One')[0] == 1 and dict(rows(m)).get('Ep D') == 'Waiting', 'Resume on the paused one queues it')
+    # Cancel Download, no confirm: the paused one, the failed one, the waiting one, the running one
+    m = page(ip_state)
+    to_page(m)
+    m.calls = []
+    tap_dots(m, 3, 4, 7)
+    PCP.click(m, 'pg_sh_dlcancel')
+    u, c = unlinks(m), confirms(m)
+    got = rows(m)
+    expect(u == ['Sub One/d.mp3.part'] and c == [] and [t for t, _ in got[:4]] == ['Ep E', 'Ep C', 'Ep F', 'Ep A'] and lay(3, 7)['h'] == m.props.get((m.sv, 'virtual_h')) and f'{RP}/Sub One/d.mp3.part' not in m.fs,
+           f'Cancel Download on a paused row: its .part is unlinked, no confirm, the row is gone ({u}, {c}, {[t for t, _ in got[:4]]})')
+    m.calls = []
+    tap_dots(m, 2, 3, 7)
+    PCP.click(m, 'pg_sh_dlcancel')
+    expect(DL.state(m, 'f.mp3', 'Sub One')[0] == 0 and [t for t, _ in rows(m)[:3]] == ['Ep E', 'Ep C', 'Ep A'], 'Cancel Download on a failed one: its failure is forgotten, the row is gone')
+    m.calls = []
+    tap_dots(m, 1, 2, 7)
+    PCP.click(m, 'pg_sh_dlcancel')
+    u = unlinks(m)
+    expect(DL.state(m, 'c.mp3', 'Sub One')[0] == 0 and DL.fn(m, 'pn_dl_count') == 1 and u == ['Sub One/c.mp3.part'] and [t for t, _ in rows(m)[:2]] == ['Ep E', 'Ep A'], f'Cancel Download on a waiting one: it leaves the queue ({u})')
+    m.put(f'{RP}/Sub One/e.mp3.part', b'x' * 10)
+    m.calls = []
+    tap_dots(m, 0, 1, 7)
+    PCP.click(m, 'pg_sh_dlcancel')
+    u = unlinks(m)
+    expect(DL.run_state(m, key) == DL.QS['DROPPING'] and u == ['Sub One/e.mp3.part'] and f'{RP}/Sub One/e.mp3.part' not in m.fs and [t for t, _ in rows(m)[:1]] != ['Ep E'],
+           f'Cancel Download on the running one: the worker is told to drop it, its .part goes and the row is gone ({u}, {rows(m)[:1]})')
+    # select mode: no "..." and no rings' dots
+    m = page(ip_state)
+    to_page(m)
+    start_select(m)
+    rings, dts = ip_marks(m, 4, 7)
+    expect(dts == {} and sorted(rings) == [0, 1] and flags(m, 'pg_sh_card') == (0, 0), f'select mode: no "..." on any row ({dts})')
 
 
 def open_tests(ctx):
@@ -532,7 +657,7 @@ def heads_tests(ctx):
     f = f'{RP}/Sub One/e.mp3'
     m.put(f, b'done', NOW - 5); m.sizes[f] = 3 << 20
     DL.poke_slot(m, 0, 'Sub One', 'e.mp3', 0)
-    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(0), 0); m.setword(DL.pn_at(DL.KIND), 0)
+    m.setword(DL.pn_at(DL.DKEY), 0); m.setword(DL.pn_at(DL.DBUSY), 0)
     m.setword(DL.pn_at(12), 500)
     PCS.tick(m)
     expect(heads(m) == ['In Progress'] and sorted(rows_y(m)) == lay(3, 1)['rows'], f'a finished download gives the page both sections: the In Progress header comes ({heads(m)})')
@@ -588,7 +713,7 @@ def width_tests(ctx):
         lib_cnt = tr('%d episodes', 999)
         tail = ' · ' + max((tr('%dm left', 99), tr('Oct %d', 23)), key=w18) + ' · ' + tr('%d MB', 99)
         worst[loc] = dict(waiting=w18(tr('%d waiting', 40)), paused=w18(tr('%d paused', 99)), shows=max(w18(tr('%d shows', 40)), w18(tr('%d show', 1))), lib=min(w18(lib_full) if w18(lib_full) <= O['PP_DL_TEXT_W'] else 9999, w18(lib_cnt)),
-                          storage=storage, heads=max(fnt.width(T('In Progress'), 20), fnt.width(T('Downloaded'), 20)), labels=max(w18(T('Select')), w18(T('Delete Played Episodes'))), confirm=w18(T('Delete all played episodes?')),
+                          storage=storage, heads=max(fnt.width(T('In Progress'), 20), fnt.width(T('Downloaded'), 20)), labels=max(w18(T('Select')), w18(T('Delete Played Episodes')), w18(T('Pause')), w18(T('Resume')), w18(T('Retry')), w18(T('Cancel Download'))), confirm=w18(T('Delete all played episodes?')),
                           toast=min(w18(tr('%d deleted, %s freed', 300).replace('%s', tr('%d GB', 125))), w18(tr('%d deleted', 300))), tail=w18(tail))
         confirms += [w18(T(k)) for k in ('Unsubscribe from this show?', 'Remove the selected downloads?', 'Delete the selected episodes?', 'Unsubscribe from these shows?')]
         shows.append((loc, w18(lib_full) <= O['PP_DL_TEXT_W'], chain.index(next((s for s in chain if w15(s) <= 288), chain[-1]))))
@@ -606,4 +731,4 @@ def width_tests(ctx):
     print('  a played Downloaded row leaves the show\'s name less than 40 px (so the name is left out and the line is the date and size) in', [loc for loc, w in worst.items() if w['tail'] > O['LIST_TEXT_W'] - O['PS_BADGE_CHECK_W'] - 40])
 
 
-SECTIONS = [page_tests, scan_tests, inprogress_tests, open_tests, select_tests, played_tests, heads_tests, off_tests, width_tests]
+SECTIONS = [page_tests, scan_tests, inprogress_tests, ring_tests, open_tests, select_tests, played_tests, heads_tests, off_tests, width_tests]

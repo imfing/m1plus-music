@@ -31,10 +31,10 @@ BADGE_W = 8 * 6 + 14            # the mocked canvas: 8 px a character; "Synced" 
 TITLE_W = 304 - 16 - BADGE_W - 8
 SYNCED_RGB, SAVED_RGB = 0xff2e2c2c, 0xffeae5e5
 NCOV = 7
-ES_TITLES = ['No Covers Found', 'No Lyrics Found', 'Lyrics Service Busy', 'Cover Service Busy']
+ES_TITLES = ['No Covers Found', 'No Lyrics Found', 'Lyrics Service Busy', 'Cover Service Busy', 'No Photos Found', 'Photo Service Busy']
 ES_TEXTS = ['Check your Wi-Fi connection.', 'Turn on Wi-Fi to search online.', 'Secure connections need the right date.', 'This device has no certificate bundle.', "The server's certificate was not accepted.",
             'The server could not answer. Try again later.', 'The SD card could not be used.', 'There is not enough memory to search.', 'Nothing on iTunes or Deezer for this album.', 'LRCLIB has no lyrics for this song.',
-            'LRCLIB is under heavy load. Try again in a moment.', 'iTunes and Deezer are busy. Try again in a moment.']
+            'LRCLIB is under heavy load. Try again in a moment.', 'iTunes and Deezer are busy. Try again in a moment.', 'The photo service is busy. Try again in a moment.', 'No photos online for this artist.']
 TXT_SYNCED = '[00:01.00] 歌词第一行\n[00:05.50] 第二行\n'
 
 
@@ -225,7 +225,7 @@ def asset_tests(ctx):
     built = {f[:-4]: dict(__import__('awtk_strings').load(os.path.join(WORK, RAW, 'strings', f))) for f in sorted(os.listdir(os.path.join(WORK, RAW, 'strings')))}
     font = Ttf(os.path.join(WORK, RAW, 'fonts', 'default.ttf'))
     words = ['Searching…', 'No Wi-Fi', 'Set the date first', 'Certificates missing', 'Certificate problem', "Can't connect", 'Server error', 'Storage unavailable', 'Not enough memory']
-    texts = {'oa_status': words + ES_TITLES, 'oa_hint': words[1:], 'oa_save': ['Use This Cover', 'Replace Cover', 'Saving…'], 'oa_lsave': ['Save Lyrics', 'Replace Lyrics'], 'oa_es_retry': ['Try Again'],
+    texts = {'oa_status': words + ES_TITLES, 'oa_hint': words[1:], 'oa_save': ['Use This Cover', 'Replace Cover', 'Saving…', 'Use This Photo', 'Replace Photo'], 'oa_lsave': ['Save Lyrics', 'Replace Lyrics'], 'oa_es_retry': ['Try Again'],
              'oa_dh_sub': ['Storage unavailable'], 'label_chip': ['Covers', 'Lyrics'], 'label_badge': ['Synced', 'Saved']}
     over = []
     for n, keys in texts.items():
@@ -252,6 +252,8 @@ def asset_tests(ctx):
     expect(badge + 14 <= 90, f'a badge is at most 90 px wide in every language ({badge + 14}), the title keeps the rest of the row')
     title_room = by['label_title'].w
     expect(all(StbText(font, 22).layout(built[loc]['Cover & Lyrics'])[1] <= title_room for loc in pod_i18n.LOCALES), f'the title "Cover & Lyrics" fits the navbar\'s label ({title_room} px) in all 13 languages')
+    wide = {loc: StbText(font, 22).layout(built[loc]['Artist Photo'])[1] for loc in pod_i18n.LOCALES}
+    expect(all(w <= title_room for w in wide.values()) and 'Artist Photo' in pod_i18n.TEXT, f'the artist page\'s title "Artist Photo" fits it too ({max(wide.values())} of {title_room} px)')
     keys = [k for ks in texts.values() for k in ks] + ES_TEXTS
     expect(all(k in pod_i18n.TEXT for k in keys if k not in pod_i18n.STOCK) and pod_i18n.text_prop('Cover & Lyrics')[1] == 'Cover & Lyrics', 'every key has its 13 translations')
 
@@ -681,7 +683,7 @@ def life_tests(ctx):
     m = AM(OA.Site()); m.open(); m.ready(); m.tap_tile(0); m.work(); m.tick()
     m.destroy()
     expect(f'{OA.ART_DIR}/full.jpg' not in m.fs, 'destroy from the confirmation: the held picture is removed')
-    # the downloads: a running one is asked to pause, the lookup starts when it has stopped, and the queue goes on once the lookup has ended
+    # the downloads: a running one goes on beside the lookup, which starts at once; the queue is never touched
     site = OA.Site()
     m = AM(site)
     m.thread = None
@@ -689,16 +691,15 @@ def life_tests(ctx):
     dl = m.thread
     expect(r == 0 and dl and dl[0] == PSYMS['pn_dmain'] and fn(m, 'pn_dl_running') == 1, 'a download is running')
     m.open()
-    expect('pthread_create' not in [c[0] for c in m.calls] and m.text('oa_status') == 'Searching…' and not site.reqs, 'the page opens while it runs: the lookup waits, "Searching…"')
+    expect([c[0] for c in m.calls].count('pthread_create') == 1 and m.thread[0] == PSYMS['pn_amain'] and m.text('oa_status') == 'Searching…' and fn(m, 'pn_job_busy') == 1 and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_dl_waiting') == 1,
+           'the page opens while a download runs: the lookup thread is created at once ("Searching…"), the download thread keeps running with its queue')
     m.tick()
-    expect('pthread_create' not in [c[0] for c in m.calls] and fn(m, 'pn_dl_running') == 1, 'the download was asked to pause: it has not stopped yet, so the lookup still waits')
-    m.thread = None; PCN.work(m, dl)
-    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_waiting') == 1, 'the paused download stopped and stays queued')
-    m.tick()
-    expect([c[0] for c in m.calls].count('pthread_create') == 1 and m.thread[0] == PSYMS['pn_amain'], 'the tick starts the lookup now')
+    expect('pthread_create' not in [c[0] for c in m.calls] and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_dl_waiting') == 1, 'the tick starts no second thread and does not touch the download')
     m.work()
     for _ in range(10): m.tick()
-    expect(fn(m, 'pn_job_busy') == 0 and fn(m, 'pn_dl_running') == 1 and m.thread[0] == PSYMS['pn_dmain'], 'the lookup ended: the queued download is started again by the page\'s tick')
+    expect(fn(m, 'pn_job_busy') == 0 and fn(m, 'pn_dl_running') == 1 and 'pthread_create' not in [c[0] for c in m.calls] and site.reqs, 'the lookup ended with its result: the download thread still runs, the page restarts nothing')
+    m.thread = None; PCN.work(m, dl)
+    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_waiting') == 0 and fn(m, 'pn_job_busy') == 0, 'then the download thread ends by itself with its queue taken')
 
 
 BUSY = {'rc': 22, 'code': 503}
@@ -855,4 +856,130 @@ def again_tests(ctx):
     expect(m.thread and m.thread[0] == PSYMS['pn_amain'], 'with the Wi-Fi back the pill starts the lookup')
 
 
-SECTIONS = [asset_tests, open_tests, tabs_tests, status_tests, state_tests, again_tests, failure_tests, cover_tests, cover_failure_tests, lyrics_tests, life_tests]
+class ARM(AM):
+    """The page opened for an artist (onlineart_open_artist): the navbar's title label, Deezer's artist search on the scripted server, and ftell over a file's bytes (ap_make sizes the picture it is given)."""
+    def __init__(self, site=None, **kw):
+        super().__init__(site or OA.Site(**{OA.DEEZER_ARTIST: {'body': OA.data('deezer_artist.json')}}), **kw)
+        Machine.widget(self, 'label_title')   # noqa: F821
+
+    def _hook(self, u, address, size, _):
+        if self.handlers.get(address) == 'ftell' and u.reg_read(UC_MIPS_REG_A0) in self.fp:   # noqa: F821
+            u.reg_write(UC_MIPS_REG_V0, self.fp[u.reg_read(UC_MIPS_REG_A0)][1]); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+        return super()._hook(u, address, size, _)
+
+    def open(self, name='陈奕迅'):
+        self.calls = []; self.thread = None
+        r = self.call(PSYMS['onlineart_open_artist'], a0=self.cstr(name), count=200000000) & 0xffffffff
+        self.open_calls = list(self.calls)
+        return r
+
+
+def artist_tests(ctx):
+    """Find Artist Photo: the same page for an artist of the library. No chips (the artist's name stands there), Deezer's photos as the grid, the confirmation with Use This Photo / Replace Photo, the photo written
+    to the artists cache with its .pick marker and to nothing else."""
+    expect = ctx.expect
+    d = __import__('json').loads(OA.data('deezer_artist.json'))['data']
+    want = [d[0], d[1], d[4]]   # the entry of the very name, then the others by followers
+    m = ARM()
+    site = m.curl_site
+    key = fn(m, 'ap_key', m.cstr('陈奕迅'))
+    f168, f44, fpick = f'{OA.AP}/a{key:08x}-168.jpg', f'{OA.AP}/a{key:08x}-44.jpg', f'{OA.AP}/a{key:08x}.pick'
+    r = m.open()
+    names = [c[0] for c in m.open_calls]
+    expect(r == 0 and ('window_open', 'm1plus_onlineart') in m.open_calls and names.count('pthread_create') == 1 and m.thread[0] == PSYMS['pn_amain'], 'the page opens on the same asset and starts the lookup')
+    expect(not m.shown('oa_chips') and m.shown('oa_dh_title') and m.text('oa_dh_title') == '陈奕迅' and m.shown('oa_dh_sub') and m.text('oa_dh_sub') == 'Deezer, NetEase', 'no chips: the artist\'s name and the service stand in their place')
+    expect(m.text('label_title') == 'Artist Photo' and m.shown('oa_listview') and m.shown('oa_sep') and not m.shown('oa_dc') and not m.shown('oa_save') and not m.shown('oa_lsave'), 'the navbar says Artist Photo; the list and its line, no pill')
+    expect(m.shown('oa_status') and m.text('oa_status') == 'Searching…', 'Searching… while the lookup runs')
+    th = m.thread
+    expect(m.open() == 0 and 'window_open' not in [c[0] for c in m.open_calls] and m.thread is None, 'a second open while it is up: the same page, no second lookup')
+    m.thread = th
+    m.ready()
+    urls = site.urls()
+    expect(urls[:2] == [OA.DEEZER_ARTIST + OA.enc('陈奕迅'), OA.NETEASE_ARTIST + OA.enc('陈奕迅')] and len(urls) == 5 and not [u for u in urls if u.startswith((OA.ITUNES, OA.LRCLIB, OA.DEEZER))], f'the two artist searches (Deezer\'s, NetEase\'s, the name) and three thumbnails: no album search, no lyrics ({len(urls)})')
+    blits, fills, texts = m.paint()
+    expect(len(blits) == 3 and not m.shown('oa_status') and [b[2][:2] for b in blits] == [(X0 + i * (TILE + GAP), Y0) for i in range(3)], f'the three photos at the grid\'s cells ({[b[2] for b in blits]})')
+    expect(not [c for c in m.bound if c[0] == m.chips and m.shown('oa_chips')], 'the chip row takes no touch (hidden and insensitive)')
+    # a tap: the confirmation, nothing written
+    m.tap_tile(0)
+    expect(m.shown('oa_dc') and not m.shown('oa_listview') and not m.shown('oa_dh_title') and not m.shown('oa_dh_sub') and m.thread[0] == PSYMS['pn_kmain'], 'a tap on a photo: the confirmation (the header and the list gone), the larger picture is fetched')
+    expect(m.text('oa_dc_name') == want[0]['name'] and m.text('oa_dc_artist') == '' and m.text('oa_dc_source') == 'Deezer', f'Deezer\'s name of that artist and the source ({m.text("oa_dc_name")})')
+    m.work(); m.tick()
+    expect(site.urls()[-1] == want[0]['picture_medium'].replace('250x250-', '500x500-') and m.shown('oa_save') and m.text('oa_save') == 'Use This Photo', 'the 500 px picture; the pill reads Use This Photo')
+    expect(not [p for p in m.fs if p.startswith((OA.AP, OA.COVERS))], 'NOTHING is written before the pill')
+    m.click('btn_return'); m.tick()
+    expect(m.shown('oa_dh_title') and m.shown('oa_listview') and not m.shown('oa_chips') and not m.shown('oa_dc') and ('navigator_back',) not in m.calls and not [p for p in m.fs if p.startswith(OA.AP)],
+           'Back from the confirmation: the grid and the name again, still no chips, nothing written')
+    # the pill
+    m.tap_tile(0); m.work(); m.tick()
+    m.click('oa_save')
+    expect(m.thread[0] == PSYMS['pn_kmain'] and m.text('oa_save') == 'Saving…', 'the pill starts the save and reads Saving…')
+    ep0 = fn(m, 'ap_epoch')
+    m.work()
+    expect(all(m.fs.get(p, b'')[:2] == b'\xff\xd8' for p in (f168, f44)) and fpick in m.fs and fn(m, 'ap_epoch') == ep0 + 1, 'the artist\'s two cache files and the .pick marker are written; the epoch moves')
+    expect(not [p for p in m.fs if p.startswith(OA.COVERS)] and not [p for p in m.fs if p.endswith(('cover.jpg', 'folder.jpg', '.lrc'))], 'no album cover, no folder picture, no lyrics file: the playing track is not this page\'s business')
+    m.tick()
+    blits, fills, _ = m.paint()
+    frame = [f[:5] for f in fills if f[0] == 0xffffffff]
+    expect(m.shown('oa_listview') and m.shown('oa_dh_title') and not m.shown('oa_dc') and len(frame) == 4 and (0xffffffff, X0 - 3, Y0 - 3, TILE + 6, 2) in frame, 'the tick: the grid again, that photo framed as the current one')
+    m.tap_tile(1); m.work(); m.tick()
+    expect(m.text('oa_save') == 'Replace Photo' and m.text('oa_dc_name') == want[1]['name'], 'the artist has a picked photo now: the pill reads Replace Photo')
+    m.click('btn_return'); m.tick()
+    m.click('btn_return')
+    expect(('navigator_back',) in m.calls, 'Back from the grid leaves the page')
+    # the page with no track playing, and a server track playing: the artist's page needs neither
+    m = ARM(); m.sbtrack[1] = 'tr-1'; m.play([m.record(album='A', artist='B', path='http://server/stream', title='T', rid=1)], 0)
+    expect(m.open() == 0, 'a server track playing does not matter: the page is the artist\'s')
+    # a blank name has no key: no page
+    m = ARM()
+    expect(m.open('  ') == 0xffffffff and 'window_open' not in [c[0] for c in m.open_calls] and m.thread is None, 'a blank name: no page, no lookup')
+    # the two states of its own, in the 13 languages
+    for name, over, in (('no photos', {OA.DEEZER_ARTIST: {'body': b'{"data":[],"total":0}'}}), ('photos busy', {OA.DEEZER_ARTIST: BUSY, OA.NETEASE_ARTIST: BUSY})):
+        wg, wt, wx, wp = pod_ui.OA_ES_STATES[name]
+        for loc in pod_i18n.LOCALES:
+            m = ARM(OA.Site(**over)); m.set_language(loc); m.open(); m.work(); m.calls = []; m.tick()
+            icon = m.widgets['oa_es_icon']
+            glyph = [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] == icon]
+            got = (glyph[-1] if glyph else '', m.text('oa_status'), m.text('oa_es_text'), m.shown('oa_es_retry'))
+            ok = got == (wg, trl(loc, wt), trl(loc, wx), wp)
+            if not ok or loc == 'en_US': expect(ok, f'{name} ({loc}): the glyph {wg}, the title, the explanation{", Try Again" if wp else ", no pill"} ({got})')
+            if not ok: break
+        else:
+            expect(True, f'{name}: the same block in all 13 languages')
+    # Try Again asks the artist search again
+    hits = []
+    site = OA.Site(**{OA.DEEZER_ARTIST: lambda u, o: (hits.append(u), BUSY if len(hits) == 1 else {'body': OA.data('deezer_artist.json')})[1], OA.NETEASE_ARTIST: BUSY})
+    m = ARM(site); m.open(); m.work(); m.tick()
+    expect(m.shown('oa_es_retry') and m.text('oa_status') == 'Photo Service Busy', 'both services busy: the block with Try Again')
+    m.click('oa_es_retry')
+    expect(m.thread and m.thread[0] == PSYMS['pn_amain'] and m.text('oa_status') == 'Searching…' and not m.shown('oa_es_retry'), 'Try Again starts the lookup again: Searching…')
+    m.ready()
+    expect(len(hits) == 2 and len(m.paint()[0]) == 3 and not m.shown('oa_status'), 'the artist search is asked again and the photos come')
+    # the pill's texts in another language; a failed save says its word and gives the pill back
+    m = ARM(); m.set_language('zh_CN'); m.open(); m.ready(); m.tap_tile(0); m.work(); m.tick()
+    expect(m.text('oa_save') == trl('zh_CN', 'Use This Photo') and m.text('label_title') == trl('zh_CN', 'Artist Photo'), 'the pill and the title in the page\'s language')
+    m = ARM(); m.open(); m.ready(); m.tap_tile(0); m.work(); m.tick()
+    m.fail = {('rename', f168)}
+    m.click('oa_save'); m.work(); m.tick()
+    expect(m.shown('oa_dc') and m.shown('oa_hint') and m.text('oa_hint') == 'Storage unavailable' and m.shown('oa_save') and m.text('oa_save') == 'Use This Photo' and fpick not in m.fs,
+           f'a photo that cannot be written: Storage unavailable under the source, the pill back, no marker ({m.text("oa_hint")})')
+    # NetEase has the artist too: the line under the name names them, a NetEase photo says NetEase and its larger picture is the 500 px one
+    ne = __import__('json').dumps({'result': {'artists': [{'name': '陈奕迅', 'fansSize': 9, 'img1v1Url': 'https://p1.music.126.net/k==/1.jpg', 'picUrl': None}]}, 'code': 200}).encode()
+    two = lambda: OA.Site(**{OA.DEEZER_ARTIST: {'body': OA.data('deezer_artist.json')}, OA.NETEASE_ARTIST: {'body': ne}})
+    m = ARM(two()); m.open()
+    expect(m.text('oa_dh_sub') == 'Deezer, NetEase', f'both services: the line names both ({m.text("oa_dh_sub")})')
+    m.ready()
+    expect(len(m.paint()[0]) == 4, 'Deezer\'s three photos and NetEase\'s one')
+    m.tap_tile(1)
+    expect(m.text('oa_dc_name') == '陈奕迅' and m.text('oa_dc_source') == 'NetEase', f'NetEase\'s photo of the very name is second, after Deezer\'s; the source says NetEase ({m.text("oa_dc_source")})')
+    m.work(); m.tick()
+    expect(m.curl_site.urls()[-1] == 'https://p1.music.126.net/k==/1.jpg?param=500y500' and m.shown('oa_save'), f'its 500 px picture ({m.curl_site.urls()[-1]})')
+    m = ARM(two()); m.set_language('zh_CN'); m.open()
+    expect(m.text('oa_dh_sub') == 'Deezer, ' + trl('zh_CN', 'NetEase') and trl('zh_CN', 'NetEase') != 'NetEase', f'NetEase\'s name in the page\'s language ({m.text("oa_dh_sub")})')
+    # destroy while the lookup runs cancels it, as the track's page
+    m = ARM(); m.open(); th = m.thread; m.destroy()
+    expect(('timer_remove', 0x777) in m.calls and fn(m, 'pn_job_busy') == 1, 'destroy with the lookup running: the timer goes, the worker is left to end by itself')
+    m.thread = th; m.work()
+    expect(fn(m, 'pn_job_busy') == 0 and fn(m, 'pn_art_code') == OA.PN['CANCELLED'] and m.open() == 0, 'it ends cancelled, and the page opens again')
+
+
+SECTIONS = [asset_tests, open_tests, tabs_tests, status_tests, state_tests, again_tests, failure_tests, cover_tests, cover_failure_tests, lyrics_tests, life_tests, artist_tests]

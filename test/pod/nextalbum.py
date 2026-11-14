@@ -268,24 +268,23 @@ def next_tests(ctx):
 
 
 def row_tests(ctx):
-    """Settings > Playback: the Continue Playing value row after EQ, its picker (Off, Next Albums, a check on the chosen one, the hint), the setting file in Settings Files, the
+    """Settings > Playback Settings: the Continue Playing value row after Folder Skip, its picker (Off, Next Albums, a check on the chosen one, the hint), the setting file in Settings Files, the
     action ids, the texts in 13 languages."""
     expect = ctx.expect
     P = pod_pages
-    S, N = P.SETTINGS_PAGE, P.NEXTALBUM_PAGE
+    S, N = P.PLAYSET_PAGE, P.NEXTALBUM_PAGE
     labels = [r.label for r in S.rows]
     i = labels.index('Continue Playing')
-    expect(labels[i - 1:i + 2] == ['EQ', 'Continue Playing', 'All Playback Settings'] and 'Play Next Album' not in labels,
-           'the Playback card: EQ, Continue Playing, All Playback Settings')
-    expect((P.ACT_NEXTALBUM, P.ACT_NASET) == (90, 91) and S.rows[i].action == 90 and S.rows[i].arg == P.NEXTALBUM_PAGE_INDEX == 66 and 90 in P.VALUE_ACTIONS and 90 not in P.SWITCH_ACTIONS
-           and P.row_kind(S.rows[i]) == 'value' and P.VALUE_INIT[90] == 'Off', 'ACT_NEXTALBUM 90, a value row opening page 66; ACT_NASET 91')
+    expect(labels[i - 1:i + 2] == ['Folder Skip', 'Continue Playing', 'Gain'] and 'Play Next Album' not in labels,
+           'the Playback card of Playback Settings: Play Mode, Gapless, Memory Playback, Folder Skip, Continue Playing')
+    expect((P.ACT_NEXTALBUM, P.ACT_NASET) == (90, 91) and S.rows[i].action == 90 and S.rows[i].arg == P.NEXTALBUM_PAGE_INDEX and P.PAGES[P.NEXTALBUM_PAGE_INDEX] is P.NEXTALBUM_PAGE and 90 in P.VALUE_ACTIONS and 90 not in P.SWITCH_ACTIONS
+           and P.row_kind(S.rows[i]) == 'value' and P.VALUE_INIT[90] == 'Off', 'ACT_NEXTALBUM 90, a value row opening the Continue Playing picker; ACT_NASET 91')
     expect(P.PAGES[P.NEXTALBUM_PAGE_INDEX] is N and N.title == 'Continue Playing' and [(r.label, r.action, r.arg) for r in N.rows] == [('Off', 91, DEFS['NA_OFF']), ('Next Albums', 91, DEFS['NA_ALBUMS'])]
            and all(P.row_kind(r) == 'check' for r in N.rows) and 91 in P.CHECK_ACTIONS and N.layout[-1].text.startswith('Plays the next album'), 'the picker: Off, Next Albums, a check each, the hint under them')
     expect(P.SETTING_FILES.index('playback-next-album') == P.SETTING_FILES.index('playback-eq') + 1 and FILE == '/mnt/data/m1plus/playback-next-album', 'the setting file follows playback-eq in Settings Files')
-    expect(len(P.SETTING_FILES) == 40 and P.INFO_SFOLD - P.INFO_SF == 45 and P.INFO_DUR == P.INFO_SFOLD + 1 == 61, 'Settings Files: 40 setting files (artists-rebuild too), INFO_SFOLD = INFO_SF + 45, INFO_DUR 61')
+    expect(len(P.SETTING_FILES) == 44 and P.INFO_SFOLD - P.INFO_SF == 49 and P.INFO_DUR == P.INFO_SFOLD + 1 == 65, 'Settings Files: 44 setting files (artists-rebuild, scrobbling, scrobble-auto, the lyrics size and podcast-directory too), INFO_SFOLD = INFO_SF + 49, INFO_DUR 65')
     for loc in pod_i18n.LOCALES:
         expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Continue Playing', 'Next Albums', 'Albums', 'Off', N.layout[-1].text)), f'the texts have a translation in {loc}')
-    menu_i = next(k for k, r in enumerate(P.MENU.rows) if r.action == P.ACT_PAGE and r.arg == P.SETTINGS_PAGE_INDEX)
 
     def open_page(row_p, saved, names):
         m = Machine()
@@ -294,8 +293,14 @@ def row_tests(ctx):
         m.call(PSYMS['on_row'], a0=row_p, count=6000000)
         return m
 
-    def open_settings(saved=None):
-        return open_page(PSYMS['pod_rows_0'] + 12 * menu_i, saved, [f'pod_{k}{n}' for k in ('row', 'value', 'switch', 'label') for n in range(len(S.rows))])
+    def open_settings(saved=None):   # the Playback Settings page, opened as its Settings row does
+        m = Machine()
+        row = m.alloc(12)
+        m.setword(row, m.cstr('pod_row0')); m.setword(row + 4, P.ACT_PAGE); m.setword(row + 8, P.PLAYSET_PAGE_INDEX)
+        m.widgets = {n: 0x30000000 + 0x100 * k for k, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_{k}{n}' for k in ('row', 'value', 'switch', 'label') for n in range(len(S.rows))])}
+        if saved is not None: m.fs[FILE] = saved
+        m.call(PSYMS['on_row'], a0=row, count=6000000)
+        return m
 
     def open_picker(saved=None):
         m = Machine()

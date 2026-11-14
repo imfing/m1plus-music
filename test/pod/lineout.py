@@ -54,7 +54,7 @@ def run(ctx):
     lab, pill = m.label, m.pill
     expect(m.names()[0] == 'widget_set_text_utf8' and log(m, 'widget_set_text_utf8') == [(lab, 'LO')], 'stock\'s widget_set_text_utf8 runs first, with the text unchanged')
     expect(log(m, 'widget_set_visible') == [(lab, 0), (pill, 1)] and log(m, 'widget_set_sensitive') == [(lab, 0), (pill, 1)], 'LO: label_volume hidden and insensitive, the pill visible and sensitive')
-    expect(sorted(c[1] for c in m.calls if c[0] == 'widget_lookup') == sorted([PILL, DEFS['SYNC_IND']]), 'the pill and the sync icon are looked up by name (once each)')
+    expect(sorted(c[1] for c in m.calls if c[0] == 'widget_lookup') == sorted([PILL, DEFS['SYNC_IND'], DEFS['EQ_IND']]), 'the pill, the sync icon and the EQ mark are looked up by name (once each)')
     expect(m.icount < 900, f'cost: {m.icount} instructions')
 
     # 3. A number, or anything else: stock's label, the pill hidden.
@@ -95,7 +95,7 @@ def run(ctx):
                and kids.index(PILL) == kids.index('label_volume') + 1 and sum(c.name == PILL for c in bar.walk()) == 1 and statusbar.LO_WIDGET == PILL,
                f'{what}: {PILL} is one hidden, insensitive image right after label_volume ({kids})')
     stock_bar = awtk_ui.parse(open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', 'release/assets/default/raw/ui/system_bar.bin'), 'rb').read())
-    expect({n.name for n in stock_bar.walk()} == {n.name for n in bars[0][1].walk()} - {PILL, 'pod_shot', 'pod_pct', 'pod_sync'}, 'no stock widget is renamed or removed')
+    expect({n.name for n in stock_bar.walk()} == {n.name for n in bars[0][1].walk()} - {PILL, 'pod_shot', 'pod_pct', 'pod_sync', 'pod_eq'}, 'no stock widget is renamed or removed')
 
     # 7. The image: amber, not the Accent Orange, a full pill, and no tint or flip touches it.
     png = os.path.join(rootfs, 'release/assets/default/raw/images/xx', statusbar.LO_IMAGE + '.png')
@@ -182,3 +182,45 @@ def run(ctx):
         if n in ('img_btclass', 'pod_sync', 'img_wifi'): spans[n] = (e - sizes[n], e); e -= sizes[n] + 4
     gaps = {n: spans[n][0] + ink_left[n] for n in spans}
     expect(all(g >= clock_end + 3 for g in gaps.values()), f'sync icon, Bluetooth and Wi-Fi lit: every ink starts 3 px clear of the clock ({gaps}, clock ends {clock_end})')
+
+    # 9. The EQ mark (hook 20's third job): the label pod_eq is visible and sensitive iff the Equalizer switch (stock's equalizer_flag) is on, the digital-out glyph is hidden and the kill switch is absent; set only on a change.
+    EQ = DEFS['EQ_IND']
+
+    def eq_machine(flag, digital=None):
+        m = machine(); m.eq = m.widget(EQ); m.props[(m.eq, 'visible')] = 0   # (hidden in the asset)
+        if digital is not None: m.dig = m.widget(DEFS['EQ_DIGITAL']); m.props[(m.dig, 'visible')] = digital
+        m.u.mem_write(pod.DATA['EQ_FLAG'][0], bytes([flag]))
+        return m
+
+    def eq_log(m): return [(c[0], c[2]) for c in m.calls if c[0] in ('widget_set_visible', 'widget_set_sensitive') and c[1] == m.eq]
+
+    m = eq_machine(0); tick(m, '50')
+    expect(not eq_log(m), 'Equalizer off: the mark stays hidden, nothing is set')
+    m = eq_machine(1); tick(m, '50')
+    expect(eq_log(m) == [('widget_set_visible', 1), ('widget_set_sensitive', 1)], 'Equalizer on: the mark is visible and sensitive')
+    expect(m.icount < 1100, f'cost with the mark: {m.icount} instructions')
+    m.calls = []; tick(m, 'LO')
+    expect(not eq_log(m) and log(m, 'widget_set_visible')[-1] == (m.pill, 1), 'a steady switch sets nothing again, and the Line Out pill works beside it')
+    m.u.mem_write(pod.DATA['EQ_FLAG'][0], b'\0'); m.calls = []; tick(m, '50')
+    expect(eq_log(m) == [('widget_set_visible', 0), ('widget_set_sensitive', 0)], 'Equalizer off again: hidden and insensitive')
+    m = eq_machine(1, digital=1); tick(m, '50')
+    expect(not eq_log(m), 'the digital-out glyph shows: no room before the clock, the mark stays hidden')
+    m = eq_machine(1, digital=0); tick(m, '50')
+    expect(eq_log(m)[0] == ('widget_set_visible', 1), 'the digital-out glyph hidden: the mark shows')
+    m.props[(m.dig, 'visible')] = 1; m.calls = []; tick(m, '50')
+    expect(eq_log(m)[0] == ('widget_set_visible', 0), 'the glyph comes on: the mark goes')
+    m = eq_machine(1); m.present.add(KILL); tick(m, '50')
+    expect(not eq_log(m), 'kill switch: hidden')
+    m = machine(); m.u.mem_write(pod.DATA['EQ_FLAG'][0], b'\1'); tick(m, '50')
+    expect(not [c for c in m.calls if c[0] == 'widget_set_visible' and c[1] not in (m.label, m.pill)], 'no EQ mark in the bar (an older asset): nothing else is touched')
+    # the assets: one hidden, insensitive label right after the pill in view_bar_left, in label_volume's style; shown, the group ends before the clock's ink
+    clock_start = min(clock.x + (clock.w - StbText(font, int(clock.get('style:normal:font_size'))).layout(t)[1]) // 2 for t in ('12:59', '12:59 PM', '10:59 AM', '12:59 AM'))
+    for what, bar in bars:
+        left = bar.find('view_bar_left'); kids = [c.name for c in left.children]; e = bar.find(EQ); vol = bar.find('label_volume')
+        expect(e is not None and e.type == 'label' and e.get('visible') == 'false' and e.get('sensitive') == 'false' and e.get('text') == 'EQ' and statusbar.EQ_WIDGET == EQ
+               and kids.index(EQ) == kids.index(PILL) + 1 and kids[-1] == DEFS['EQ_DIGITAL'] and sum(c.name == EQ for c in bar.walk()) == 1
+               and all(e.get(f'style:{st}:{k}') == vol.get(f'style:{st}:{k}') for st in statusbar.STATES for k in ('text_color', 'text_align_v')) and e.get('style:normal:font_size') == str(statusbar.EQ_PX) == '16',
+               f'{what}: {EQ} is one hidden, insensitive label after the pill, before the digital-out glyph, white like the volume number, at 16 px like the volume number ({kids})')
+        expect(e.w >= StbText(font, statusbar.EQ_PX).layout('EQ')[1], f'{what}: the box holds "EQ" at 16 px ({e.w})')
+        end = statusbar.EDGE + sum(c.w + statusbar.GAP for c in left.children if c.name not in (PILL, DEFS['EQ_DIGITAL'])) - statusbar.GAP
+        expect(end + 3 <= clock_start, f'{what}: play state, volume and the mark end at x {end}, 3 px clear of the clock\'s ink ({clock_start})')

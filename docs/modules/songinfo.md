@@ -3,7 +3,7 @@
 A track's details page, opened by the Get Info row of the track rows' "..." sheet ([rowmenu](rowmenu.md)). Device: the compact layout was checked on V2.1zAZYTAAAB (look and open); the readers per format are emulated only.
 
 **Source:** `songinfo_open(rec)` copies the title (the file name when empty), artist, album, path and CUE start/end of the row's `stSongInfo`, so the caller may destroy the record at once. The page
-`m1plus_songinfo` (`tools/pod_ui.py build_songinfo_page`, `pod_pages.SONGINFO`, last in the page table) is Station Info's structure ([radio](radio.md), `patch/radioinfo.c`): the stock navbar (Back, Now Playing,
+`m1plus_songinfo` (`tools/pod_ui.py build_songinfo_page`, `pod_pages.SONGINFO`) is Station Info's structure ([radio](radio.md), `patch/radioinfo.c`): the stock navbar (Back, Now Playing,
 title "Get Info") over a stock list holding one content view painted in its `EVT_AFTER_PAINT`, texts wrapped once by `pd_lines`, the navbar fade shown while scrolled. Four hidden labels carry the text styles
 (`label_head` 22 px white, `label_sub` 16 px `#AAAAAA`, `label_key` 14 px `#AAAAAA`, `label_val` 18 px white). No timer, nothing written; the memory goes with the window. Returns -1
 with no record, no window, an asset without the widgets or no memory; a second open while the page is on top opens nothing.

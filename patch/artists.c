@@ -493,9 +493,28 @@ static int ar_on_scroll(void *ctx, void *e) {
 }
 
 /* The page is in front again: a re-check on an artist's page since the circles were last looked at made, replaced or removed a photo, so every circle is looked for again (the tiles dropped, the answers forgotten; one decode a tick as ever). */
+/* The local list is read once at open: songs deleted elsewhere (an album page above) leave an artist (genre, composer) that has none, and a row then opens another one. Back on the page the stock query is read
+ * again and compared with the page's rows (the capped count): 1 when they differ (a list that is now empty too). */
+static void ar_load(int keep);
+static int ar_local_changed(void) {
+    void *list = loadLocalClassList(ar.cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0;
+    unsigned n = list ? deque_size(list) : 0;
+    int changed;
+    if (!n && !ar.count) return 0;
+    if (n > MAX_ARTISTS) n = MAX_ARTISTS;
+    changed = !(n && ar.artists && ar.count == n && ls_same_list(ar.artists, n, list, n));
+    if (list) deque_clear(list); /* (read for the comparison alone: the page has its own rows) */
+    return changed;
+}
+
 static int ar_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    if (!ar.src && ar.view && ar_local_changed()) {
+        ar.epoch = ap_epoch(); /* (the page is made again below: its circles are looked for afresh) */
+        ar_load(1);
+        return RET_OK;
+    }
     if (!ar.photo || ar.src || !ar.view || ar.epoch == ap_epoch())
         return RET_OK; /* (a source has no photos to change) */
     ar.epoch = ap_epoch();
@@ -566,9 +585,8 @@ static void ar_load(int keep) {
         if (ar.count > MAX_ARTISTS) ar.count = MAX_ARTISTS;
         if (ar.count) ar_sort();
     } else if ((list = loadLocalClassList(ar.cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0) && deque_size(list) &&
-               (ar.artists = _create_deque("stSongInfo"))) {
-        deque_init(ar.artists);
-        deque_assign(ar.artists, list);
+               (ar.artists = lib_take_list(
+                    list))) { /* (the rows are the page's now, not copied: *pdeq_showlist is left empty) */
         ar.count = deque_size(ar.artists);
         if (ar.count > MAX_ARTISTS) ar.count = MAX_ARTISTS;
         ar_sort(); /* Genres and Composers stay in stock's order (toolsQueryDbTable's in-memory title sort) unless Z-A */
@@ -584,6 +602,8 @@ static void ar_load(int keep) {
     m1_show(ar.list,
             ar.count != 0 ||
                 ar.src != (const lib_src_t *)0); /* (a source's page keeps the large title when it has no rows) */
+    ls_room(ar.status, ar.spin,
+            LS_ROOM_NAV + (ar.src ? SG_TITLE_H : 0)); /* (under the title the source's page keeps) */
     m1_show(ar.status, ar.count == 0 && !(st == LS_ST_LOADING && ar.spin));
     if (!ar.count) widget_set_tr_text(ar.status, ar.src ? ls_empty_key(st, "No artists") : "Update Local Music first");
     ls_spin(ar.spin, st == LS_ST_LOADING && ar.count == 0 && ar.spin != (void *)0);

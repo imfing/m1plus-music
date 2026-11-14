@@ -225,6 +225,29 @@ def request_tests(ctx):
     run_set(m, albums, force=1)
     expect(m.fs[f44(kq)] == b'picked' and m.fs[f168(kq)] == b'picked168', '.pick keeps the files')
 
+    # A pick saved while the job is at work (the network worker; after the job's own look at .pick) wins: under the publishing mutex neither the job's photo nor its empty marker goes over it.
+    def pick_at_lock(mm, k):
+        def go():
+            if mm.calls[-1] != ('lock', PSYMS['ap_mutex']): return   # (not the cover lock: the job has looked at .pick by now)
+            mm.on_lock = None
+            mm.fs[fpick(k)] = b''; mm.fs[f44(k)] = b'picked'; mm.fs[f168(k)] = b'picked168'
+        mm.on_lock = go
+    m = library({f'{MUSIC}/Abba/artist.jpg': photo}, albums)
+    ka, kq = key(m, 'Abba'), key(m, 'Queen')
+    locks = [PSYMS['ap_mutex']]
+    m.on_lock = None
+    run_set(m, albums[1:])
+    pick_at_lock(m, ka)
+    run_set(m, albums[:1])
+    mine = [c[0] for c in m.calls if c[0] in ('lock', 'unlock') and c[1] == locks[0]]
+    expect(m.fs[f44(ka)] == b'picked' and m.fs[f168(ka)] == b'picked168' and fsrc(ka) not in m.fs and not [p for p in m.fs if p.startswith(AP) and p.endswith('.tmp')],
+           f'a pick saved while the photo was being made: the job publishes nothing ({sorted(p for p in m.fs if p.startswith(AP))})')
+    expect(mine and mine.count('lock') == mine.count('unlock'), f'every publication is under ap_mutex, released on every path ({mine})')
+    m = library({}, albums)
+    pick_at_lock(m, kq)
+    run_set(m, albums[1:])
+    expect(m.fs[f44(kq)] == b'picked' and m.fs[f168(kq)] == b'picked168', 'a pick saved while nothing was found: no empty marker over it')
+
     # An artist whose last attempt died or hung (.try) gets the empty marker, not another attempt.
     m = library({f'{MUSIC}/Abba/artist.jpg': photo}, albums, extra={ftry(ka): b''})
     run_set(m, albums)
@@ -383,7 +406,7 @@ def lead_tests(ctx):
     for name, want in (('Adele feat. Someone', 'Adele'), ('Adele FEAT. Someone', 'Adele'), ('Adele ft. Someone', 'Adele'), ('Adele Ft. Someone', 'Adele'), ('Adele featuring Someone', 'Adele'),
                        ('Adele FeaturingSomeone', None), ('Simon & Garfunkel', 'Simon'), ('Mark X Mark', 'Mark'), ('Mark x Mark', 'Mark'), ('Tyler, The Creator', 'Tyler'),
                        ('Tom; Jerry', 'Tom'), ('Tom;Jerry', None), ('Beyoncé feat. Jay-Z & Kanye', 'Beyoncé'.encode().decode('latin-1')), ('A & B feat. C', 'A'), ('A feat. B & C', 'A'), ('Abba', None),
-                       ('Maxx', None), ('Fox', None), ('Adele ft.', None), ('feat. X', None), ('Prince and the Revolution', None), ('Earth, Wind & Fire', 'Earth')):
+                       ('Maxx', None), ('Fox', None), ('Adele ft.', None), ('feat. X', None), ('Prince and the Revolution', None), ('Earth, Wind & Fire', 'Earth'), (' Abba', None), ('Abba ', None), (' Abba & B', 'Abba'), ('A & ', 'A')):
         expect(lead(name) == want, f'lead of {name!r}: {want!r} (got {lead(name)!r})')
     expect(lead('x' * 300 + ' & B') is None and lead('Longer than the buffer & B', 6) is None, 'a lead that does not fit gives none')
     expect(key(m, 'Adele feat. Someone') != key(m, 'Adele') and key(m, 'The Weeknd & Drake') != key(m, 'Weeknd'), 'ap_key itself never splits')

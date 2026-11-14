@@ -25,6 +25,7 @@
 #include "common.h"
 #include "covercache.h"
 #include "entries.h"
+#include "scrobble.h"
 
 #define FRAME_W 320 /* the frame is TP_H wide (columns) and TP_W tall (rows) */
 
@@ -824,6 +825,7 @@ static int tp_tick(const void *timer) {
         tp.timer = 0;
         return RET_OK;
     }
+    scrobble_note(cc_playing()); /* lit or dark (patch/scrobble.c) */
     if (m1_screen_lit())
         tp_update(
             0); /* dark: no reels, no text, no invalidation; the first lit tick looks at everything (dt is capped, the text compares with what it shows) */

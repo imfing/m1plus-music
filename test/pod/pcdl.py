@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PCN, PF = sibling('pcnet'), sibling('pcshows')
 PCP = PCN.PCP
 PN, RP, CA = PCN.PN, PCN.ROOT_DIR, PCN.CA
-PN.update(CARDFULL=13, NOTAUDIO=14, QFULL=15, PAUSED=16)
+PN.update(CARDFULL=13, NOTAUDIO=14, QFULL=15)
 ROW = PCP.ROW
 NOW = PF.NOW
 SHOW = f'{RP}/Show'
@@ -24,10 +24,38 @@ DL_STATE = dict(NONE=0, WAIT=1, ACTIVE=2, FAILED=3)
 
 # the status record (patch/pcnet.c): the fields after `fail` (the tests of pcdialog.py know the ones before)
 K = 20 + 12 * O['PC_MAX_SHOWS'] + 28
-KIND, DPAUSE, DWAIT, DCANCEL, DKEY, DGOT, DTOTAL, DGEN, DSTEP, DSEQ, NFAIL = (K + 4 * i for i in range(11))
-DROOT = K + 44
+KIND, DBUSY, DWAIT, DKEY, DGOT, DTOTAL, DGEN, DSTEP, DSEQ, NFAIL = (K + 4 * i for i in range(10))
+DROOT = K + 40
 Q0, QSIZE = DROOT + 148, 268
 FAILS = Q0 + 32 * QSIZE
+
+
+QS = dict(FREE=0, WAIT=1, ACTIVE=2, STOPPING=3, DROPPING=4, PUBLISHED=5)   # a slot's state: the life of its download (patch/pcnet.c PN_Q_*)
+
+
+def slot_states(m): return [m.word(pn_at(Q0 + i * QSIZE)) for i in range(32)]
+
+
+def flagged(m):
+    """The states of the downloads the page has paused (STOPPING) or dropped (DROPPING) and the thread has not let go yet."""
+    return [s for s in slot_states(m) if s in (QS['STOPPING'], QS['DROPPING'])]
+
+
+def run_state(m, key):
+    """The state of the taken-up download of key (ACTIVE and later), 0 when none."""
+    return next((s for i, s in enumerate(slot_states(m)) if s >= QS['ACTIVE'] and m.word(pn_at(Q0 + i * QSIZE + 8)) == key), 0)
+
+
+def stop(m, key, drop=False):
+    """What pn_dl_cancel (pn_dl_drop) does to the running download of key."""
+    for i, s in enumerate(slot_states(m)):
+        if s in (QS['ACTIVE'], QS['STOPPING']) and m.word(pn_at(Q0 + i * QSIZE + 8)) == key: m.setword(pn_at(Q0 + i * QSIZE), QS['DROPPING' if drop else 'STOPPING'])
+
+
+def unstop(m):
+    """The pause is taken back (a test goes on with the download still running)."""
+    for i, s in enumerate(slot_states(m)):
+        if s == QS['STOPPING']: m.setword(pn_at(Q0 + i * QSIZE), QS['ACTIVE'])
 
 
 def pn_at(off): return PSYMS['pn'] + off
@@ -52,6 +80,14 @@ def machine(site=None, ents=None, **kw):
     m = PCN.machine(site=site, **kw)
     PCN.sub(m, 'Show', 'https://feeds.example/show', title='Show', checked=1)
     m.put(f'{SHOW}/.episodes', eps_text(ents if ents is not None else entries()))
+    return m
+
+
+def lanes():
+    """A machine for both lanes: Show's episodes download from the episode server, the feed of a second show (Other) answers a refresh."""
+    feed, dl = PCN.feed_bytes('wsj-3items.xml'), server(DATA)
+    m = machine(site=lambda url, o: {'body': feed} if url == 'https://feeds.example/other' else dl(url, o))
+    PCN.sub(m, 'Other', 'https://feeds.example/other', title='Other')
     return m
 
 
@@ -132,9 +168,6 @@ def queue_tests(ctx):
     expect(r2 == 0 and th2 is None and fn(m, 'pn_dl_count') == 1, 'the same episode again: left as it is')
     r3, th3 = add(m, 'b.mp3')
     expect(r3 == 0 and th3 is None and fn(m, 'pn_dl_count') == 2, 'another one while the thread runs: queued, no second thread')
-    shows, arr = m.shows()
-    idx = m.alloc(4); m.setword(idx, 0)
-    expect(m.call(PSYMS['pn_refresh'], a0=m.cstr(RP), a1=arr, a2=idx, a3=1, count=1 << 40) == PN['BUSY'], 'a refresh while the download thread runs: PN_BUSY (one worker at a time)')
     calls = work(m, th)
     expect(fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0 and f'{SHOW}/a.mp3' in m.fs and f'{SHOW}/b.mp3' in m.fs, 'the thread drains the queue (two episodes) and ends')
     reqs = [c[1] for c in calls if c[0] == 'curl_perform']
@@ -154,18 +187,61 @@ def queue_tests(ctx):
     expect(r == PN['QFULL'] and fn(m, 'pn_dl_count') == 32, 'the 33rd: PN_QFULL')
     r, th = add(m, 'ep5.mp3')
     expect(r == 0, 'one that is queued already is no new entry even when the queue is full')
-    # a refresh running: a download is queued and waits for the page to start it
+    # two lanes: a job (a refresh) and the download thread run side by side
+    m = lanes()
+    r, th = add(m); add(m, 'b.mp3')
+    expect(r == 0 and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_busy') == 0, 'a download thread is pending (pn_busy is the jobs\' lane only)')
+    r, thr = PCN.start(m, ['Other'])
+    expect(r == 0 and thr and thr[0] == PSYMS['pn_main'] and fn(m, 'pn_busy') == 1 and m.word(pn_at(KIND)) == 1 and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_dl_count') == 2 and fn(m, 'pn_dl_waiting') == 2,
+           'a refresh while the download thread runs starts at once (0, not PN_BUSY): its own thread is created, the download thread still runs, the queue is untouched')
+    r2, thr2 = PCN.start(m, ['Other'])
+    expect(r2 == PN['BUSY'] and thr2 is None and fn(m, 'pn_dl_running') == 1, 'a second job is still PN_BUSY (one job at a time)')
+    calls = work(m, th)
+    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_busy') == 1 and m.word(pn_at(KIND)) == 1 and m.word(pn_at(0)) == 1 and fn(m, 'pn_dl_count') == 0 and m.fs.get(f'{SHOW}/a.mp3') == DATA and m.fs.get(f'{SHOW}/b.mp3') == DATA,
+           'the download thread ends first: the job is still busy with its own kind, the episodes are files')
+    PCN.work(m, thr)
+    expect(fn(m, 'pn_busy') == 0 and m.word(pn_at(KIND)) == 0 and PCN.status(m, 'https://feeds.example/other') is not None and PCN.status(m, 'https://feeds.example/other')[0] == 0 and fn(m, 'pn_dl_running') == 0,
+           'then the refresh thread runs to its end and completes normally')
+    # the reverse order: the job ends first, the download thread goes on and completes
+    m = lanes()
+    r, thr = PCN.start(m, ['Other'])
+    r, th = add(m); add(m, 'b.mp3')
+    expect(r == 0 and th and th[0] == PSYMS['pn_dmain'] and fn(m, 'pn_busy') == 1 and fn(m, 'pn_dl_running') == 1, 'a download asked while a refresh runs starts its own thread in the same call (no waiting for the refresh)')
+    PCN.work(m, thr)
+    expect(fn(m, 'pn_busy') == 0 and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_dl_count') == 2 and PCN.status(m, 'https://feeds.example/other')[0] == 0, 'the job ends first: pn_dl_running is still 1, the queue is untouched')
+    work(m, th)
+    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_count') == 0 and m.fs.get(f'{SHOW}/a.mp3') == DATA and m.fs.get(f'{SHOW}/b.mp3') == DATA, 'then the download thread completes both episodes')
+    # pn_dl_start: nothing when the thread is there, one thread when it is not
     m = machine(site=server(DATA))
-    r, th = PCN.start(m, ['Show'])
-    expect(r == 0 and fn(m, 'pn_busy') == 1 and fn(m, 'pn_dl_running') == 0, 'a refresh running is not a download thread')
+    r, th = add(m); add(m, 'b.mp3')
     m.thread = None
-    r, thd = add(m)
-    expect(r == 0 and thd is None and fn(m, 'pn_dl_count') == 1 and fn(m, 'pn_dl_waiting') == 1 and 'pthread_create' not in [c[0] for c in m.calls], 'a download asked during a refresh waits (no second thread)')
-    expect(fn(m, 'pn_dl_start') == 0 and 'pthread_create' not in [c[0] for c in m.calls], 'pn_dl_start while the refresh runs does nothing either')
-    m.curl_site = lambda url, o: {'body': PCN.feed_bytes('wsj-3items.xml')}
-    PCN.work(m, th)
+    expect(fn(m, 'pn_dl_start') == 0 and m.thread is None and 'pthread_create' not in [c[0] for c in m.calls[-5:]], 'pn_dl_start with the download thread running (dbusy 1) creates no thread')
+    m.setword(pn_at(DBUSY), 0)   # the thread could not be made (or has ended)
+    expect(fn(m, 'pn_dl_start') == 0 and m.thread and m.thread[0] == PSYMS['pn_dmain'] and fn(m, 'pn_dl_running') == 1, 'with dbusy 0 and downloads waiting pn_dl_start creates the thread and takes dbusy')
     m.thread = None
-    expect(fn(m, 'pn_dl_start') == 0 and m.thread and m.thread[0] == PSYMS['pn_dmain'], 'when the refresh has ended pn_dl_start starts the queue')
+    expect(fn(m, 'pn_dl_start') == 0 and m.thread is None, 'a second pn_dl_start finds the thread there: exactly one thread')
+    work(m, th)
+    expect(fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0 and m.fs.get(f'{SHOW}/b.mp3') == DATA, 'the one thread drains the queue')
+    # pn_cancel is scoped: a page stops only the kinds of job it starts (PN_K_*, patch/pcnet.h)
+    K_REFRESH, K_PODCASTS, K_ART, K_UPDATE, K_EQ = 1 << 1, 1 << 3 | 1 << 4 | 1 << 8 | 1 << 10, 3 << 5, 1 << 7, 1 << 9
+    m = machine(site=server(DATA))
+    m.setword(pn_at(0), 1); m.setword(pn_at(KIND), 1)   # a refresh holds the job slot
+    for mask, who in ((K_PODCASTS, 'a search or chart leaving'), (K_ART, 'Find Cover & Lyrics closing'), (K_UPDATE, 'Software Update closing'), (K_EQ, 'AutoEq closing')):
+        fn(m, 'pn_cancel', a0=mask)
+        expect(fn(m, 'pn_cancelling') == 0, f'{who} does not stop a running refresh')
+    fn(m, 'pn_cancel', a0=K_REFRESH)
+    expect(fn(m, 'pn_cancelling') == 1, 'the refresh dialog\'s Cancel does')
+    m = machine(site=server(DATA))
+    m.setword(pn_at(0), 1); m.setword(pn_at(KIND), 10)   # the archive fetch of a show
+    fn(m, 'pn_cancel', a0=K_ART | K_UPDATE | K_EQ | K_REFRESH)
+    m.setword(pn_at(KIND), 1)
+    expect(fn(m, 'pn_cancelling') == 0, 'another page\'s Cancel leaves a Podcasts job (the archive fetch) alone')
+    m.setword(pn_at(KIND), 10); fn(m, 'pn_cancel', a0=K_PODCASTS); m.setword(pn_at(KIND), 1)
+    expect(fn(m, 'pn_cancelling') == 1, 'the Podcasts page\'s own Cancel stops it')
+    m = machine(site=server(DATA))
+    fn(m, 'pn_cancel', a0=0xffffffff)
+    m.setword(pn_at(0), 1); m.setword(pn_at(KIND), 1)
+    expect(fn(m, 'pn_cancelling') == 0, 'a Cancel with no job running leaves no flag behind for the next job')
     # the guards fail later: every waiting download fails with their words
     m = machine(site=server(DATA))
     r, th = add(m); r, th2 = add(m, 'b.mp3')
@@ -173,14 +249,13 @@ def queue_tests(ctx):
     expect(fn(m, 'pn_dl_start') == 0 and fn(m, 'pn_dl_running') == 1, 'a running thread: pn_dl_start is a no-op')
     work(m, th)
     m = machine(site=server(DATA))
-    PCN.start(m, ['Show'])
-    m.thread = None
     add(m); add(m, 'b.mp3')
-    m.setword(pn_at(0), 0); m.setword(pn_at(KIND), 0)   # the refresh worker "ended" (the job is dropped)
+    m.setword(pn_at(DBUSY), 0)   # the thread is gone with the queue left waiting
     m.wifi = -1
     expect(fn(m, 'pn_dl_start') == PN['NOWIFI'] and fn(m, 'pn_dl_count') == 0 and state(m)[0:2] == (DL_STATE['FAILED'], PN['NOWIFI']) and state(m, 'b.mp3')[0:2] == (DL_STATE['FAILED'], PN['NOWIFI']),
            'a start that finds no Wi-Fi: the waiting downloads fail at once with "No Wi-Fi" (they must not keep the device awake for nothing)')
     m.wifi = 4
+    m.setword(pn_at(DBUSY), 0)
     r, th = add(m)
     expect(r == 0 and state(m)[0] == DL_STATE['WAIT'], 'asking again clears the failure and queues it')
 
@@ -197,7 +272,7 @@ def transfer_tests(ctx):
 
     def site(url, o):
         out = base_site(url, o)
-        out['xfer'] = lambda u, sent, total: progress.append((m.word(pn_at(DGOT)), m.word(pn_at(DTOTAL)), m.word(pn_at(DKEY)), m.word(pn_at(KIND))))
+        out['xfer'] = lambda u, sent, total: progress.append((m.word(pn_at(DGOT)), m.word(pn_at(DTOTAL)), m.word(pn_at(DKEY)), m.word(pn_at(DBUSY)), m.word(pn_at(0)), m.word(pn_at(KIND))))
         return out
     m.curl_site = site
     calls = work(m, th)
@@ -218,9 +293,9 @@ def transfer_tests(ctx):
     expect(order == ['open', 'close'] + ['open', 'write', 'fsync', 'close'] * 3, 'the size of the .part is asked first (open, close), then open, write, fsync, close for every chunk: the card is held busy for a moment only')
     expect(not any(c[0] in ('utime', 'utimes') for c in calls), 'no mtime call (demo imports neither utime nor utimes)')
     got = [p[0] for p in progress]
-    expect(got == sorted(got) and got[-1] == len(DATA) and all(p[1] == len(DATA) for p in progress[1:]) and all(p[2] == key_of('Show', 'a.mp3') and p[3] == 2 for p in progress),
-           'progress: the bytes got only grow to the whole, the total is the server\'s length, the current key and the thread kind are set meanwhile')
-    expect(fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0 and m.word(pn_at(KIND)) == 0 and m.word(pn_at(0)) == 0 and fn(m, 'pn_gen') > gen0 and fn(m, 'pn_dl_gen') > 0
+    expect(got == sorted(got) and got[-1] == len(DATA) and all(p[1] == len(DATA) for p in progress[1:]) and all(p[2] == key_of('Show', 'a.mp3') and p[3] == 1 and p[4] == 0 and p[5] == 0 for p in progress),
+           'progress: the bytes got only grow to the whole, the total is the server\'s length, the current key and the download flag are set meanwhile, the job lane (busy, kind) stays untouched')
+    expect(fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0 and m.word(pn_at(DBUSY)) == 0 and m.word(pn_at(KIND)) == 0 and m.word(pn_at(0)) == 0 and fn(m, 'pn_gen') > gen0 and fn(m, 'pn_dl_gen') > 0
            and m.word(pn_at(DKEY)) == 0, 'at the end: nothing queued or running, the generation and the progress generation moved')
     expect(state(m)[0] == DL_STATE['NONE'], 'no state for an episode that is a file now (the model says local)')
     expect(not [c for c in calls if c[0] == 'get_wifisignal' or c[0] == 'reset_poweroptions_timer' or c[0].startswith('widget') or c[0] == 'toast' or c[0] == 'timer_add'],
@@ -230,12 +305,12 @@ def transfer_tests(ctx):
     small = body(5000)
     m = machine(site=server(small), ents=[('g', 'a.mp3', 0, URL_A)])
     r, th = add(m); calls = work(m, th)
-    expect(m.fs.get(f'{SHOW}/a.mp3') == small and len([c for c in calls if c[0] == 'fsync']) == 1, 'a file under one chunk: one chunk write, one fsync')
+    expect(m.fs.get(f'{SHOW}/a.mp3') == small and [c[1] for c in calls if c[0] == 'fsync'] == [f'{SHOW}/a.mp3.part', SHOW], 'a file under one chunk: one chunk write, one fsync; then the folder is synced after the rename (patch/net.c net_publish)')
     # whole-file chunking at the exact multiple
     exact = body(2 * CHUNK)
     m = machine(site=server(exact, chunk=CHUNK), ents=[('g', 'a.mp3', len(exact), URL_A)])
     r, th = add(m); calls = work(m, th)
-    expect(m.fs.get(f'{SHOW}/a.mp3') == exact and len([c for c in calls if c[0] == 'fsync']) == 2, 'exactly two chunks: two fsyncs, no empty third write')
+    expect(m.fs.get(f'{SHOW}/a.mp3') == exact and len([c for c in calls if c == ('fsync', f'{SHOW}/a.mp3.part')]) == 2, 'exactly two chunks: two fsyncs, no empty third write')
     # the file is already there: nothing is fetched, a leftover .part goes
     log = []
     m = machine(site=server(DATA, log)); m.put(f'{SHOW}/a.mp3', b'whole'); m.put(f'{SHOW}/a.mp3.part', b'junk')
@@ -326,6 +401,68 @@ def resume_tests(ctx):
     m = machine(site=lambda url, o: (log.append(1), dict(rc=33, code=0))[1]); m.put(f'{SHOW}/a.mp3.part', b'z' * 4000)
     r, th = add(m); work(m, th)
     expect(len(log) == 2, 'curl\'s range error (33) is treated the same way')
+    # the response's headers (patch/net.c net_head_line): a 206 for another part of the file than the one asked for is not appended
+    log = []
+
+    def head(m, o, *lines):
+        for text in lines + ('',):
+            buf = m.alloc(len(text) + 3); m.u.mem_write(buf, (text + '\r\n').encode())
+            m.nested(o[20079], buf, 1, len(text) + 2, o[10029])
+
+    def wrong_part(url, o):
+        start = int(o[10007].rstrip('-')) if o.get(10007) else 0
+        log.append((start, o.get(10023)))
+        if start:
+            head(m, o, 'HTTP/1.1 206 Partial Content', f'Content-Range: bytes 0-{len(DATA) - 1}/{len(DATA)}')
+            return dict(code=206, body=DATA, ctype='audio/mpeg', length=len(DATA))
+        head(m, o, 'HTTP/1.1 200 OK')
+        return dict(code=200, body=DATA, ctype='audio/mpeg', length=len(DATA))
+    m = machine(site=wrong_part); m.put(f'{SHOW}/a.mp3.part', b'z' * 4000)
+    r, th = add(m); calls = work(m, th)
+    expect([x[0] for x in log] == [4000, 0] and m.fs.get(f'{SHOW}/a.mp3') == DATA and not sleeps(calls),
+           f'a 206 whose Content-Range starts at 0 for the Range "4000-": nothing is appended, the file starts again, once ({log})')
+    expect(log[0][1] is None, 'a .part from an earlier run has no ETag: its Range carries no If-Range')
+    log.clear()
+
+    def right_part(url, o):
+        start = int(o[10007].rstrip('-')) if o.get(10007) else 0
+        log.append(start)
+        head(m, o, 'HTTP/1.1 206 Partial Content', f'content-range: BYTES {start}-{len(DATA) - 1}/{len(DATA)}')
+        return dict(code=206, body=DATA[start:], ctype='audio/mpeg', length=len(DATA) - start)
+    m = machine(site=right_part); m.put(f'{SHOW}/a.mp3.part', DATA[:4000])
+    r, th = add(m); work(m, th)
+    expect(log == [4000] and m.fs.get(f'{SHOW}/a.mp3') == DATA, 'a 206 whose Content-Range starts where the Range asked is appended')
+    # If-Range: an attempt of this run got its bytes with a strong ETag, so the retry asks for the rest of that same file
+    for etag, want in (('"v1"', 'If-Range: "v1"'), ('W/"v1"', None), (None, None)):
+        log = []
+
+        def tagged(url, o, etag=etag):
+            start = int(o[10007].rstrip('-')) if o.get(10007) else 0
+            log.append((start, m.read_cstr(m.word(o[10023])) if o.get(10023) else None))
+            tag = [f'ETag: {etag}'] if etag else []
+            if not start:
+                head(m, o, 'HTTP/1.1 200 OK', *tag)
+                return dict(rc=56, code=200, partial=True, body=DATA[:700000], ctype='audio/mpeg', length=len(DATA))
+            head(m, o, 'HTTP/1.1 206 Partial Content', *tag, f'Content-Range: bytes {start}-{len(DATA) - 1}/{len(DATA)}')
+            return dict(code=206, body=DATA[start:], ctype='audio/mpeg', length=len(DATA) - start)
+        m = machine(site=tagged)
+        r, th = add(m); work(m, th)
+        expect(log == [(0, None), (700000, want)] and m.fs.get(f'{SHOW}/a.mp3') == DATA, f'ETag {etag}: the retry after a break carries {want} ({log})')
+    # the file changed on the server between two attempts: the If-Range gets the whole file (200), which replaces the bytes of the old one
+    log = []
+    NEW = bytes(reversed(DATA))
+
+    def changed(url, o):
+        start = int(o[10007].rstrip('-')) if o.get(10007) else 0
+        log.append(start)
+        if not start:
+            head(m, o, 'HTTP/1.1 200 OK', 'ETag: "v1"')
+            return dict(rc=56, code=200, partial=True, body=DATA[:700000], ctype='audio/mpeg', length=len(DATA))
+        head(m, o, 'HTTP/1.1 200 OK', 'ETag: "v2"')
+        return dict(code=200, body=NEW, ctype='audio/mpeg', length=len(NEW))
+    m = machine(site=changed)
+    r, th = add(m); work(m, th)
+    expect(log == [0, 700000] and m.fs.get(f'{SHOW}/a.mp3') == NEW, 'a file that changed on the server: the 200 to the If-Range replaces the old bytes, the result is the new file alone')
 
 
 def failure_tests(ctx):
@@ -424,6 +561,13 @@ def failure_tests(ctx):
 def control_tests(ctx):
     """Cancel, the pause for a refresh, and a refresh after it; the queue's order."""
     expect = ctx.expect
+    # The life of a download, the whole table (pn_q_after): every state under every event; -1: the event does not apply, nothing moves
+    F, W, A, S, D, P = (QS[k] for k in ('FREE', 'WAIT', 'ACTIVE', 'STOPPING', 'DROPPING', 'PUBLISHED'))
+    table = dict(ADD={F: W}, CLAIM={W: A}, CANCEL={W: F, A: S}, DROP={W: F, A: D, S: D}, RESUME={S: A}, PUBLISH={A: P, S: P}, END={A: F, S: F, D: F, P: F}, HALT={A: W, S: F, D: F})
+    m = machine()
+    got = {ev: {st: v for st in range(6) if (v := m.call(PSYMS['pn_q_after'], a0=st, a1=i, count=10000)) < 6} for i, ev in enumerate(table)}
+    expect(got == table, f'the state table: a waiting download leaves on a cancel or a drop; a running one pauses (STOPPING, undone by an add, still published by a rename) or is dropped (DROPPING: no way back, never '
+           f'published); a published one hears neither; every taken-up one ends free, but a run halted for a pause that was taken back (HALT on ACTIVE) waits again ({got})')
     # Cancel the running one: the transfer is aborted at once, the bytes so far stay
     m = machine(site=server(DATA, chunk=65536))
     r, th = add(m)
@@ -432,19 +576,210 @@ def control_tests(ctx):
 
     def cancelling(url, o):
         out = base(url, o)
-        out['xfer'] = lambda u, sent, total: m.setword(pn_at(DCANCEL), key) if sent >= 600000 else None
+        out['xfer'] = lambda u, sent, total: stop(m, key) if sent >= 600000 else None
         return out
     m.curl_site = cancelling
     calls = work(m, th)
     kept = part_of(m)
     expect(fn(m, 'pn_dl_count') == 0 and m.fs.get(f'{SHOW}/a.mp3') is None and kept is not None and 600000 <= len(kept) < len(DATA) and kept == DATA[:len(kept)] and not sleeps(calls)
-           and state(m)[0] == DL_STATE['NONE'] and m.word(pn_at(DCANCEL)) == 0 and fn(m, 'pn_dl_running') == 0,
+           and state(m)[0] == DL_STATE['NONE'] and not flagged(m) and fn(m, 'pn_dl_running') == 0,
            f'a cancel in the middle: the transfer stops, the {len(kept or b"")} bytes got stay as the .part (a prefix of the file), the queue is empty, no failure, no waiting')
     m.curl_site = server(DATA)
     log = []
     m.curl_site = server(DATA, log)
     r, th = add(m); work(m, th)
     expect(log[0][1] == len(kept) and m.fs.get(f'{SHOW}/a.mp3') == DATA, 'a later tap resumes from the .part')
+    # Cancel and delete (pn_dl_drop: Remove Download, Delete, Unsubscribe): the page unlinks the .part at once; the thread writes none of the bytes it still holds
+    for at, what in ((600000, 'with a chunk on the card and bytes in memory'), (100000, 'before the first chunk'), (len(DATA), 'at the last byte')):
+        m = machine(site=server(DATA, chunk=65536))
+        r, th = add(m)
+        base = m.curl_site
+        hit = []
+
+        def dropping(url, o, at=at, m=m, hit=hit):
+            out = base(url, o)
+
+            def xfer(u, sent, total):
+                if sent >= at and not hit:
+                    hit.append(len(part_of(m) or b''))
+                    stop(m, key, drop=True)   # what pn_dl_drop sets for the running one
+                    m.fs.pop(f'{SHOW}/a.mp3.part', None)                                 # the page's unlink
+            out['xfer'] = xfer
+            return out
+        m.curl_site = dropping
+        work(m, th)
+        expect(len(hit) == 1 and (at != 600000 or hit[0] == CHUNK) and left_over(m) == [] and fn(m, 'pn_dl_count') == 0 and state(m)[0] == DL_STATE['NONE']
+               and not flagged(m),
+               f'a drop {what}: the thread leaves no .part and no file behind (no piece of the middle to resume from), no failure, the flags are cleared')
+        log = []
+        m.curl_site = server(DATA, log)
+        r, th = add(m); work(m, th)
+        expect(log and log[0][1] == 0 and 10007 not in log[0][2] and m.fs.get(f'{SHOW}/a.mp3') == DATA, 'and the next download of it starts at byte 0 and is the whole file')
+    # a drop that comes with the transfer already done: the file the thread publishes after it is taken away too
+    m = machine(site=server(DATA))
+    r, th = add(m)
+    base = m.curl_site
+    done = []
+
+    def finishing(url, o):
+        out = base(url, o)
+        out['xfer'] = lambda u, sent, total: done.append(1) if sent >= len(DATA) else None
+        return out
+    m.curl_site = finishing
+    m.on_statfs = lambda p: (stop(m, key, drop=True), m.fs.pop(f'{SHOW}/a.mp3.part', None)) if done else None   # (the last flush asks for the room)
+    calls = work(m, th)
+    m.on_statfs = None
+    expect(done and [c for c in calls if c[0] == 'curl_perform'] and left_over(m) == [] and state(m)[0] == DL_STATE['NONE'] and not flagged(m) and fn(m, 'pn_dl_count') == 0,
+           'a drop between the last byte and the rename: nothing stays on the card, no failure is shown')
+    # a drop that comes after the rename, while the thread syncs the folder: the episode is downloaded, the drop flags nothing and the thread leaves the file alone
+    for what in ('drop', 'unsubscribe'):
+        m = machine(site=server(DATA))
+        r, th = add(m)
+        root, show = m.cstr(RP), sibling('pcarchive').show_addr(m, 'Show')
+        seen = []
+
+        def syncing(p, m=m, what=what, seen=seen):
+            if p != SHOW or seen: return
+            seen.append(m.fs.get(f'{SHOW}/a.mp3') == DATA)
+            if what == 'drop': m.nested(PSYMS['pn_dl_drop'], key)
+            else: seen.append(m.nested(PSYMS['pn_unsubscribe_show'], root, show))
+            seen.append(len(flagged(m))); seen.append(run_state(m, key) == QS['PUBLISHED']); seen.append(len(flagged(m)))
+        m.on_fsync = syncing
+        work(m, th)
+        m.on_fsync = None
+        expect(seen[:1] == [True] and seen[-2] is True and seen[-1] == 0 and m.fs.get(f'{SHOW}/a.mp3') == DATA and part_of(m) is None and slot_states(m) == [0] * 32 and fn(m, 'pn_dl_count') == 0 and state(m)[0] == DL_STATE['NONE'],
+               f'{what} while the folder is synced after the rename: the downloaded file stays whole, nothing is flagged or left flagged')
+        if what == 'unsubscribe':
+            expect(seen[1] == 1 and f'{SHOW}/.show' in m.fs and f'{SHOW}/.episodes' in m.fs, 'and Unsubscribe counts it as an episode on the card: the show and its files stay (1)')
+    # a drop where a waiting download turns into the running one: the thread takes a download up under the mutex the drop holds, so the drop sees it waiting or running, never between
+    m = machine(site=server(DATA))
+    r, th = add(m)
+    log, once = [], []
+    m.curl_site = server(DATA, log)
+
+    def before_claim():   # the thread waits for the mutex to take the download up: the drop has it first
+        if once: return
+        once.append(1); m.nested(PSYMS['pn_dl_drop'], key); m.fs.pop(f'{SHOW}/a.mp3.part', None)
+    m.on_lock = before_claim
+    work(m, th)
+    m.on_lock = None
+    expect(once and not log and left_over(m) == [] and fn(m, 'pn_dl_count') == 0 and not flagged(m),
+           'a drop that gets the mutex before the thread takes the download up: it leaves the queue and is never fetched')
+    # the slot is emptied and filled with another episode while the thread waits to take it up: it is taken up as that episode (its key), so that one's drop is heard
+    m = machine(site=server(DATA, chunk=65536))
+    r, th = add(m)
+    root, folder, bname, key_b = m.cstr(RP), m.cstr('Show'), m.cstr('b.mp3'), key_of('Show', 'b.mp3')
+    log, base, once, later = [], m.curl_site, [], []
+
+    def reuse():   # Remove Download on a, then a tap on b: b gets a's slot
+        if once: return
+        once.append(1); m.nested(PSYMS['pn_dl_drop'], key)
+        once.append(m.nested(PSYMS['pn_dl_add'], root, folder, bname)); once.append(m.word(pn_at(Q0 + 8)))
+
+    def drop_b(url, o):
+        log.append(url)
+        out = base(url, o)
+
+        def xfer(u, sent, total):
+            if sent >= 600000 and not later:
+                later.append(m.word(pn_at(DKEY))); m.nested(PSYMS['pn_dl_drop'], key_b); m.fs.pop(f'{SHOW}/b.mp3.part', None)
+        out['xfer'] = xfer
+        return out
+    m.on_lock, m.curl_site = reuse, drop_b
+    work(m, th)
+    m.on_lock = None
+    expect(once == [1, 0, key_b] and later == [key_b] and log == [URL_A.replace('/a.', '/b.')] and left_over(m) == [] and fn(m, 'pn_dl_count') == 0
+           and not flagged(m) and state(m, 'b.mp3')[0] == DL_STATE['NONE'],
+           'a removed, its slot filled with b, b removed under its transfer: b ran under its own key, its drop stopped it, no file and no flag is left')
+    m = machine(site=server(DATA, chunk=65536))
+    r, th = add(m)
+    base, once = m.curl_site, []
+
+    def after_claim(url, o):   # the thread took it up while the drop waited for the mutex: the drop finds it running, with bytes in memory
+        out = base(url, o)
+
+        def xfer(u, sent, total):
+            if sent >= 600000 and not once:
+                once.append(1); m.nested(PSYMS['pn_dl_drop'], key); m.fs.pop(f'{SHOW}/a.mp3.part', None)
+        out['xfer'] = xfer
+        return out
+    m.curl_site = after_claim
+    work(m, th)
+    expect(once and left_over(m) == [] and fn(m, 'pn_dl_count') == 0 and state(m)[0] == DL_STATE['NONE'] and not flagged(m),
+           'a drop of a download the thread has just taken up (pn_dl_drop itself, run under the transfer): flagged as a drop, no .part comes back')
+    m = machine(site=server(DATA))
+    r, th = add(m)
+    held = []
+
+    def claiming():   # the page's drop waits for the mutex while the thread takes the download up
+        if held: return
+        held.append(1); poke_slot(m, 0, 'Show', 'a.mp3', 2)
+    m.on_lock = claiming
+    m.call(PSYMS['pn_dl_drop'], a0=key, count=2000000)
+    m.on_lock = None
+    expect(held and flagged(m) == [QS['DROPPING']] and fn(m, 'pn_dl_count') == 1,
+           'a download taken up while the drop waited for the mutex is found running: both flags are set (not a pause)')
+    # a tap again on a download being paused, while the thread ends it (END against RESUME): the add looks and queues in one hold of the mutex, so the ended download is queued as a new one
+    m = machine(site=server(DATA, chunk=65536))
+    r, th = add(m)
+    base, log, once = m.curl_site, [], []
+
+    def pausing(url, o):
+        log.append(o.get(10007))
+        out = base(url, o)
+        if len(log) == 1: out['xfer'] = lambda u, sent, total: stop(m, key) if sent >= 600000 else None
+        return out
+
+    def ending():   # the thread is at END's lock with the slot STOPPING: the page's add comes in, and the thread's END wins the mutex before the add's hold
+        if not once and run_state(m, key) == QS['STOPPING'] and len(log) == 1:
+            once.append(1)
+            once.append(m.nested(PSYMS['pn_dl_add'], root_a, folder_a, name_a))
+        elif len(once) == 1:
+            once.append(2); m.setword(pn_at(Q0), QS['FREE'])   # (what END does to the slot)
+    root_a, folder_a, name_a = m.cstr(RP), m.cstr('Show'), m.cstr('a.mp3')
+    m.curl_site, m.on_lock = pausing, ending
+    work(m, th)
+    m.on_lock = None
+    expect(once == [1, 2, 0] and len(log) == 2 and log[1] and int(log[1].rstrip('-')) >= CHUNK and m.fs.get(f'{SHOW}/a.mp3') == DATA and part_of(m) is None
+           and fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0,
+           f'a resume that loses the mutex to the download\'s end is not dropped: the episode is queued again, the same thread resumes it from the .part and the file is whole (requests from {log})')
+    # the other order (RESUME before END), at two moments after the thread stopped the transfer: at the lock of the run's end, and during the last flush (before the attempt reads the slot again). The
+    # pause is taken back, the transfer is not: the run ends in HALT, the episode waits again and the same thread goes on with it from the .part, with no wait for the network between
+    for moment in ('lock', 'statfs'):
+        m = machine(site=server(DATA, chunk=65536))
+        r, th = add(m)
+        base, log, once = m.curl_site, [], []
+
+        def pausing(url, o, m=m, base=base, log=log):
+            log.append(o.get(10007))
+            out = base(url, o)
+            if len(log) == 1: out['xfer'] = lambda u, sent, total: stop(m, key) if sent >= 600000 else None
+            return out
+
+        def resuming(*a, m=m, log=log, once=once):
+            if not once and run_state(m, key) == QS['STOPPING'] and len(log) == 1:
+                once.append(1)
+                once.append(m.nested(PSYMS['pn_dl_add'], m.cstr(RP), m.cstr('Show'), m.cstr('a.mp3')))
+                once.append(run_state(m, key))
+        m.curl_site = pausing
+        setattr(m, 'on_' + moment, resuming)
+        calls = work(m, th)
+        setattr(m, 'on_' + moment, None)
+        expect(once == [1, 0, QS['ACTIVE']] and len(log) == 2 and log[1] and int(log[1].rstrip('-')) >= CHUNK and m.fs.get(f'{SHOW}/a.mp3') == DATA and part_of(m) is None
+               and not sleeps(calls) and state(m)[0] == DL_STATE['NONE'] and fn(m, 'pn_dl_count') == 0 and fn(m, 'pn_dl_running') == 0,
+               f'a resume that takes the mutex before the end of a stopped run ({moment}) is kept: the run ends in HALT, the episode waits again and is fetched from the .part at once, no failure and '
+               f'no wait (add {once}, requests from {log}, sleeps {sleeps(calls)})')
+    # pn_dl_drop on the UI thread: the running one is flagged for both, a waiting one only leaves the queue
+    m = machine(site=server(DATA))
+    r, th = add(m); add(m, 'b.mp3')
+    poke_slot(m, 0, 'Show', 'a.mp3', 2); m.setword(pn_at(DKEY), key)
+    m.call(PSYMS['pn_dl_drop'], a0=key_of('Show', 'b.mp3'), count=2000000)
+    expect(not flagged(m) and fn(m, 'pn_dl_count') == 1, 'dropping a waiting download takes it out of the queue and flags nothing')
+    m.call(PSYMS['pn_dl_drop'], a0=key, count=2000000)
+    expect(flagged(m) == [QS['DROPPING']] and state(m)[0] == DL_STATE['NONE'], 'dropping the running one flags the drop and the cancel; its row stops saying Downloading')
+    r, th2 = add(m)
+    expect(r == 0 and flagged(m) == [QS['DROPPING']] and fn(m, 'pn_dl_count') == 2 and fn(m, 'pn_dl_waiting') == 1 and state(m)[0] == DL_STATE['WAIT'],
+           'a tap again before the thread took the drop does not undo it (the .part is gone): the episode is queued afresh behind the dropped one')
     # pn_dl_cancel from the UI: a waiting one is taken out; the running one is flagged
     m = machine(site=server(DATA))
     r, th = add(m); add(m, 'b.mp3'); add(m, 'c.mp3')
@@ -458,57 +793,119 @@ def control_tests(ctx):
     r, th = add(m)
     poke_slot(m, 0, 'Show', 'a.mp3', 2); m.setword(pn_at(DKEY), key)
     m.call(PSYMS['pn_dl_cancel'], a0=key, count=2000000)
-    expect(m.word(pn_at(DCANCEL)) == key and state(m)[0] == DL_STATE['NONE'], 'cancelling the running one flags it (the worker aborts and drops it); its row stops saying Downloading')
+    expect(flagged(m) == [QS['STOPPING']] and state(m)[0] == DL_STATE['NONE'], 'cancelling the running one flags it (the worker aborts and drops it); its row stops saying Downloading')
     r, th2 = add(m)
-    expect(r == 0 and m.word(pn_at(DCANCEL)) == 0 and state(m)[0] == DL_STATE['ACTIVE'], 'a tap again before the worker took the cancel undoes it')
-    # pause for a refresh in the middle of a transfer: the queue stays, the .part keeps the bytes, a refresh runs, the downloads go on
-    m = machine(site=server(DATA, chunk=65536))
+    expect(r == 0 and not flagged(m) and state(m)[0] == DL_STATE['ACTIVE'], 'a tap again before the worker took the cancel undoes it')
+    # a refresh pending beside the downloads: nothing pauses them, the job's thread and the download thread each run to the end
+    m = lanes()
     r, th = add(m); add(m, 'b.mp3')
-    base = m.curl_site
-
-    def pausing(url, o):
-        out = base(url, o)
-        out['xfer'] = lambda u, sent, total: m.setword(pn_at(DPAUSE), 1) if sent >= 600000 else None
-        return out
-    m.curl_site = pausing
-    calls = work(m, th)
-    kept = part_of(m)
-    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_count') == 2 and fn(m, 'pn_dl_waiting') == 2 and kept is not None and 600000 <= len(kept) < len(DATA) and m.word(pn_at(DPAUSE)) == 0
-           and f'{SHOW}/b.mp3' not in m.fs and len([c for c in calls if c[0] == 'curl_perform']) == 1 and not sleeps(calls) and state(m)[0] == DL_STATE['WAIT'],
-           'a pause mid-transfer: the thread ends, both downloads are still queued (waiting), the bytes got are kept, nothing else was started')
-    PCN.sub(m, 'Other', 'https://feeds.example/other', title='Other')
-    m.curl_site = lambda url, o: {'body': PCN.feed_bytes('wsj-3items.xml')}
     r, thr = PCN.start(m, ['Other'])
-    expect(r == 0 and thr[0] == PSYMS['pn_main'] and fn(m, 'pn_busy') == 1, 'the refresh starts now: the download thread has ended')
-    PCN.work(m, thr)
-    expect(fn(m, 'pn_busy') == 0, 'the refresh ends')
-    log = []
-    m.curl_site = server(DATA, log)
-    m.thread = None
-    expect(fn(m, 'pn_dl_start') == 0 and m.thread and m.thread[0] == PSYMS['pn_dmain'], 'then pn_dl_start puts the downloads back on a thread')
-    work(m, m.thread)
-    expect(log[0][1] == len(kept) and m.fs.get(f'{SHOW}/a.mp3') == DATA and m.fs.get(f'{SHOW}/b.mp3') == DATA and fn(m, 'pn_dl_count') == 0,
-           'the first resumes from its .part, the second follows: both are files')
-    # a pause asked before the worker's first episode: nothing is started
-    m = machine(site=server(DATA))
-    r, th = add(m); m.call(PSYMS['pn_dl_pause'], count=2000000)
-    expect(m.word(pn_at(DPAUSE)) == 1, 'pn_dl_pause flags a running download thread')
+    base = m.curl_site
+    queued = []
+
+    def late(url, o):
+        out = base(url, o)
+        if url.endswith('/b.mp3') or '/b.mp3?' in url:   # during the last transfer a third episode is queued (a tap on its row)
+            out['xfer'] = lambda u, sent, total: (poke_slot(m, 2, 'Show', 'c.mp3', 1, seq=9), queued.append(1)) if sent >= 600000 and not queued else None
+        return out
+    m.curl_site = late
+    m.calls = []
     calls = work(m, th)
-    expect(not [c for c in calls if c[0] == 'curl_perform'] and fn(m, 'pn_dl_waiting') == 1 and fn(m, 'pn_dl_running') == 0 and m.word(pn_at(DPAUSE)) == 0, 'paused before it began: no request, the download still waits, the thread has ended')
-    m = machine(site=server(DATA))
-    m.call(PSYMS['pn_dl_pause'], count=2000000)
-    expect(m.word(pn_at(DPAUSE)) == 0, 'pn_dl_pause with no download thread does nothing (a flag would stop the next one)')
-    # a cancel, or a pause, that comes in while the job waits to retry is heard within a second (the wait is one-second sleeps)
+    expect(len(queued) == 1 and f'{SHOW}/a.mp3' in m.fs and f'{SHOW}/b.mp3' in m.fs and m.fs.get(f'{SHOW}/c.mp3') == DATA and len([c for c in calls if c[0] == 'curl_perform']) == 3 and 'pthread_create' not in [c[0] for c in calls]
+           and fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_count') == 0 and not sleeps(calls) and part_of(m) is None,
+           'an episode queued during the last transfer is downloaded by the same thread run (no second thread, nothing paused, no .part left)')
+    expect(fn(m, 'pn_busy') == 1 and m.word(pn_at(KIND)) == 1, 'and the refresh is still pending on its own lane meanwhile')
+    PCN.work(m, thr)
+    expect(fn(m, 'pn_busy') == 0 and PCN.status(m, 'https://feeds.example/other')[0] == 0, 'the refresh thread then completes its own result')
+    # a cancel that comes in while the job waits to retry is heard within a second (the wait is one-second sleeps)
     key = key_of('Show', 'a.mp3')
-    for what, flag, value in (('cancel', DCANCEL, key), ('pause', DPAUSE, 1)):
-        hit = []
-        m = machine(site=lambda url, o: (hit.append(1), dict(rc=56, code=0))[1])
+    hit = []
+    m = machine(site=lambda url, o: (hit.append(1), dict(rc=56, code=0))[1])
+    r, th = add(m)
+    m.on_sleep = lambda n, m=m: stop(m, key) if n == 3 else None
+    calls = work(m, th)
+    m.on_sleep = None
+    expect(len(hit) == 1 and len(sleeps(calls)) == 3 and state(m)[0] == DL_STATE['NONE'] and fn(m, 'pn_dl_running') == 0 and part_of(m) is None,
+           'a cancel during the first wait: heard at the third second, one request, dropped')
+
+
+def sweep_tests(ctx):
+    """The page's actions at every step of the download thread. One download whose first transfer breaks (so the wait and a second request are steps too) is run once to count the thread's steps
+    (each lock and unlock of the mutex, each look at the card's room, each sync, each second of the wait, each chunk of a transfer); then it is run again for every step with each action there,
+    and for every pair of steps with one action at each. Nothing is said about how a run goes: only what must hold when the thread has ended."""
+    expect = ctx.expect
+    key, FILE, PART = key_of('Show', 'a.mp3'), f'{SHOW}/a.mp3', f'{SHOW}/a.mp3.part'
+    CH = 262144
+
+    def run(plan):
+        """plan: {step: the actions there}. Returns (the steps' kinds, the actions done, why the end is wrong or None)."""
+        m = machine()
+        good = server(DATA, chunk=CH)
+        st = dict(busy=False, kinds=[], done=[], reqs=0, kept=None, ret=0)
+
+        def act(name):
+            if name == 'cancel': m.nested(PSYMS['pn_dl_cancel'], key)
+            elif name == 'drop':   # (as the pages do it: the drop, then the .part is unlinked; a file in place by then is a downloaded episode)
+                m.nested(PSYMS['pn_dl_drop'], key)
+                st['kept'] = FILE in m.fs
+                m.fs.pop(PART, None)
+            else: st['ret'] = m.nested(PSYMS['pn_dl_add'], m.cstr(RP), m.cstr('Show'), m.cstr('a.mp3'))
+            st['done'].append(name)
+
+        def tick(kind):
+            if st['busy']: return   # (a step of the action itself)
+            i = len(st['kinds']); st['kinds'].append(kind)
+            st['busy'] = True
+            for name in plan.get(i, ()): act(name)
+            st['busy'] = False
+
+        def site(url, o):
+            st['reqs'] += 1
+            out = (dict(rc=56, code=200, partial=True, body=DATA[:700000], ctype='audio/mpeg', chunk=CH, length=len(DATA)) if st['reqs'] == 1 else good(url, o))
+            out['xfer'] = lambda *a: tick('xfer')
+            return out
+        m.curl_site = site
         r, th = add(m)
-        m.on_sleep = lambda n, flag=flag, value=value, m=m: m.setword(pn_at(flag), value) if n == 3 else None
-        calls = work(m, th)
-        m.on_sleep = None
-        expect(len(hit) == 1 and len(sleeps(calls)) == 3 and state(m)[0] == (DL_STATE['NONE'] if what == 'cancel' else DL_STATE['WAIT']) and fn(m, 'pn_dl_running') == 0 and part_of(m) is None,
-               f'a {what} during the first wait: heard at the third second, one request, {"dropped" if what == "cancel" else "kept in the queue"}')
+        for h in ('lock', 'unlock', 'statfs', 'fsync', 'sleep'): setattr(m, 'on_' + h, lambda *a, h=h: tick(h))
+        m.thread = None
+        work(m, th)
+        while m.thread:   # (an add after the thread's last look at the queue starts another)
+            th, m.thread = m.thread, None
+            work(m, th)
+        for h in ('lock', 'unlock', 'statfs', 'fsync', 'sleep'): setattr(m, 'on_' + h, None)
+        file, part, last = m.fs.get(FILE), m.fs.get(PART), (st['done'] or ['add'])[-1]
+        why = None
+        if any(slot_states(m)) or fn(m, 'pn_dl_count') or fn(m, 'pn_dl_running'): why = f'the queue is not empty ({[s for s in slot_states(m) if s]})'
+        elif file is not None and file != DATA: why = f'the file in place is not the episode ({len(file)} bytes)'
+        elif part is not None and (file is not None or not DATA.startswith(part)): why = f'the .part is not a start of the episode, or is beside the file ({len(part)} bytes)'
+        elif state(m)[0] == DL_STATE['FAILED']: why = 'a failure is kept'
+        elif st['ret']: why = f'an add failed ({st["ret"]})'
+        elif last == 'add' and file is None: why = 'the episode asked for last is not downloaded'
+        elif last == 'drop' and (part is not None or (file is not None) != st['kept']): why = f'after a drop: .part {part is not None}, file {file is not None} (in place at the drop: {st["kept"]})'
+        return st['kinds'], st['done'], why
+    kinds, _, why = run({})
+    n = len(kinds)
+    expect(why is None and set(kinds) == {'lock', 'unlock', 'statfs', 'fsync', 'sleep', 'xfer'} and n >= 30,
+           f'the download alone: whole, and its {n} steps are of every kind ({why}; {sorted(set(kinds))})')
+    bad, runs = [], 0
+    for i in range(n):
+        for acts in (('cancel',), ('drop',), ('cancel', 'add'), ('drop', 'add'), ('cancel', 'drop'), ('cancel', 'add', 'cancel'), ('cancel', 'add', 'drop')):
+            k, done, why = run({i: acts})
+            runs += 1
+            if why: bad.append((i, kinds[i], acts, why))
+    expect(not bad, f'each action at each of the {n} steps ({runs} runs): the queue ends empty, the file is whole or not there, a .part is a start of the file, a drop leaves no .part and no file but one '
+           f'in place before it, the episode asked for last is downloaded ({len(bad)} wrong: {bad[:6]})')
+    bad, runs = [], 0
+    for i in range(n):
+        for first, second in (('cancel', 'add'), ('cancel', 'drop'), ('drop', 'add'), ('drop', 'cancel')):
+            j = i + 1
+            while True:   # (the steps after the first action are that run's own: j goes on until the run has no such step)
+                k, done, why = run({i: (first,), j: (second,)})
+                if len(done) < 2: break
+                runs += 1
+                if why: bad.append((i, k[i], first, j, k[j], second, why))
+                j += 1
+    expect(not bad and runs > 500, f'two actions at two steps ({runs} runs): the same holds ({len(bad)} wrong: {bad[:6]})')
 
 
 def refresh_tests(ctx):
@@ -602,7 +999,7 @@ def page_tests(ctx):
     # running: the status record says it
     key_a = key_of('Sub One', 'a.mp3')
     poke_slot(m, 0, 'Sub One', 'a.mp3', 2)
-    m.setword(pn_at(DKEY), key_a); m.setword(pn_at(DGOT), len(DATA) * 42 // 100); m.setword(pn_at(DTOTAL), len(DATA)); m.setword(pn_at(DGEN), 5); m.setword(pn_at(KIND), 2); m.setword(pn_at(0), 1)
+    m.setword(pn_at(DKEY), key_a); m.setword(pn_at(DGOT), len(DATA) * 42 // 100); m.setword(pn_at(DTOTAL), len(DATA)); m.setword(pn_at(DGEN), 5); m.setword(pn_at(DBUSY), 1)
     tick(m)
     expect(dict(lines(m))[0] == '42%', f'a running download: the ring and "42%" ({dict(lines(m))[0]})')
     m.setword(pn_at(DTOTAL), 0); m.setword(pn_at(DGOT), 12 * 1048576 + 5); m.setword(pn_at(DGEN), 6)
@@ -628,7 +1025,7 @@ def page_tests(ctx):
     expect(dict(lines(m))[0] == 'Waiting', 'waiting for a retry: Waiting')
     m.setword(pn_at(DWAIT), 0)
     # a failure, with the .part kept
-    m.setword(pn_at(0), 0); m.setword(pn_at(KIND), 0); poke_slot(m, 0, 'Sub One', 'a.mp3', 0)
+    m.setword(pn_at(DBUSY), 0); poke_slot(m, 0, 'Sub One', 'a.mp3', 0)
     words = {PN['NOWIFI']: 'No Wi-Fi', PN['NOCLOCK']: 'Set the date first', PN['NOCERT']: 'Certificates missing', PN['CERT']: 'Certificate problem', PN['NET']: "Can't connect",
              PN['GONE']: 'Not found', PN['HTTP']: 'Server error', PN['STORAGE']: 'Storage unavailable', PN['MEM']: 'Not enough memory', PN['CARDFULL']: 'Card is full', PN['NOTAUDIO']: 'Not audio'}
     for gen, (code, word) in enumerate(words.items(), 20):
@@ -684,7 +1081,7 @@ def page_tests(ctx):
 
 
 def refresh_page_tests(ctx):
-    """Refresh All while downloads run: they pause, the refresh starts when the thread has stopped, the downloads go on afterwards."""
+    """Refresh All while downloads run: the refresh starts at once beside the download thread, nothing pauses or restarts."""
     expect = ctx.expect
     m = page(lambda mm: mm.put(f'{RP}/Sub One/a.mp3.part', DATA[:1000])); open_sub_one(m)   # (it had begun: the refresh keeps the line of an episode with a .part)
     PCP.act(m, 0)
@@ -692,35 +1089,32 @@ def refresh_page_tests(ctx):
     PCP.click(m, 'btn_return')
     m.calls = []; m.thread = None
     PCP.refresh_all(m)   # Refresh All
-    expect(m.word(pn_at(DPAUSE)) == 1 and m.thread is None and 'pthread_create' not in [c[0] for c in m.calls] and fn(m, 'pn_busy') == 0 and m.props.get((m.widgets['pod_pd_scrim'], 'visible'), 0) == 0,
-           'Refresh All while a download runs: the downloads are asked to pause, no refresh thread yet, no dialog yet')
+    rthr = m.thread
     _, texts, styles, _ = PCP.paint(m)
     got = {t for (t, r) in texts}
-    expect('Waiting' in got, 'the refresh line says Waiting')
+    expect(rthr and rthr[0] == PSYMS['pn_main'] and rthr != th and fn(m, 'pn_busy') == 1 and fn(m, 'pn_dl_running') == 1 and fn(m, 'pn_dl_waiting') + fn(m, 'pn_dl_count') >= 1
+           and PF.flags(m, 'pod_pd_scrim') == (1, 1) and PF.flags(m, 'pod_pd_cancel') == (1, 1),
+           'Refresh All while a download runs: the refresh thread is created in the same tap, the download thread keeps running, the queue is untouched, the dialog opens at once')
+    expect('Waiting' not in got and any(t.startswith('Refreshing') for t in got), 'the refresh line says Refreshing, never Waiting')
+    m.thread = None; m.calls = []
     tick(m)
-    expect(m.thread is None, 'while the download thread has not stopped the page does not start the refresh')
-    work(m, th)
-    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_waiting') == 1 and m.word(pn_at(DPAUSE)) == 0, 'the download thread stops at its pause point and keeps the queue')
-    m.calls = []
-    tick(m)
-    expect(m.thread and m.thread[0] == PSYMS['pn_main'] and PF.flags(m, 'pod_pd_scrim') == (1, 1) and PF.flags(m, 'pod_pd_cancel') == (1, 1),
-           'the next tick starts the refresh and opens the dialog')
+    expect(m.thread is None and 'pthread_create' not in [c[0] for c in m.calls] and fn(m, 'pn_dl_running') == 1, 'the next tick starts nothing more: no second refresh, no restart of the downloads')
     m.curl_site = lambda url, o: {'body': PCN.feed_bytes('headlines-3items.xml')} if 'f.example' in url else server(DATA)(url, o)
-    work(m, m.thread)
+    work(m, th)
+    expect(fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_count') == 0 and m.fs.get(f'{RP}/Sub One/a.mp3') == DATA and fn(m, 'pn_busy') == 1, 'the download thread runs to its end beside the pending refresh: the episode is a file (resumed from its .part)')
+    work(m, rthr)
+    expect(fn(m, 'pn_busy') == 0 and fn(m, 'pn_dl_running') == 0 and fn(m, 'pn_dl_count') == 0 and m.fs.get(f'{RP}/Sub One/a.mp3') == DATA, 'then the refresh ends too: both results are there')
     m.thread = None; m.calls = []
     m.call(PSYMS['pg_dlg_tick'], a0=0, count=40000000)
-    expect(m.thread and m.thread[0] == PSYMS['pn_dmain'], 'when the dialog closes the downloads are started again')
-    m.curl_site = server(DATA)
-    work(m, m.thread)
-    expect(m.fs.get(f'{RP}/Sub One/a.mp3') == DATA, 'and the episode is finished, resumed from its .part')
-    # the page is not in front or dark when the downloads have paused: the refresh is dropped, the downloads go on
+    expect(m.thread is None and 'pthread_create' not in [c[0] for c in m.calls], 'when the dialog closes no download is restarted (none was stopped)')
+    # the screen off or the page away while a download runs: the refresh is not held up for it, the downloads go on
     m = page(); open_sub_one(m); PCP.act(m, 0); th = m.thread
     PCP.click(m, 'btn_return')
-    PCP.refresh_all(m)
-    work(m, th)
-    m.screen(False); m.thread = None
+    m.screen(False); m.thread = None; m.calls = []
     m.call(PSYMS['pg_awake_tick'], a0=0, count=40000000)
-    expect(m.thread and m.thread[0] == PSYMS['pn_dmain'] , 'screen off while the downloads wait for a refresh: the timer drops the refresh and starts the downloads (no dialog is opened in the dark)')
+    expect(m.thread is None and 'pthread_create' not in [c[0] for c in m.calls] and fn(m, 'pn_dl_running') == 1, 'screen off with a download running: the timer starts nothing (the thread is there)')
+    work(m, th)
+    expect(fn(m, 'pn_dl_running') == 0, 'and the thread finishes its queue')
 
 
 def awake_tests(ctx):
@@ -746,17 +1140,20 @@ def awake_tests(ctx):
     # a queue that waits (no thread running): no call
     m = page(); open_sub_one(m)
     PCP.act(m, 0)
-    m.setword(pn_at(0), 0); m.setword(pn_at(KIND), 0)
+    m.setword(pn_at(DBUSY), 0)   # the thread could not be created
     m.thread = None; m.calls = []
     m.call(PSYMS['pg_awake_tick'], a0=0, count=40000000)
     expect(not [c for c in m.calls if c[0] == 'reset_poweroptions_timer'] and m.thread and m.thread[0] == PSYMS['pn_dmain'], 'a queue with no thread: the timer starts the worker (a tap that raced its end); it keeps nothing awake before it runs')
     # the refresh's thread does not keep the device awake
     m = page(); open_sub_one(m)
-    PCP.act(m, 0); PCP.click(m, 'btn_return')
-    m.setword(pn_at(KIND), 1)   # the thread now a refresh's
+    m.setword(pn_at(KIND), 1); m.setword(pn_at(0), 1)   # a refresh's job thread runs, no download
     m.calls = []
     m.call(PSYMS['pg_awake_tick'], a0=0, count=40000000)
-    expect(not [c for c in m.calls if c[0] == 'reset_poweroptions_timer'], 'only a download thread keeps the device awake (the refresh dialog is its own thing)')
+    expect(not [c for c in m.calls if c[0] == 'reset_poweroptions_timer'], 'only a download thread keeps the device awake (a job running alone, the refresh dialog, is its own thing)')
+    m.setword(pn_at(DBUSY), 1)   # a download beside the job
+    m.calls = []
+    m.call(PSYMS['pg_awake_tick'], a0=0, count=40000000)
+    expect([c for c in m.calls if c[0] == 'reset_poweroptions_timer'] == [('reset_poweroptions_timer', 1, 1, 0)], 'a download thread beside a job: kept awake (the job does not matter)')
     # screen off: the same call, no widget work; in the background too
     m = page(); open_sub_one(m)
     PCP.act(m, 0)
@@ -807,4 +1204,4 @@ def width_tests(ctx):
     expect(not over, f'every state line fits 274 px in every language ({over})')
 
 
-SECTIONS = [queue_tests, transfer_tests, resume_tests, failure_tests, control_tests, refresh_tests, page_tests, refresh_page_tests, awake_tests, width_tests]
+SECTIONS = [queue_tests, transfer_tests, resume_tests, failure_tests, control_tests, sweep_tests, refresh_tests, page_tests, refresh_page_tests, awake_tests, width_tests]

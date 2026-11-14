@@ -184,7 +184,7 @@ separately.
   the Songs page, the Podcasts page and the Daily Mix): the flag off, Repeat one -> List play, List play and Repeat all kept.
   `pod_set_mode(MODE_SHUFFLE)` (the Shuffle buttons of the album page, Songs, Daily Mix, the Pod, genre) turns the flag on and puts stock under it
   in List play. The mode stays afterwards (q2-pod restores it with a hook on the queue load; not ported).
-- **Limits** (stock one-line message box, nothing played, mode untouched): "Update Local Music first" (empty), "Storage unavailable" (first file
+- **Limits** (stock one-line message box, nothing played, mode untouched): "Update Local Music first" (empty), "File not found" with the card in or "Storage unavailable" without it (`so_missing`, `patch/songops.c`; first file
   missing), "Too many songs to shuffle" (Albums/Folders over `SHUFFLE_MAX` 65536, checked before copying), "Not enough memory to shuffle".
   About 12 M payload instructions for Shuffle Albums over 2,048 songs.
 - After a reboot Shuffle Songs resumes with the flag on and reshuffles the rest; Albums/Folders resume on the same track and continue in Songs order

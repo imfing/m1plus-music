@@ -965,10 +965,10 @@ int sba_dl_xfer(void *ctx, long long total, long long now, long long up_total, l
     resume = s->resume_offset;
     got = now + (resume > 0 ? resume : 0);
     if (resume > 0) { /* only a 206 for exactly our range tells the whole size */
-        if (!s->range_seen || s->range_start != resume || s->range_total <= 0)
+        if (!s->head.range_seen || s->head.range_start != resume || s->head.range_total <= 0)
             total = 0;
         else
-            total = s->range_total;
+            total = s->head.range_total;
     }
     if (total < got) total = 0;
     g = got > 0xffffffffLL ? 0xffffffffu : (unsigned)got;
@@ -989,11 +989,8 @@ int sba_dl_xfer(void *ctx, long long total, long long now, long long up_total, l
 static int sbd_http_code(const sbn_sink_t *s, unsigned free_kb_known, unsigned free_kb) {
     long st = s->http_status;
     int rc = s->curl_result;
-    if (rc == CURLE_SSL_CACERT || rc == CURLE_SSL_CONNECT_ERROR || rc == CURLE_PEER_FAILED_VERIFICATION ||
-        rc == CURLE_SSL_CERTPROBLEM || rc == CURLE_SSL_CIPHER || rc == CURLE_SSL_ISSUER_ERROR)
-        return SBA_CERT;
-    if (rc == CURLE_SSL_CACERT_BADFILE) return SBA_NOCERT;
-    switch (s->werr) { /* what the card side said (sbnet.h SBN_W_*), before what the network said */
+    if (net_tls(rc)) return net_tls(rc) == 2 ? SBA_NOCERT : SBA_CERT;
+    switch (s->file.why) { /* what the card side said (sbnet.h SBN_W_*), before what the network said */
     case SBN_W_SPACE:
         return SBA_CARDFULL;
     case SBN_W_CARD:
@@ -1071,7 +1068,7 @@ static int sbd_run(const sba_track_t *t, char *file, unsigned *size) {
     rc = sbn_download(url, part, final, dir, identity[0] ? identity : (const char *)0, sink, &resumable);
     sbd.sink = (sbn_sink_t *)0;
     if (rc == 1) {
-        *size = (unsigned)(sink->resume_offset + sink->written);
+        *size = (unsigned)(sink->resume_offset + sink->file.written);
         sbd.got = sbd.total = *size;
         sbn_sink_free(sink);
         free(sink);

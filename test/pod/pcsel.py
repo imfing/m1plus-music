@@ -54,7 +54,7 @@ def running(m, f='e.mp3', got=420000, total=1000000):
     """The status record as it is while f downloads (slot 0, seq 1)."""
     poke_slot(m, 0, SUB, f, 2, seq=1)
     m.setword(pn_at(DL.DKEY), key_of(SUB, f)); m.setword(pn_at(DL.DGOT), got); m.setword(pn_at(DL.DTOTAL), total)
-    m.setword(pn_at(DL.KIND), 2); m.setword(pn_at(0), 1); m.setword(pn_at(DL.DSEQ), 10)
+    m.setword(pn_at(DL.DBUSY), 1); m.setword(pn_at(DL.DSEQ), 10)
 
 
 def start_select(m):

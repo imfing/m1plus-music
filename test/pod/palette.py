@@ -868,7 +868,7 @@ def accent_picker_tests(ctx):
     expect(V.rows[row_i].arg == P.APPEARANCE_PAGE_INDEX and V.rows[row_i].action == P.ACT_PAGE and P.row_kind(V.rows[row_i]) == 'link' and [r.label for r in V.rows[row_i - 1:row_i + 2]] == ['Buttons & Power', 'Appearance', 'Keyboards']
            and 'Light Mode' not in [r.label for r in V.rows] and 'Accent' not in [r.label for r in V.rows], 'Settings > System: an Appearance link (a chevron, no value) between Buttons & Power and Keyboards; the Light row still hidden')
     expect([(r.label, r.action, r.arg) for r in W.rows][1:2] == [('Accent', P.ACT_ACCENT, P.ACCENT_PAGE_INDEX)] and P.row_kind(W.rows[1]) == 'value' and W.title == 'Appearance' and W.key == 'm1plus_appearance'
-           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is W and P.APPEARANCE_PAGE_INDEX == 39 and P.PAGES[41:] == [P.RADIO, P.RADIONP, P.RADIOINFO, P.SONGINFO, P.REGION_PAGE, P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE, P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.BATTERY_PAGE, P.CHGLIMIT_PAGE, P.IDLE_PAGE, P.LOCK_PAGE, P.LOCKWALL_PAGE, P.LOCKSTYLE_PAGE, P.LOCKINFO_PAGE, P.NEXTALBUM_PAGE, P.NDLOGIN_PAGE, P.NDSERVER_PAGE, P.NDROOT_PAGE, P.DISPLAY_PAGE, P.LIGHTTIME_PAGE, P.LED_PAGE, P.KEYSPOWER_PAGE, P.KEYLOCK_PAGE, P.SHUTDOWN_PAGE, P.PCFIND_PAGE], 'the Appearance page (PAGES[39]): an Accent value row opening the picker, the Radio pages after the Pull-down page')
+           and P.PAGES[P.APPEARANCE_PAGE_INDEX] is W, 'the Appearance page: an Accent value row opening the picker')
 
     def open_pick(data=None):
         m = LM(acc=data)
@@ -974,7 +974,7 @@ def tinted_tests(ctx):
     m.on_top('home_page')
     expect(m.color(m.style(color=tone)) == teal(tone, False) != tone and m.color(m.style(color=0xff202020)) == teal(0xff202020, False) != 0xff202020, 'on any other page a dark neutral tone and #202020 are tinted like any colour')
     cover_words = [tone, 0xff202020, 0xff333333, BLACK, 0xff1e1c1c, 0xff0a0b0c, WHITE, 0xff8c8c8c] + ROLE_WORDS
-    for name in ('playing_page', 'm1plus_dailymix_page'):
+    for name in ('playing_page', 'm1plus_dailymix_page', 'm1plus_idlelyrics_page'):
         m.on_top(name)
         got = [(m.color(m.style(color=c)), m.call(PSYMS['pal_map'], a0=c, count=20000), m.call(PSYMS['ui_ink'], a0=c, count=20000)) for c in cover_words]
         want = [(teal(c, True) if c >> 24 else c, teal(c, True), teal(c, True) if c >> 24 else c) for c in cover_words]   # (a clear colour: the hooks and ui_ink skip it, pal_map does not)

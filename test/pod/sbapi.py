@@ -154,10 +154,10 @@ def sba_at(m, off): return m.word(PSYMS['sba'] + off)
 class Site:
     """A scripted server: routes by view name; every request is kept."""
     def __init__(self, **routes):
-        self.routes, self.urls, self.default = routes, [], {'body': ok_json()}
+        self.routes, self.urls, self.opts, self.default = routes, [], [], {'body': ok_json()}
 
     def __call__(self, url, opts):
-        self.urls.append(url)
+        self.urls.append(url); self.opts.append(dict(opts))
         view = re.search(r'/rest/(\w+)\.view', url)
         r = self.routes.get(view.group(1) if view else '', self.default)
         return r(url, opts) if callable(r) else r
@@ -398,6 +398,8 @@ def worker(ctx):
            and hashlib.md5((PASSWORD + q['s']).encode()).hexdigest() == q['t'] and PASSWORD not in site.urls[0] and site.urls[0].startswith(URL + '/rest/ping.view?'),
            'requests carry user, a salted token (md5(password + salt)), version, client, json; never the password')
     expect(site.query(1)['id'] == 'al1', 'getAlbum carries the id')
+    o = site.opts[0]
+    expect(o[181] == 3 and o[182] == 2 and o[10065] == '/etc/m1plus-cacert.pem' and 64 not in o and 81 not in o, 'an https server: a redirect down to http is refused (patch/net.c NET_NODOWNGRADE); the CA bundle, verification at its defaults')
     expect(busy(m) == 0 and gen(m) != g1 and tfull(m) == (ST['OK'], 0) and state(m, K['ALBUM'], 'al1') == (ST['OK'], 0), 'the worker ended: not busy, both OK, the generation moved again')
     # errors
     cases = [('wrong user (Subsonic 40)', {'body': err_json(40)}, 'AUTH'), ('wrong token (41)', {'body': err_json(41)}, 'AUTH'), ('not found (70)', {'body': err_json(70)}, 'NOTFOUND'),

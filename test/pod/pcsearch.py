@@ -9,7 +9,7 @@ DATA = os.path.join(ROOT, 'test', 'data', 'search')
 
 
 PCN = sibling('pcnet')
-PN, CA, ROOT_DIR = dict(PCN.PN, CANCELLED=12, NOFEED=17), PCN.CA, PCN.ROOT_DIR
+PN, CA, ROOT_DIR = dict(PCN.PN, CANCELLED=12, NOFEED=16), PCN.CA, PCN.ROOT_DIR
 SDIR = '/mnt/mmc/.m1plus/podcasts/search'
 SEARCH = 'https://itunes.apple.com/search?media=podcast&entity=podcast&limit=25&country=US&term='
 LOOKUP = 'https://itunes.apple.com/lookup?id='
@@ -48,7 +48,7 @@ def state(m):
 def result(m, i):
     p = fn(m, 'pn_search_result', i)
     if not p: return None
-    raw = bytes(m.u.mem_read(p, 4 + 80 + 56 + 320 + 160))
+    raw = bytes(m.u.mem_read(p, 4 + 80 + 56 + 320 + 320))   # id, name, author, feed (PC_URL), art (PJ_ART)
     cs = lambda b: b.split(b'\0')[0].decode('utf-8')
     return (int.from_bytes(raw[:4], 'little'), cs(raw[4:84]), cs(raw[84:140]), cs(raw[140:460]), cs(raw[460:]))
 
@@ -340,7 +340,7 @@ def subscribe_tests(ctx):
     # a full list of shows
     m = machine(site=site)
     m.thread = None; fn(m, 'pn_preview', m.cstr(F_WSJ), m.cstr(''), m.cstr('')); PCN.work(m, m.thread)
-    expect(fn(m, 'pn_subscribe', m.cstr(ROOT_DIR), m.shows()[1], 40, out, 128) == PN['STORAGE'] and fn(m, 'pn_preview_parser') != 0, '40 shows already: PN_STORAGE, nothing written')
+    expect(fn(m, 'pn_subscribe', m.cstr(ROOT_DIR), m.shows()[1], O['PC_MAX_SHOWS'], out, 128) == PN['STORAGE'] and fn(m, 'pn_preview_parser') != 0, 'PC_MAX_SHOWS shows already: PN_STORAGE, nothing written (the page says Too many shows before it asks)')
 
 
 def fallback_tests(ctx):

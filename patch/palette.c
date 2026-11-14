@@ -321,7 +321,8 @@ enum {
     PAL_COVER_AB,
     PAL_COVER_PG,
     PAL_COVER_DM,
-    PAL_COVER_RN
+    PAL_COVER_RN,
+    PAL_COVER_IL
 }; /* tools/palette.py COVER_PAGES, in order */
 
 static void pal_look(void) {
@@ -360,6 +361,7 @@ static int pal_cover_page(void) {
     case PAL_COVER_NP:
     case PAL_COVER_DM:
     case PAL_COVER_RN:
+    case PAL_COVER_IL:
         return 1;
     case PAL_COVER_AB:
         return ab_has_tone();

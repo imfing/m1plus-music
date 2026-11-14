@@ -2,10 +2,12 @@
 """Preview of the Now Playing lyrics page: the earlier look (28 px Medium, greys, hard clip) beside the current one (bold face, white
 at falling opacity, edge fade), over the background of a device screenshot. docs/modules/lyrics.md.
 
-  preview_lyrics.py OUT.png --shot SHOT.bmp [--mode look|scrim|intro] [--tree RAW_TREE_ROOT] [--bold FILE.ttf]
+  preview_lyrics.py OUT.png --shot SHOT.bmp [--mode look|scrim|intro|size] [--tree RAW_TREE_ROOT] [--bold FILE.ttf]
 
 The --mode scrim option puts the info scrim (np_scrim, 50 % black) beside the lyrics scrim (np_scrim_lyrics, 27 %, eased edges) over the screenshot's window and
-over two cover tones; --mode intro shows the interlude dots at four moments of a 12 s intro, the first line waiting under them.
+over two cover tones; --mode intro shows the interlude dots at four moments of a 12 s intro, the first line waiting under them;
+--mode size writes OUT_small.png, OUT_medium.png and OUT_large.png (Settings > Now Playing > Lyrics Text Size: 22, 26 and 30 px), each with a long Latin
+line, a CJK line and the intro dots, over a warm cover tone (--shot is not needed).
 
 The layout is the page's own: the line geometry of patch/offsets.inc (LY_*), a line's rows from a greedy word wrap with the text model of the
 build (awtk_text.StbText on the real font files: default.ttf of the tree, the lyric face from tools/mod_font.lyric_face), the anchor,
@@ -27,6 +29,11 @@ NEW_OPACITY = (255, 115, 82, 61, 46)            # patch/lyrics.c ly_opacity: dis
 OLD_OPACITY = (255, 179, 128, 89)               # stage 2
 OLD = dict(font=28, line_h=34, gap=14, op=OLD_OPACITY, fade=0, cur=(0xee, 0xee, 0xec), dim=(0xa0, 0xa0, 0xa0), bold=False)
 NEW = dict(font=O['LY_FONT'], line_h=O['LY_LINE_H'], gap=O['LY_GAP'], op=NEW_OPACITY, fade=O['LY_FADE'], cur=(255, 255, 255), dim=(255, 255, 255), bold=True)
+def sized(suffix):
+    """NEW at a text size (Small draws its Latin lines in the default font too: latin_bold False) (patch/lyrics.c ly_sizes; tools/mod_nowplaying.py LYR_SIZES / LYR_GAPS): '' Large, '_m' Medium, '_s' Small."""
+    import mod_nowplaying as mn
+    px, spacer = mn.LYR_SIZES[suffix]
+    return dict(NEW, font=px, line_h=px + spacer, gap=mn.LYR_GAPS[suffix], latin_bold=suffix in mn.LYR_BOLD_SIZES)
 
 LATIN_A = ['Walking down the street tonight', 'Be what you want to be', 'When you get a head', 'A head full of dreams and a heart wide open',
            "Into life, I've just been", 'With a head full of stars', 'Nothing left to say but goodbye', 'And we run, run, run']
@@ -62,28 +69,28 @@ def wrap_text(text, st, width=ROW_W):
 
 def wrap_rows(text, st, width=ROW_W, cap=O['LY_LINES_MAX']): return min(len(wrap_text(text, st, width)), cap)
 
-def anchor(rows):
-    """patch/lyrics.c ly_anchor: a current line of more than three rows sits higher."""
-    a = VIEW_H - O['LY_ANCHOR_ROOM'] - O['LY_LINE_H'] - (rows * O['LY_LINE_H'] + O['LY_GAP'])
-    return ANCHOR if a >= ANCHOR else max(a, O['LY_ANCHOR_MIN'])
+def anchor(rows, vh=VIEW_H, anc=ANCHOR, p=NEW):
+    """patch/lyrics.c ly_anchor: a current line of more than three rows sits higher (vh, anc: another view's height and anchor)."""
+    a = vh - O['LY_ANCHOR_ROOM'] - p['line_h'] - (rows * p['line_h'] + p['gap'])
+    return anc if a >= anc else max(a, O['LY_ANCHOR_MIN'])
 
-def edge(y, rows, p):
-    top, bot = y + rows * p['line_h'] - p['line_h'] // 2, VIEW_H - (y + p['line_h'] // 2)
+def edge(y, rows, p, vh=VIEW_H):
+    top, bot = y + rows * p['line_h'] - p['line_h'] // 2, vh - (y + p['line_h'] // 2)
     e = min(top, bot)
     if not p['fade']: return 255
     return 0 if e <= 0 else 255 if e >= p['fade'] else e * 255 // p['fade']
 
-def render(bg, lines, cur, p, fonts, pad=0, ref=None):
+def render(bg, lines, cur, p, fonts, pad=0, ref=None, vh=VIEW_H, anc=ANCHOR):
     """The lyric rectangle for lines with line `cur` anchored `pad` px below the anchor, the opacities counted from line `ref` (default `cur`; -1 in an intro): an RGBA layer (W x VIEW_H) of the settled page."""
-    layer = Image.new('RGBA', (W, VIEW_H), (0, 0, 0, 0))
+    layer = Image.new('RGBA', (W, vh), (0, 0, 0, 0))
     ref = cur if ref is None else ref
     def face(t):
-        bold = p['bold'] and latin_only(t)
+        bold = p.get('latin_bold', p['bold']) and latin_only(t)
         return fonts['bold' if bold else 'default']
     def rows(t):
         f = face(t)[1]
         return wrap_rows(t, StbText(f, p['font']))
-    top = (anchor(rows(lines[cur])) if p['bold'] else ANCHOR) + pad
+    top = (anchor(rows(lines[cur]), vh, anc, p) if p['bold'] else anc) + pad
     ys, y = {}, top
     for i in range(cur, len(lines)):
         ys[i] = y; y += rows(lines[i]) * p['line_h'] + p['gap']
@@ -92,8 +99,8 @@ def render(bg, lines, cur, p, fonts, pad=0, ref=None):
         y -= rows(lines[i]) * p['line_h'] + p['gap']; ys[i] = y
     for i, y in sorted(ys.items()):
         n = rows(lines[i]); h = n * p['line_h']
-        if y + h <= 0 or y >= VIEW_H: continue
-        op = p['op'][min(abs(i - ref), len(p['op']) - 1)] * edge(y, n, p) // 255
+        if y + h <= 0 or y >= vh: continue
+        op = p['op'][min(abs(i - ref), len(p['op']) - 1)] * edge(y, n, p, vh) // 255
         if not op: continue
         sf, tt = face(lines[i]); st = StbText(tt, p['font'])
         col = p['cur'] if i == ref else p['dim']
@@ -112,12 +119,12 @@ def dot_op(k, el, ln):
     left = ln - el
     return 0 if left <= 0 else op * left // fade if left < fade else op
 
-def draw_dots(layer, el, ln):
+def draw_dots(layer, el, ln, p=NEW):
     """The three interlude dots (np_dot.png) at the anchor row."""
     import mod_nowplaying as mn
-    dot = mn.dot_image(); y = ANCHOR + (O['LY_LINE_H'] - O['LY_DOT']) // 2
+    dot = mn.dot_image(); y = ANCHOR + (p['line_h'] - O['LY_DOT']) // 2
     for k in range(3):
-        op = dot_op(k, el, ln) * edge(ANCHOR, 1, NEW) // 255
+        op = dot_op(k, el, ln) * edge(ANCHOR, 1, p) // 255
         d = dot.copy(); d.putalpha(d.getchannel('A').point(lambda v: v * op // 255))
         layer.alpha_composite(d, (O['LY_DOT_X'] + k * O['LY_DOT_PITCH'], y))
 
@@ -177,10 +184,28 @@ def sheets(a, fonts):
                 sheet.paste(panel(bg, layer, f'intro {el / 1000:.1f} s of {ln // 1000} s: {name}'), (c * 324, r * 304))
     sheet.convert('RGB').save(a.out); print(os.path.abspath(a.out))
 
+SIZE_LATIN = ['Walking down the street tonight', "Every night I lie awake wondering what you're thinking of me", '夜晚的风轻轻吹过我的窗前，不管明天会怎样', 'Be what you want to be',
+              'A head full of dreams and a heart wide open', 'And we run, run, run']
+SIZE_CJK = ['Walking down the street tonight', '夜晚的风轻轻吹过我的窗前，不管明天会怎样，我只想和你在一起走到天亮', 'Hello, 你好吗', 'Be what you want to be', 'もう一度だけ会いたい', 'And we run, run, run']
+SIZE_INTRO = ['Walking down the street tonight', 'Be what you want to be', '夜晚的风轻轻吹过我的窗前', 'And we run, run, run']
+
+def size_sheets(a, fonts):
+    """--mode size: one image a text size (OUT_small.png, OUT_medium.png, OUT_large.png): a long Latin current line, a long CJK one and the intro dots, over a warm cover."""
+    stem, ext = os.path.splitext(a.out)
+    bg = scrimed(tone_rows((230, 150, 60)), 'new')
+    for name, suf in (('small', '_s'), ('medium', '_m'), ('large', '')):
+        p = sized(suf)
+        lay = lambda ls, cur, **kw: render(bg, ls, cur, p, fonts, **kw)
+        intro = lay(SIZE_INTRO, 0, pad=p['line_h'] + p['gap'], ref=-1); draw_dots(intro, 6000, 12000, p)
+        ims = [panel(bg, lay(SIZE_LATIN, 1), f'{name} {p["font"]} px: long Latin line'), panel(bg, lay(SIZE_CJK, 1), f'{name} {p["font"]} px: CJK line'), panel(bg, intro, f'{name} {p["font"]} px: intro dots')]
+        sheet = Image.new('RGBA', (3 * 324, 304), (40, 40, 40, 255))
+        for c, im in enumerate(ims): sheet.paste(im, (c * 324, 0))
+        sheet.convert('RGB').save(f'{stem}_{name}{ext}'); print(os.path.abspath(f'{stem}_{name}{ext}'))
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('out'); ap.add_argument('--shot', required=True, help='device screenshot used as the preview background')
-    ap.add_argument('--mode', choices=('look', 'scrim', 'intro'), default='look', help='look: earlier and current typography; scrim: info and lyrics scrims; intro: interlude dots')
+    ap.add_argument('out'); ap.add_argument('--shot', help='device screenshot used as the preview background')
+    ap.add_argument('--mode', choices=('look', 'scrim', 'intro', 'size'), default='look', help='look: earlier and current typography; scrim: info and lyrics scrims; intro: interlude dots; size: the three text sizes')
     ap.add_argument('--tree', help='the raw tree with fonts/default.ttf (default: the release tree in work/)')
     ap.add_argument('--bold', help='the lyric face file (default: mod_font.lyric_face of the committed subset)')
     a = ap.parse_args()
@@ -189,6 +214,8 @@ def main():
     dpath = os.path.join(tree, 'fonts', 'default.ttf')
     bpath = a.bold or os.path.join(tree, 'fonts', 'lyrics.ttf')
     fonts = {'default': (StbFont(dpath), Ttf(dpath)), 'bold': (StbFont(bpath), Ttf(bpath))}
+    if a.mode == 'size': return size_sheets(a, fonts)
+    if not a.shot: sys.exit('--shot is required for this mode')
     if a.mode != 'look': return sheets(a, fonts)
     bg = background(a.shot)
     sets = [('latin', LATIN_A, 2), ('long', LATIN_B, 0), ('cjk', CJK, 1)]

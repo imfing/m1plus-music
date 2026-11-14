@@ -728,7 +728,7 @@ def measured_tests(ctx):
     lay = P.CACHE_PAGE.layout
     shape = [x.text if isinstance(x, P.Hdr) else 'gap' if x == P.GAP else x.label for x in lay]
     expect(shape == ['Covers', 'Albums', 'Covers', 'No art', 'Missing', 'Old files', 'Size', 'gap', 'Status', 'gap', 'Clear Cover Cache', 'Artist Photos', 'Photos', 'None', 'Track Durations', 'Measured Tracks', 'Clear Track Durations'], f'the Cache page: a Covers section (the counts, Status and Clear Cover Cache, the gaps kept), an Artist Photos section (Photos, None), then a Track Durations section ({shape})')
-    expect(P.CACHE_PAGE.key == 'm1plus_cache' and P.CACHE_PAGE.title == 'Cache' and P.CACHE_PAGE_INDEX == 32, 'the page keeps its key and index; its title is Cache')
+    expect(P.CACHE_PAGE.key == 'm1plus_cache' and P.CACHE_PAGE.title == 'Cache' and P.PAGES[P.CACHE_PAGE_INDEX] is P.CACHE_PAGE, 'the page keeps its key; its title is Cache')
     expect([r.label for r in P.DEVELOPER_PAGE.rows if r.action == P.ACT_PAGE and r.arg == P.CACHE_PAGE_INDEX] == ['Cache'], 'the Developer row reads Cache')
     mt = next(r for r in P.CACHE_PAGE.rows if r.label == 'Measured Tracks')
     expect(mt.action == P.ACT_INFO and mt.arg == P.INFO_DUR == P.INFO_SFOLD + 1 and P.INFO_DUR > P.INFO_CC_STATUS, 'Measured Tracks is an info row with its own kind, after the Settings Files kinds')

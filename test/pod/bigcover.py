@@ -421,10 +421,11 @@ CFG_ON, CFG_OFF = ('write_int_config', 1, 'SYSSET', 'COVERMODE'), ('write_int_co
 
 
 class IM(Machine):
-    """The dispatcher with the two open functions mocked at the payload function boundary (their own tests are tape.py / vinyl.py): what each returns is scripted."""
-    def __init__(self, tape=0, vinyl=0):
+    """The dispatcher with the open functions mocked at the payload function boundary (their own tests are tape.py / vinyl.py / idlelyrics.py): what each returns is scripted.
+    rows is what ly_has_rows answers (Now Playing's stock lyric rows), up what idlelyrics_up answers (the lyrics page is open)."""
+    def __init__(self, tape=0, vinyl=0, lyrics=0, rows=1, up=0):
         super().__init__()
-        self.rets = {'tape_open_idle': tape, 'vinyl_open_idle': vinyl}
+        self.rets = {'tape_open_idle': tape, 'vinyl_open_idle': vinyl, 'idlelyrics_open_idle': lyrics, 'ly_has_rows': rows, 'idlelyrics_up': up}
         for n in self.rets: self.handlers[PSYMS[n]] = n
 
     def _hook(self, u, address, size, _):
@@ -469,12 +470,14 @@ def idle_tests(ctx):
     expect(PSYMS['bc_timed_open'] >= pod.BASE and 'idle_set' in PSYMS and 'idle_choice' in PSYMS, 'the dispatcher and the setting are in the payload')
 
     # -- the dispatcher: every destination
-    def run(data=None, kill=False, tape=0, vinyl=0, name=NAME):
-        m = IM(tape, vinyl)
+    OPENS = ('tape_open_idle', 'vinyl_open_idle', 'idlelyrics_open_idle')
+
+    def run(data=None, kill=False, tape=0, vinyl=0, name=NAME, lyrics=0, rows=1, up=0):
+        m = IM(tape, vinyl, lyrics, rows, up)
         if data is not None: m.fs[IDLE] = data
         if kill: m.present.add(KILL)
         r = go(m, name)
-        return m, r, [c[0] for c in m.calls if c[0] in ('tape_open_idle', 'vinyl_open_idle')], [c for c in m.calls if c[0] == 'navigator_to']
+        return m, r, [c[0] for c in m.calls if c[0] in OPENS], [c for c in m.calls if c[0] == 'navigator_to']
     for data in (None, b'0\n', b'0'):
         m, r, opened, nav = run(data)
         expect(opened == [] and nav == [('navigator_to', NAME)], f'Album Cover ({data!r}): stock\'s navigator_to once, no other page')
@@ -484,14 +487,25 @@ def idle_tests(ctx):
     for data in (b'2\n', b'2'):
         m, r, opened, nav = run(data)
         expect(r == 0 and opened == ['vinyl_open_idle'] and nav == [], f'Vinyl ({data!r}): vinyl_open once, no stock cover page')
-    for data in (b'', b'3\n', b'x', b'11', b'1\n\n', b' 1', b'-1', b'\x001', b'a', b'12\n'):
+    for data in (b'', b'4\n', b'x', b'11', b'1\n\n', b' 1', b'-1', b'\x001', b'a', b'12\n'):
         m, r, opened, nav = run(data)
         expect(opened == [] and nav == [('navigator_to', NAME)], f'an invalid setting ({data!r}) is Album Cover: stock\'s call once')
+    for data in (b'3\n', b'3'):
+        m, r, opened, nav = run(data)
+        expect(r == 0 and opened == ['idlelyrics_open_idle'] and nav == [], f'Lyrics ({data!r}) with lyric rows: the lyrics page opens once, no stock cover page')
+        m, r, opened, nav = run(data, rows=0)
+        expect(opened == [] and nav == [('navigator_to', NAME)], f'Lyrics ({data!r}) with no lyric rows: stock\'s Album Cover page once, the lyrics page is not tried')
+    m, r, opened, nav = run(b'3\n', lyrics=-1)
+    expect(opened == ['idlelyrics_open_idle'] and nav == [('navigator_to', NAME)], 'Lyrics that will not open: stock\'s cover page once')
+    m, r, opened, nav = run(b'3\n', up=1, rows=0)
+    expect(r == 0 and opened == ['idlelyrics_open_idle'] and nav == [], 'Lyrics page already up (the track has no rows): the open call answers 0, no stock page over it')
+    m, r, opened, nav = run(b'3\n', lyrics=-1, tape=0, vinyl=0)
+    expect('tape_open_idle' not in opened and 'vinyl_open_idle' not in opened, 'a failed Lyrics never tries Cassette or Vinyl')
     # -- the kill switch, another name
-    for data in (b'1\n', b'2\n'):
+    for data in (b'1\n', b'2\n', b'3\n'):
         m, r, opened, nav = run(data, kill=True)
         expect(opened == [] and nav == [('navigator_to', NAME)], f'the kill switch with {data!r}: stock\'s call, no open function')
-    m, r, opened, nav = run(b'1\n', name='playing_page')
+    m, r, opened, nav = run(b'3\n', name='playing_page')
     expect(opened == [] and nav == [('navigator_to', 'playing_page')], 'another page name goes to stock with its own name')
     m, r, opened, nav = run(b'2\n', name='')
     expect(opened == [] and nav == [('navigator_to', '')], 'an empty name goes to stock')
@@ -546,9 +560,9 @@ def idle_setting_tests(ctx):
            'Settings > Now Playing ends with the Idle Display value row (a new action id, a value row), the picker\'s rows are check rows')
     expect([type(x).__name__ for x in N.layout][-3:] == ['str', 'Row', 'Note'] and N.layout[-1].text == 'Shown after 10 seconds on Now Playing.' and N.layout[0].text == 'Cassette Mode',
            'the last card is the Idle Display row and its note, after the Cassette Mode and Vinyl Mode cards')
-    expect([(r.label, r.action, r.arg) for r in I.rows] == [('Off', P.ACT_IDLESET, 0), ('Album Cover', P.ACT_IDLESET, 1), ('Cassette', P.ACT_IDLESET, 2), ('Vinyl', P.ACT_IDLESET, 3)]
-           and I.title == 'Idle Display' and I.key == 'm1plus_idleview' and P.IDLE_VALUES == ('Off', 'Album Cover', 'Cassette', 'Vinyl') and I.layout[-1].text == 'Shown after 10 seconds on Now Playing.'
-           and P.PAGES[P.IDLE_PAGE_INDEX] is I, 'the picker: Off, Album Cover, Cassette, Vinyl, titled Idle Display, with the note')
+    expect([(r.label, r.action, r.arg) for r in I.rows] == [('Off', P.ACT_IDLESET, 0), ('Album Cover', P.ACT_IDLESET, 1), ('Cassette', P.ACT_IDLESET, 2), ('Vinyl', P.ACT_IDLESET, 3), ('Lyrics', P.ACT_IDLESET, 4)]
+           and I.title == 'Idle Display' and I.key == 'm1plus_idleview' and P.IDLE_VALUES == ('Off', 'Album Cover', 'Cassette', 'Vinyl', 'Lyrics') and I.layout[-1].text == 'Shown after 10 seconds on Now Playing.'
+           and P.PAGES[P.IDLE_PAGE_INDEX] is I, 'the picker: Off, Album Cover, Cassette, Vinyl, Lyrics, titled Idle Display, with the note')
     expect(IDLE.rsplit('/', 1)[1] in P.SETTING_FILES and 'nowplaying-idle' not in ' '.join(P.RETIRED_FILES), 'the file is a Settings Files row and not a retired one')
     ids = [v for k, v in vars(P).items() if k.startswith('ACT_')]
     expect(len(set(ids)) == len(ids), 'the action ids are distinct')
@@ -557,39 +571,39 @@ def idle_setting_tests(ctx):
 
     def open_picker(data=None, on=1, language=None):
         m = Machine()
-        m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(4)] + [f'pod_check{i}' for i in range(4)])}
+        m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(5)] + [f'pod_check{i}' for i in range(5)])}
         if data is not None: m.fs[IDLE] = data
         if language: m.set_language(language)
         bytes_on(m, on)
-        m.call(PSYMS['on_row'], a0=rows_n + 12 * 3, count=3000000)   # the Idle Display row (the page's last)
+        m.call(PSYMS['on_row'], a0=rows_n + 12 * 4, count=3000000)   # the Idle Display row (the page's last, after the Lyrics Text Size row)
         return m
 
     def shown(m, i):
         v = [c[2] for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets[f'pod_check{i}']]
         return v[-1] if v else None
 
-    def checks(m): return [shown(m, i) for i in range(4)]
+    def checks(m): return [shown(m, i) for i in range(5)]
 
     def untouched(m): return not any(c[0] == 'widget_set_visible' for c in m.calls)   # a refused pick: the click redraws no check
 
     m = open_picker()
     expect(('window_open', I.key) in m.calls, 'the Idle Display row opens the picker')
-    expect(checks(m) == [0, 1, 0, 0] and IDLE not in m.fs and not any(c[0] == 'write_int_config' for c in m.calls), 'with the byte on and nothing saved the check is on Album Cover; reading writes nothing')
-    expect([checks(open_picker(d)) for d in (b'1\n', b'2\n', b'0\n', b'9', b'', b'1\n\n')] == [[0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]],
-           'a saved Cassette or Vinyl has the check; an invalid file is Album Cover')
-    expect([checks(open_picker(d, on=0)) for d in (None, b'1\n', b'2\n')] == [[1, 0, 0, 0]] * 3, 'with the byte off the check is on Off, whatever the destination')
+    expect(checks(m) == [0, 1, 0, 0, 0] and IDLE not in m.fs and not any(c[0] == 'write_int_config' for c in m.calls), 'with the byte on and nothing saved the check is on Album Cover; reading writes nothing')
+    expect([checks(open_picker(d)) for d in (b'1\n', b'2\n', b'3\n', b'0\n', b'9', b'', b'1\n\n')] == [[0, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1], [0, 1, 0, 0, 0], [0, 1, 0, 0, 0], [0, 1, 0, 0, 0], [0, 1, 0, 0, 0]],
+           'a saved Cassette, Vinyl or Lyrics has the check; an invalid file is Album Cover')
+    expect([checks(open_picker(d, on=0)) for d in (None, b'1\n', b'2\n', b'3\n')] == [[1, 0, 0, 0, 0]] * 4, 'with the byte off the check is on Off, whatever the destination')
 
     # a pick: the destination first (atomically), the byte through stock's save only when it changes
     m = open_picker(b'1\n', on=1)
     m.click('pod_row3')
     expect(m.fs.get(IDLE) == b'2\n' and IDLE + '.tmp' not in m.fs and ('rename', IDLE + '.tmp', IDLE) in m.calls and ('fsync', '/mnt/data/m1plus') in m.calls
-           and not any(c[0] == 'write_int_config' for c in m.calls) and checks(m) == [0, 0, 0, 1] and m.u.mem_read(COVER_MODE, 1)[0] == 1,
+           and not any(c[0] == 'write_int_config' for c in m.calls) and checks(m) == [0, 0, 0, 1, 0] and m.u.mem_read(COVER_MODE, 1)[0] == 1,
            'Vinyl while the byte is on: the file is written atomically, stock\'s save is not touched, the check follows')
     m.click('pod_row0')
-    expect(CFG_OFF in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 0 and m.fs.get(IDLE) == b'2\n' and checks(m) == [1, 0, 0, 0],
+    expect(CFG_OFF in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 0 and m.fs.get(IDLE) == b'2\n' and checks(m) == [1, 0, 0, 0, 0],
            'Off: [SYSSET] COVERMODE = 0 saved with stock\'s write_int_config, the byte off, the destination kept')
     m.click('pod_row2')
-    expect(CFG_ON in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 1 and m.fs.get(IDLE) == b'1\n' and checks(m) == [0, 0, 1, 0],
+    expect(CFG_ON in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 1 and m.fs.get(IDLE) == b'1\n' and checks(m) == [0, 0, 1, 0, 0],
            'Cassette while off: the destination is saved and the byte turned on through stock\'s save')
     m.click('pod_row0'); m.click('pod_row0')
     expect(CFG_OFF not in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 0 and checks(m)[0] == 1, 'Off twice: the second tap saves nothing, it stays off')
@@ -600,6 +614,20 @@ def idle_setting_tests(ctx):
     m.click('pod_row1')
     expect(CFG_ON in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 1 and m.fs.get(IDLE) == b'0\n' and checks(m)[1] == 1,
            'Album Cover while off with nothing saved saves "0" and turns the byte on')
+    m = open_picker(b'1\n', on=1)
+    m.click('pod_row4')
+    expect(m.fs.get(IDLE) == b'3\n' and IDLE + '.tmp' not in m.fs and not any(c[0] == 'write_int_config' for c in m.calls) and checks(m) == [0, 0, 0, 0, 1] and m.u.mem_read(COVER_MODE, 1)[0] == 1,
+           'Lyrics while the byte is on: "3" written atomically, stock\'s save untouched, the check follows')
+    m = open_picker(b'3\n', on=0)
+    m.click('pod_row4')
+    expect(CFG_ON in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 1 and m.fs.get(IDLE) == b'3\n' and checks(m)[4] == 1,
+           'Lyrics (already saved) while off: the file is left, the byte turned on through stock\'s save')
+    m = open_picker(b'1\n', on=0)
+    m.click('pod_row4')
+    expect(CFG_ON in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 1 and m.fs.get(IDLE) == b'3\n' and checks(m) == [0, 0, 0, 0, 1],
+           'Lyrics while off: destination saved, byte on, stock\'s Cover mode row in step')
+    m.click('pod_row0')
+    expect(CFG_OFF in m.calls and m.u.mem_read(COVER_MODE, 1)[0] == 0 and m.fs.get(IDLE) == b'3\n' and checks(m)[0] == 1, 'Off after Lyrics: the byte off, "3" kept')
 
     # failures change neither file nor byte nor label
     m = open_picker(b'1\n', on=1); m.fail.add(('write', IDLE + '.tmp')); m.click('pod_row3')
@@ -614,15 +642,19 @@ def idle_setting_tests(ctx):
            'Vinyl while off with a failed config save: the byte stays off, the file is put back, the check stays on Off')
     m = open_picker(None, on=0); m.config_ret = -1; m.click('pod_row3')
     expect(m.u.mem_read(COVER_MODE, 1)[0] == 0 and IDLE not in m.fs and IDLE + '.tmp' not in m.fs, 'the same with no file before: no file after')
+    m = open_picker(b'1\n', on=1); m.fail.add(('write', IDLE + '.tmp')); m.click('pod_row4')
+    expect(m.fs.get(IDLE) == b'1\n' and IDLE + '.tmp' not in m.fs and m.u.mem_read(COVER_MODE, 1)[0] == 1 and untouched(m), 'Lyrics with a failed file write: nothing changes')
+    m = open_picker(b'1\n', on=0); m.config_ret = -1; m.click('pod_row4')
+    expect(m.u.mem_read(COVER_MODE, 1)[0] == 0 and m.fs.get(IDLE) == b'1\n' and untouched(m), 'Lyrics while off with a failed config save: byte off, file put back to "1", check on Off')
     m = open_picker(b'2\n', on=0); m.config_ret = -1; m.click('pod_row3')
     expect(m.u.mem_read(COVER_MODE, 1)[0] == 0 and m.fs.get(IDLE) == b'2\n', 'a pick of the saved destination while off with a failed config save leaves the file alone')
 
     # the row: the label follows stock's byte live, both ways
-    val = 'pod_value3'
+    val = 'pod_value4'
 
     def open_row(data=None, on=1, language=None):
         m = Machine()
-        m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(N.rows))] + ['pod_value0', 'pod_value1', 'pod_value2', val])}
+        m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(len(N.rows))] + ['pod_value0', 'pod_value1', 'pod_value2', 'pod_value3', val])}
         if data is not None: m.fs[IDLE] = data
         if language: m.set_language(language)
         bytes_on(m, on)
@@ -633,8 +665,8 @@ def idle_setting_tests(ctx):
     def label(m):
         keys = [c[2] for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets[val]]
         return keys[-1] if keys else None
-    expect([label(open_row(d, on)) for d, on in ((None, 1), (b'1\n', 1), (b'2\n', 1), (b'0\n', 1), (b'7', 1), (None, 0), (b'1\n', 0), (b'2\n', 0))]
-           == ['Album Cover', 'Cassette', 'Vinyl', 'Album Cover', 'Album Cover', 'Off', 'Off', 'Off'], 'the row reads Off when stock\'s Cover mode byte is off, else the destination')
+    expect([label(open_row(d, on)) for d, on in ((None, 1), (b'1\n', 1), (b'2\n', 1), (b'0\n', 1), (b'7', 1), (None, 0), (b'1\n', 0), (b'2\n', 0), (b'3\n', 1), (b'3\n', 0))]
+           == ['Album Cover', 'Cassette', 'Vinyl', 'Album Cover', 'Album Cover', 'Off', 'Off', 'Off', 'Lyrics', 'Off'], 'the row reads Off when stock\'s Cover mode byte is off, else the destination')
     m = open_row(b'2\n', on=1)
     first = label(m)
     bytes_on(m, 0)
@@ -645,20 +677,20 @@ def idle_setting_tests(ctx):
     m.call(f, a0=c, a1=0, count=3000000)
     expect(label(m) == 'Vinyl', '... and on again as the saved destination')
     for loc in pod_i18n.ALL_TABLES:
-        for d, on, key in ((None, 1, 'Album Cover'), (b'1\n', 1, 'Cassette'), (b'2\n', 1, 'Vinyl'), (None, 0, 'Off')):
+        for d, on, key in ((None, 1, 'Album Cover'), (b'1\n', 1, 'Cassette'), (b'2\n', 1, 'Vinyl'), (b'3\n', 1, 'Lyrics'), (None, 0, 'Off')):
             expect(label(open_row(d, on, loc)) == key, f'{loc}: {key} is set by key')
     # translations: every text of the page is in every table, nothing is the key's twin by mistake for the longer ones
-    for key in ('Idle Display', 'Album Cover', 'Cassette', 'Vinyl', 'Shown after 10 seconds on Now Playing.'):
+    for key in ('Idle Display', 'Album Cover', 'Cassette', 'Vinyl', 'Lyrics', 'Shown after 10 seconds on Now Playing.'):
         expect(all(pod_i18n.TEXT[key].get(loc) for loc in pod_i18n.LOCALES), f'{key!r} has a text in every language')
     # the assets
     tree = awtk_ui.parse(open(os.path.join(WORK, 'rootfs/release/assets/default/raw/ui/m1plus_npset.bin'), 'rb').read())
-    row, lab = tree.find('pod_row3'), tree.find('pod_value3')
+    row, lab = tree.find('pod_row4'), tree.find('pod_value4')
     expect(row is not None and lab is not None and (lab.get('tr_text') or lab.get('text')) == 'Album Cover' and row.find('pod_icon') is not None and tree.find('pod_note0_t').get('tr_text') == 'Shown after 10 seconds on Now Playing.',
            'the page asset: the last row has a glyph and its value label (Album Cover until the payload sets it), then the note')
     tree = awtk_ui.parse(open(os.path.join(WORK, 'rootfs/release/assets/default/raw/ui/m1plus_idleview.bin'), 'rb').read())
-    expect(all(tree.find(f'pod_check{i}').get('visible') == 'false' and tree.find(f'pod_check{i}').get('sensitive') == 'false' and tree.find(f'pod_row{i}').find('pod_icon') is None for i in range(4))
+    expect(all(tree.find(f'pod_check{i}').get('visible') == 'false' and tree.find(f'pod_check{i}').get('sensitive') == 'false' and tree.find(f'pod_row{i}').find('pod_icon') is None for i in range(5))
            and tree.find('pod_note0_t').get('tr_text') == 'Shown after 10 seconds on Now Playing.' and tree.find('label_title').get('tr_text') == 'Idle Display',
-           'the picker asset: four rows without a glyph, a hidden insensitive check each, the note, the title')
+           'the picker asset: five rows without a glyph, a hidden insensitive check each, the note, the title')
 
 
 def server_tests(ctx):

@@ -53,5 +53,11 @@ void ap_job(const char *track, unsigned key, int force, const volatile int *canc
 int ap_recheck(const char *name, const char *tracks);
 /* Counts the re-checks that made, replaced or removed a photo. A page compares it with the value it saw to know that a photo changed. */
 unsigned ap_epoch(void);
+/* ---- a photo the user picked (Find Artist Photo, docs/modules/onlineart.md "Artist photos") */
+/* The picture at src (a JPEG or PNG ap_make takes) becomes the artist's photo: both cache files, then the .pick marker, which keeps every automatic build (the Home pass, a rebuild, the re-check) off the artist.
+ * No .src is kept. Bumps ap_epoch. 1 done; 0 not (the artist's files are as they were). Any thread that may write the card (the network worker). */
+int ap_pick(const char *src, unsigned key);
+/* 1 when the artist's photo is a picked one (the marker and a photo). */
+int ap_picked(unsigned key);
 /* Worker thread: the job ap_recheck queues. */
 void ap_recheck_job(const char *tracks, unsigned key, const volatile int *cancelled);

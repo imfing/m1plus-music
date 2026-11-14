@@ -236,7 +236,7 @@ def unsub_tests(ctx):
     m.calls = []
     PCP.click(m, 'pg_unsubp')
     expect([t for t, _ in lines(m)] == ['Alpha Show', 'Sub Two'] and b'feed=http' in m.fs[f'{RP}/Alpha Show/.show'] and f'{RP}/Sub One/.show' not in m.fs, f'only the marked show is unsubscribed ({lines(m)})')
-    expect(DL.fn(m, 'pn_dl_count') == 0 or m.word(DL.pn_at(DL.DCANCEL)) or DL.state(m, 'a.mp3', 'Sub One')[0] == 0, 'its queued download is taken out of the queue')
+    expect(DL.fn(m, 'pn_dl_count') == 0 or DL.flagged(m) or DL.state(m, 'a.mp3', 'Sub One')[0] == 0, 'its queued download is taken out of the queue')
     expect(title(m) == 'Subscriptions' and flags(m, 'btn_more') == (1, 1), 'the page stays, the "..." too (two subscriptions left)')
     # a .show that cannot be written: said, nothing else touched, still subscribed
     m = page()

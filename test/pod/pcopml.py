@@ -2,7 +2,7 @@
 
 The scanner po_next: three realistic exports (in the style of Apple Podcasts, Pocket Casts and Overcast: test/data/opml) against Python's xml.etree as the oracle, then the syntax cases (nesting,
 entities, quotes, attribute order and case, missing attributes, comments / CDATA / DOCTYPE, a '>' inside a quote, cut tags, every cut of every sample) and fuzzing: the input ends at an unmapped
-page and so does the item, so any overrun faults. The import of subscriptions.txt and OPML together (the 40 cap, duplicates, the rename to .imported, a dot file, a failed write) and the export
+page and so does the item, so any overrun faults. The import of subscriptions.txt and OPML together (the PC_MAX_SHOWS cap, duplicates, the rename to .imported, a dot file, a failed write) and the export
 (escaping, order, the atomic write, a failed write, a round trip through the scanner)."""
 import os, random
 import xml.etree.ElementTree as ET
@@ -143,7 +143,7 @@ def limit_tests(ctx):
     expect(got == [('http://a/1', '日' * 31), ('http://a/2', chr(0x1F600) * 23), ('http://a/3', 'a' * 95)], 'a name is cut at 95 bytes on a character boundary (31 CJK, 23 emoji, 95 ASCII)')
     many = ''.join(f'<outline xmlUrl="http://a/{i}" text="s{i}"/>' for i in range(600)).encode()
     got = P.scan(many)
-    expect(len(got) == 600 and got[599] == ('http://a/599', 's599'), '600 outlines are scanned (the caller stops at the 40 shows)')
+    expect(len(got) == 600 and got[599] == ('http://a/599', 's599'), '600 outlines are scanned (the caller stops at PC_MAX_SHOWS shows)')
     big = b'<!--' + b'x' * 200000 + b'-->' + b'<outline xmlUrl="http://a/1"/>'
     expect(P.scan(big) == [('http://a/1', '')], 'a 200 kB comment is skipped')
     expect(P.scan(b'<outline ' + b'a="1" ' * 40000 + b'xmlUrl="http://a/1"/>') == [('http://a/1', '')], '40000 attributes on one tag')
@@ -202,6 +202,7 @@ def fuzz_tests(ctx):
 
 # ---- the import and export on the card
 F = lambda i: f'https://feeds.example/{i}'
+MAXS = O['PC_MAX_SHOWS']
 
 
 def card(m, files):
@@ -253,20 +254,20 @@ def import_tests(ctx):
     m = PCN.machine()
     card(m, {f'{CARD}/empty.opml': b'<opml><body></body></opml>', f'{CARD}/junk.opml': b'not xml at all', f'{CARD}/bad.opml': opml(('ftp://x/y', 'x'))})
     expect(import_(m) == 0 and all(f'{CARD}/{n}.opml' in m.fs for n in ('empty', 'junk', 'bad')), 'files with no usable outline are read (0 added) and left where they are (nothing was imported)')
-    # the cap: 40 shows; a file the cap stops is kept for later, one that was seen whole is renamed
+    # the cap: PC_MAX_SHOWS shows; a file the cap stops is kept for later, one that was seen whole is renamed
     m = PCN.machine()
-    card(m, {f'{CARD}/big.opml': opml(*[(F(i), f'S{i}') for i in range(60)]), f'{CARD}/small.opml': opml((F(100), 'x'))})
+    card(m, {f'{CARD}/big.opml': opml(*[(F(i), f'S{i}') for i in range(MAXS + 20)]), f'{CARD}/small.opml': opml((F(100), 'x'))})
     n = import_(m)
-    expect(n == 40 and len(m.shows()[0]) == 40, f'60 outlines: 40 shows at most ({n})')
+    expect(n == MAXS and len(m.shows()[0]) == MAXS, f'{MAXS + 20} outlines: {MAXS} shows at most ({n})')
     expect(f'{CARD}/big.opml' in m.fs and f'{CARD}/small.opml' in m.fs, 'the cap stopped the import: the files stay for a later one')
     m = PCN.machine()
-    for i in range(39): PCN.sub(m, f'f{i}', F(f'f{i}'))
+    for i in range(MAXS - 1): PCN.sub(m, f'f{i}', F(f'f{i}'))
     card(m, {f'{CARD}/dup.opml': opml((F('f1'), 'dup'), (F(1), 'new'), (F('f2'), 'dup'))})
     expect(import_(m) == 1 and f'{CARD}/dup.opml.imported' in m.fs, 'room for one: a duplicate after it does not count as left over, the file is renamed')
     # two sources, the cap in the second
     m = PCN.machine()
-    card(m, {f'{ROOT_DIR}/subscriptions.txt': ''.join(F(i) + '\n' for i in range(30)), f'{CARD}/b.opml': opml(*[(F(100 + i), 'x') for i in range(20)])})
-    expect(import_(m) == 40 and f'{CARD}/b.opml' in m.fs, 'text lines and an OPML share the 40: the file the cap stopped stays')
+    card(m, {f'{ROOT_DIR}/subscriptions.txt': ''.join(F(i) + '\n' for i in range(MAXS - 10)), f'{CARD}/b.opml': opml(*[(F(1000 + i), 'x') for i in range(20)])})
+    expect(import_(m) == MAXS and f'{CARD}/b.opml' in m.fs, 'text lines and an OPML share the cap: the file the cap stopped stays')
     # a write that fails: that show is not counted and the file is not renamed away silently? (it was seen: renamed)
     m = PCN.machine()
     card(m, {f'{CARD}/w.opml': opml((F(1), 'a'), (F(2), 'b'))})
@@ -277,9 +278,9 @@ def import_tests(ctx):
     card(m, {f'{CARD}/r.opml': opml((F(1), 'a'))}); m.fail.add(('rename', f'{CARD}/r.opml.imported'))
     expect(import_(m) == 1 and f'{CARD}/r.opml' in m.fs, 'a rename that fails: the import counted, the file stays')
     m = PCN.machine()
-    big = b'<opml><body>' + b'<!-- ' + b'x' * 270000 + b' -->' + b'<outline xmlUrl="http://a/late"/></body></opml>'
+    big = b'<opml><body>' + b'<!-- ' + b'x' * 530000 + b' -->' + b'<outline xmlUrl="http://a/late"/></body></opml>'
     card(m, {f'{CARD}/c.opml': big})
-    expect(import_(m) == 0, 'only the first 256 kB of a file are read: an outline after them is not seen')
+    expect(import_(m) == 0, 'only the first 512 kB (PO_FILE_MAX) of a file are read: an outline after them is not seen')
 
 
 def read_export(m):
@@ -333,11 +334,21 @@ def export_tests(ctx):
     ok, n = export_(m)
     root = ET.fromstring(read_export(m))
     expect(ok == 1 and n == 0 and not list(root.iter('outline')), 'no subscription: a valid OPML with no outline')
-    # the largest: 40 shows of the worst escaping fit the buffer
+    # the largest: PC_MAX_SHOWS shows of the worst escaping fit the buffer
     m = PCN.machine()
-    for i in range(40): PCN.sub(m, f'd{i}', 'https://h.example/' + '&' * 301, title='"' * 95)
+    for i in range(MAXS): PCN.sub(m, f'd{i}', 'https://h.example/' + '&' * 301, title='"' * 95)
     ok, n = export_(m)
-    expect(ok == 1 and n == 40 and len(read_export(m)) > 100000 and len(ET.fromstring(read_export(m)).findall('.//outline')) == 40, f'40 shows of the worst escaping ({len(read_export(m))} bytes) fit the 128 kB buffer')
+    expect(ok == 1 and n == MAXS and len(read_export(m)) > 2500 * MAXS and len(ET.fromstring(read_export(m)).findall('.//outline')) == MAXS, f'{MAXS} shows of the worst escaping ({len(read_export(m))} bytes) fit the buffer (PO_EXPORT_MAX)')
+    # the largest round trip: PC_MAX_SHOWS distinct feeds of the worst escaping, exported, are all imported again (PO_FILE_MAX is not under PO_EXPORT_MAX)
+    m = PCN.machine()
+    feeds = sorted('https://h.example/' + '&' * 298 + f'{i:03d}' for i in range(MAXS))
+    for i, u in enumerate(feeds): PCN.sub(m, f'd{i}', u, title='"' * 95)
+    ok, n = export_(m)
+    raw = read_export(m)
+    m2 = PCN.machine()
+    card(m2, {f'{CARD}/back.opml': raw})
+    n2 = import_(m2)
+    expect(ok == 1 and n == MAXS and len(raw) > 262144 and n2 == MAXS and feeds_of(m2) == feeds and f'{CARD}/back.opml.imported' in m2.fs, f'the largest export ({len(raw)} bytes, {MAXS} feeds) is imported whole: {n2} shows, the file renamed')
     # control bytes are left out; titles that are only a folder name
     m = PCN.machine()
     m.put(f'{ROOT_DIR}/c/.show', b'M1PLUS-SHOW 1\ntitle=a\x01b\x7fc\nfeed=https://x.example/f\n')

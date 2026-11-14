@@ -55,6 +55,150 @@ int so_delete(int cls, void *list, unsigned count, const unsigned char *sel, uns
     return 1;
 }
 
+int so_card(void) { return access("/tmp/mmc_add", F_OK) == 0; }
+
+const char *so_missing(void) { return TR(so_card() ? "File not found" : "Storage unavailable"); }
+
+/* A row is checked only when its path is on the card (SO_CARD_ROOT): any other path (USB, none) is never tested, marked or deleted. */
+#define SO_CARD_ROOT "/mnt/mmc/"
+static int so_on_card(const char *p) {
+    const char *r = SO_CARD_ROOT;
+    while (*r && *p == *r) ++p, ++r;
+    return !*r;
+}
+
+unsigned so_gone_mark(void *list, unsigned count, unsigned char *sel, unsigned *checked) {
+    unsigned i, gone = 0;
+    memset(sel, 0, (count + 7) / 8);
+    for (i = 0, *checked = 0; i < count; ++i) {
+        const char *p = cc_str(deque_at(list, i), REC_PATH);
+        if (!so_on_card(p)) continue;
+        ++*checked;
+        if (access(p, F_OK) != 0) sel[i >> 3] |= (unsigned char)(1 << (i & 7)), ++gone;
+    }
+    return gone;
+}
+
+/* A playlist song's row id (REC_ID: getMusicByPlayList's `select * from playlist where id > 100 and cd_num=`); the ids up to PL_MAX are the playlists themselves and
+ * are never written here. */
+static int so_row_id(void *rec) {
+    int id = I(rec, REC_ID);
+    return id > PL_MAX ? id : 0;
+}
+
+int *so_marked_ids(void *list, unsigned count, const unsigned char *sel, unsigned n) {
+    int *ids = calloc(n ? n : 1, sizeof *ids);
+    unsigned i, k = 0;
+    for (i = 0; ids && i < count && k < n; ++i)
+        if (so_marked(sel, i)) ids[k++] = so_row_id(deque_at(list, i));
+    return ids;
+}
+
+unsigned so_keep_ids(void *list, unsigned count, unsigned char *sel, const int *ids, unsigned n) {
+    unsigned i, k, kept = 0;
+    for (i = 0; i < count; ++i) {
+        int id;
+        if (!so_marked(sel, i)) continue;
+        id = so_row_id(deque_at(list, i));
+        for (k = 0; id && k < n && ids[k] != id; ++k) {
+        }
+        if (id && k < n)
+            ++kept;
+        else
+            sel[i >> 3] &= (unsigned char)~(1 << (i & 7));
+    }
+    return kept;
+}
+
+/* The library's row a missing playlist row now is: the same file name (the rows asked for), CUE range, title, album and artist, another path that is on the card
+ * (so_on_card: a row is never moved to a USB path, which the check would not look at again), and its file there. */
+static int so_same_song(void *lib, void *rec) {
+    return !strcmp(cc_str(lib, REC_NAME), cc_str(rec, REC_NAME)) && I(lib, REC_CUE_START) == I(rec, REC_CUE_START) &&
+           I(lib, REC_CUE_END) == I(rec, REC_CUE_END) && !strcmp(cc_str(lib, REC_TITLE), cc_str(rec, REC_TITLE)) &&
+           !strcmp(cc_str(lib, REC_ALBUM), cc_str(rec, REC_ALBUM)) &&
+           !strcmp(cc_str(lib, REC_ARTIST), cc_str(rec, REC_ARTIST)) && so_on_card(cc_str(lib, REC_PATH)) &&
+           strcmp(cc_str(lib, REC_PATH), cc_str(rec, REC_PATH)) && !access(cc_str(lib, REC_PATH), F_OK);
+}
+
+/* text with its quotes doubled, after o; the new end. */
+static char *so_quoted(char *o, const char *text) {
+    *o++ = '\'';
+    for (; *text; ++text) {
+        if (*text == '\'') *o++ = '\'';
+        *o++ = *text;
+    }
+    *o++ = '\'';
+    return o;
+}
+
+/* One playlist row's path: `update playlist set fileurl='..' where id=N` through stock's own statement runner (toolsUpdateDbTable: 1 when it ran). */
+static int so_set_path(int id, const char *path) {
+    static const char head[] = "update playlist set fileurl=";
+    char tail[32], *sql = calloc(sizeof head + 2 * strlen(path) + 2 + sizeof tail, 1), *o;
+    int ok;
+    if (!sql) return 0;
+    memcpy(sql, head, sizeof head - 1);
+    o = so_quoted(sql + sizeof head - 1, path);
+    snprintf(tail, sizeof tail, " where id=%d", id);
+    memcpy(o, tail, strlen(tail) + 1);
+    ok = toolsUpdateDbTable(STOCK_DB_PATH, sql) == 1;
+    free(sql);
+    return ok;
+}
+
+/* SO_RELINK_ROWS marked rows from row `from` on: the library's rows with their file names in one query (dailymix.c dm_rows' way: stock's song query and row callback
+ * with our WHERE, the rows in *tools_pdeq_directory, cleared after), then each marked row that has a twin gets the twin's path. *next: where the following chunk starts. */
+#define SO_RELINK_ROWS 40
+static unsigned so_relink_chunk(void *list, unsigned count, const unsigned char *sel, unsigned from, unsigned *next) {
+    static const char head[] = "select * from songtable where filename in (";
+    unsigned i, k, n = sizeof head + 1, rows = 0, done = 0, end, nlib;
+    char *sql, *o;
+    void *lib;
+    for (i = from; i < count && rows < SO_RELINK_ROWS; ++i)
+        if (so_marked(sel, i)) n += 2 * strlen(cc_str(deque_at(list, i), REC_NAME)) + 3, ++rows;
+    *next = end = i;
+    if (!rows) return 0;
+    sql = calloc(n, 1);
+    if (!sql) return 0;
+    memcpy(sql, head, sizeof head - 1);
+    o = sql + sizeof head - 1;
+    for (i = from, k = 0; i < end; ++i) {
+        if (!so_marked(sel, i)) continue;
+        if (k++) *o++ = ',';
+        o = so_quoted(o, cc_str(deque_at(list, i), REC_NAME));
+    }
+    *o++ = ')';
+    lib = toolsQueryDbTable(STOCK_DB_PATH, sql, STOCK_SONG_ROW, 0) >= 0 ? *(void **)PDEQ_TOOLS_TMP : (void *)0;
+    free(sql);
+    nlib = lib ? deque_size(lib) : 0;
+    for (i = from; i < end && nlib; ++i) {
+        void *rec = deque_at(list, i);
+        if (!so_marked(sel, i) || !so_row_id(rec)) continue;
+        for (k = 0; k < nlib && !so_same_song(deque_at(lib, k), rec); ++k) {
+        }
+        if (k < nlib && so_set_path(so_row_id(rec), cc_str(deque_at(lib, k), REC_PATH))) ++done;
+    }
+    if (lib) deque_clear(lib);
+    return done;
+}
+
+unsigned so_relink(void *list, unsigned count, const unsigned char *sel) {
+    unsigned at = 0, done = 0;
+    while (at < count) done += so_relink_chunk(list, count, sel, at, &at);
+    return done;
+}
+
+unsigned so_clean(void *list, unsigned count, const unsigned char *sel) {
+    unsigned i, done = 0;
+    for (i = 0; i < count; ++i) {
+        int id = so_marked(sel, i) ? so_row_id(deque_at(list, i)) : 0;
+        if (id && toolsDeleteItemById("playlist", STOCK_DB_PATH, id) == 1) ++done;
+    }
+    if (done)
+        *(volatile unsigned char *)DELETE_FLAG = 1; /* as batch_delete_file leaves it after a delete (@0x4e1474) */
+    return done;
+}
+
 /* Add to playlist: our picker (patch/picker.c: the Playlists page in pick mode) over the page, which adds the selection to the playlist that is tapped and closes. Where
  * it cannot open, the stock Add button's path (@0x5280c0) to its playlist picker: playlist_page with the add context; tapping a playlist there adds the
  * selection (batch_add_file on *pdeq_showlist and the vector) and closes the picker. The title the picker may overwrite and the browsing class it sets are put back
@@ -176,7 +320,10 @@ int so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev,
     first = n ? deque_at(queue, idx) : (void *)0;
     if (!first || access(cc_str(first, REC_PATH), F_OK)) {
         deque_destroy(queue);
-        pod_toast(TR(n ? "Storage unavailable" : "Update Local Music first"));
+        if (n)
+            pod_toast(so_missing());
+        else
+            pod_toast(TR("Update Local Music first"));
         return -1;
     }
     if (how == SO_IN_ORDER)

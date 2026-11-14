@@ -846,7 +846,7 @@ int homecover_clear(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Settings > Developer > Cache (docs/modules/settings.md "Cache"): a status page over the cache folder. Nothing runs unless the page
+ * Settings > Developer > Cache (docs/modules/homecover.md "Cache page"): a status page over the cache folder. Nothing runs unless the page
  * is open. At open (and after a clear, and on coming back to the front) the folder is counted in bounded steps of CP_N entries on a one-shot
  * that re-arms itself: the pictures, the empty no-art markers and the old files, then the library's albums (cc_albums, once) are checked
  * against the CC_MISSING rule, CP_N a tick. Until a count is known the page shows an ellipsis. A 500 ms poll refreshes the page when the Status

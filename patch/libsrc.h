@@ -126,6 +126,10 @@ enum {
 void ls_spin(void *img, int on);
 void ls_spin_end(void *img);
 int ls_spin_tick(const void *arg); /* (the timer's callback; arg is stock's timer_info_t, not a ctx, and is not read) */
+/* A page's empty-state hint (label_status: x 10, 30 px high) and its spinner (either may be NULL), centred in the room between window y `top` and the window's bottom: top is the navbar's bottom
+ * (LS_ROOM_NAV, where the asset builds them: tools/pod_ui.py room_y) or the bottom of the header the page keeps over no rows (LS_ROOM_NAV + SG_TITLE_H for the large title). */
+#define LS_ROOM_NAV 50
+void ls_room(void *status, void *spin, int top);
 /* The pace at which a source page looks at src->gen (every source page: Albums, album, Artists, Playlists, Songs). A gen read is a sum of counters, so one pace costs nothing. */
 #define LS_GEN_MS 500
 

@@ -1,0 +1,5 @@
+<!-- The MusicBrainz icon (2016, MetaBrainz Foundation; public domain on Wikimedia Commons, File:MusicBrainz_Logo_Icon_(2016).svg), in one colour: its two halves scaled to the 20-unit box of a Lucide glyph, the gap between them widened from 1 to 1.8 units so that it stays open at 20 px. MusicBrainz is a trademark of its owner. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <path transform="translate(1.285714 1.285714) scale(0.714286)" d="M14.1 1l-12 7v14l12 7z" />
+  <path transform="translate(1.285714 1.285714) scale(0.714286)" d="M15.9 1l12 7v14l-12 7z" />
+</svg>

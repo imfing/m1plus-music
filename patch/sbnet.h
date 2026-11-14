@@ -5,6 +5,8 @@
  * hooks given to sbn_init.
  */
 #pragma once
+#include "net.h"
+#include "netfile.h"
 
 #define SBN_RESPONSE_MAX \
     (4u << 20) /* the most a sink's body buffer holds (NUL included); a larger response fails the transfer */
@@ -12,8 +14,14 @@
 #define SBN_E_INIT (-2) /* sbn_http: no curl handle or no sink, nothing was sent and no hook ran */
 #define SBN_IDENTITY \
     544 /* bytes of the string that tells whose partial file a resume record belongs to, the NUL included */
-/* sink->werr: the first write that failed stopped the transfer (CURLE_WRITE_ERROR); sbn_download also sets SBN_W_IO when the finished file could not be synced, closed or renamed */
-enum { SBN_W_NONE = 0, SBN_W_RESPONSE, SBN_W_SPACE, SBN_W_CARD, SBN_W_IO };
+/* sink->file.why: the first write that failed stopped the transfer (CURLE_WRITE_ERROR; patch/netfile.h NET_W_*); sbn_download also sets SBN_W_IO when the finished file could not be synced, closed or renamed */
+enum {
+    SBN_W_NONE = NET_W_NONE,
+    SBN_W_RESPONSE = NET_W_RESPONSE,
+    SBN_W_SPACE = NET_W_SPACE,
+    SBN_W_CARD = NET_W_CARD,
+    SBN_W_IO = NET_W_IO
+};
 #define SBN_E_URL (-3) /* sbn_get: the URL did not fit or the server is not an http(s) URL */
 
 /* One server login. The strings are borrowed. auth is the login secret (sbn_auth_make): SBN_AUTH hex digits, the salt (16) then the token md5(password + salt) (32); sbnet never sees the password
@@ -30,10 +38,10 @@ int sbn_auth_make(
     const char
         *password); /* the secret of a password into out (SBN_AUTH + 1 bytes), with a fresh random salt; 0 or -1 */
 
-/* One transfer's destination and result. A sink with fd < 0 collects the body in data (heap, cap
+/* One transfer's destination and result. A sink with file.fd < 0 collects the body in data (heap, cap
  * bytes, NUL terminated, used bytes; sbn_http allocates it SBN_RESPONSE_START and doubles it up to
- * SBN_RESPONSE_MAX as the body arrives; it is kept for the next transfer); with fd >= 0 the body is
- * written to that file and data stays NULL. Prepare it with sbn_sink_reset,
+ * SBN_RESPONSE_MAX as the body arrives; it is kept for the next transfer); with file.fd >= 0 the body is
+ * written to that file (file: the descriptor, the bytes written, why a write stopped; head: the response's status, strong ETag and Content-Range; patch/net.h) and data stays NULL. Prepare it with sbn_sink_reset,
  * give the memory back with sbn_sink_trim / sbn_sink_free. Heap-allocate it (calloc). */
 typedef struct {
     char *data;
@@ -42,19 +50,16 @@ typedef struct {
     unsigned char prefix[8]; /* the first body bytes of a file transfer, for sniffing the type */
     unsigned prefix_used;
     unsigned used;
-    int fd;
+    net_file_t file;
+    net_head_t head;
     int curl_result; /* the CURLcode of the transfer */
     long http_status;
     long long content_length;
-    long long range_start, range_end, range_total; /* Content-Range of a 206; -1 unknown, total -2 malformed */
-    int range_seen;
-    long long written, last_check;
     long long resume_offset; /* where a resumed download continues: sbn_download sets it, the progress hook reads it */
     /* An audio file transfer only (sbn_download sets audio): a body is written only after the headers say it is the audio we asked for, and a resumed one only if its strong ETag still
      * identifies the saved .part file (patch/sbnet.c). */
-    int audio, headers_ok, header_status, body_started, resume_saved;
-    int werr; /* why the body write stopped the transfer (SBN_W_*), 0 when it did not */
-    char etag[128], resume_etag[128]; /* the response's strong ETag; the one saved with the .part file */
+    int audio, headers_ok, body_started, resume_saved;
+    char resume_etag[128]; /* the strong ETag saved with the .part file (the response's is head.etag) */
     const char *validator_path,
         *identity; /* the resume record's file; who the .part belongs to (server, user, track): borrowed from sbn_download's caller */
 } sbn_sink_t;

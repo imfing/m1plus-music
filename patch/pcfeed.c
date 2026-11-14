@@ -49,7 +49,8 @@ struct pf_parser {
     int mode, want, in_item, in_image, saw_feed, img_itunes, nitems, seen, drank, srank;
     unsigned tl, tn, en, dn, dtn, dnl, den;
     char quote, trunc, d1, d2, tover, inent;
-    char dm, dq, dcut, dcont, dspace, dnend, dent_on, dc1, dc2, dhead[3], dnlc;
+    char dm, dq, dcut, dcont, dspace, dnend, dent_on, dc1, dc2, dhead[3], dnlc,
+        dnlc0; /* dnlc0: dnlc before the last lead byte (a white space character gives it back) */
     unsigned dlim; /* the sink's budget: PF_NOTE for an item, PC_DESC_CUT for the channel */
     char ent[12];
     char dname[12];
@@ -388,7 +389,7 @@ const char *pf_summary(const pf_parser_t *p) { return p->summary; }
 /* ---------------------------------------------------------------------------
  * The description sink: the text of an itunes:summary / description / content:encoded as plain text, a byte at a time in bounded memory (the element of a real feed is up to 100 KB of HTML).
  * The bytes come entity- and CDATA-decoded by the parser, so they hold real tags and double-encoded entities. Tags are skipped (a boundary tag counts as a space; a comment is skipped whole; a '<'
- * that does not start one stays text), the common entities are decoded once more, white space runs (and U+00A0) become one space, the ends are trimmed, and the text is cut at PC_DESC_CUT bytes before
+ * that does not start one stays text), the common entities are decoded once more, white space runs (and U+00A0 and the Unicode spaces of pf_dws3) become one space, the zero width characters (U+200B, U+2060, U+FEFF) go, the ends are trimmed, and the text is cut at PC_DESC_CUT bytes before
  * a split UTF-8 character. After the cut the sink ignores everything, so the rest of a long element costs a compare per byte.
  */
 /* dspace: 0 nothing pending, 1 a space, 2 a paragraph break ('\n'); a break tag or a blank line sets 2, any other white space 1. The text is at most dlim bytes (PF_NOTE for an item: the notes; the cells'
@@ -397,15 +398,36 @@ static void pf_dbrk(pf_parser_t *p, int level) {
     if (p->dn && level > p->dspace) p->dspace = (char)level;
 }
 
+/* The white space of three UTF-8 bytes: 1 a space (U+2000..200A, 202F, 205F, 3000), 2 a paragraph break (U+2028, 2029), 3 nothing (the zero width U+200B, 2060, FEFF); 0 any other character.
+ * A feed's text often starts with one of them (a BOM, a paragraph of one ideographic space), which as text was a blank first line on the episode page. */
+static int pf_dws3(unsigned char a, unsigned char b, unsigned char c) {
+    if (a == 0xe2 && b == 0x80) return c <= 0x8a ? 1 : c == 0x8b ? 3 : c == 0xa8 || c == 0xa9 ? 2 : c == 0xaf ? 1 : 0;
+    if (a == 0xe2 && b == 0x81) return c == 0x9f ? 1 : c == 0xa0 ? 3 : 0;
+    if (a == 0xe3 && b == 0x80) return c == 0x80;
+    if (a == 0xef && b == 0xbb) return c == 0xbf ? 3 : 0;
+    return 0;
+}
+
 static void pf_dout(pf_parser_t *p, unsigned char c) { /* an output byte */
+    int ws = 0;
+    unsigned k = 0; /* the bytes of the character already in dbuf */
     if (p->dcut) return;
-    if (c == 0xa0 && p->dn && (unsigned char)p->dbuf[p->dn - 1] == 0xc2) { /* U+00A0 (also from an entity): a space */
-        int was = 1;
-        --p->dn;
+    if (c == 0xa0 && p->dn && (unsigned char)p->dbuf[p->dn - 1] == 0xc2)
+        ws = 1, k = 1; /* U+00A0 (also from an entity): a space */
+    else if ((c & 0xc0) == 0x80 && p->dn >= 2 &&
+             (ws = pf_dws3((unsigned char)p->dbuf[p->dn - 2], (unsigned char)p->dbuf[p->dn - 1], c)) != 0)
+        k = 2;
+    if (ws) {
+        int was = ws == 3 ? 0 : ws;
+        p->dn -= k;
         if (p->dn && (p->dbuf[p->dn - 1] == ' ' ||
-                      p->dbuf[p->dn - 1] == '\n')) /* the one put before it: the pending one replaces it */
-            was = p->dbuf[p->dn - 1] == '\n' ? 2 : 1, --p->dn;
+                      p->dbuf[p->dn - 1] == '\n')) { /* the one put before it: the pending one replaces it */
+            int lvl = p->dbuf[p->dn - 1] == '\n' ? 2 : 1;
+            if (lvl > was) was = lvl;
+            --p->dn;
+        }
         p->dspace = 0;
+        p->dnlc = p->dnlc0; /* its bytes were text when they came: the run of newlines goes on through it */
         pf_dbrk(p, was);
         return;
     }
@@ -421,6 +443,7 @@ static void pf_dout(pf_parser_t *p, unsigned char c) { /* an output byte */
         return;
     }
     if (p->dspace) p->dbuf[p->dn++] = p->dspace == 2 ? '\n' : ' ', p->dspace = 0;
+    if (c >= 0xc0) p->dnlc0 = p->dnlc;
     p->dnlc = 0;
     p->dbuf[p->dn++] = (char)c;
 }
@@ -523,7 +546,7 @@ static void pf_dbyte(pf_parser_t *p, unsigned char c) {
 
 static void pf_start_desc(pf_parser_t *p, int want) {
     p->dm = DM_TEXT, p->dn = 0, p->dspace = p->dcut = p->dcont = p->dent_on = 0;
-    p->dq = 0, p->den = 0, p->dnlc = 0;
+    p->dq = 0, p->den = 0, p->dnlc = p->dnlc0 = 0;
     p->dlim =
         want < W_CSUM ? PF_NOTE : PC_DESC_CUT; /* an item's text is kept long (the episode page), the channel's short */
     p->dbuf[0] = 0;

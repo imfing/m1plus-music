@@ -1,4 +1,4 @@
-/* M1+ Music Settings > System > Display (docs/modules/settings.md "Display"): the state behind our Display page's Screen Timeout row and its picker.
+/* M1+ Music Settings > System > Display (docs/modules/display.md): the state behind our Display page's Screen Timeout row and its picker.
  *
  * The state is stock's own: the word backlighttime_mode (LIGHT_MODE), an index 0 .. 4 (never, 15 s, 30 s, 1 min, 5 min), loaded from [SYSSET] LIGHTTIME by config_init (anything else becomes 0)
  * and shown by stock's systemset/lighttime_page, which stays reachable through All System Settings and reads the same word. Nothing of ours is saved.
@@ -29,13 +29,13 @@ int disp_light_set(int index) {
     return 0;
 }
 
-/* LED Light: stock's lamp mode, the byte atmosphereled_mode (LED_MODE): 0 off, 1 orange, 2 blue, loaded from [SYSSET] ATMOSPHERELEDMODE by config_init (anything else becomes its default). */
+/* LED Light: stock's lamp mode, the byte atmosphereled_mode (LED_MODE): 0 off, 1 green (stock names it orange, img_orange, but reset_atmosphereled_rgb lights only the green channel), 2 blue, loaded from [SYSSET] ATMOSPHERELEDMODE by config_init (anything else becomes its default). */
 int disp_led(void) {
     int v = *(volatile signed char *)LED_MODE;
     return v == 1 || v == 2 ? v : 0;
 }
 
-/* Choose a mode the way stock's page does: its switch (0x4a1c30: off, or on as orange) and its two colour images (0x4a1e14, 0x4a1d8c) each store the byte, save it and call reset_atmosphereled_rgb, which makes the
+/* Choose a mode the way stock's page does: its switch (0x4a1c30: off, or on as green) and its two colour images (0x4a1e14, 0x4a1d8c) each store the byte, save it and call reset_atmosphereled_rgb, which makes the
  * lamp follow; a colour that is the mode already does nothing. Blue from off is one step here (stock's page shows the colours only while the lamp is on: its switch, then the colour). 0, or -1 for a mode stock
  * does not have. */
 int disp_led_set(int mode) {

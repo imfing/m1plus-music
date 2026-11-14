@@ -13,7 +13,7 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   26 px reflection. Geometry (`offsets.inc`): frame 320x276, `CF_TOP` 31, `CF_EYE` 312, `CF_X1` 110,
   `CF_XS` 48, `CF_Z1` 96, `CF_ZS` 22, `DRAG_PX` 108. Change them together and re-run
   `test/coverflow.py`.
-- **Renderer.** (`cfg_t` and `coverflow_render` are declared in `patch/coverflow.h`; the iPod page's Cover Flow screen draws with the same renderer, `docs/modules/ipod-coverflow.md`; its `tail` and `bg` fields are 0 for these two shelves: `bg` 0 composites over black; nonzero (the iPod's white) blends a faded cover towards it, opaque (`shade(tex, bright) + shade(bg, 256 - bright)`), its reflection fades by transparency, and the final pass adds `shade(bg, 256 - have)` to the premultiplied colour.) After Rockbox PictureFlow via q2-pod; all integer (16.16 turns, 1/16 px geometry, 1/256
+- **Renderer.** (`cfg_t` and `coverflow_render` are declared in `patch/coverflow.h`; the iPod page's Cover Flow screen draws with the same renderer, `docs/modules/ipod-coverflow.md`; its `tail` field is 0 for these two shelves and `bg` is the page's background (`shelf()`: 0 on Black, the washed black `pal_map(black)` on Tinted with an accent, paper in Light, so the frame never shows as a block on the page): `bg` 0 composites over black; nonzero (the iPod's white too) blends a faded cover towards it, opaque (`shade(tex, bright) + shade(bg, 256 - bright)`), its reflection fades by transparency, and the final pass adds `shade(bg, 256 - have)` to the premultiplied colour.) After Rockbox PictureFlow via q2-pod; all integer (16.16 turns, 1/16 px geometry, 1/256
   px row spans). One `bitmap_create_ex(320, 276, ..., RGBA8888)` frame plus 9 textures of 168^2 and one
   placeholder: about 1.48 MB of heap while open. If an allocation fails the page falls back to flat
   covers: a stock `slide_menu` whose `image` children (one per album) show the cached JPEGs, `ART_NEAR`
@@ -184,7 +184,7 @@ everything runs from the page's own widgets, one timer and one worker thread. Al
   Home's cover build does it (`docs/modules/homecover.md`, `docs/modules/settings.md`) with `CC_REBUILD`. The worker's `CC_REBUILD` mode
   is unchanged: it extracts each album again to `.tmp` and `rename`s it over the cache file, so an old picture is replaced atomically and
   a "no art" marker is replaced by the picture an album gained; an album that now yields no art keeps what it has (the old picture, or
-  its marker: nothing is written or removed). Cover Flow's open builds only the missing covers (`CC_MISSING`). Settings > Developer > Clear Cover Cache deletes the cache files (`docs/modules/settings.md`); Cover Flow's `album` file is kept.
+  its marker: nothing is written or removed). Cover Flow's open builds only the missing covers (`CC_MISSING`). Settings > Developer > Clear Cover Cache deletes every file in the covers folder (`docs/modules/homecover.md` "Clear Cover Cache"); Cover Flow's position file `/mnt/mmc/.m1plus/coverflow-position` is outside that folder and is kept.
 - **One worker at a time**, app-wide: the Albums page builds missing covers in the background (`docs/modules/albums.md`) with the
   same set, and so does the Home page (`docs/modules/homecover.md`: a progress line at its top, stopped when Home leaves the front); its Cover Flow button stops its own build before opening this page, and a page that finds the set taken starts nothing.
 - **Not ported from q2-pod:** Sort and Refresh cards, the rated scope, A-Z jump, the album split by

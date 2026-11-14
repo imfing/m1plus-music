@@ -84,8 +84,8 @@ def server_asset(ctx):
     expect = ctx.expect
     P = pod_pages
     pg = P.NDSERVER_PAGE
-    expect(P.PAGES[P.NDSERVER_PAGE_INDEX] is pg and P.PAGES[P.NDSERVER_PAGE_INDEX + 1] is P.NDROOT_PAGE and pg.key == 'm1plus_ndserver' and pg.name == 'm1plus_ndserver_page' and pg.title == 'Server' and pg.kind == 'ndserver' and pg.rows == [],
-           'the Server page is in the page table (the root page follows), m1plus_ndserver, titled Server, and has no rows for the Settings binder (it binds its own)')
+    expect(P.PAGES[P.NDSERVER_PAGE_INDEX] is pg and pg.key == 'm1plus_ndserver' and pg.name == 'm1plus_ndserver_page' and pg.title == 'Server' and pg.kind == 'ndserver' and pg.rows == [],
+           'the Server page is in the page table, m1plus_ndserver, titled Server, and has no rows for the Settings binder (it binds its own)')
     expect([r.label for r in pg.layout if isinstance(r, P.Row)] == list(LABELS) and [P.row_kind(r) for r in pg.layout if isinstance(r, P.Row)] == ['value'] * 3 + ['action'] * 2
            and pg.layout[3] is P.GAP and P.ACT_NDVALUE in P.VALUE_ACTIONS and P.ACT_NDACT in P.ACTION_ACTIONS and P.VALUE_INIT[P.ACT_NDVALUE] == '',
            'Server URL, Username and Password are value rows, a gap, then Sync Now and Sign Out as action rows; a value starts empty')
@@ -272,7 +272,7 @@ def server_login_asset(ctx):
     import pod_keyboard as PK
     from awtk_text import Ttf, StbText
     pg = pod_pages.NDLOGIN_PAGE
-    expect(pg in pod_pages.PAGES and pod_pages.PAGES[pod_pages.NDSERVER_PAGE_INDEX - 1] is pg and pg.kind == 'ndlogin' and pg.key == 'm1plus_ndlogin' and pg.title == 'Sign In' and pg.rows == [], 'the Sign In page is registered (before the Server page), titled Sign In')
+    expect(pod_pages.PAGES[pod_pages.NDLOGIN_PAGE_INDEX] is pg and pg.kind == 'ndlogin' and pg.key == 'm1plus_ndlogin' and pg.title == 'Sign In' and pg.rows == [], 'the Sign In page is registered, titled Sign In')
     tree = awtk_ui.parse(open(os.path.join(WORK, UI_LOGIN), 'rb').read())   # noqa: F821
     by = {w.name: w for w in tree.walk() if w.name}
     expect(tree.name == pg.name and by['label_title'].get('tr_text') == pod_i18n.key_for('Sign In'), 'the stock navbar reads Sign In')
@@ -861,8 +861,8 @@ def root_asset(ctx):
     expect = ctx.expect
     P = pod_pages
     pg = P.NDROOT_PAGE
-    expect(P.PAGES[P.NDROOT_PAGE_INDEX] is pg and P.NDROOT_PAGE_INDEX == P.NDSERVER_PAGE_INDEX + 1 == 69 and pg.key == 'm1plus_ndroot' and pg.name == 'm1plus_ndroot_page' and pg.title == 'Subsonic' and pg.kind == 'ndroot' and pg.rows == [],
-           'the root page follows the Server page in the page table (page 69), m1plus_ndroot, titled Navidrome, no rows for the Settings binder')
+    expect(P.PAGES[P.NDROOT_PAGE_INDEX] is pg and pg.key == 'm1plus_ndroot' and pg.name == 'm1plus_ndroot_page' and pg.title == 'Subsonic' and pg.kind == 'ndroot' and pg.rows == [],
+           'the root page is in the page table, m1plus_ndroot, titled Navidrome, no rows for the Settings binder')
     tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', 'm1plus_ndroot.bin'), 'rb').read())   # noqa: F821
     f = tree.find
     st = f('btn_more')

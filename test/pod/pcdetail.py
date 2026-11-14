@@ -37,10 +37,10 @@ def note_oracle(s):
         return chr(cp) if cp else m.group(3)
     t = PF.TOKEN.sub(rep, s)
     out, pending, nl = [], 0, 0
-    for ch in t:
-        if ch == '\x01' or ord(ch) <= 32 or ch == '\xa0':
+    for ch in PF.ZERO_W.sub('', t):
+        if ch == '\x01' or ord(ch) <= 32 or PF.UNI_WS.match(ch):
             if not out: continue
-            lvl = 2 if ch == '\x01' else 1
+            lvl = 2 if ch in '\x01\u2028\u2029' else 1
             if ch == '\n':
                 nl += 1
                 if nl >= 2: lvl = 2
@@ -110,6 +110,11 @@ def parser_tests(ctx):
     expect(n == 'Line one still one\nPara two\nPara three' and x == 'Line one still one Para two Para three', f'plain text: a single newline is a space, a blank line a paragraph break ({n!r})')
     n, _ = one('<description>a&nbsp;&nbsp;b &#160; c&#x1F600;d <b>bold</b>x</description>')
     expect(n == 'a b c\U0001F600d boldx', f'U+00A0 and its entities are one space, an emoji from a numeric entity, an inline tag is nothing ({n!r})')
+    for chunk in (0, 1, 7):
+        for d in ('ZBOMFirstZLSSecond', 'First\nZIDS\nSecond', 'First\nZZWS\nSecond', 'First\n&#160;\n ZIDS Second', 'First\n\xa0ZIDS\r\nSecond', '<![CDATA[<p>ZIDS</p><p>First</p><p>&#8203;</p><p>ZIDSZIDSSecondZPS</p>]]>', '&lt;p&gt;ZZWS&lt;/p&gt;FirstZPSZWJSecond&lt;br&gt;ZBOM'):
+            for k, v in (('ZBOM', 0xfeff), ('ZLS', 0x2028), ('ZPS', 0x2029), ('ZIDS', 0x3000), ('ZZWS', 0x200b), ('ZWJ', 0x2060)): d = d.replace(k, chr(v))
+            n, x = one(f'<description>{d}</description>', chunk)
+            expect(n == 'First\nSecond' and x == 'First Second', f'no blank first line from a BOM or a paragraph of an ideographic or zero width space; a paragraph\'s indent goes, U+2028 and U+2029 are breaks (chunk {chunk}): {n!r} / {x!r}')
     n, _ = one('<description><![CDATA[<table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table>]]></description>')
     expect(n == 'a b\nc', f'a table row is a paragraph, a cell a space ({n!r})')
     n, _ = one('<description><![CDATA[<!-- a comment <p> -->only<p></p><p></p>this]]></description>')

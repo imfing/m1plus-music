@@ -11,9 +11,10 @@ SAME_AS_ENGLISH |= {'AutoEq'}    # the brand name (the Presets page's section he
 SAME_AS_ENGLISH |= {'%d minute', '%d minutes'}    # French writes minute(s) as English does
 SAME_AS_ENGLISH |= {'Podcasts', ', %d', 'Normal', 'Chrome', 'Metal', 'Graphite', '5 s', '10 s'}    # Podcasts in French and German
 SAME_AS_ENGLISH |= {'%d MB', '%d.%d GB', '%d GB'}
-SAME_AS_ENGLISH |= {'Filter'}    # German writes Filter as English does
+SAME_AS_ENGLISH |= {'Filter', 'Pause'}    # German writes Filter as English does; French and German write Pause the same
 SAME_AS_ENGLISH |= {'A–Z', 'Z–A'}    # the alphabet range in Latin-script and CJK tables (Thai and Cyrillic have their own)
 SAME_AS_ENGLISH |= {'Format', 'Type'}    # French, German and Polish write Format as English does; French writes Type the same
+SAME_AS_ENGLISH |= {'Scrobbling'}    # Last.fm's word, kept in French, German, Spanish, Italian and Polish
 SAME_AS_ENGLISH |= {'Genre', 'Screenshot', 'Collections', 'Cover', 'Streaming'}    # French and German write Genre the same; German and Italian say Screenshot; French writes Collections the same; German says Cover
 SAME_AS_ENGLISH |= {'Orange', 'Champagne', 'Neutral'}    # colour names: Orange in French and German, Champagne in French and Italian, Neutral in German
 SAME_AS_ENGLISH |= {'Radio', 'LIVE', 'Live', '%d stations'}    # Radio in French, German, Spanish, Italian and Polish; LIVE and Live in German and Italian; "stations" in French
@@ -32,14 +33,17 @@ SAME_AS_ENGLISH |= {'Sync Navidrome songs and artwork to the SD card now?', 'No 
 SAME_AS_ENGLISH |= {'A download is already queued', 'Artwork cache paused for download.', 'Artwork scan stopped; check SD card and server.',
                     'Download paused; tap Download to resume', 'Download queued; pausing artwork cache', 'Navidrome busy · download starting',
                     'Navidrome busy · updating SD library', 'Over 100k tracks; old index kept', 'Server rejected login or access'}
-SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Wi-Fi', 'Wi-Fi MAC', 'Bluetooth', 'EQ', 'System', 'Display', 'Firmware', 'Model', 'Device', 'Status', 'Auto'}    # brand and technical words (Wi-Fi, Bluetooth, EQ); System in German and Polish, Display in Italian
+SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Podcast Index', 'Directory', 'Wi-Fi', 'Wi-Fi MAC', 'Bluetooth', 'EQ', 'System', 'Display', 'Firmware', 'Model', 'Device', 'Status', 'Auto'}    # brand and technical words (Wi-Fi, Bluetooth, EQ); System in German and Polish, Display in Italian
 SAME_AS_ENGLISH |= {'Enhanced Open', 'WEP', 'WPA/WPA2', 'WPA2/WPA3', 'WPA3', 'Enterprise'}    # the Wi-Fi page's security labels: the standards' names (Enterprise in German, Italian and Polish)
 SAME_AS_ENGLISH |= {'Volume', 'Auto-Standby'}    # Buttons & Power: Volume in French and Italian, Auto-Standby in German (the hyphenated Standby is the German word too)
 SAME_AS_ENGLISH |= {'Password'}    # the password page's label: Password in Italian
 SAME_AS_ENGLISH |= {'Name'}    # the Other Network page's label: Name in German
+SAME_AS_ENGLISH |= {'NetEase'}    # the service's name outside Chinese (Find Artist Photo's services line and source)
+SAME_AS_ENGLISH |= {'D2P', 'DOP', 'ReplayGain', 'Variable'}    # Playback Settings: the DSD output modes and the ReplayGain name read the same in every language that does not write them in its script
 SAME_AS_ENGLISH |= {'Photos'}    # the Cache page's Artist Photos count: Photos in French
 SAME_AS_ENGLISH |= {'Codec', 'Bitrate', 'Source'}    # Station Info: Codec in French, German and Italian, Bitrate in German and Italian, Source in French
 
+SAME_AS_ENGLISH |= {'ListenBrainz', 'Last.fm', 'Account'}    # the services' names; Account in Italian
 SAME_AS_ENGLISH |= {'%d dB', 'Pop', 'Rock', 'Dance', 'Blues', 'Jazz'}    # the 10-Band EQ: the unit; the genre names that most languages write as English
 
 
@@ -115,7 +119,7 @@ def run(ctx):
         expect(all(dict(built[stub])[k] == dict(built[twin])[k] for k in pod_i18n.TEXT), f'{stub} holds {twin}\'s language')
     for k, by in pod_i18n.TEXT.items():
         counts = {loc: by[loc].count('%d') for loc in LOC}
-        expect(set(counts.values()) == ({k.count('%d')} if k.startswith(('%d', 'Added %d', 'Downloading %d', 'See All (')) or k.startswith('Cancelled, ') or k in pod_i18n.DATE_KEYS else {0}) and all('%' not in by[l].replace('%d', '').replace('%s', '') for l in LOC)
+        expect(set(counts.values()) == ({k.count('%d')} if k.startswith(('%d', 'Added %d', 'Downloading %d', 'See All (', 'Remove %d ')) or k.startswith('Cancelled, ') or k in pod_i18n.DATE_KEYS else {0}) and all('%' not in by[l].replace('%d', '').replace('%s', '') for l in LOC)
                and all(by[l].count('%s') == k.count('%s') for l in LOC),
                f'{k!r}: %d only in the track counts, once each; %s only in the Daily Mix templates, as often as the key has it')
     expect(sorted(pod_i18n.TEXT) == pod_i18n.KEYS and all(set(by) == set(LOC) for by in pod_i18n.TEXT.values()), 'every key has all 13 languages')
@@ -369,11 +373,11 @@ def run(ctx):
                     if need > room + ST.TEXT_X - ST.CM - ST.PAD: cards_over.append((page.key, r.label, '99999', loc, need, room))
                     continue
                 if pod_pages.row_kind(r) != 'value': continue
-                vkeys = stock_values[pod_pages.STOCK_PAGES[r.arg][1]] if r.action == pod_pages.ACT_STOCK else pod_pages.BG_VALUES if r.action == pod_pages.ACT_BG else pod_pages.ACCENT_VALUES if r.action == pod_pages.ACT_ACCENT else pod_pages.IDLE_VALUES if r.action == pod_pages.ACT_IDLE else ('Large Cover', 'Mini Player') if r.action == pod_pages.ACT_LOCKSTYLE else ('Off', 'Albums') if r.action == pod_pages.ACT_NEXTALBUM else pod_pages.LIGHTTIME_VALUES if r.action == pod_pages.ACT_LIGHT else pod_pages.KEYLOCK_VALUES if r.action == pod_pages.ACT_KEYLOCK else pod_pages.SHUTDOWN_VALUES if r.action == pod_pages.ACT_SHUTDOWN else () if r.action == pod_pages.ACT_REGION else ('Normal', 'Chrome', 'Metal', 'Auto')
-                vals = [(vk, tr_text(loc, vk)) for vk in vkeys] if r.action != pod_pages.ACT_REGION else [('Automatic', tr_text(loc, 'Automatic'))] + [(n, n) for n in pcregion.NAMES]   # (the Podcast Region's value: Automatic, or a storefront's English name)
+                vkeys = stock_values[pod_pages.STOCK_PAGES[r.arg][1]] if r.action == pod_pages.ACT_STOCK else pod_pages.BG_VALUES if r.action == pod_pages.ACT_BG else pod_pages.ACCENT_VALUES if r.action == pod_pages.ACT_ACCENT else pod_pages.IDLE_VALUES if r.action == pod_pages.ACT_IDLE else ('Large Cover', 'Mini Player') if r.action == pod_pages.ACT_LOCKSTYLE else ('Off', 'Albums') if r.action == pod_pages.ACT_NEXTALBUM else pod_pages.LIGHTTIME_VALUES if r.action == pod_pages.ACT_LIGHT else pod_pages.KEYLOCK_VALUES if r.action == pod_pages.ACT_KEYLOCK else pod_pages.SHUTDOWN_VALUES if r.action == pod_pages.ACT_SHUTDOWN else pod_pages.PLAYMODE_VALUES if r.action == pod_pages.ACT_PLAYMODE else pod_pages.MEMPLAY_VALUES if r.action == pod_pages.ACT_MEMPLAY else pod_pages.GAIN_VALUES if r.action == pod_pages.ACT_GAIN else pod_pages.REPLAYGAIN_VALUES if r.action == pod_pages.ACT_REPLAYGAIN else pod_pages.DSD_VALUES if r.action == pod_pages.ACT_DSD else pod_pages.USBVOL_VALUES if r.action == pod_pages.ACT_USBVOL else pod_pages.MAXVOL_VALUES if r.action == pod_pages.ACT_MAXVOL else pod_pages.BOOTVOL_VALUES if r.action == pod_pages.ACT_BOOTVOL else pod_pages.BALANCE_VALUES if r.action == pod_pages.ACT_BALANCE else pod_pages.LYRSIZE_VALUES if r.action == pod_pages.ACT_LYRSIZE else () if r.action in (pod_pages.ACT_REGION, pod_pages.ACT_PCDIR) else ('Normal', 'Chrome', 'Metal', 'Auto')
+                vals = [(vk, tr_text(loc, vk)) for vk in vkeys] if r.action not in (pod_pages.ACT_REGION, pod_pages.ACT_PCDIR) else [('Automatic', tr_text(loc, 'Automatic'))] + [(n, n) for n in pcregion.NAMES] if r.action == pod_pages.ACT_REGION else [('Apple Podcasts', 'Apple Podcasts'), ('Podcast Index', 'Podcast Index')]   # (the Podcast Region's value: Automatic, or a storefront's English name)
                 for vk, vt in vals:
                     need = width(tr_text(loc, pod_i18n.key_for(r.label)), row_px) + ST.VALUE_LABEL_GAP + min(width(vt, ST.VALUE_PX) + 6, ST.VALUE_MAX)
-                    if need > room + (ST.TEXT_X - ST.CM - ST.PAD if r.action == pod_pages.ACT_REGION else 0): cards_over.append((page.key, r.label, vk, loc, need, room))
+                    if need > room + (ST.TEXT_X - ST.CM - ST.PAD if r.action in (pod_pages.ACT_REGION, pod_pages.ACT_PCDIR) else 0): cards_over.append((page.key, r.label, vk, loc, need, room))
             for node in tree.walk():
                 if node.name.startswith(('pod_sec', 'pod_note')) and node.name.endswith('_t') and node.type == 'hscroll_label':   # a one-line header or note: one line
                     px = int(node.get('style:normal:font_size'))

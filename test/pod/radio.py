@@ -965,8 +965,7 @@ def asset_tests(ctx):
     expect = ctx.expect
     P = pod_pages
     root = ui('m1plus_radio'); f = root.find
-    expect(root.name == 'm1plus_radio_page' == P.RADIO.name and P.RADIO.kind == 'radio' and P.RADIO in P.PAGES and ui('m1plus_radionp').name == 'm1plus_radionp_page' == P.RADIONP.name and P.RADIONP in P.PAGES
-           and P.PAGES[-36:-33] == [P.RADIO, P.RADIONP, P.RADIOINFO] and P.PAGES[-31:-26] == [P.WIFI_PAGE, P.WIFIINFO_PAGE, P.WIFIPASS_PAGE, P.WIFIOTHER_PAGE, P.WIFISEC_PAGE] and P.PAGES[-26:] == [P.PEQ_PAGE, P.PEQP_PAGE, P.PEQLIB_PAGE, P.TENBAND_PAGE, P.TENCURVE_PAGE, P.TENPREAMP_PAGE, P.AUTOEQ_PAGE, P.PEQBAND_PAGE, P.BATTERY_PAGE, P.CHGLIMIT_PAGE, P.IDLE_PAGE, P.LOCK_PAGE, P.LOCKWALL_PAGE, P.LOCKSTYLE_PAGE, P.LOCKINFO_PAGE, P.NEXTALBUM_PAGE, P.NDLOGIN_PAGE, P.NDSERVER_PAGE, P.NDROOT_PAGE, P.DISPLAY_PAGE, P.LIGHTTIME_PAGE, P.LED_PAGE, P.KEYSPOWER_PAGE, P.KEYLOCK_PAGE, P.SHUTDOWN_PAGE, P.PCFIND_PAGE], 'the pages m1plus_radio, m1plus_radionp and m1plus_radioinfo are built and follow the Pull-down page in the page table (Get Info, the Podcast Region picker and the Wi-Fi pages come after them)')
+    expect(root.name == 'm1plus_radio_page' == P.RADIO.name and P.RADIO.kind == 'radio' and P.RADIO in P.PAGES and ui('m1plus_radionp').name == 'm1plus_radionp_page' == P.RADIONP.name and P.RADIONP in P.PAGES and P.RADIOINFO in P.PAGES, 'the pages m1plus_radio, m1plus_radionp and m1plus_radioinfo are built and in the page table')
     expect(all(f(n) is not None for n in PAGE_WIDGETS if n != 'radio_scrollview'), 'every widget the stations page looks up is in the asset')
     lv, sv, grid = f('radio_listview'), f('radio_scrollview'), f('view_grid')
     expect((lv.y, lv.h) == (50, VIEW_H) and sv.w == 310 and f('scroll_bar_m') is not None and grid.get('style:normal:bg_color') == '#000000', 'a stock list under the 50 px navbar holding the content view')
@@ -1043,7 +1042,7 @@ def asset_tests(ctx):
     from awtk_text import Ttf, StbText
     import pod_wrap
     st = f('label_status')
-    expect(st is not None and (st.x, st.w) == (20, 280) and st.h >= 120 and st.y + st.h // 2 == 225 and st.get('style:normal:font_size') == '18', 'the caption label: 280 px wide, 120 px tall, centred on the same line as before')
+    expect(st is not None and (st.x, st.w) == (20, 280) and st.h >= 120 and st.y + st.h // 2 == 250 and st.get('style:normal:font_size') == '18', 'the caption label: 280 px wide, 120 px tall, centred in the 400 px under the navbar')
     raw = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw')
     built = {fn[:-4]: dict(__import__('awtk_strings').load(os.path.join(raw, 'strings', fn))) for fn in sorted(os.listdir(os.path.join(raw, 'strings')))}
     font = Ttf(os.path.join(raw, 'fonts', 'default.ttf'))
@@ -2516,6 +2515,17 @@ def retry_tests(ctx):
     m = machine(); m.setword(PSYMS['pn'], 1)
     r, _ = fetch(m, path, 1)
     expect(r == E['PODBUSY'], 'rd_fetch: a podcast job in the way is RD_E_PODBUSY')
+    DL = sibling('pcdl')
+    m = machine(); m.setword(PSYMS['pn'] + DL.DBUSY, 1)   # an episode download runs, no job
+    r, _ = fetch(m, path, 1)
+    expect(r == E['OK'] and 'pthread_create' in m.names(), 'rd_fetch: a podcast download running alone (no job) does not refuse the fetch: it starts beside it')
+    m = opened(); m.answer = TOP_CSV.encode(); sites_of(m)
+    m.setword(PSYMS['pn'] + DL.DBUSY, 1)
+    tap_dir(m, 0)
+    expect(text_of(m, 'label_status') == 'Loading…' and m.names().count('pthread_create') == 1, 'the directory page with a download running: the tap fetches at once, no waiting for the downloads')
+    m = opened(); sites_of(m); m.setword(PSYMS['pn'] + DL.DBUSY, 1)
+    r = m.call(PSYMS['rd_logo_start'], a0=m.buf('https://logo.example/a.png'), count=40000000)
+    expect(r == 1, 'a logo job starts beside a running download too')
 
 
 SECTIONS = [parsers_tests, table_tests, play_tests, poll_tests, stop_tests, reroute_tests, fetch_tests, card_tests, asset_tests, open_tests, levels_tests, directory_tests, search_tests, logo_tests, favs_tests, np_tests, info_tests, entry_tests, view_tests, nowifi_tests, retry_tests]

@@ -333,6 +333,7 @@ class SF(PD):
     def __init__(self, stack=(), sys=0, play=0, **kw):
         super().__init__(**kw)
         self.stack, self.nav_fail, self.switch_fail, self.seen = [], False, False, None
+        self.open_fail = True   # our own page (window_open) will not open: the older tests below run the stock route; playtile_tests opens it (SFO)
         self.run, self.life, self.bt_on, self.wifi_on = set(), [], False, True   # what the stock pages have started (STOCK_LIFE), the events they got, Bluetooth and Wi-Fi enabled
         self.did = []   # every resource start, in order: what init does per open ('wifi_scan', 'bt_search') shows up once per open
         for n in stack: self.push(n)
@@ -377,6 +378,13 @@ class SF(PD):
                 self.stack.remove(ent); self.stack.append(ent); self.sync(); ret = 0
                 self.event(old, 'bg')   # window_manager_switch_to with a3 0 (0x678a04): EVT_WINDOW_TO_BG (0x12c) to the window left, then the old window is not closed
                 self.calls.append(('to_fg', ent[0])); self.event(ent[0], 'fg')   # and EVT_WINDOW_TO_FG (0x12d) (0x6789e8) to the restacked window
+        elif name == 'window_open' and self.read_cstr(a0).startswith(('m1plus_playset', 'm1plus_ps')):   # (other assets: the base machine's)
+            asset = self.read_cstr(a0); self.calls.append(('window_open', asset)); ret = 0
+            if not self.open_fail:   # a Playback Settings page of ours: its window is named by the asset's root (<asset>_page), stacked on top
+                self.push(asset + '_page'); ret = self.stack[-1][1]
+        elif name == 'window_close' and self.name_of(a0):   # a window of the stack: it leaves the stack
+            self.calls.append(('window_close', self.name_of(a0))); ret = 0
+            self.stack.remove(next(e for e in self.stack if e[1] == a0)); self.sync()
         elif name == 'navigator_to':
             page = self.read_cstr(a0); self.calls.append(('navigator_to', page)); ret = 0x10
             if not self.nav_fail:
@@ -507,6 +515,80 @@ def flags_tests(ctx):
            'the tile handlers\' flag tests (they reject a nonzero flag; stock is untouched) are pinned with the rest')
 
 
+def playtile_tests(ctx):
+    """The Playback tile opens our Playback Settings page (m1plus_playset_page), not stock's list; the flag follows our page, its sub-pages and stock's list; the System tile is as before."""
+    expect = ctx.expect
+
+    def SFO(*a, **kw):
+        m = SF(*a, **kw); m.open_fail = False; return m
+    P, S, R, H, O = 'playing_page', 'sysset_page', 'playset_page', 'home_page', 'm1plus_playset_page'
+    own = lambda m: [c for c in m.calls if c[0] in ('window_open', 'navigator_to', 'switch_to')]
+    seen = lambda stack, **kw: (lambda m: (m.pulldown(), m))(SFO(stack, **kw))
+
+    m = SFO([H]); r = m.tap(R)
+    expect(r == 0 and own(m) == [('window_open', 'm1plus_playset')] and m.names_() == [H, O] and m.word(PLAY) == 1,
+           f'no page open: the Playback tile opens our page, stock\'s list is not asked for ({own(m)}, {m.names_()}, {m.word(PLAY)})')
+    m.back()
+    m = SFO([H, O, P]); r = m.tap(R)
+    expect(r == 0 and own(m) == [('switch_to', P, O, 0)] and m.names_() == [H, P, O] and m.word(PLAY) == 1,
+           f'ours behind Now Playing: restacked, not opened twice ({own(m)}, {m.names_()})')
+    closed = lambda m: [c[1] for c in m.calls if c[0] == 'window_close']
+    m = SFO([H, O, 'm1plus_psmode_page', P]); r = m.tap(R)
+    expect(r == 0 and own(m) == [('switch_to', P, O, 0)] and closed(m) == ['m1plus_psmode_page'] and m.names_() == [H, P, O],
+           f'a picker of ours below the player: closed, then our page restacked, so the picker cannot be opened twice ({closed(m)}, {m.names_()})')
+    m = SFO([H, O, 'm1plus_psbootvol_page', P, 'lyric_page']); r = m.tap(R)
+    expect(r == 0 and closed(m) == ['m1plus_psbootvol_page'] and m.names_() == [H, P, 'lyric_page', O],
+           f'a slider page below the player: closed, the windows above the player are left ({closed(m)}, {m.names_()})')
+    m = SFO([H, O, 'm1plus_psmode_page', 'm1plus_psx_page', P]); r = m.tap(R)
+    expect(closed(m) == ['m1plus_psx_page', 'm1plus_psmode_page'] and m.names_() == [H, P, O], f'two sub-pages: both closed, the topmost first ({closed(m)})')
+    m = SFO([H, O, P]); r = m.tap(R)
+    expect(closed(m) == [], f'no sub-page: nothing is closed ({closed(m)})')
+    m = SFO([H, S, 'display_page', P]); r = m.tap(S)
+    expect(closed(m) == [] and m.names_() == [H, 'display_page', P, S], f'System: stock\'s sub-pages are left as before ({closed(m)}, {m.names_()})')
+    m = SFO([H]); m.open_fail = True; r = m.tap(R)
+    expect(r == 0 and own(m) == [('window_open', 'm1plus_playset'), ('navigator_to', NAV[R])] and m.names_() == [H, R] and m.word(PLAY) == 1,
+           f'our page that will not open: the stock call, as before ({own(m)})')
+    m = SFO([H]); m.open_fail = True; m.nav_fail = True; r = m.tap(R)
+    expect(r == 0x10 and m.word(PLAY) == 0, f'neither opens: the failure is returned and the flag is not left at 2 ({r:#x}, {m.word(PLAY)})')
+    m = SFO([H, R, P]); r = m.tap(R)
+    expect(r == 0 and own(m) == [('window_open', 'm1plus_playset')] and m.names_() == [H, R, P, O],
+           f'stock\'s list left behind the player (reached from stock Home): the tile opens ours ({m.names_()})')
+
+    # -- the flag
+    f, _ = seen([H, O], play=0)
+    expect(f == (0, 1), f'our page in front: flag 1, the tile disabled ({f})')
+    f, _ = seen([H, O, 'm1plus_psmode_page'])
+    expect(f == (0, 1), f'a picker of ours in front: flag 1 ({f})')
+    f, _ = seen([H, O, 'm1plus_psmaxvol_page'])
+    expect(f == (0, 1), f'a slider page of ours in front: flag 1 ({f})')
+    f, _ = seen([H, O, P], play=1)
+    expect(f == (0, 0), f'the player above our page: flag 0, the tile live ({f})')
+    f, _ = seen([H, O, 'm1plus_psmode_page', 'm1plus_radionp'])
+    expect(f == (0, 0), f'Radio Now Playing above our picker: 0 ({f})')
+    f, _ = seen([O, H])
+    expect(f == (0, 0), f'our page left under Home: 0 ({f})')
+    f, _ = seen([H, R], play=1)
+    expect(f == (0, 1), f'stock\'s list reached from stock Home: flag 1 as before ({f})')
+    f, _ = seen([H, R, P], play=1)
+    expect(f == (0, 0), f'stock\'s list behind the player: 0 ({f})')
+    f, _ = seen([H, R, P, O])
+    expect(f == (0, 1), f'stock\'s list under the player with ours in front: 1 ({f})')
+    f, _ = seen([H, O, P, R])
+    expect(f == (0, 1), f'ours under the player with stock\'s list in front: 1 ({f})')
+    m = SFO([H, O], play=1); m.home_opened = 0; m.pulldown()
+    expect(m.seen == (0, 0), 'our page that is not opened (closing after Back) is not inside settings')
+    f, _ = seen([H, S, O], sys=1)
+    expect(f == (1, 1), f'System Settings -> our Playback page: both flags 1 ({f})')
+    f, _ = seen([H, S, O, P], sys=1)
+    expect(f == (0, 0), f'both behind the player: 0, 0 ({f})')
+
+    # -- the System tile is as before
+    m = SFO([H]); r = m.tap(S)
+    expect(r == 0 and own(m) == [('navigator_to', NAV[S])] and m.names_() == [H, S] and m.word(SYS) == 1, 'System: no page open, the stock call')
+    m = SFO([H, S, P]); r = m.tap(S)
+    expect(r == 0 and own(m) == [('switch_to', P, S, 0)] and m.names_() == [H, P, S], 'System: restacked behind the player')
+
+
 def stockopen_tests(ctx):
     """m1_open_stock (patch/common.c), which the Settings ACT_STOCK rows, the Wi-Fi row of the All System Settings hub (wifi_hub_open) and the Sleep Timer link use: a stock page
     that has no single_instance property is restacked when its window is still in the stack (the top-right Now Playing button leaves it there under the player), else opened by
@@ -606,4 +688,4 @@ def stockopen_tests(ctx):
     expect(r == 0x10, 'hub Wi-Fi row: a page that will not open returns the navigator_to result, as before')
 
 
-SECTIONS = [hook_tests, page_tests, files_tests, flags_tests, stockopen_tests]
+SECTIONS = [hook_tests, page_tests, files_tests, flags_tests, playtile_tests, stockopen_tests]

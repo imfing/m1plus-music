@@ -243,7 +243,7 @@ def run(ctx):
                f'{what}: {name} is one hidden, insensitive label in the right group, after the stock icons and before the camera ({kids})')
         sty = {st: (lab.get(f'style:{st}:text_color'), lab.get(f'style:{st}:font_size'), lab.get(f'style:{st}:text_align_h'), lab.get(f'style:{st}:text_align_v')) for st in statusbar.STATES}
         expect(all(v == ('#FFFFFF', str(statusbar.PCT_PX), 'right', 'middle') for v in sty.values()) and lab.w == w3 and lab.h == 0, f'{what}: white {statusbar.PCT_PX} px text, right-aligned, vertically centred, {w3} px wide in every state')
-    expect({n.name for n in stock_bar.walk()} == {n.name for n in bar.walk()} - {LABEL, 'pod_shot', 'pod_lo', 'pod_sync'}, 'no stock widget is renamed or removed (the label and the camera are the only additions)')
+    expect({n.name for n in stock_bar.walk()} == {n.name for n in bar.walk()} - {LABEL, 'pod_shot', 'pod_lo', 'pod_sync', 'pod_eq'}, 'no stock widget is renamed or removed (the label and the camera are the only additions)')
     expect(font.width('100%', statusbar.PCT_PX) > 0 and w4 == StbText(font, statusbar.PCT_PX).layout('100%')[1] and w2 < w3 < w4, 'the widths are StbText\'s measure of "100%" and the shorter forms')
     # layout: the group is right-aligned from its right edge (4 px before the outline); with the label the icons move left by its width + 4. Every icon's ink must stay clear of the clock.
     from PIL import Image

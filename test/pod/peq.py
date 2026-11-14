@@ -1127,8 +1127,8 @@ def layout_peqlib_tests(ctx):
             and bool(hair) == (want != 'bot') and all((h_.x, h_.y, h_.w, h_.h) == (lx, ST.LIB_ROW_H - 1, ST.CM + ST.CARD_W - lx, 1) for h_ in hair) \
             and not [c for c in r.children if c.name in ('pod_icon', 'pod_check%d' % i)] and sub.get('sensitive') == 'false'
     expect(ok, 'every slot: the tall piece of a full section card (top, middles, bottom), the name (20 px) at y 8, the grey 16 px line at y 32, the chevron centred in 60 px, a hairline but on the last')
-    expect(P.PAGES[P.PEQLIB_PAGE_INDEX] is P.PEQLIB_PAGE and P.PEQLIB_PAGE_INDEX == 53 == P.PAGES.index(P.PEQBAND_PAGE) - 5 and P.PEQLIB_PAGE.rows == [] and t.find('label_title') is not None
-           and P.row_kind(P.PEQLIB_ROW) == 'lib' and P.row_kind(P.PEQP_DELETE) == 'delete', 'the Presets page is PAGES[53] (the editor and its two pages follow), exports no rows; its navbar title is the payload\'s')
+    expect(P.PAGES[P.PEQLIB_PAGE_INDEX] is P.PEQLIB_PAGE and P.PEQLIB_PAGE.rows == [] and t.find('label_title') is not None
+           and P.row_kind(P.PEQLIB_ROW) == 'lib' and P.row_kind(P.PEQP_DELETE) == 'delete', 'the Presets page exports no rows; its navbar title is the payload\'s')
 
 
 def widths_tests(ctx):
@@ -2785,7 +2785,7 @@ def layout_tenband_tests(ctx):
     lx, lw = ST.label_box('wvalue', False)
     expect(all((v.x, v.w) == (vx, vw) and v.get('style:normal:text_align_h') == 'right' and v.get('style:normal:text_color') == '#AAAAAA' and v.get('sensitive') == 'false' for v in vals) and vx + vw == ST.chevron_left() - ST.VALUE_GAP
            and all((lab(r, i).x, lab(r, i).w) == (lx, lw) for i, r in enumerate(rows[:2])) and lx + lw + ST.VALUE_LABEL_GAP == vx, 'the grey values are PREAMP_W wide, right aligned before the chevron, the labels end before them')
-    expect(P.PAGES[P.TENBAND_PAGE_INDEX] is page and page.rows == [] and page.title == '10-Band EQ' and t.find('label_title') is not None and P.row_kind(P.TB_RESET) == 'plain' and P.row_kind(P.TB_SAVE) == 'plain' and P.row_kind(P.TB_CURVE) == 'wvalue', 'page 50, no exported rows, the title; Reset and Save as Preset are plain')
+    expect(P.PAGES[P.TENBAND_PAGE_INDEX] is page and page.rows == [] and page.title == '10-Band EQ' and t.find('label_title') is not None and P.row_kind(P.TB_RESET) == 'plain' and P.row_kind(P.TB_SAVE) == 'plain' and P.row_kind(P.TB_CURVE) == 'wvalue', 'the 10-Band page: no exported rows, the title; Reset and Save as Preset are plain')
 
     # the Curve page
     page = P.TENCURVE_PAGE
@@ -2799,7 +2799,7 @@ def layout_tenband_tests(ctx):
     expect([pod_i18n.shown_english(next(c for c in r.children if c.name == f'pod_label{i}')) for i, r in enumerate(rows)] == list(P.TENCURVE_NAMES) == ['Flat', 'Pop', 'Rock', 'Dance', 'Blues', 'Metal', 'Vocal', 'Classical', 'Jazz', 'Custom']
            and [r.get('style:normal:bg_image') for r in rows] == ['pod_cd_top'] + ['pod_cd_mid'] * 8 + ['pod_cd_bot'] and all(next(c for c in r.children if c.name == f'pod_check{i}').get('visible') == 'false' for i, r in enumerate(rows))
            and not [c for r in rows for c in r.children if c.name in ('pod_chevron', 'pod_icon', f'pod_value{rows.index(r)}')], 'the ten curves, in the record\'s order, one card, a hidden check each, no chevron, no glyph, no value')
-    expect(P.PAGES[P.TENCURVE_PAGE_INDEX] is page and page.rows == [] and page.title == 'Curve' and t.find('label_title') is not None, 'page 55, no exported rows, titled Curve')
+    expect(P.PAGES[P.TENCURVE_PAGE_INDEX] is page and page.rows == [] and page.title == 'Curve' and t.find('label_title') is not None, 'the Curve page: no exported rows, titled Curve')
 
     # the Preamp page
     page = P.TENPREAMP_PAGE
@@ -2818,7 +2818,7 @@ def layout_tenband_tests(ctx):
     note = t.find('pod_note0')   # the grey note under Auto's card: what Auto is for, shown, between Auto and the first fixed value (its label wraps to two lines)
     expect(note is not None and note.get('visible') != 'false' and pod_i18n.shown_english(t.find('pod_note0_t')) == "Auto reduces the level to help prevent distortion from EQ boosts." and note.y >= rows[0].y + rows[0].h
            and note.y + note.h <= rows[1].y and isinstance(page.layout[1], P.Note) and page.layout[1].lines == 2 and not isinstance(page.layout[-1], P.Note), 'the Preamp page has its two-line note directly under Auto\'s card, before the second card')
-    expect(P.PAGES[P.TENPREAMP_PAGE_INDEX] is page and P.TENPREAMP_PAGE_INDEX == P.PAGES.index(P.PEQBAND_PAGE) - 2 == 56 and page.rows == [] and page.title == 'Preamp' and P.TENPREAMP_STEPS == 13, 'page 56, the editor\'s last (AutoEq, 53, and the band page, 54, follow), no exported rows, titled Preamp')
+    expect(P.PAGES[P.TENPREAMP_PAGE_INDEX] is page and page.rows == [] and page.title == 'Preamp' and P.TENPREAMP_STEPS == 13, 'the Preamp page: no exported rows, titled Preamp')
 
 
 def retire_tests(ctx):

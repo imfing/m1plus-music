@@ -699,7 +699,10 @@ int shuffle_play(int kind) {
     first = n ? deque_at(queue, idx) : (void *)0;
     if (!first || access(str(first, REC_PATH), F_OK)) {
         deque_destroy(queue);
-        toast(TR(n ? "Storage unavailable" : "Update Local Music first"));
+        if (n)
+            toast(so_missing());
+        else
+            toast(TR("Update Local Music first"));
         return -1;
     }
     /* Shuffle Songs: shuffle on over the whole library (stock mode List play), the queue shuffled

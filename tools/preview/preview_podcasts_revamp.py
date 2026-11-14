@@ -588,7 +588,7 @@ def search_sheet(s, shows, workdir, path):
     prev = Show(mini.key, mini.title, mini.cover, mini.author, mini.genre, mini.sub,
                 [ep(e['date'], e['title'], e['desc'], 'remote', '48 MB') for e in mini.eps], False)
     pg = PK2.Page(s)
-    lib = PSET.draw_page(s, 'm1plus_library', full=True).convert('RGBA')
+    lib = PSET.draw_page(s, 'm1plus_podcastsettings', full=True).convert('RGBA')
     lib = lib.crop((0, lib.height - (STAT + WIN), W, lib.height)) if lib.height > STAT + WIN else lib
     libf = Image.new('RGBA', (W, STAT + WIN), (0, 0, 0, 255)); PI.status_bar(s, libf, 0, bg=(0, 0, 0)); libf.alpha_composite(lib, (0, STAT + WIN - lib.height))
     frames = [('Shows page, Import possible:\n... | Now Playing', shows_frame(s, shows, shelf_n=0, caps='more')[0]),
@@ -602,7 +602,7 @@ def search_sheet(s, shows, workdir, path):
               ('After Subscribe: the real Show page in place\n(pills, "...", sheets; Back = the results)', show_frame(s, prev, 0)[0]),
               ('A result that is a show already: its real page\n(cells with pills, "..."), no Subscribed', show_frame(s, mini, 0)[0]),
               ('The search field, with and without the clear\nbutton, the magnifier unmoved; clear button zoomed', field_panel(s, shows)),
-              ('Settings > Library > Podcasts: Podcast Region', libf)]
+              ('Settings > Library > Podcasts (page): Discover, Directory and Region', libf)]
     assemble(frames, 4, path)
 
 

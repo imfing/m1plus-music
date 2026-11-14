@@ -99,5 +99,7 @@ void az_make_disc(az_t *az);
 void az_free(az_t *az); /* the disc */
 void az_redraw_rail(const az_t *az);
 
-/* The UTF-8 text on label w cut with an ellipsis to the label's width (wide chars, at most SG_NAME_MAX looked at). */
-void az_fit(void *w, const char *text);
+/* The UTF-8 text on label w cut with an ellipsis to the label's width (wide chars, at most SG_NAME_MAX looked at); 1 when it was cut. */
+int az_fit(void *w, const char *text);
+/* The same, cut to room px (an hscroll_label draws its text in its width less a 2 px margin each side, and scrolls a text wider than that). */
+int az_fit_room(void *w, const char *text, int room);

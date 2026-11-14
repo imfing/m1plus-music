@@ -6,7 +6,7 @@ Modelled on q2-pod's test/patch.py.
 Requires unicorn (venv) and a workdir patched by tools/pod.py (its podbuild/manifest.json).
 test/patch.py calls init(WORKDIR) first, then loads the feature modules, which star-import this one.
 """
-import functools, importlib.util, json, math, os, re, struct, sys, unicodedata
+import functools, hashlib, importlib.util, json, math, os, re, struct, sys, unicodedata
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
 from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3,
                                 UC_MIPS_REG_V0, UC_MIPS_REG_SP, UC_MIPS_REG_RA, UC_MIPS_REG_T9, UC_MIPS_REG_PC, UC_MIPS_REG_GP, UC_MIPS_REG_F0, UC_MIPS_REG_F12, UC_MIPS_REG_F14,
@@ -288,6 +288,7 @@ class Machine:
         for sym, nm in (('stock_setmode_trampoline', 'stock_setmode'), ('stock_loadplaylist_trampoline', 'stock_loadplaylist')):   # the Shuffle hooks' way back into stock (patch/shuffle.c)
             if sym in PSYMS: self.handlers[PSYMS[sym]] = nm
         if 'album_open' in PSYMS: self.handlers[PSYMS['album_open']] = 'album_open'
+        self.handlers[PSYMS['lib_deque_swap']] = 'lib_deque_swap'   # patch/libload.c: the model's deques are lists by handle, so the exchange is modelled (test/pod/libload.py runs the real one)
         # Cover Flow's shelf commits and moves (noinline in patch/coverflow.c): ('set_value', album), ('set_offset', off)
         self.watch = Traps(self)
         self.watch.update({PSYMS[n]: n for n in ('set_value', 'set_offset') if n in PSYMS})
@@ -380,6 +381,10 @@ class Machine:
     def word(self, a): return struct.unpack('<I', self.u.mem_read(a, 4))[0]
     def s32(self, a): return struct.unpack('<i', self.u.mem_read(a, 4))[0]
     def setword(self, a, v): self.u.mem_write(a, struct.pack('<I', v & 0xffffffff))
+    def set_errno(self, v):
+        """libc's errno (the int __errno_location points at): set by a failed open (2 no such file, 5 an injected failure)."""
+        if not getattr(self, 'errno_p', 0): self.errno_p = self.alloc(4); self.setword(self.errno_p, 0)
+        if v is not None: self.setword(self.errno_p, v)
 
     def paint_event(self):
         """A zeroed 0x40 byte event whose paint canvas is the machine's own canvas; returns its address."""
@@ -846,12 +851,16 @@ class Machine:
             f_ = re.fullmatch(r"select \* from songtable where fileurl='((?:[^']|'')*)' limit 1", sql)   # one file's row (patch/folders.c fo_album_of): the library's first row with that path
             d_ = re.fullmatch(r"select \* from songtable where fileurl>='((?:[^']|'')*)/' and fileurl<'((?:[^']|'')*)0' order by fileurl limit 1", sql)   # a folder's first row in path order (BINARY: bytes)
             album_sql = sql == pod.ALBUM_SQL and a2 == 0x4e93c8   # getAllAlbum's statement with stock's album row callback (payload cc_cmap_build): one record per album (class_lists[0xf003]), the empty-album group skipped as the callback does
+            n_ = re.fullmatch(r"select \* from songtable where filename in \((.*)\)", sql)   # the library's rows with those file names (Clean Up Playlist's repair, patch/songops.c so_relink_chunk)
             if (album_sql or a_) and self.__dict__.get('album_query_fails'):
                 ret = -1
-            elif not m_ and not a_ and not album_sql and not f_ and not d_:
+            elif not m_ and not a_ and not album_sql and not f_ and not d_ and not n_:
                 ret = -1
             else:
-                if album_sql:
+                if n_:
+                    wanted = {p.replace("''", "'") for p in re.findall(r"'((?:[^']|'')*)'", n_.group(1))}
+                    rows = [r for r in self.class_lists.get(0xf001, self.showlist) if self.read_cstr(self.word(r + O['REC_NAME'])) in wanted]
+                elif album_sql:
                     rows = [r for r in self.class_lists.get(O['CLASS_ALBUMS'], []) if self.read_cstr(self.word(r + O['REC_ALBUM']))]
                 elif f_ or d_:
                     lib = self.class_lists.get(0xf001, self.showlist)
@@ -871,6 +880,18 @@ class Machine:
                 if not self.word(tmp): self.setword(tmp, self.new_deque())
                 self.deques[self.word(tmp)] = rows
                 ret = len(rows)
+        elif name == 'toolsUpdateDbTable':   # (db, sql): one statement, 1 when it ran. `update playlist set fileurl='..' where id=N` rewrites the path of the playlist row with that id (self.playlist_songs)
+            sql = self.read_cstr(a1); self.calls.append(('toolsUpdateDbTable', self.read_cstr(a0), sql))
+            u_ = re.fullmatch(r"update playlist set fileurl='((?:[^']|'')*)' where id=(\d+)", sql)
+            ret = 1 if u_ and not self.__dict__.get('update_fails') else 0xffffffff
+            if ret == 1:
+                for rows in self.playlist_songs.values():
+                    for r in rows:
+                        if self.word(r + O['REC_ID']) == int(u_.group(2)): self.setword(r + O['REC_PATH'], self.cstr(u_.group(1).replace("''", "'")))
+        elif name == 'toolsDeleteItemById':   # (table, db, id): `delete from table where id=N`, 1 when it ran: the playlist row with that id goes (self.playlist_songs)
+            self.calls.append(('toolsDeleteItemById', self.read_cstr(a0), self.read_cstr(a1), a2)); ret = 1
+            if self.read_cstr(a0) == 'playlist':
+                for k in self.playlist_songs: self.playlist_songs[k] = [r for r in self.playlist_songs[k] if self.word(r + O['REC_ID']) != a2]
         elif name == 'deque_clear':
             self.deques[a0] = []; self.calls.append(('deque_clear', a0))
         elif name == 'loadSongList':
@@ -998,6 +1019,9 @@ class Machine:
             self.calls.append(('dmrSendPlayMode', a0))
         elif name == 'mclGetOutputWay':
             ret = getattr(self, 'out_way', 0)   # 0 the jacks, 1 Bluetooth, 2 USB audio (a test sets m.out_way)
+        elif name in ('mclGetGaplessMode', 'mclGetJumpFolder', 'mclSetJumpFolder', 'mclGetGainMode', 'mclSetGainMode', 'mclGetReplayGain', 'mclSetReplayGain', 'mclGetfilter', 'mclSetFilter', 'mclGetDsdMode', 'mclSetDsdMode',
+                      'mclSetLineOut', 'save_stop_player', 'save_start_player', 'set_devicevolume'):
+            pass   # the Playback Settings page's stock calls (patch/playset.c): answered 0 and not recorded; test/pod/playset.py runs the getters for real and records the setters
         elif name == 'write_int_config':
             self.calls.append(('write_int_config', a0, self.read_cstr(a1), self.read_cstr(a2)))
             ret = getattr(self, 'config_ret', 0)   # toolsWriteConfig's: 0 done, -1 config.ini could not be opened (a test sets m.config_ret)
@@ -1005,6 +1029,9 @@ class Machine:
             ret = self.seed % a0 if a0 else 0
         elif name == 'time_now_ms':
             ret = self.clock; u.reg_write(UC_MIPS_REG_A3, 0)
+        elif name == 'get_playtimeandlength':   # (the machines that play something set pt; the default is the player without a time)
+            pos, ln, r = self.pt; self.setword(a0, pos); self.setword(a1, ln); ret = r
+            self.calls.append(('get_playtimeandlength',))
         elif name == 'toolsGetAlbumCover':
             self.cover_size = (a2, a3)   # the thumbnail's requested size
             self.calls.append(('toolsGetAlbumCover', self.read_cstr(a0), self.read_cstr(a1)))
@@ -1197,6 +1224,10 @@ class Machine:
         elif name == 'deque_assign':
             self.deques[a0] = list(self.deques.get(a1, []))
             self.calls.append(('deque_assign', len(self.deques[a0])))
+        elif name == 'lib_deque_swap':   # both handles keep their place, the records change sides; refused (0) while swap_fail is set
+            ret = 0 if getattr(self, 'swap_fail', False) or a0 not in self.deques or a1 not in self.deques or a0 == a1 else 1
+            if ret: self.deques[a0], self.deques[a1] = self.deques[a1], self.deques[a0]
+            self.calls.append(('lib_deque_swap', len(self.deques.get(a0, [])), ret))
         elif name == 'deque_size':
             ret = len(self.deques.get(a0, []))
         elif name == 'deque_at':
@@ -1216,7 +1247,7 @@ class Machine:
         elif name == 'open':
             p, fl = self.fsname(self.read_cstr(a0)), a1
             self.calls.append(('open', p, fl))
-            if ('open', p) in self.fail: ret = -1
+            if ('open', p) in self.fail: ret = -1; self.set_errno(5)   # (EIO: an injected failure is never "no such file")
             elif p == '/dev/fb0':
                 if self.fb: ret = self.next_fd; self.fds[ret] = [p, fl, 0]; self.next_fd += 1
                 else: ret = -1
@@ -1225,7 +1256,15 @@ class Machine:
             elif p in self.fs or fl & 0x100:
                 if fl & 0x200 or p not in self.fs: self.fs[p] = b''
                 ret = self.next_fd; self.fds[ret] = [p, fl, 0]; self.next_fd += 1
-            else: ret = -1
+            else: ret = -1; self.set_errno(2)   # ENOENT
+        elif name == '__errno_location':
+            self.set_errno(None); ret = self.errno_p
+        elif name == 'MD5_Init':   # libcrypto's MD5 (patch/scrobup.c: Last.fm's api_sig): the context is the caller's, its state kept here by address
+            self.__dict__.setdefault('md5', {})[a0] = hashlib.md5(); ret = 1
+        elif name == 'MD5_Update':
+            self.md5[a0].update(bytes(self.u.mem_read(a1, a2))); ret = 1
+        elif name == 'MD5_Final':
+            self.u.mem_write(a0, self.md5.pop(a1).digest()); ret = 1
         elif name == 'read':
             p, _, pos = self.fds[a0]
             data = self.fs.get(p, b'')[pos:pos + a2]
@@ -1244,6 +1283,7 @@ class Machine:
             else: self.fs[p] = self.fs.get(p, b'') + data; ret = a2
         elif name == 'fsync':
             p = self.fds[a0][0]; self.calls.append(('fsync', p))
+            if getattr(self, 'on_fsync', None): self.on_fsync(p)   # a test's way to act while a file or a folder is being synced
             ret = -1 if ('fsync', p) in self.fail else 0
         elif name == 'close':
             self.calls.append(('close', self.fds.pop(a0)[0]))
@@ -1422,6 +1462,7 @@ class Machine:
     wall = 1800000000        # time(): the wall clock, seconds (2027-01-15 08:00 UTC); tz: seconds localtime adds
     tz = 0
     clock = 1                # time_now_ms
+    pt = (0, 0, 0)           # get_playtimeandlength: position, length, result (0: no time)
     calloc_fail = False
     calloc_fail_size = 0           # a calloc of exactly this many bytes is refused (one allocation, not all)
     played = None            # (queue records, index) handed to playing_page

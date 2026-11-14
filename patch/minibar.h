@@ -4,10 +4,12 @@
 #define MINIBAR_H
 #include "offsets.inc"
 
-/* The cover: an MB_ART px RGBA bitmap whose four MB_ART_R px corners are rounded in its own alpha. */
+/* The cover: an MB_ART px RGBA bitmap whose four MB_ART_R px corners are rounded in its own alpha. A bigger one (the idle lyrics page's 56 px, radius 8) sets size and r before its first picture (mb_art_size); zero is the bar's. */
+#define MB_ART_RMAX 8
 typedef struct {
     void *bmp; /* NULL until the first picture (or when it could not be made) */
-    unsigned char corner[MB_ART_R * MB_ART_R]; /* the top left corner's coverage outside the arc, 0..255 */
+    unsigned char size, r; /* the picture's side and corner radius in px; 0: MB_ART / MB_ART_R */
+    unsigned char corner[MB_ART_RMAX * MB_ART_RMAX]; /* the top left corner's coverage outside the arc, 0..255 */
     unsigned fkey; /* the hash of the /tmp cover file the picture was made from, 0 when it was not */
     int settle; /* ticks left that read the /tmp file again */
 } mb_art_t;
@@ -21,6 +23,9 @@ int mb_art_settle(mb_art_t *a, void *win,
                   void *t); /* one tick of the /tmp file watch after a new track; 1 when the cover was redone */
 void mb_art_paint(mb_art_t *a,
                   void *canvas); /* the resident cover at the card's MB_ART_X / MB_ART_Y (the card's EVT_AFTER_PAINT) */
+void mb_art_paint_at(mb_art_t *a, void *canvas, int x, int y); /* the same at x, y of the canvas */
+void mb_art_size(mb_art_t *a, int size,
+                 int r); /* a picture of another side and radius (r <= MB_ART_RMAX), before the first mb_art_cover */
 void mb_art_free(mb_art_t *a);
 
 /* The backdrop blur of the pill under a canvas translated to the card (tools/pod_blur.py is the model). */

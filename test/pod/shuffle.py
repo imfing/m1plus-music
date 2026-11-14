@@ -255,6 +255,10 @@ def shuffle_tests(ctx):
         expect(v == 0xffffffff and any(c[0] == 'toast' and c[1] == 'Storage unavailable' for c in m.calls)
                and not m.played and 'mclSetPlayMode' not in m.names() and 'deque_destroy' in m.names(),
                f'Shuffle {K[kind]} with the card missing says so and plays nothing')
+        m = shuffle_machine(lib, present=False); m.present.add('/tmp/mmc_add')
+        v = m.call(play, a0=kind, count=COUNT)
+        expect(v == 0xffffffff and [c[1] for c in m.calls if c[0] == 'toast'] == ['File not found'] and not m.played,
+               f'Shuffle {K[kind]} with the card in and the first file gone says "File not found" (patch/songops.c so_missing)')
 
     # 34. No memory for the album index: a message, the queue freed, nothing played.
     m = shuffle_machine(albums); m.calloc_fail = True

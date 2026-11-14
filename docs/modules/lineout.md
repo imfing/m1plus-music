@@ -1,4 +1,4 @@
-# The Line Out pill and the sync icon (`patch/lineout.c`, `patch/lineout.h`, `test/pod/lineout.py`; hook 20 in [payload](payload.md))
+# The Line Out pill, the EQ mark and the sync icon (`patch/lineout.c`, `patch/lineout.h`, `test/pod/lineout.py`; hook 20 in [payload](payload.md))
 
 **Behaviour.** While Line Out is on (stock's byte `0xa05aa7`), the status bar shows an amber pill with a black "LO" in place of stock's white "LO" text, and the same in the
 pull-down's own bar copy. Always on: no setting. Everything else is stock: the volume glyph beside it, the volume number in PO mode, the pull-down's Output tile, and the "Line Out sets max volume" confirm.
@@ -18,6 +18,22 @@ the same page-init dispatcher as the battery hook). Each site is pinned with its
 (not in `ACCENT_*` or the glyph prefixes) and Light Mode's flip leaves it (it has colour). `tools/preview/preview.py` writes `lineout.png` (bar off, bar on, the pull-down's bar on).
 
 **Limits.** The pill is an asset swap, so the pull-down's bar shows it up to a second after Line Out changes, as stock's text did.
+
+## EQ mark
+
+**Behaviour.** While the Equalizer switch is on (stock's `equalizer_flag`, the byte the [Equalizer page](peq.md) and the per-output EQ keep), the status bar shows a white "EQ" after the volume number (or the Line Out pill), and the
+pull-down's bar copy shows it too. It follows the switch, not the sound: DSD plays without the EQ and the mark stays. No setting. Stock's M1 Plus bar has no EQ widget.
+
+**Implementation.** No new hook: `lo_set_text` calls `lo_eq` after `peqout_sync` (which can turn the switch for a new output). It looks up `pod_eq` among `label_volume`'s siblings and sets it visible and sensitive together when the byte is
+set, the kill switch is absent and stock's digital-out glyph `img_digital` is hidden; only on a change. A bar without `pod_eq` is left as it is. Cost per tick per bar: one or two lookups in the small group.
+The widget is added by `tools/statusbar.py` `apply` to both copies: a `label` with the text `EQ` in `label_volume`'s white at 16 px, the volume number's size (19 px wide, the text's width), hidden and insensitive, right after `pod_lo` in `view_bar_left`.
+
+**Placement.** Left group: play state, volume glyph, volume number, the mark end at x 100, clear of the 12 h clock's ink at 116 (`test/pod/lineout.py`). With the digital-out glyph as well the group would end at 126, over the clock,
+so the mark gives way to the glyph. Stock sets the glyph later in the same tick, so the mark follows it one tick late.
+
+`tools/preview/preview.py` writes `eqmark.png` (off, on, on with Line Out, the pull-down's bar).
+
+**Limits.** Not device-tested. The mark is the default white: the Accent does not tint it.
 
 ## Sync icon
 

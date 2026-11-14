@@ -5,7 +5,7 @@ import json, os, random, struct
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
 
 DATA = os.path.join(ROOT, 'test', 'data', 'search')
-NAME, AUTHOR, URL, ART = 80, 56, 320, 160
+NAME, AUTHOR, URL, ART = 80, 56, 320, 320
 REC = 4 + NAME + AUTHOR + URL + 2 * ART
 REGION, SIZE = 0x30000000, 0x40000   # the input and the output each get a mapped region ending where a page is unmapped
 
@@ -81,8 +81,8 @@ def real_tests(ctx):
     n, res, _ = P.run(raw, 1)
     expect(n == 1 and res[0][0] == 1611374685 and res[0][4].decode() == want['artworkUrl100'] and res[0][6].decode() == want['artworkUrl600'] and res[0][6].endswith(b'/600x600bb.jpg'),
            'the lookup answer of a show whose feed picture is progressive: artworkUrl600 is kept (144 bytes) beside artworkUrl100')
-    n, res, _ = P.run(doc(obj(collectionName='L', artworkUrl600='https://i/' + 'b' * 150), obj(collectionName='M', artworkUrl600='https://i/' + 'b' * 149), obj(collectionName='N')))
-    expect(n == 3 and [r[6] for r in res] == [b'', b'https://i/' + b'b' * 149, b''], 'artworkUrl600: one byte too long is none, one that fills the field is kept, a missing one is empty (and never lands in artworkUrl100)')
+    n, res, _ = P.run(doc(obj(collectionName='L', artworkUrl600='https://i/' + 'b' * 310), obj(collectionName='M', artworkUrl600='https://i/' + 'b' * 309), obj(collectionName='N')))
+    expect(n == 3 and [r[6] for r in res] == [b'', b'https://i/' + b'b' * 309, b''], 'artworkUrl600: one byte too long is none, one that fills the field is kept, a missing one is empty (and never lands in artworkUrl100)')
 
 
 def string_tests(ctx):
@@ -126,9 +126,9 @@ def field_tests(ctx):
     expect, P = ctx.expect, PJ()
     n, res, _ = P.run(doc(obj(collectionName='A', feedUrl='https://f/a'), obj(collectionName='B'), obj(feedUrl='https://f/c'), obj(artistName='nobody'), obj(collectionId=5)))
     expect(n == 3 and kept(res) == [(0, 'A', '', 'https://f/a', ''), (0, 'B', '', '', ''), (0, '', '', 'https://f/c', '')], 'an object is kept with a name or a feed; the missing fields are empty; one with neither is no result')
-    n, res, _ = P.run(doc(obj(collectionName='L', feedUrl='https://f/' + 'a' * 309, artworkUrl100='https://i/' + 'b' * 149)))
-    expect(n == 1 and len(res[0][3]) == 319 and len(res[0][4]) == 159, 'an address that fills its field (319 and 159 bytes) is kept')
-    n, res, _ = P.run(doc(obj(collectionName='L', feedUrl='https://f/' + 'a' * 310, artworkUrl100='https://i/' + 'b' * 150)))
+    n, res, _ = P.run(doc(obj(collectionName='L', feedUrl='https://f/' + 'a' * 309, artworkUrl100='https://i/' + 'b' * 309)))
+    expect(n == 1 and len(res[0][3]) == 319 and len(res[0][4]) == 319, 'an address that fills its field (319 bytes each) is kept')
+    n, res, _ = P.run(doc(obj(collectionName='L', feedUrl='https://f/' + 'a' * 310, artworkUrl100='https://i/' + 'b' * 310)))
     expect(n == 1 and res[0][3] == b'' and res[0][4] == b'' and res[0][1] == b'L', 'an address one byte too long is none (a cut address is no address), the result stays')
     for text, want in (('1493503146', 1493503146), ('4294967295', 4294967295), ('4294967296', 0xffffffff), ('99999999999999999999', 0xffffffff), ('-5', 0), ('12.7', 12), ('1e3', 1), ('0', 0)):
         n, res, _ = P.run(('{"results":[{"collectionName":"x","collectionId":%s}]}' % text).encode())

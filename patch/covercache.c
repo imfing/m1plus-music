@@ -368,15 +368,16 @@ void *cc_copy_list(void *list) {
 static int cc_lfail __attribute__((section(
     ".scratch"))); /* the last cc_albums / cc_songs failed to copy a non-empty list, as opposed to an empty one: cc_list_failed */
 
-/* A stock list class read into *pdeq_showlist and copied. NULL when empty (cc_lfail 0: stock's loadLocalClassList returns the deque's size, so a query that failed before any row reads as empty too) or when
- * the copy failed (cc_lfail 1: rows but no memory for the copy). */
+/* A stock list class read into *pdeq_showlist and taken from it into a deque of our own (lib_take_list, patch/libload.c: the records change owner, none is copied, and *pdeq_showlist is left
+ * empty; a page that shows the stock list reads it again, as after any query). NULL when empty (cc_lfail 0: stock's loadLocalClassList returns the deque's size, so a query that failed before any
+ * row reads as empty too) or when there was no memory for the deque (cc_lfail 1: rows but no list). */
 static void *cc_class_copy(int cls) {
     void *list, *copy;
     cc_lfail = 0;
     if (loadLocalClassList(cls) <= 0) return (void *)0;
     list = *(void **)PDEQ_SHOWLIST;
     if (!list || !deque_size(list)) return (void *)0;
-    copy = cc_copy_list(list);
+    copy = lib_take_list(list);
     if (copy && !deque_size(copy)) {
         deque_destroy(copy);
         copy = (void *)0;
@@ -1014,6 +1015,7 @@ static int so_stats(unsigned n) {
         return 0;
     }
     so_scan(songs, idx, m);
+    deque_clear(songs); /* (the whole song table, read for this scan alone: not left in *pdeq_showlist) */
     free(idx);
     return 1;
 }

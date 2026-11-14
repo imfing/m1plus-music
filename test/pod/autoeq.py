@@ -22,7 +22,7 @@ DIR, IDX, PART, STAMP, PRESET = '/mnt/mmc/.m1plus/autoeq', '/mnt/mmc/.m1plus/aut
 EQ, STATE = '/mnt/mmc/EQ', '/mnt/data/m1plus/playback-eq'
 BASE = 'https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/'
 RET_REPEAT = 8
-PN = dict(PCN.PN, CANCELLED=12, CARDFULL=13, NOFEED=17)
+PN = dict(PCN.PN, CANCELLED=12, CARDFULL=13, NOFEED=16)
 E = dict(IDLE=0, RUNNING=1, DONE=2, FAILED=3)
 HD600 = 'oratory1990/over-ear/Sennheiser%20HD%20600'
 HD600_RTINGS = 'Rtings/Bruel%20&%20Kjaer%205128%20over-ear/Sennheiser%20HD%20600'
@@ -370,7 +370,7 @@ def net_tests(ctx):
     # Cancel: the transfer is aborted, nothing is kept
     m = machine(site(index_over={'xfer': lambda url, sent, total: None}), index=False)
     start_index(m)
-    m.call(PSYMS['pn_cancel'], count=1 << 30)
+    m.call(PSYMS['pn_cancel'], a0=1 << 9, count=1 << 30)   # PN_K_EQ
     jobs(m)
     expect(st(m) == (E['FAILED'], PN['CANCELLED'], 0) and IDX not in m.fs and PART not in m.fs, 'Cancel before the first byte: PN_CANCELLED, nothing written')
     # storage

@@ -83,9 +83,10 @@ int cc_decode(void *w, const char *url, int unload, unsigned size, int box, unsi
 /* cc_decode for a picture that must not be cropped: the whole picture fitted inside size x size over the word bg (cc_fit). 1 when out was written. */
 int cc_decode_fit(void *w, const char *url, int unload, unsigned size, unsigned bg, unsigned *out);
 void *cc_copy_list(void *list); /* a stock list copied into a deque of our own */
+void *cc_albums(
+    void); /* the stock Albums list (getAllAlbum), owned by the caller; NULL if empty or failed (cc_list_failed) */
 void *
-cc_albums(void); /* the stock Albums list (getAllAlbum), copied; NULL if empty or the copy failed (cc_list_failed) */
-void *cc_songs(void); /* the stock Songs list (getAllMusic), copied; NULL if empty or failed (cc_list_failed) */
+cc_songs(void); /* the stock Songs list (getAllMusic), owned by the caller; NULL if empty or failed (cc_list_failed) */
 int cc_list_failed(
     void); /* the last cc_albums / cc_songs returned NULL because the copy of a non-empty list failed (a failed query is not told apart from an empty list: stock returns 0 for both) */
 int cc_open_album(

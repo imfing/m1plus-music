@@ -36,6 +36,7 @@
 #include "common.h"
 #include "i18n.h"
 #include "podcasts.h"
+#include "scrobble.h"
 
 /* patch/ipod_cf.c: the Cover Flow screen (level K_CF: the albums list drawn as covers; docs/modules/ipod-coverflow.md) */
 
@@ -2101,6 +2102,7 @@ static int ip_tick(const void *timer) {
         ip.long_done = 1; /* MENU held: back to the main menu */
         ip_pop_root();
     }
+    scrobble_note(cc_playing()); /* lit or dark; it asks the player at most every SC_POLL_MS (patch/scrobble.c) */
     if (!m1_screen_lit()) { /* the screen is off: no pan, no cover work, no repaint (the idle-power rule); the next lit tick looks again */
         ip_pane_xfer_stop();
         ip_retime();

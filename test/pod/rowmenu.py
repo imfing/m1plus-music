@@ -354,6 +354,8 @@ def menu_tests(ctx):
                     m = AB.album_machine(); with_menu(m, 0); AB.open_album(m); AB.scroll_to(m, 300); AB.paint(m); rows_ = m.songs; row = 2
                     y = AB.row_y(row) - 300 + 30; x = 288
                 m.up_ret = status; m.calls = []
+                card_in = status == MISSING and bool(after)   # a missing file with the card in (/tmp/mmc_add) reads "File not found" (patch/songops.c so_missing); the card out, "Storage unavailable"
+                (m.present.add if card_in else m.present.discard)('/tmp/mmc_add')
                 (SG if page == 'songs' else AB).tap(m, x, y)
                 m.calls = []
                 m.click(row_item)
@@ -364,7 +366,7 @@ def menu_tests(ctx):
                 expect(len(m.up_calls) == 1 and ok_rows, f'{what}: upnext_add({after}) with a one-row deque holding the tapped row ({m.up_calls})')
                 ti = [i for i, n in enumerate(names) if n == 'toast']
                 order = names.index('upnext_add') < names.index('deque_destroy') < max(i for i, c in enumerate(calls) if c[0] == 'widget_set_visible' and c[1] == m.widgets['rm_card'] and c[2] == 0)
-                want = ('Added to Queue' if after else 'Playing Next') if status == ADDED else None if status == STARTED else TOASTS[status]
+                want = ('Added to Queue' if after else 'Playing Next') if status == ADDED else None if status == STARTED else 'File not found' if card_in else TOASTS[status]
                 expect(order and names.count('deque_destroy') == 1 and vis(m, 'rm_card') == (0, 0) and vis(m, 'rm_scrim') == (0, 0)
                        and bool(ti and ti[0] > names.index('deque_destroy')) == (want is not None), f'{what}: the deque is destroyed and the menu closed, then the toast')
                 expect(toasts_in(calls) == ([want] if want else []), f'{what}: the toast is {want!r} ({toasts_in(calls)})')

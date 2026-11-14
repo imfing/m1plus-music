@@ -38,6 +38,12 @@ assert '0xff2b2b2bu' in open(os.path.join(ROOT, 'patch', 'grid.h')).read()
 ROW_H, MB_PAD = 52, O['MB_PAD']
 
 
+SCROBBLE_SET = '/mnt/data/m1plus/scrobbling'   # patch/home.h SCROBBLE_FILE
+
+
+def quiet(m): return [c for c in m.calls if c[0] != 'get_playtimeandlength'] == []   # no call but the scrobble poll asking the player (patch/scrobble.c, through recent_note)
+
+
 def tile_x(i): return GRID_MARGIN + i % GRID_COLS * (GRID_COVER + GRID_GAP)       # cell i's x
 def cell_y(i): return SH_TOP + i // GRID_COLS * PITCH                                   # its top in the shelf
 
@@ -388,9 +394,9 @@ def file_and_layout_tests(ctx):
     expect(note(tracks[0]) == 1 and m.fs.get(RECENT) == pod_recent.dump([entry(*ALBUMS[0])]), 'the first album is recorded: the file holds it')
     expect(writes() == [('rename', RECENT_TMP, RECENT)] and ('fsync', RECENT_TMP) in m.calls, 'written atomically (temp file, fsync, rename onto the file)')
     m.calls = []; r = note(tracks[0])
-    expect(r == 0 and m.calls == [], f'the same album again: nothing changes, nothing is opened, read or written ({m.calls})')
+    expect(r == 0 and quiet(m), f'the same album again: nothing changes, nothing is opened, read or written ({m.calls})')
     m.calls = []; r = note(track(ALBUMS[0][1], ALBUMS[0][0], path='/mnt/mmc/other/2.flac', title='Another song'))
-    expect(r == 0 and m.calls == [] and m.fs[RECENT] == pod_recent.dump([entry(*ALBUMS[0])]), 'another track of the same album: still nothing')
+    expect(r == 0 and quiet(m) and m.fs[RECENT] == pod_recent.dump([entry(*ALBUMS[0])]), 'another track of the same album: still nothing')
     expect(note(tracks[1]) == 1 and pod_recent.parse(m.fs[RECENT]) == [entry(*ALBUMS[1]), entry(*ALBUMS[0])], 'a second album goes in front of the first')
     expect(note(tracks[0]) == 1 and [e[0] for e in pod_recent.parse(m.fs[RECENT])] == [entry(*ALBUMS[0])[0], entry(*ALBUMS[1])[0]],
            'an album already in the list moves to the front, it is not added twice')
@@ -403,12 +409,12 @@ def file_and_layout_tests(ctx):
     expect([e[0] for e in pod_recent.parse(m.fs[RECENT])] == [entry(*ALBUMS[i])[0] for i in (3, 6, 5, 4, 2, 0)] and len(pod_recent.parse(m.fs[RECENT])) == 6,
            'an album from the middle of a full list moves to the front, nothing falls off')
     m.calls = []; before = m.fs[RECENT]
-    expect(note(tracks[3]) == 0 and m.calls == [] and m.fs[RECENT] == before, 'and the most recent again changes nothing')
+    expect(note(tracks[3]) == 0 and quiet(m) and m.fs[RECENT] == before, 'and the most recent again changes nothing')
     nowrites = len([c for c in m.calls if c[0] in ('open', 'write', 'rename', 'fsync')])
     expect(nowrites == 0, 'no file call')
     untagged = track('', 'Artist')
     m.calls = []
-    expect(note(untagged) == 0 and m.calls == [] and m.fs[RECENT] == before, 'an album with an empty album tag is not recorded')
+    expect(note(untagged) == 0 and quiet(m) and m.fs[RECENT] == before, 'an album with an empty album tag is not recorded')
     expect(m.call(PSYMS['recent_note'], a0=0, count=100000) == 0 and m.calls == [], 'no track (nothing is playing): nothing')
     # the stored fields: control bytes, cut names, paths
     m = plain_machine()
@@ -445,7 +451,8 @@ def file_and_layout_tests(ctx):
     expect(r == 0 and RECENT not in m.fs, 'a streamed server track is never recorded (its path holds the credentials)')
     m = plain_machine(); m.card_mounted = False
     r = m.call(PSYMS['recent_note'], a0=m.record(album='A', artist='B', path='/p', title='t', name='n'), count=3000000)
-    expect(r == 0 and not [c for c in m.calls if c[0] in ('open', 'write', 'rename', 'mkdir', 'fsync', 'unlink')] and not m.fs and CARD not in m.dirs, 'no card: nothing is recorded, opened or written')
+    card_io = [c for c in m.calls if c[0] in ('open', 'write', 'rename', 'mkdir', 'fsync', 'unlink') and SCROBBLE_SET not in c[1:2]]   # the scrobble poll's one read of its flash setting is not the card
+    expect(r == 0 and not card_io and not m.fs and CARD not in m.dirs, f'no card: nothing is recorded, opened or written ({card_io})')
     m = plain_machine(); m.fs['/mnt/data/m1plus/recently-played'] = pod_recent.dump(e3)
     m.call(PSYMS['recent_note'], a0=m.record(album='Dummy', artist='Portishead', path='/p', title='t', name='n'), count=3000000)
     expect(RECENT in m.fs and m.fs['/mnt/data/m1plus/recently-played'] == pod_recent.dump(e3) and len(pod_recent.parse(m.fs[RECENT])) == 1, 'the old flash file is neither read nor touched')
@@ -1253,7 +1260,7 @@ def refresh_and_fallback_tests(ctx):
     expect(got[0][0] == pod_recent.identity('Now That\'s What I Call Music') and got[0][4] == 'Artist 0', 'its identity is the title\'s, the first track gave the artist')
     m.calls = []
     t = m.record(album='NOW THAT\'S WHAT I CALL MUSIC', artist='Someone', path='/other/1.flac', title='x', name='1.flac')
-    expect(m.call(PSYMS['recent_note'], a0=t, count=3000000) == 0 and m.calls == [], 'the same title in another case is the same album (SQLite NOCASE, as the stock list groups it): nothing happens')
+    expect(m.call(PSYMS['recent_note'], a0=t, count=3000000) == 0 and quiet(m), 'the same title in another case is the same album (SQLite NOCASE, as the stock list groups it): nothing happens')
     other = m.record(album='Greatest Hits', artist='A', path='/a/gh/1.flac', title='x', name='1.flac'); same = m.record(album='Greatest Hits', artist='B', path='/b/gh/1.flac', title='x', name='1.flac')
     m.call(PSYMS['recent_note'], a0=other, count=3000000)
     expect(m.call(PSYMS['recent_note'], a0=same, count=3000000) == 0 and len(pod_recent.parse(m.fs[RECENT])) == 2,

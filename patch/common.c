@@ -18,10 +18,6 @@ __attribute__((noinline)) int m1_scan_dir(const char *name, const char *dot) {
     return name[0] == '.' ? 0 : strcmp(name, dot);
 }
 
-/* A widget's text as UTF-8 in buf (size bytes, never written past): stock widget_get_text_utf8 ignores its size for a wide text (tk_utf8_from_utf16 at 0x70e790 overwrites
- * its out_size argument before reading it, counts the whole encoding and writes all of it), so a long lyric line or tag overran the caller's stack buffer. This reads the wide
- * text (widget_get_text) and encodes it here: a text that does not fit is cut at a character boundary, buf is always NUL terminated (size >= 1). Returns the length the whole
- * text needs (snprintf's), so the text fitted when the result is below size; -1 when the widget has no text (buf is then empty). A code point beyond U+10FFFF or a surrogate is U+FFFD. */
 static int m1_lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
 
 /* An artist field's names (docs/modules/artists.md "Separators"): the separators carry their own spaces, so a name that only looks
@@ -59,6 +55,10 @@ int m1_artist_split(const char *field, m1_artist_span *out, int max) {
     return (int)n;
 }
 
+/* A widget's text as UTF-8 in buf (size bytes, never written past): stock widget_get_text_utf8 ignores its size for a wide text (tk_utf8_from_utf16 at 0x70e790 overwrites
+ * its out_size argument before reading it, counts the whole encoding and writes all of it), so a long lyric line or tag overran the caller's stack buffer. This reads the wide
+ * text (widget_get_text) and encodes it here: a text that does not fit is cut at a character boundary, buf is always NUL terminated (size >= 1). Returns the length the whole
+ * text needs (snprintf's), so the text fitted when the result is below size; -1 when the widget has no text (buf is then empty). A code point beyond U+10FFFF or a surrogate is U+FFFD. */
 int m1_text_utf8(void *widget, char *buf, unsigned size) {
     const unsigned *t = widget ? widget_get_text(widget) : (const unsigned *)0;
     unsigned n = 0, w = 0, c, len, cut = 0;

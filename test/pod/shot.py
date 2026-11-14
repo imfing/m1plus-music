@@ -175,7 +175,7 @@ def run(ctx):
            'the stock icons of the group are untouched and in order, then the hidden battery percentage (test/pod/battery.py)')
     expect(os.path.isfile(os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx/pod_bar_shot.png')), 'the camera image is in the tree')
     stock_bar = awtk_ui.parse(open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', 'release/assets/default/raw/ui/system_bar.bin'), 'rb').read())
-    expect({w.name for w in stock_bar.walk()} == {w.name for w in bar.walk()} - {'pod_shot', 'pod_pct', 'pod_lo', 'pod_sync'}, 'no stock widget is renamed or removed')
+    expect({w.name for w in stock_bar.walk()} == {w.name for w in bar.walk()} - {'pod_shot', 'pod_pct', 'pod_lo', 'pod_sync', 'pod_eq'}, 'no stock widget is renamed or removed')
     # layout: the group's icons are laid out right-aligned from its right edge, the camera last, 4 px between; in the worst case
     # (Bluetooth 47, SyncLink 16, Wi-Fi 24 and the camera 16 at 4 px) the boxes start 111 px before the battery gap, but the
     # Bluetooth image is right-aligned art (its ink is the right 11 of 47 px), so every icon's ink starts right of the clock's text

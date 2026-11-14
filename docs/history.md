@@ -28,6 +28,8 @@ and [UI reference](ui.md). Hardware observations below do not validate later bui
 - **1.4.0, 2026-11-12:** Subsonic / Navidrome servers as a library source, artist photos, Continue
   Playing, Idle Display, a Lock Screen with a mini player, own Display and Buttons & Power pages,
   Charge Limit, Podcasts' full episode lists, search and filter, and Cassette Mode's quality tapes.
+- **1.4.1, 2026-11-12:** up to 100 podcast shows, long Wi-Fi names cut with an ellipsis, library
+  lists that refresh after deleting songs, and Cover Flow, LED and podcast description fixes.
 
 ## Device findings
 

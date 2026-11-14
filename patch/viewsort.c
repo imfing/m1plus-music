@@ -72,7 +72,7 @@ int vs_bind(vs_t *v, void *win, int (*item)(void *, void *), int (*scrim)(void *
         v->item[i] = widget_lookup(win, ITEMS[i], 1);
         v->label[i] = widget_lookup(win, LABELS[i], 1);
         if (i >= VS_ACT2 && !v->item[i] && !v->label[i])
-            continue; /* (slots 8 and 9 exist only in the Playlists asset: a page that offers them without the widgets is not ours, below) */
+            continue; /* (slot 8 exists only in the Playlists and Songs assets, slot 9 in the Playlists asset: a page that offers them without the widgets is not ours, below) */
         if (!v->item[i] || !v->label[i]) return -1;
         if (i < VS_SEARCH && !(v->tick[i] = widget_lookup(win, TICKS[i], 1))) return -1;
     }

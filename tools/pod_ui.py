@@ -35,6 +35,11 @@ UI_MODE = 0o744         # stock ui/*.bin mode
 UI_MTIME = 1750924035   # a stock ui/*.bin mtime (2025-06-26); fixed so added assets build deterministically
 
 
+def room_y(h, top=NAVBAR_H):
+    """The y of a block h high centred in the room under window y `top` (the navbar's bottom, or a kept large title's; patch/libsrc.c ls_room): a page's empty-state hint and its loading spinner."""
+    return top + (CLIENT_H - top - h) // 2
+
+
 def styled(w, states, prop, value):
     for st in states: w.set(f'style:{st}:{prop}', value)
 
@@ -404,9 +409,9 @@ def build_grid_page(page, toggle='list', coverflow=True, names=('albums_listview
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/albums.c / playlists.c show it while yoffset > 0
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
-    if albums or title_name:   # a source's list still loading: the one spinner, centred in the content area (patch/libsrc.c ls_spin)
-        root.children.append(hidden(wf_image((title_name or 'al_title')[:2] + '_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    if albums or title_name:   # a source's list still loading: the one spinner, centred in the room under the navbar here and under the large title by the payload (patch/libsrc.c ls_spin)
+        root.children.append(hidden(wf_image((title_name or 'al_title')[:2] + '_spin', (SCREEN_W - WF_SPIN_PX) // 2, room_y(WF_SPIN_PX), WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))
     # The two modes' text styles (patch/albums.c reads them with widget_prepare_text_style; never shown)
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB), ('label_row_sub', LIST_SUB_PX, SUB_RGB),
                                    ('label_grid_title', GRID_ALBUM_PX, INK_RGB), ('label_grid_sub', GRID_ARTIST_PX, SUB_RGB)))
@@ -479,7 +484,7 @@ def build_podcasts_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/podcasts.c shows it while yoffset > 0 (not on the Show level, which paints a fade in the page's colour)
-    status = hidden(label('label_status', 20, 180, SCREEN_W - 40, 90, '', 18, HINT_RGB))
+    status = hidden(label('label_status', 20, room_y(90), SCREEN_W - 40, 90, '', 18, HINT_RGB))
     styled(status, ('normal',), 'text_align_v', 'middle')
     root.children.append(status)
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB), ('label_row_sub', LIST_SUB_PX, SUB_RGB)))
@@ -502,7 +507,8 @@ PS_SHEET_ROWS = (('speed', 'pc_ic_speed', 'Playback Speed', True, False), ('refr
                  ('dl', 'pc_ic_down', 'Download', False, False), ('rm', 'pc_ic_trash', 'Remove Download', False, False),
                  ('mark', 'pc_ic_check', 'Mark as Played', False, False), ('unmark', 'pc_ic_undo', 'Mark as Unplayed', False, False),
                  ('import', 'pc_ic_import', 'Import from Card', False, False), ('delplayed', 'pc_ic_trash', 'Delete Played Episodes', False, False),
-                 ('export', 'pod_ic_export', 'Export OPML', False, False), ('save', 'pod_ic_save', 'Save Episode', False, False), ('order', 'pod_ic_order', 'Episode Order', True, False), ('filter', 'pod_ic_filter', 'Filter', True, False))   # id, glyph, label, has a value, red; import is the Shows level's sheet, select (relabelled Select, or Select Shows) and delplayed the Downloads page's, select and export the Subscriptions page's, save (relabelled Unsave Episode when it is saved) an episode's
+                 ('export', 'pod_ic_export', 'Export OPML', False, False), ('save', 'pod_ic_save', 'Save Episode', False, False), ('order', 'pod_ic_order', 'Episode Order', True, False), ('filter', 'pod_ic_filter', 'Filter', True, False),
+                 ('dlpause', 'pod_ic_pause', 'Pause', False, False), ('dlresume', 'pod_ic_play', 'Resume', False, False), ('dlretry', 'pc_ic_undo', 'Retry', False, False), ('dlcancel', 'pod_ic_cancel', 'Cancel Download', False, False))   # an In Progress row's sheet: the first of dlpause / dlresume / dlretry by the download's state, then dlcancel; id, glyph, label, has a value, red; import is the Shows level's sheet, select (relabelled Select, or Select Shows) and delplayed the Downloads page's, select and export the Subscriptions page's, save (relabelled Unsave Episode when it is saved) an episode's
 PS_SHEET_ICON_X, PS_SHEET_TEXT_X, PS_SHEET_VALUE_R, PS_SHEET_VALUE_W, PS_SHEET_GAP = (OFFSETS[k] for k in ('PS_SHEET_ICON_X', 'PS_SHEET_TEXT_X', 'PS_SHEET_VALUE_R', 'PS_SHEET_VALUE_W', 'PS_SHEET_GAP'))   # patch/offsets.inc
 PS_SHEET_RED = RED_RGB
 PS_SHEET_PX = 18   # the labels (Now Playing's More sheet: 18 px)
@@ -978,11 +984,11 @@ def view_sort_card(sort_keys=VS_SORT_KEYS, view_keys=VS_VIEW_KEYS, search_key=VS
         styled(card, (st,), 'border_width', '0')
     acts = tuple(act_keys) if act_keys else (search_key, select_key)
     act_gl = tuple(act_glyphs) if act_glyphs else ('pod_ic_vssearch', 'pod_ic_vsselect')
-    assert len(acts) == len(act_gl) and len(acts) in (2, 4)
+    assert len(acts) == len(act_gl) and len(acts) in (2, 3, 4)
     keys = tuple(sort_keys) + tuple(view_keys) + acts
     assert len(sort_keys) == len(VS_SORT_KEYS) and len(view_keys) == len(VS_VIEW_KEYS)
     slots = (6, 7, 8, 9)[:len(acts)] + (4, 5, 0, 1, 2, 3)   # the actions, Grid, List, Title, Artist, Recently Added, Year: the payload packs the rows a page offers (the asset is seven rows high, Select shares Grid's place until then)
-    where = {6: 0, 7: 1, 4: 1, 5: 2, 0: 3, 1: 4, 2: 5, 3: 6} if len(acts) == 2 else {6: 0, 7: 1, 8: 2, 9: 3, 4: 4, 5: 5, 0: 6, 1: 6, 2: 6, 3: 6}   # (four actions, two views and one sort fill the seven rows; the other sort rows share the last)
+    where = {6: 0, 7: 1, 8: 2, 4: 1, 5: 2, 0: 3, 1: 4, 2: 5, 3: 6} if len(acts) < 4 else {6: 0, 7: 1, 8: 2, 9: 3, 4: 4, 5: 5, 0: 6, 1: 6, 2: 6, 3: 6}   # (a third action, the Songs page's, shares List's place as Select shares Grid's; four actions, two views and one sort fill the seven rows; the other sort rows share the last)
     for slot in slots:
         pos = where[slot]
         key, y, glyph = keys[slot], pos * VS_ROW_H, slot >= len(VS_SORT_KEYS)
@@ -1098,8 +1104,8 @@ def build_artists_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/artists.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
-    root.children.append(hidden(wf_image('ar_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))   # a source's list still loading (patch/libsrc.c ls_spin)
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    root.children.append(hidden(wf_image('ar_spin', (SCREEN_W - WF_SPIN_PX) // 2, room_y(WF_SPIN_PX), WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')))   # a source's list still loading (patch/libsrc.c ls_spin)
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB),))   # the row text style (the stock srlabel_leftwhite21_style's 21 px white)
     root.children.extend(azlist_labels())
     root.children.extend(azlist_rail())
@@ -1251,12 +1257,12 @@ def build_songs_page(page):
     pills, ptext = play_header(o['PH_BTN_Y'])
     grid.children = [title, hname, sg_pill('btn_play', o['SG_PILL_X0'], o['SG_PILL_Y'], 'Play', 'sg_play', down=SG_PILL_PRESS_RGB),
                      sg_pill('btn_shuffle', o['SG_PILL_X1'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', down=SG_PILL_PRESS_RGB), *pills, foot,
-                     hidden(wf_image('sg_spin', (SCREEN_W - WF_SPIN_PX) // 2, (CLIENT_H - WF_SPIN_PX) // 2, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default'))]   # a source's loading spinner (the payload places, shows and turns it)
+                     hidden(wf_image('sg_spin', (SCREEN_W - WF_SPIN_PX) // 2, room_y(WF_SPIN_PX, NAVBAR_H + o['SG_TITLE_H']) - NAVBAR_H, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default'))]   # a source's loading spinner (the payload places, shows and turns it)
     root.children.append(ptext)
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/songs.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB), ('label_row_sub', LIST_SUB_PX, SUB_RGB),
                                    ('label_row_dim', LIST_TITLE_PX, '#7A7A7A'), ('label_row_subdim', LIST_SUB_PX, '#7A7A7A'),   # a source's rows that cannot play
                                    ('label_grid_title', GRID_ALBUM_PX, INK_RGB), ('label_grid_sub', GRID_ARTIST_PX, SUB_RGB)))   # the last two: Recently Added's album grid
@@ -1264,7 +1270,8 @@ def build_songs_page(page):
     root.children.extend(azlist_rail())
     root.children.append(select_bar('sg_bar', 'sg_bar_line', [('sg_add', o['SG_PILL_X0'], 'Add to Playlist', 'sg_listplus', o['SG_BAR_PILL_W']),
                                                               ('sg_del', o['SG_BAR_PILL_X1'], 'Delete', 'sg_trash', o['SG_BAR_PILL_W'])]))
-    root.children.extend(view_sort_card(sort_keys=pod_pages.SONGS_SORT_KEYS, view_keys=('Albums', 'Songs'), search_key='Search Songs'))   # above the list, the rail and the select bar (the "..." card: Select, Albums / Songs on Recently Added, the four sort rows of the library; vs_bind hides what a list does not offer; the Search Songs row is never offered, Search is the navbar button)
+    root.children.extend(view_sort_card(sort_keys=pod_pages.SONGS_SORT_KEYS, view_keys=('Albums', 'Songs'), act_keys=('Search Songs', 'Select', 'Clean Up Playlist'),
+                                        act_glyphs=('pod_ic_vssearch', 'pod_ic_vsselect', 'pod_ic_vsclean')))   # above the list, the rail and the select bar (the "..." card: Select, a playlist's Clean Up Playlist (slot 8), Albums / Songs on Recently Added, the four sort rows of the library; vs_bind hides what a list does not offer; the Search Songs row is never offered, Search is the navbar button)
     root.children.extend(row_menu())   # last: above everything (the track rows' "..." menu, patch/rowmenu.c)
     return root
 
@@ -1341,7 +1348,7 @@ def build_album_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(play_text('ab_play_text'))   # the pill's text style and its translated text; the payload paints the text over the pill
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
     root.children += style_labels(AB_STYLES)
     root.children.extend(album_navbar(page))   # the glass controls paint and take touches over the list
     root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=('Download Album', 'Select'), act_glyphs=('pod_ic_vsdownload', 'pod_ic_vsselect')))   # a source's "..." card (patch/albumpage.c offers the first row alone: Download Album); hidden on the library's page
@@ -1439,7 +1446,7 @@ def build_queue_page(page):
     view.children = kids
     sv.children.append(view)
     root.children.append(lv)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB), ('label_row_sub', LIST_SUB_PX, SUB_RGB)))
     root.children.extend(queue_navbar(page))   # last: the glass controls paint and take touches over the list
     return root
@@ -1532,6 +1539,29 @@ def build_tape_page(page):
     return root
 
 
+# The idle lyrics page (patch/idlelyrics.c, docs/modules/idlelyrics.md; the numbers are patch/offsets.inc IL_*): a fullscreen window (320 x 480, no status bar) in the Now Playing tone (the payload sets
+# its colour) with the cover tint and the lyrics scrim over it (np_tint_idle, np_scrim_idle: insensitive images), then il_view, the touch target over the whole window (transparent; the payload paints the
+# rounded cover in its own EVT_AFTER_PAINT), the title and the artist (hscroll_labels that end in an ellipsis and never scroll, as the mini bar's), il_lyrics (the engine's box: a scroll_view of the
+# lyrics, LY_W x IL_BOX_H) and the hint (20 px #AAAAAA, hidden and insensitive until the track has no lyrics). The window takes Now Playing's theme (styles/playing_page.bin) for the lyric label styles
+# the engine names (np_lyric_style[_m|_s], np_lyric_cjk_style[_m|_s]). label_title (hidden) is the page's name for the i18n and asset tests.
+def build_idlelyrics_page(page):
+    o = OFFSETS
+    root = Widget('window', 0, 0, 0, 0, [('name', page.name), ('theme', 'playing_page'), ('fullscreen', 'true')])
+    styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#202020')
+    tint = Widget('image', 0, 0, o['IL_W'], o['IL_H'], [('name', 'img_il_tint'), ('image', 'np_tint_idle'), ('draw_type', 'default'), ('sensitive', 'false')])
+    scrim = Widget('image', 0, 0, o['IL_W'], o['IL_H'], [('name', 'img_il_scrim'), ('image', 'np_scrim_idle'), ('draw_type', 'default'), ('sensitive', 'false')])
+    view = Widget('view', 0, 0, o['IL_W'], o['IL_H'], [('name', 'il_view')])
+    for st in ('normal', 'disable', 'focused'): styled(view, (st,), 'bg_color', '#00000000')
+    title = scroll_text('il_title', o['IL_TEXT_X'], o['IL_TITLE_Y'], o['IL_TEXT_W'], o['IL_TITLE_H'], o['IL_TITLE_PX'], MB_TITLE_RGB, 'left')
+    artist = scroll_text('il_artist', o['IL_TEXT_X'], o['IL_ARTIST_Y'], o['IL_TEXT_W'], o['IL_ARTIST_H'], o['IL_ARTIST_PX'], MB_ARTIST_RGB, 'left')
+    box = Widget('scroll_view', o['IL_BOX_X'], o['IL_BOX_Y'], o['LY_W'], o['IL_BOX_H'], [('name', 'il_lyrics'), ('floating', 'false')])
+    for st in ('normal', 'disable', 'focused'): styled(box, (st,), 'bg_color', '#00000000')
+    hint = hidden(scroll_text('il_hint', o['IL_BOX_X'], o['IL_BOX_Y'], o['LY_W'], o['IL_BOX_H'], o['IL_HINT_PX'], SUB_RGB, 'center', 'No Lyrics Found'))
+    root.children = [tint, scrim, view, title, artist, box, hint,
+                     hidden(Widget('label', 36, 14, 200, 22, [('name', 'label_title'), ('style', 'navbar_label_white'), pod_i18n.text_prop(page.title)]))]
+    return root
+
+
 # The Vinyl page (patch/vinyl.c, docs/modules/vinyl.md): a fullscreen window (320 x 480, portrait), one view over the whole window (vinyl_view: the touch target, painted by the
 # payload in its own EVT_AFTER_PAINT) and the text over it as insensitive hscroll_labels that never scroll (cut with an ellipsis; tools/vinyl_art.py TEXT): the title and its twin one
 # pixel right (the weight of the mock's title), the artist, the times, the status line. label_title (hidden) is the page's name for the i18n and asset tests.
@@ -1578,6 +1608,8 @@ OA_ES_STATES = {
     'covers busy': ('pod_es_timer', 'Cover Service Busy', 'iTunes and Deezer are busy. Try again in a moment.', True),
     'no lyrics': ('pod_es_music', 'No Lyrics Found', 'LRCLIB has no lyrics for this song.', False),
     'no covers': ('pod_es_image', 'No Covers Found', 'Nothing on iTunes or Deezer for this album.', False),
+    'photos busy': ('pod_es_timer', 'Photo Service Busy', 'The photo service is busy. Try again in a moment.', True),   # Find Artist Photo (onlineart_open_artist): the two states of its own; the others are shared
+    'no photos': ('pod_es_image', 'No Photos Found', 'No photos online for this artist.', False),
     'no connection': ('pod_es_plug', "Can't connect", 'Check your Wi-Fi connection.', True),
     'certificate': ('pod_es_lock', 'Certificate problem', "The server's certificate was not accepted.", True),
     'no certificates': ('pod_es_lock', 'Certificates missing', 'This device has no certificate bundle.', False),
@@ -1850,7 +1882,7 @@ def cards_row(i, row, piece, last, icon=True):
     from mod_icons import CARD_GLYPHS, card_name, CARD_CHEVRON, CARD_CHECK
     kind = pod_pages.row_kind(row)
     swatch = row.action == pod_pages.ACT_ACCENTSET   # the Accent picker's rows show the accent's round swatch where a glyph goes (never tinted: docs/modules/accent.md)
-    has_icon = swatch or (icon and kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph, like the rows around them)
+    has_icon = swatch or (icon and kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PCDIR, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row and the Presets count have no glyph, like the rows around them)
     h = ST.row_h(row)
     item = Widget('list_item', 0, 0, ST.LIST_W, h, [('name', f'pod_row{i}'), ('style', 'list_item_style')] + ([('sensitive', 'false')] if kind in ('info', 'preamp') and row.action != pod_pages.ACT_SFDEL else []))
     normal, down = ST.piece_images(piece, h != ST.ROW_H)
@@ -2036,6 +2068,60 @@ def cards_brightness():
     return v
 
 
+VOL_NAMES = {'maxvol': ('label_vol', 'vol_slider', 100), 'bootvol': ('label_vol', 'vol_slider', 100), 'balance': ('label_balance', 'slider_balance', 20)}   # stock's widget names of the three loudness pages (label, slider) and the slider's top
+VOL_BTN_W, VOL_VALUE_PX, VOL_BTN_PX = 46, 22, 24   # the - and + buttons' width (a touch target; the card is 300 wide), the value's text size, the buttons' text size
+VOL_DISC, VOL_DISC_FILL, VOL_GAP = 36, '#FFFFFF14', 8   # the round disc drawn under each button's text (its diameter, 8 % white) and the space between a button and the slider's end, so the bar's ends stand 13 px clear of the discs
+VOL_BTN_TEXTS = {'maxvol': ('−', '+'), 'bootvol': ('−', '+'), 'balance': ('L', 'R')}   # the buttons' texts: a step down or up; Channel Balance's step toward the left or the right (shown as they are in every language)
+
+
+def cards_volcard(card):
+    """A card of the Playback Settings loudness pages (patch/playset.c ps_vol_opened), one row high with the single piece, holding stock's own widgets by stock's names because stock's handlers and refresh are bound to
+    them and look them up by name: part 'value' the label (label_vol / label_balance, white, centred: stock's refresh writes "VOL: 80" or "L3" into it; on Max Volume and Default Volume it is hidden and insensitive, and pod_vsnum, the same look, shows the number alone), part 'slider' the buttons btn_dec / btn_add (stock's click
+    handlers) either side of the slider (vol_slider / slider_balance, 0 .. 100 or 0 .. 20: stock's value-changing handler), the Display page's slider look (pod_sl_thumb, drop_bg, drop_fg)."""
+    import pod_settings as ST
+    label_name, slider_name, top = VOL_NAMES[card.kind]
+    v = Widget('view', 0, 0, ST.LIST_W, ST.ROW_H, [('name', 'pod_vsval' if card.part == 'value' else 'pod_vsctl')])
+    for st in STATES:
+        styled(v, (st,), 'bg_color', '#00000000')
+        styled(v, (st,), 'bg_image', ST.piece_images('single')[0])
+        styled(v, (st,), 'bg_image_draw_type', 'default')
+    if card.part == 'value':
+        hidden = card.kind != 'balance'   # Max Volume, Default Volume: stock's label (it writes "VOL: 80") is kept for stock's refresh but hidden; ours (pod_vsnum) shows the number
+        for name, props in ((label_name, [('visible', 'false')] if hidden else []),) + ((('pod_vsnum', []),) if hidden else ()):
+            lab = Widget('label', ST.CM, 0, ST.CARD_W, ST.ROW_H, [('name', name), ('text', ''), ('sensitive', 'false')] + props)
+            for st in ('normal', 'disable', 'focused'):
+                styled(lab, (st,), 'font_size', str(VOL_VALUE_PX))
+                styled(lab, (st,), 'text_color', '#FFFFFF')
+                styled(lab, (st,), 'text_align_h', 'center')
+                styled(lab, (st,), 'text_align_v', 'middle')
+            v.children.append(lab)
+        return v
+    left, right = VOL_BTN_TEXTS[card.kind]
+    sx = ST.CM + 4 + VOL_BTN_W + VOL_GAP
+    for name, x, text in (('btn_dec', ST.CM + 4, left), ('btn_add', ST.CM + ST.CARD_W - 4 - VOL_BTN_W, right)):
+        disc = Widget('view', x + (VOL_BTN_W - VOL_DISC) // 2, (ST.ROW_H - VOL_DISC) // 2, VOL_DISC, VOL_DISC, [('name', name.replace('btn', 'pod_vsdisc')), ('sensitive', 'false')])   # the faint disc under the button's text; the button over it stays the touch target
+        for st in STATES:
+            styled(disc, (st,), 'bg_color', VOL_DISC_FILL); styled(disc, (st,), 'round_radius', str(VOL_DISC // 2))
+            styled(disc, (st,), 'border_width', '0'); styled(disc, (st,), 'border_color', '#00000000')
+        v.children.append(disc)
+        b = Widget('button', x, 3, VOL_BTN_W, ST.ROW_H - 6, [('name', name), ('text', text)])
+        for st in STATES:
+            styled(b, (st,), 'bg_color', '#00000000')
+            styled(b, (st,), 'border_width', '0'); styled(b, (st,), 'border_color', '#00000000')   # the theme's default button style draws a square border when the widget's own style names none
+            styled(b, (st,), 'text_color', '#8A8A8E' if st == 'pressed' else '#FFFFFF')
+            styled(b, (st,), 'font_size', str(VOL_BTN_PX))
+            styled(b, (st,), 'text_align_h', 'center')
+            styled(b, (st,), 'text_align_v', 'middle')
+        v.children.append(b)
+    s = Widget('slider', sx, 1, ST.CARD_W - 8 - 2 * (VOL_BTN_W + VOL_GAP), 50, [('name', slider_name), ('max', str(top)), ('step', '1'), ('slide_with_bar', 'true'), ('bar_size', '6'), ('dragger_size', '50'), ('dragger_adapt_to_icon', 'true'), ('value', '0')])
+    for st in ('normal', 'pressed', 'over', 'disable', 'focused'):
+        styled(s, (st,), 'bg_color', '#00000000'); styled(s, (st,), 'fg_color', '#00000000')
+        styled(s, (st,), 'icon', 'pod_sl_thumb'); styled(s, (st,), 'bg_image', 'drop_bg'); styled(s, (st,), 'fg_image', 'drop_fg')
+    styled(s, ('normal',), 'round_radius', '6')
+    v.children.append(s)
+    return v
+
+
 def cards_segment():
     """The band page's Peak / Low shelf / High shelf control (patch/peqband.c): a sensitive transparent view (the payload blits the container and the selected pill in its EVT_BEFORE_PAINT and takes the touch) with the three labels pod_seg_l<k> over it
     (white; the selected one is black on its pill, set by the payload), none sensitive."""
@@ -2132,6 +2218,7 @@ def build_cards_page(page):
         elif isinstance(it, pod_pages.Segment): sv.children.append(cards_segment())
         elif isinstance(it, pod_pages.HSliders): sv.children.append(cards_hsliders())
         elif isinstance(it, pod_pages.Brightness): sv.children.append(cards_brightness())
+        elif isinstance(it, pod_pages.VolCard): sv.children.append(cards_volcard(it))
         elif isinstance(it, pod_pages.Hdr): sv.children.append(cards_text(f'pod_sec{n_hdr}', ST.HDR_LABEL_Y, ST.HDR_LABEL_H, it.text, ST.HDR_PX, ST.HDR_H)); n_hdr += 1
         elif isinstance(it, pod_pages.Note):
             sv.children.append(cards_text(f'pod_note{n_note}', ST.NOTE_LABEL_Y, ST.NOTE_LABEL_H + (it.lines - 1) * ST.WRAP_LINE, it.text, ST.NOTE_PX, ST.item_h(it), it.lines > 1)); n_note += 1
@@ -2397,7 +2484,7 @@ def build_folders_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/folders.c shows it while yoffset > 0 (at rest it would darken the large title)
-    root.children.append(hidden(label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)))
+    root.children.append(hidden(label('label_status', 10, room_y(30), SCREEN_W - 20, 30, '', 20, HINT_RGB)))
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB),))
     root.children.append(select_bar('sg_bar', 'sg_bar_line', [('sg_add', o['SG_PILL_X0'], 'Add to Playlist', 'sg_listplus', o['SG_BAR_PILL_W']),
                                                               ('sg_del', o['SG_BAR_PILL_X1'], 'Delete', 'sg_trash', o['SG_BAR_PILL_W'])]))
@@ -2445,7 +2532,7 @@ def build_radio_page(page):
     sv.children.append(grid)
     root.children.append(lv)
     root.children.append(nav_fade(shown=False))   # patch/radiopage.c shows it while yoffset > 0 (at rest it would darken the large title)
-    status = hidden(label('label_status', 20, 165, SCREEN_W - 40, 120, '', 18, HINT_RGB))   # the captions are grey, centred on y 225; up to four lines of 280 px (the payload sets line_wrap and word_wrap)
+    status = hidden(label('label_status', 20, room_y(120), SCREEN_W - 40, 120, '', 18, HINT_RGB))   # the captions are grey, centred in the room under the navbar (room_y); up to four lines of 280 px (the payload sets line_wrap and word_wrap)
     styled(status, ('normal',), 'text_align_v', 'middle')
     root.children.append(status)
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, INK_RGB), ('label_row_sub', LIST_SUB_PX, SUB_RGB),
@@ -2673,6 +2760,7 @@ def build_wifi_page(page):
 # stock layouter's stacking agrees): Forget This Network (a saved network), the info card (WI_FIELDS label / value rows, room for the enterprise rows of a later stage), Auto-Join (saved) or Join (not saved),
 # with the card gaps between them. The navbar's title is the network's name (set by the payload).
 WI_FIELDS = 4   # patch/wifipage.c WI_FIELDS
+WI_NAME_H = 20  # patch/wifipage.c WI_NAME_H: a line of the whole name above the cards
 WI_LABEL_W, WI_VALUE_X, WI_VALUE_PX = 116, 140, 18   # a field row: the label's box (card relative from x 24) and the right aligned grey value's box up to the card's right ink edge (x 296)
 
 
@@ -2700,6 +2788,10 @@ def build_wifiinfo_page(page):
     join = hidden(wf_row('wi_row_join', 'single'))
     join.children = [centred('wi_join_t', 'Join')]
     sv.children.append(cards_spacer('pod_top', ST.CM))
+    for k in range(2):   # the whole name's lines, shown above the cards when the navbar's title is cut (patch/wifipage.c wi_name): grey, centred, as the password page's line
+        nm = hidden(cards_spacer(f'wi_nm{k}', WI_NAME_H))
+        nm.children = [label(f'wi_name{k}', ST.CM, 0, ST.CARD_W, WI_NAME_H, '', WK_LINE_PX, ST.GREY, 'center')]
+        sv.children.append(nm)
     sv.children.append(forget)
     sv.children.append(hidden(cards_spacer('wi_gap0', ST.GAP_H)))
     for k in range(WI_FIELDS):
@@ -2933,6 +3025,8 @@ def build_page(page):
         return build_ipod_page(page)
     if page.kind == 'tape':
         return build_tape_page(page)
+    if page.kind == 'idlelyrics':
+        return build_idlelyrics_page(page)
     if page.kind == 'vinyl':
         return build_vinyl_page(page)
     if page.kind == 'onlineart':

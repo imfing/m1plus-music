@@ -54,8 +54,8 @@ Preview: `uv run python -I tools/preview/preview_update.py work/mod-release out/
 - **Now Playing** leaves the page and cancels what runs (a download's `.part` is deleted, `update.bin` stays as it was); the worker ends by itself.
 - While a job runs the page's 250 ms timer calls stock's `reset_poweroptions_timer(1, 1, 0)` once a second (the standby and auto power-off countdowns set again, the screen's light left alone; stock standby would stop the Wi-Fi), exactly as the
   Podcasts downloads do (`docs/modules/payload.md`). It is the page's own timer (removed with the window), not a global one. Under a stock dialog (a modal call) the timer and the pills leave everything alone (`up.modal`).
-- **One job at a time.** The check and the download are jobs of the one worker slot of `patch/pcnet.c` (`PN_KIND_UPDATE`, counted by `pn_job_busy`). A running Podcasts download is paused first (`pn_dl_pause`; its queue stays), the job starts from the tick
-  once the slot is free (the title already says Checking… / Downloading 0%), and the queued downloads start again when the slot is free and the page has nothing waiting (and on destroy).
+- **One job at a time.** The check and the download are jobs of the one worker slot of `patch/pcnet.c` (`PN_KIND_UPDATE`, counted by `pn_job_busy`). A running Podcasts download is no job: it has a thread of its own and goes on beside the check and the download ([podcasts](podcasts.md) "Network and feeds"). The job starts from the tick
+  once the slot is free (the title already says Checking… / Downloading 0%).
 
 ## Release notes (`patch/relnotes.c`, `patch/upver.c up_notes`, `pcnet.c pn_up_notes_fetch`)
 

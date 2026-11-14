@@ -627,6 +627,8 @@ def src_tests(ctx):
     m = PM([]); src = m.fake_src(); m.fake_state_all = 1
     m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
     expect(vis(m, 'pl_spin')[0] == 1 and vis(m, 'label_status')[0] == 0 and vis(m, 'view_grid')[0] == 1 and ('timer_add', PSYMS['ls_spin_tick'], 250) in m.calls, 'loading: one spinner, no status line, the title block shows')
+    expect(('widget_move', m.widgets['pl_spin'], 153, 102 + (348 - 14) // 2) in m.calls and ('widget_move', m.widgets['label_status'], 10, 102 + (348 - 30) // 2) in m.calls,
+           'the spinner and the status line are centred in the room under the large title the page keeps (patch/libsrc.c ls_room)')
     m.playlists = [PM.rec(m, 1, 'Road', 2)]; m.playlist_songs[1] = []; m.fake_state_all = 0; m.fake_gen += 1
     m.call(PSYMS['pl_on_gen'], count=60000000)
     expect(vis(m, 'pl_spin')[0] == 0 and vis(m, 'label_status')[0] == 0 and vis(m, 'view_grid')[0] == 1, 'the playlists arrive: the spinner goes')

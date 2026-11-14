@@ -86,8 +86,9 @@ int ap_lead(const char *name, char *out, unsigned n) {
     unsigned len, a = 0, b;
     if (!name || m1_artist_split(name, &sp, 1) < 1 || sp.n >= n) return 0;
     len = (unsigned)strlen(name);
+    while (name[a] == ' ' || name[a] == '\t') ++a;
     for (b = len; b > a && (name[b - 1] == ' ' || name[b - 1] == '\t'); --b);
-    if (sp.p == name + a && sp.n == b) return 0; /* one name: nothing to lead */
+    if (sp.p == name + a && sp.n == b - a) return 0; /* one name: nothing to lead */
     memcpy(out, sp.p, sp.n);
     out[sp.n] = 0;
     return 1;
@@ -417,13 +418,33 @@ static int ap_find(const char *dir, const char *stem, char *out, int *prank, cha
     return 1;
 }
 
-static void ap_empty_marker(unsigned key) {
+/* ---- publishing (the cover worker's automatic builds and the network worker's pick write the same files) */
+
+/* Ours, zero-filled (a default mutex): held over the renames, unlinks and marker files that change an artist's cache entry, never over a decode. Under it a picked artist (ap_owned) is closed to the automatic
+ * builds, so a job that looked before the pick was saved cannot put its own result (a photo or the empty marker) over it. */
+static unsigned ap_mutex[8] __attribute__((section(".scratch"), aligned(8)));
+
+/* A picked photo: the marker and a -44 file (ap_job's and the re-check's rule). */
+static int ap_owned(unsigned key) {
+    char p[72];
+    return !access(ap_path(p, key, ".pick"), F_OK) && !access(ap_path(p, key, "-" AP_STR(AP_LIST) ".jpg"), F_OK);
+}
+
+/* No photo: the empty -44 file, the -168 file and .src removed. 1 written; 0 not (the artist's photo is a picked one). */
+static int ap_empty_marker(unsigned key) {
     char p[72];
     void *f;
+    pthread_mutex_lock(ap_mutex);
+    if (ap_owned(key)) {
+        pthread_mutex_unlock(ap_mutex);
+        return 0;
+    }
     unlink(ap_path(p, key, "-" AP_STR(AP_HEAD) ".jpg"));
     unlink(ap_path(p, key, ".src"));
     f = fopen(ap_path(p, key, "-" AP_STR(AP_LIST) ".jpg"), "w");
     if (f) fclose(f);
+    pthread_mutex_unlock(ap_mutex);
+    return 1;
 }
 
 /* .src: where the photo came from (the path, its size and modification time), so a later check can tell a changed or removed file. */
@@ -438,17 +459,24 @@ static void ap_write_src(unsigned key, const char *src) {
     m1_save(p, t, 0644, b, n);
 }
 
-/* The source picture at both sizes, each a square (cropped by pv_square), made from one decode of it (the 44 px file from the 168 px one). 1 when both files are published (the -44 file last). */
-static int ap_make(const char *src, unsigned key) {
-    char t168[72], t44[72], p168[72], p44[72];
+/* The source picture at both sizes, each a square (cropped by pv_square), made from one decode of it (the 44 px file from the 168 px one), then published under ap_mutex. pick 0, an automatic build: refused when
+ * the artist's photo is a picked one; .src is written. pick 1 (ap_pick): the .pick marker is part of the save and .src and .try go. 1 when both files (and the marker) are there; 0 not, and then the files the
+ * artist had are as they were (the old -168 file is kept in memory until the -44 file is in place). The two callers' temporary files have their own names: they run on two threads. */
+static int ap_make(const char *src, unsigned key, int pick) {
+    char t168[72], t44[72], p168[72], p44[72], old[72], mark[72], p[72];
     unsigned w, h, sof;
     long size = cc_file_size(src);
-    int kind = pc_pic_info(src, &w, &h, &sof), r;
+    int kind = pc_pic_info(src, &w, &h, &sof), r, had, marked = 0, ok = 0;
+    long osz;
+    void *f, *keep = (void *)0;
     if (!((kind == 1 && (sof == 0xc0 || sof == 0xc1 || sof == 0xc2) && size > 0 && size <= AP_MAX_JPEG) ||
           (kind == 2 && size > 0 && size <= AP_MAX_PNG)))
         return 0;
-    ap_path(t168, key, "-" AP_STR(AP_HEAD) ".jpg.tmp"), ap_path(t44, key, "-" AP_STR(AP_LIST) ".jpg.tmp");
+    if (!pick && ap_owned(key)) return 0; /* (not worth a decode; the answer that counts is the one under the mutex) */
+    ap_path(t168, key, pick ? "-" AP_STR(AP_HEAD) ".jpg.pk" : "-" AP_STR(AP_HEAD) ".jpg.tmp");
+    ap_path(t44, key, pick ? "-" AP_STR(AP_LIST) ".jpg.pk" : "-" AP_STR(AP_LIST) ".jpg.tmp");
     ap_path(p168, key, "-" AP_STR(AP_HEAD) ".jpg"), ap_path(p44, key, "-" AP_STR(AP_LIST) ".jpg");
+    ap_path(old, key, "-" AP_STR(AP_HEAD) ".jpg.old"), ap_path(mark, key, ".pick");
     r = pv_square(src, t168, AP_HEAD); /* a square, whatever the picture's shape */
     if (r != 1 || cc_file_size(t168) <= 0) {
         unlink(t168);
@@ -460,16 +488,50 @@ static int ap_make(const char *src, unsigned key) {
         unlink(t168), unlink(t44);
         return 0;
     }
-    if (rename(t168, p168)) {
+    pthread_mutex_lock(ap_mutex);
+    if (pick) {
+        if (access(mark, F_OK)) {
+            f = fopen(mark, "w");
+            marked = f && !fclose(f);
+            if (!marked) unlink(mark);
+        }
+    }
+    if (pick ? !marked && access(mark, F_OK)
+             : ap_owned(key)) { /* no marker could be written; or a pick was saved meanwhile */
+        pthread_mutex_unlock(ap_mutex);
         unlink(t168), unlink(t44);
         return 0;
     }
-    ap_write_src(key, src);
-    if (rename(t44, p44)) {
-        unlink(t44), unlink(p168);
-        return 0;
+    /* The header photo the artist has is held in memory, never moved: the path always names a whole photo. A -44 file that cannot be published writes it back; if that fails too the new header stays
+     * beside the old list file (two photos, both whole), and the save is still a failure. */
+    osz = cc_file_size(p168);
+    had = osz > 0;
+    if (had) {
+        keep = osz <= AP_MAX_JPEG ? calloc(1, (unsigned)osz) : (void *)0;
+        f = keep ? fopen(p168, "rb") : (void *)0;
+        if (!f || fread(keep, 1, (unsigned)osz, f) != (unsigned)osz) had = -1; /* cannot be kept: nothing is replaced */
+        if (f) fclose(f);
     }
-    return 1;
+    if (had >= 0 && !rename(t168, p168)) {
+        if (!pick) ap_write_src(key, src);
+        ok = !rename(t44, p44); /* (last: a non-empty -44 file means both are there) */
+        if (!ok) {
+            if (!had)
+                unlink(p168);
+            else
+                m1_save(p168, old, 0644, keep, (unsigned)osz);
+        }
+    }
+    free(keep);
+    if (!ok) {
+        if (marked) unlink(mark);
+    } else if (pick) {
+        unlink(ap_path(p, key, ".src")); /* the source was a scratch file: nothing to compare with later */
+        unlink(ap_path(p, key, ".try"));
+    }
+    pthread_mutex_unlock(ap_mutex);
+    if (!ok) unlink(t168), unlink(t44);
+    return ok;
 }
 
 /* How a folder's purity is judged: the Home pass's snapshot (mode 0), the saved map (mode 1: tab, mask), or not at all (mode 2: only the album folders themselves are looked in). */
@@ -511,7 +573,7 @@ static int ap_walk(unsigned key, const char *const *dirs, unsigned n, const ap_o
             tried[0] = 0, rank = 0;
             while (ap_find(dir, tier == 2 ? "folder" : "artist", src, &rank,
                            tried)) /* a picture that does not decode leaves the others of the folder to try */
-                if (ap_make(src, key)) return 1;
+                if (ap_make(src, key, 0)) return 1;
         }
     }
     return 0;
@@ -669,9 +731,8 @@ void ap_recheck_job(const char *tracks, unsigned key, const volatile int *cancel
         return;
     }
     if (!access(try, F_OK)) { /* the last attempt on this artist died or hung: no photo until a rebuild */
-        ap_empty_marker(key);
+        if (ap_empty_marker(key) && sz > 0) ++ap_ep;
         unlink(try);
-        if (sz > 0) ++ap_ep;
         free(copy);
         return;
     }
@@ -692,7 +753,7 @@ void ap_recheck_job(const char *tracks, unsigned key, const volatile int *cancel
     o.mode = full ? 1 : 2, o.tab = tab, o.mask = mask;
     found = ap_walk(key, (const char *const *)dirs, n, &o);
     if (!found && sz > 0 && !*cancelled && !access(old, F_OK))
-        found = ap_make(old, key); /* the file is still there: changed in place, and still the photo */
+        found = ap_make(old, key, 0); /* the file is still there: changed in place, and still the photo */
     unlink(try);
     free(tab);
     free(copy);
@@ -700,12 +761,27 @@ void ap_recheck_job(const char *tracks, unsigned key, const volatile int *cancel
     if (found)
         ++ap_ep;
     else if (full && sz != 0) {
-        ap_empty_marker(key); /* nothing found where the whole library was weighed: no photo (a removed source) */
-        if (sz > 0) ++ap_ep;
+        if (ap_empty_marker(key) && sz > 0)
+            ++ap_ep; /* nothing found where the whole library was weighed: no photo (a removed source) */
     }
 }
 
 unsigned ap_epoch(void) { return ap_ep; }
+
+int ap_picked(unsigned key) {
+    char p[72];
+    return key && !access(ap_path(p, key, ".pick"), F_OK) &&
+           cc_file_size(ap_path(p, key, "-" AP_STR(AP_LIST) ".jpg")) > 0;
+}
+
+int ap_pick(const char *src, unsigned key) {
+    if (!key) return 0;
+    mkdir(CARD_DIR, 0755);
+    mkdir(AP_DIR, 0755);
+    if (!ap_make(src, key, 1)) return 0; /* (the files the artist had stay, a marker it did not have is not left) */
+    ++ap_ep;
+    return 1;
+}
 
 int ap_recheck(const char *name, const char *tracks) {
     unsigned key = ap_key(name);

@@ -45,6 +45,7 @@
 #include "grid.h"
 #include "podcasts.h"
 #include "fnv.h"
+#include "scrobble.h"
 
 #if SH_TILES != GRID_COLS * SH_ROWS || SH_TILES != RC_MAX
 #error the shelf shows every album the file keeps: SH_TILES = GRID_COLS * SH_ROWS = RC_MAX
@@ -236,6 +237,7 @@ int recent_note(void *t) {
     ent_t e;
     pc_note(
         t); /* Podcasts: the place, the played mark, the speed (patch/pcmodel.c); every page that sees the playing track on a timer calls this */
+    scrobble_note(t); /* the seconds heard, a listen to the scrobble log (patch/scrobble.c) */
     if (!t) return 0;
     if (pc_is_path(cc_str(t, REC_PATH))) return 0; /* an episode is not an album of the shelf */
     if (rc_is_stream(cc_str(t, REC_PATH)))

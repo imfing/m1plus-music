@@ -7,6 +7,7 @@
 #include "utf8.h"
 #include "common.h"
 #include "curlopts.h"
+#include "net.h"
 
 #define SBN_TEXT 192 /* longest password the token input holds */
 
@@ -453,7 +454,7 @@ void sbn_sink_reset(sbn_sink_t *sink) {
     unsigned cap = sink->cap;
     memset(sink, 0, sizeof *sink);
     sink->data = data, sink->cap = data ? cap : 0;
-    sink->fd = -1;
+    sink->file.fd = -1;
 }
 
 void sbn_sink_free(sbn_sink_t *sink) {
@@ -486,29 +487,28 @@ int sbn_init(sbn_xfer_fn xfer, sbn_after_fn after) {
     sbn_st.xfer = xfer;
     sbn_st.after = after;
     if (sbn_st.ready) return 1;
-    if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) return 0;
+    if (!net_init()) return 0;
     sbn_st.ready = 1;
     return 1;
 }
 
 static int sbn_resume_save(const sbn_sink_t *sink, const char *path);
 
-static unsigned sbn_write(void *ptr, unsigned size, unsigned nmemb, void *ctx) {
+static unsigned sbn_write(char *ptr, unsigned size, unsigned nmemb, void *ctx) {
     sbn_sink_t *s = (sbn_sink_t *)ctx;
     unsigned n = size * nmemb;
     if (!s || (size && n / size != nmemb)) return 0;
-    if (s->fd >= 0) {
-        unsigned done = 0;
+    if (s->file.fd >= 0) {
         if (s->audio) {
-            if (s->header_status >= 300 && s->header_status < 400)
+            if (s->head.status >= 300 && s->head.status < 400)
                 return n; /* a redirect's body never belongs in the audio file */
             if (!s->headers_ok) { /* not the audio we asked for (or a resume the server did not honour): nothing is appended */
-                s->werr = SBN_W_RESPONSE;
+                s->file.why = SBN_W_RESPONSE;
                 return 0;
             }
             if (!s->body_started) {
                 s->body_started = 1;
-                if (s->etag[0] && s->validator_path && s->identity)
+                if (s->head.etag[0] && s->validator_path && s->identity)
                     s->resume_saved = sbn_resume_save(s, s->validator_path);
             }
         }
@@ -518,32 +518,7 @@ static unsigned sbn_write(void *ptr, unsigned size, unsigned nmemb, void *ctx) {
             memcpy(s->prefix + s->prefix_used, ptr, take);
             s->prefix_used += take;
         }
-        if ((long long)n > LLONG_MAX - s->written) {
-            s->werr = SBN_W_SPACE;
-            return 0;
-        }
-        if (s->written - s->last_check >= 1024 * 1024) {
-            unsigned free_kb = 0;
-            if (!m1_free_kb("/mnt/mmc", &free_kb)) {
-                s->werr = SBN_W_CARD;
-                return 0;
-            }
-            if (free_kb <= SBA_RESERVE_KB) {
-                s->werr = SBN_W_SPACE;
-                return 0;
-            }
-            s->last_check = s->written;
-        }
-        while (done < n) {
-            int wrote = write(s->fd, (const char *)ptr + done, n - done);
-            if (wrote <= 0) {
-                s->werr = SBN_W_IO;
-                return 0;
-            }
-            done += (unsigned)wrote;
-        }
-        s->written += n;
-        return n;
+        return net_file_write(&s->file, ptr, n); /* (the reserve is asked again after every MiB) */
     }
     if (n >= SBN_RESPONSE_MAX - s->used || !sbn_room(s, s->used + n + 1)) return 0;
     memcpy(s->data + s->used, ptr, n);
@@ -552,227 +527,65 @@ static unsigned sbn_write(void *ptr, unsigned size, unsigned nmemb, void *ctx) {
     return n;
 }
 
-/* A strong ETag (RFC 9110): a quoted string, no W/ prefix, nothing inside that could break a header line. */
-static int sbn_strong_etag(const char *value) {
-    unsigned i, n = sbn_len(value);
-    if (n < 2 || n >= 128 || value[0] != '"' || value[n - 1] != '"') return 0;
-    for (i = 1; i + 1 < n; ++i)
-        if ((unsigned char)value[i] < 33 || value[i] == '"' || (unsigned char)value[i] == 127) return 0;
-    return 1;
-}
-
-/* The value of the header line "key:" (key in lower case), trimmed, into out. 1 matched (out empty when the value did not fit cap), 0 another header. */
-static int sbn_header_value(const char *line, unsigned n, const char *key, char *out, unsigned cap) {
-    unsigned i = 0, end = n, length;
-    while (key[i]) {
-        if (i >= n || sbn_ascii_lower((unsigned char)line[i]) != key[i]) return 0;
-        ++i;
-    }
-    while (i < end && (line[i] == ' ' || line[i] == '\t')) ++i;
-    while (end > i && (line[end - 1] == '\r' || line[end - 1] == '\n' || line[end - 1] == ' ' || line[end - 1] == '\t'))
-        --end;
-    length = end - i;
-    out[0] = 0;
-    if (length >= cap) return 1;
-    memcpy(out, line + i, length);
-    out[length] = 0;
-    return 1;
-}
-
-static int sbn_text_type(const char *type);
-
 /* Are the headers of this response the ones a download wants? A fresh file: 200. A resumed one: a 206 for exactly the bytes after the saved ones, ending at the file's end, with the strong ETag
  * the .part file was saved under. Never a text or JSON type (a login page, a Subsonic error). */
 static int sbn_download_headers_valid(const sbn_sink_t *sink) {
-    if (sbn_text_type(sink->content_type)) return 0;
-    if (!sink->resume_offset) return sink->header_status == 200;
-    return sink->header_status == 206 && sink->range_seen && sink->range_start == sink->resume_offset &&
-           sink->range_end >= sink->range_start && sink->range_total > 0 && sink->range_end == sink->range_total - 1 &&
-           sbn_strong_etag(sink->resume_etag) && !strcmp(sink->etag, sink->resume_etag);
+    if (net_text_type(sink->content_type)) return 0;
+    if (!sink->resume_offset) return sink->head.status == 200;
+    return net_head_resumes(&sink->head, sink->resume_offset) && net_strong_etag(sink->resume_etag) &&
+           !strcmp(sink->head.etag, sink->resume_etag);
 }
 
-static unsigned sbn_header(void *ptr, unsigned size, unsigned nmemb, void *ctx) {
+/* libcurl's header callback: the shared reader keeps the status, the strong ETag, the type and the Content-Range (patch/netfile.c net_head_line); an audio transfer is judged at the end of each
+ * response's headers. */
+static unsigned sbn_header(char *ptr, unsigned size, unsigned nmemb, void *ctx) {
     sbn_sink_t *sink = (sbn_sink_t *)ctx;
-    const char *line = (const char *)ptr;
-    static const char key[] = "content-range:";
-    unsigned n = size * nmemb, i;
+    unsigned n = size * nmemb;
+    int end;
     if (!sink || (size && n / size != nmemb)) return 0;
-    if (n >= 5 && line[0] == 'H' && line[1] == 'T' && line[2] == 'T' && line[3] == 'P' && line[4] == '/') {
-        sink->range_seen = 0;
-        sink->range_start = sink->range_end = sink->range_total = -1;
-        sink->headers_ok = sink->header_status = 0;
-        sink->etag[0] = sink->content_type[0] = 0;
-        for (i = 5; i < n && line[i] != ' '; ++i) {
-        }
-        if (i + 3 < n && line[i + 1] >= '0' && line[i + 1] <= '9' && line[i + 2] >= '0' && line[i + 2] <= '9' &&
-            line[i + 3] >= '0' && line[i + 3] <= '9')
-            sink->header_status = (line[i + 1] - '0') * 100 + (line[i + 2] - '0') * 10 + line[i + 3] - '0';
-        return n;
-    }
-    if ((n == 2 && line[0] == '\r' && line[1] == '\n') ||
-        (n == 1 && line[0] == '\n')) { /* the end of one response's headers */
-        if (sink->audio) sink->headers_ok = sbn_download_headers_valid(sink);
-        return n;
-    }
-    if (sbn_header_value(line, n, "etag:", sink->etag, sizeof sink->etag)) {
-        if (!sbn_strong_etag(sink->etag)) sink->etag[0] = 0;
-        return n;
-    }
-    if (sbn_header_value(line, n, "content-type:", sink->content_type, sizeof sink->content_type)) return n;
-    if (n < sizeof key - 1) return n;
-    for (i = 0; i < sizeof key - 1; ++i)
-        if (sbn_ascii_lower((unsigned char)line[i]) != key[i]) return n;
-    sink->range_seen = 1;
-    sink->range_start = sink->range_end = sink->range_total = -1;
-    i = sizeof key - 1;
-    while (i < n && (line[i] == ' ' || line[i] == '\t')) ++i;
-    if (i + 6 > n || sbn_ascii_lower((unsigned char)line[i++]) != 'b' ||
-        sbn_ascii_lower((unsigned char)line[i++]) != 'y' || sbn_ascii_lower((unsigned char)line[i++]) != 't' ||
-        sbn_ascii_lower((unsigned char)line[i++]) != 'e' || sbn_ascii_lower((unsigned char)line[i++]) != 's' ||
-        line[i++] != ' ')
-        return n;
-    if (i < n && line[i] == '*') return n;
-    {
-        long long start = 0, end = 0;
-        unsigned digits = 0;
-        while (i < n && line[i] >= '0' && line[i] <= '9') {
-            unsigned digit = (unsigned)(line[i++] - '0');
-            if (start > 922337203685477580LL || (start == 922337203685477580LL && digit > 7)) return n;
-            start = start * 10 + digit;
-            ++digits;
-        }
-        if (!digits || i >= n || line[i++] != '-') return n;
-        digits = 0;
-        while (i < n && line[i] >= '0' && line[i] <= '9') {
-            unsigned digit = (unsigned)(line[i++] - '0');
-            if (end > 922337203685477580LL || (end == 922337203685477580LL && digit > 7)) return n;
-            end = end * 10 + digit;
-            ++digits;
-        }
-        if (!digits || i >= n || line[i++] != '/' || end < start) return n;
-        sink->range_start = start;
-        sink->range_end = end;
-        if (i < n && line[i] != '*') {
-            long long total = 0;
-            digits = 0;
-            while (i < n && line[i] >= '0' && line[i] <= '9') {
-                unsigned digit = (unsigned)(line[i++] - '0');
-                if (total > 922337203685477580LL || (total == 922337203685477580LL && digit > 7)) {
-                    sink->range_total = -2;
-                    return n;
-                }
-                total = total * 10 + digit;
-                ++digits;
-            }
-            if (digits)
-                sink->range_total = total > end ? total : -2;
-            else
-                sink->range_total = -2;
-        }
-    }
+    end = net_head_line(&sink->head, ptr, n);
+    memcpy(sink->content_type, sink->head.type, sizeof sink->content_type);
+    if (end == 2) sink->headers_ok = 0; /* (a status line: another response begins) */
+    if (end == 1 && sink->audio) sink->headers_ok = sbn_download_headers_valid(sink);
     return n;
 }
-
-#define SBN_SETOPT(option, value) \
-    do { \
-        if (curl_easy_setopt(h, option, value) != CURLE_OK) { \
-            rc = CURLE_FAILED_INIT; \
-            goto cleanup; \
-        } \
-    } while (0)
-
 int sbn_http(const char *url, sbn_sink_t *sink, long timeout, const char *range) {
-    void *h;
-    int rc = CURLE_FAILED_INIT;
-    long status = 0;
-    char *content_type = (char *)0;
-    long long content_length = -1;
-    struct {
-        char *data;
-        void *next;
-    } if_range_header; /* libcurl's curl_slist: one header, no allocation */
+    net_req_t r;
+    int rc;
+    void *if_range_list[2];
     char if_range[144];
     if (!sink) return SBN_E_INIT;
-    if (sink->fd < 0 && !sink->data && !sbn_room(sink, 1))
+    if (sink->file.fd < 0 && !sink->data && !sbn_room(sink, 1))
         return SBN_E_INIT; /* (an answer with no body still leaves data a string) */
-    h = curl_easy_init();
-    if (!h) {
-        sink->curl_result = -1, sink->http_status = 0;
-        return SBN_E_INIT;
-    }
-    SBN_SETOPT(CURLOPT_URL, url);
-    SBN_SETOPT(CURLOPT_WRITEFUNCTION, sbn_write);
-    SBN_SETOPT(CURLOPT_WRITEDATA, sink);
-    SBN_SETOPT(CURLOPT_HEADERFUNCTION, sbn_header);
-    SBN_SETOPT(CURLOPT_HEADERDATA, sink);
-    SBN_SETOPT(CURLOPT_FAILONERROR, 1L);
-    SBN_SETOPT(CURLOPT_CONNECTTIMEOUT, 12L);
-    SBN_SETOPT(CURLOPT_TIMEOUT, timeout);
-    SBN_SETOPT(CURLOPT_LOW_SPEED_LIMIT, 512L);
-    SBN_SETOPT(CURLOPT_LOW_SPEED_TIME, timeout > 0 && timeout < 45L ? timeout / 2L : 45L);
-    SBN_SETOPT(CURLOPT_NOPROGRESS, 0L);
-    SBN_SETOPT(CURLOPT_XFERINFOFUNCTION, sbn_st.xfer);
-    SBN_SETOPT(CURLOPT_XFERINFODATA, sink);
-    SBN_SETOPT(CURLOPT_NOSIGNAL, 1L);
-    SBN_SETOPT(CURLOPT_FOLLOWLOCATION, 1L);
-    SBN_SETOPT(CURLOPT_MAXREDIRS, 5L);
-    SBN_SETOPT(CURLOPT_REDIR_PROTOCOLS, sbn_https(url) ? CURLPROTO_HTTPS : CURLPROTO_HTTP_HTTPS);
-    SBN_SETOPT(CURLOPT_PROTOCOLS, CURLPROTO_HTTP_HTTPS);
-    SBN_SETOPT(CURLOPT_CAINFO, M1_CA);
-    SBN_SETOPT(CURLOPT_SSL_VERIFYPEER, 1L);
-    SBN_SETOPT(CURLOPT_SSL_VERIFYHOST, 2L);
-    if (range && *range) SBN_SETOPT(CURLOPT_RANGE, range);
-    if (sink->audio && sink->resume_offset &&
-        sbn_strong_etag(
-            sink->resume_etag)) { /* the Range only holds if the file is still the one the .part file came from */
-        snprintf(if_range, sizeof if_range, "If-Range: %s", sink->resume_etag);
-        if_range_header.data = if_range;
-        if_range_header.next = (void *)0;
-        SBN_SETOPT(CURLOPT_HTTPHEADER, &if_range_header);
-    }
-    rc = curl_easy_perform(h);
-cleanup:
-    if (curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status) != CURLE_OK) status = 0;
-    if (curl_easy_getinfo(h, CURLINFO_CONTENT_TYPE, &content_type) != CURLE_OK) content_type = (char *)0;
-    if (curl_easy_getinfo(h, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &content_length) != CURLE_OK) content_length = -1;
-    {
-        unsigned i;
-        sink->curl_result = rc;
-        sink->http_status = status;
-        sink->content_length = content_length;
-        sink->content_type[0] = 0;
-        if (content_type)
-            for (i = 0; i + 1 < sizeof sink->content_type && content_type[i]; ++i)
-                sink->content_type[i] = content_type[i];
-        if (content_type) sink->content_type[i] = 0;
-    }
-    curl_easy_cleanup(h);
+    memset(&r, 0, sizeof r);
+    r.url = url, r.write = sbn_write, r.wdata = sink, r.header = sbn_header, r.hdata = sink;
+    r.xfer = sbn_st.xfer, r.xdata = sink;
+    r.type = sink->content_type, r.type_size = sizeof sink->content_type;
+    r.flags = NET_FAIL | NET_NODOWNGRADE | NET_NOENCODING;
+    r.redirs = 5, r.connect_s = 12, r.total_s = (int)timeout;
+    r.low_limit = 512, r.low_time = timeout > 0 && timeout < 45L ? (int)(timeout / 2L) : 45;
+    if (range && *range) r.range = range;
+    /* the Range only holds if the file is still the one the .part file came from */
+    if (sink->audio && sink->resume_offset && net_if_range(if_range, sizeof if_range, if_range_list, sink->resume_etag))
+        r.headers = if_range_list;
+    rc = net_perform(&r);
+    sink->curl_result = rc;
+    sink->http_status = r.http;
+    if (rc == NET_NOHANDLE) return SBN_E_INIT;
+    sink->content_length = r.length;
     if (sbn_st.after) sbn_st.after(sink);
     return rc == 0 ? 0 : -1;
 }
 
-#undef SBN_SETOPT
-
-static int sbn_text_type(const char *type) {
-    char lower[64];
-    unsigned i;
-    if (!type || !type[0]) return 0;
-    for (i = 0; i + 1 < sizeof lower && type[i]; ++i) lower[i] = (char)sbn_ascii_lower((unsigned char)type[i]);
-    lower[i] = 0;
-    return sbn_prefix(lower, "text/") || sbn_prefix(lower, "application/json") ||
-           sbn_prefix(lower, "application/xml") || sbn_prefix(lower, "application/xhtml") ||
-           sbn_prefix(lower, "application/problem+");
-}
-
 static int sbn_audio_response_valid(const sbn_sink_t *sink, long expected_status, long long expected_range_start) {
     unsigned i = 0;
-    if (!sink || sink->http_status != expected_status || sink->written <= 0 || sink->prefix_used < 3 ||
-        (sink->content_length >= 0 && sink->written != sink->content_length) || sbn_text_type(sink->content_type))
+    if (!sink || sink->http_status != expected_status || sink->file.written <= 0 || sink->prefix_used < 3 ||
+        (sink->content_length >= 0 && sink->file.written != sink->content_length) || net_text_type(sink->content_type))
         return 0;
-    if (expected_status == 206 &&
-        (!sink->range_seen || sink->range_start != expected_range_start || sink->range_end < sink->range_start ||
-         sink->range_total == -2 || sink->range_end - sink->range_start == LLONG_MAX ||
-         sink->written != sink->range_end - sink->range_start + 1))
+    if (expected_status == 206 && (!sink->head.range_seen || sink->head.range_start != expected_range_start ||
+                                   sink->head.range_end < sink->head.range_start || sink->head.range_total == -2 ||
+                                   sink->head.range_end - sink->head.range_start == LLONG_MAX ||
+                                   sink->file.written != sink->head.range_end - sink->head.range_start + 1))
         return 0;
     while (i < sink->prefix_used &&
            (sink->prefix[i] == ' ' || sink->prefix[i] == '\t' || sink->prefix[i] == '\r' || sink->prefix[i] == '\n'))
@@ -782,20 +595,20 @@ static int sbn_audio_response_valid(const sbn_sink_t *sink, long expected_status
 }
 
 static void sbn_sink_prepare_file(sbn_sink_t *sink, int fd) {
-    sink->audio = sink->headers_ok = sink->header_status = sink->body_started = sink->resume_saved = sink->werr = 0;
-    sink->etag[0] = sink->resume_etag[0] = 0;
+    sink->audio = sink->headers_ok = sink->body_started = sink->resume_saved = 0;
+    memset(&sink->file, 0, sizeof sink->file);
+    memset(&sink->head, 0, sizeof sink->head);
+    sink->file.room = fd >= 0 ? "/mnt/mmc" : (const char *)0;
+    sink->resume_etag[0] = 0;
     sink->validator_path = sink->identity = (const char *)0;
     sink->used = 0;
     sink->prefix_used = 0;
-    sink->fd = fd;
+    sink->file.fd = fd;
     sink->curl_result = 0;
     sink->http_status = 0;
     sink->content_length = -1;
-    sink->range_start = sink->range_end = sink->range_total = -1;
-    sink->range_seen = 0;
+    sink->head.range_start = sink->head.range_end = sink->head.range_total = -1;
     sink->content_type[0] = 0;
-    sink->written = 0;
-    sink->last_check = 0;
 }
 
 /* The resume record next to a .part file (<part>.etag): the strong ETag of the file the .part bytes came from, and who asked (server, user, track). A resume is only attempted when a record
@@ -825,7 +638,7 @@ static int sbn_resume_save(const sbn_sink_t *sink, const char *path) {
     memset(&meta, 0, sizeof meta);
     memcpy(meta.magic, "SBRES1\0\0", sizeof meta.magic);
     memcpy(meta.identity, sink->identity, sbn_len(sink->identity));
-    memcpy(meta.etag, sink->etag, sbn_len(sink->etag));
+    memcpy(meta.etag, sink->head.etag, sbn_len(sink->head.etag));
     return m1_save(path, tmp, 0600, &meta, sizeof meta);
 }
 
@@ -842,7 +655,7 @@ static int sbn_resume_load(const char *path, const char *identity, char *etag) {
     close(fd);
     if (n != (int)sizeof meta || tail != 0 || !sbn_bytes_equal(meta.magic, "SBRES1\0\0", sizeof meta.magic) ||
         !sbn_fixed_equal(meta.identity, sizeof meta.identity, identity) || meta.etag[sizeof meta.etag - 1] ||
-        !sbn_strong_etag(meta.etag))
+        !net_strong_etag(meta.etag))
         return 0;
     memcpy(etag, meta.etag, sizeof meta.etag);
     return 1;
@@ -858,26 +671,19 @@ int sbn_download(const char *url, const char *part, const char *final, const cha
     char range[40], validator[320], etag[128];
     long long offset;
     int fd, rc = -1, resumable = 0, ok;
-    unsigned free_kb = 0;
     *resumable_out = -1;
     etag[0] = 0;
-    if (!m1_card_mounted() || !m1_free_kb("/mnt/mmc", &free_kb)) {
-        sink->werr = SBN_W_CARD;
-        return -1;
-    }
-    if (free_kb <= SBA_RESERVE_KB) {
-        sink->werr = SBN_W_SPACE;
-        return -1;
-    }
+    sink->file.why = m1_card_mounted() ? net_room("/mnt/mmc", 0) : SBN_W_CARD;
+    if (sink->file.why) return -1;
     if (snprintf(validator, sizeof validator, "%s.etag", part) >= (int)sizeof validator) return -1;
     fd = open(part, O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
-        sink->werr = m1_card_mounted() ? SBN_W_IO : SBN_W_CARD;
+        sink->file.why = m1_card_mounted() ? SBN_W_IO : SBN_W_CARD;
         return -1;
     }
     offset = lseek(fd, 0, 2);
     if (offset > 0) (void)sbn_resume_load(validator, identity, etag);
-    if (offset < 0 || (offset > 0 && !sbn_strong_etag(etag))) {
+    if (offset < 0 || (offset > 0 && !net_strong_etag(etag))) {
         /* Stock lseek uses a 32-bit long. Restart an unseekable partial, or one with no valid
          * record of what it is, rather than appending a response at an unknown offset. */
         int oldfd = fd;
@@ -925,26 +731,20 @@ int sbn_download(const char *url, const char *part, const char *final, const cha
     }
     ok = !rc && sbn_audio_response_valid(sink, offset > 0 ? 206 : 200, offset);
     if (ok) {
-        int synced = fsync(fd) == 0, closed = close(fd) == 0;
         fd = -1; /* closed either way */
-        if (!(synced && closed)) {
+        if (!net_file_close(&sink->file)) {
             ok = 0;
-            sink->werr = SBN_W_IO;
+            sink->file.why = SBN_W_IO;
         }
     }
     if (ok) {
-        if (!rename(part, final)) {
-            int dir = open(dir_path, O_RDONLY, 0);
+        if (net_publish(part, final, dir_path)) { /* (a folder that could not be synced does not fail the file) */
             unlink(validator);
-            if (dir >= 0) {
-                (void)fsync(dir);
-                close(dir);
-            }
             *resumable_out = 0;
-            sink->fd = -1;
+            sink->file.fd = -1;
             return 1;
         }
-        sink->werr = SBN_W_IO;
+        sink->file.why = SBN_W_IO;
         resumable = 1;
     } else if (sink->curl_result != 0 &&
                (sink->http_status == 0 || sink->http_status >= 500 || sink->http_status == 408 ||
@@ -956,10 +756,10 @@ int sbn_download(const char *url, const char *part, const char *final, const cha
         (sink->http_status == 0 || sink->http_status >= 500 || sink->http_status == 408 || sink->http_status == 429 ||
          sink->curl_result == CURLE_OPERATION_TIMEDOUT)) {
         resumable = 1;
-    } else if (!sink->headers_ok || !sink->resume_saved || !sbn_strong_etag(sink->etag))
+    } else if (!sink->headers_ok || !sink->resume_saved || !net_strong_etag(sink->head.etag))
         resumable = 0;
     if (resumable && fd >= 0 && fsync(fd) < 0) resumable = 0;
-    if (resumable && sink->written == 0 && offset == 0) resumable = 0;
+    if (resumable && sink->file.written == 0 && offset == 0) resumable = 0;
     if (resumable && m1_card_mounted())
         *resumable_out = 1;
     else {
@@ -971,6 +771,6 @@ int sbn_download(const char *url, const char *part, const char *final, const cha
     }
 done:
     if (fd >= 0) close(fd);
-    sink->fd = -1;
+    sink->file.fd = -1;
     return -1;
 }

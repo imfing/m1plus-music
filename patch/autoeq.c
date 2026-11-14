@@ -573,14 +573,8 @@ static void ae_apply(void) {
     ae_redraw();
 }
 
-static int
-ae_slot_free(void) { /* the job slot is free once the Podcasts' downloads have given way (as every job of ours asks) */
-    if (pn_dl_running()) {
-        pn_dl_pause();
-        return 0;
-    }
-    return !(pn_busy() || pn_job_busy());
-}
+/* The job slot is free (the Podcasts' downloads have a thread of their own and go on). */
+static int ae_slot_free(void) { return !(pn_busy() || pn_job_busy()); }
 
 /* A job did not start, or ended badly: the list's failure is the page's state; a preset's is a message box and the row as it was. */
 static void ae_row_failed(int code) {
@@ -832,9 +826,7 @@ static int ae_on_destroy(void *ctx, void *e) {
     keyboard_detach();
     m1_timer_stop(&ae.timer);
     if (ae.running && pn_job_busy())
-        pn_cancel(); /* the worker ends by itself; its part file is removed by the next job */
-    if (!pn_job_busy() && pn_dl_waiting() && !pn_dl_running())
-        pn_dl_start(); /* the Podcasts' downloads that gave way */
+        pn_cancel(PN_K_EQ); /* the worker ends by itself; its part file is removed by the next job */
     if (ae.b_down) bitmap_destroy(ae.b_down);
     if (ae.b_check) bitmap_destroy(ae.b_check);
     if (ae.b_ring) bitmap_destroy(ae.b_ring);

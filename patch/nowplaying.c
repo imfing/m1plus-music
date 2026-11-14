@@ -335,6 +335,16 @@ static void np_cover(void) {
     }
 }
 
+/* The idle lyrics page's (patch/idlelyrics.c) view of this page: its window, 0 when it has none (the page then does not open), and the colour the window has (a color_t word) once the cover's tone has been looked
+ * at again: this page's own tick does not run while another window covers it, so the idle page asks. np_cover compares the cheap signature and does no work for a track it has seen. */
+void *np_window(void) { return np.win; }
+
+unsigned np_idle_color(void) {
+    if (!np.win) return NP_NEUTRAL | 0xff000000u;
+    np_cover();
+    return np.color | 0xff000000u;
+}
+
 /* np_elapsed and np_remaining are the visible labels while the player gives a length, label_playtime and label_playlen
  * (stock's) otherwise. Stock rewrites its two on its own tick ("01:27"), so ours are separate labels and not rewrites of
  * stock's text, which a paint between the two timers would show. */
@@ -691,6 +701,7 @@ static int np_on_background(void *ctx, void *e) {
 static int np_on_foreground(void *ctx, void *e) {
     (void)e;
     if (!np.win || ctx != np.win) return RET_OK;
+    ly_refresh(); /* a lyrics text size changed in Settings is laid out now */
     np_work(); /* the page is current when it reappears (fg still 0: a new colour tints the bar once, below) */
     /* the mode button's picture follows the play mode: stock sets it only in its own click handler, so a mode set on the Queue page (or elsewhere) is shown now */
     stock_np_mode_button(ctx);

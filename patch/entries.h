@@ -45,13 +45,20 @@ const char *
 np_cover_file(int *busy); /* demo's cover file of the playing track, NULL for none; busy while demo makes it */
 unsigned np_file_key(const char *path); /* a hash of the picture file, 0 if unreadable */
 void np_relight(void);
+void *np_window(void); /* Now Playing's window, 0 when it has none (patch/idlelyrics.c) */
+unsigned np_idle_color(void); /* the window's colour (a color_t word) after the cover's tone is looked at again */
+
+/* patch/idlelyrics.c */
+int idlelyrics_open_idle(
+    void); /* Now Playing's idle timer: 0 once the page is up (or already open), -1 when it could not open (nothing left of it) */
+int idlelyrics_up(void); /* 1 while the page is open */
 
 /* patch/queuepage.c */
 int queue_open(void); /* our Queue page; 0 once it is open, else the stock drawer should open */
 
 /* patch/bigcover.c */
 int idle_choice(
-    void); /* Idle Display: 0 Off (stock's Cover mode byte off), 1 Album Cover, 2 Cassette, 3 Vinyl; read live */
+    void); /* Idle Display: 0 Off (stock's Cover mode byte off), 1 Album Cover, 2 Cassette, 3 Vinyl, 4 Lyrics; read live */
 int idle_set(
     int choice); /* choose it, saved (the byte through stock's save, the destination atomically); the choice or -1 */
 
@@ -69,6 +76,12 @@ int vinyl_record(void); /* the saved record colour, 0 Black (the default) .. VN_
 int vinyl_record_set(int rec); /* choose it, saved atomically; the colour or -1 */
 int vinyl_theme(void); /* the saved plinth theme, 0 Graphite (the default), 1 White */
 int vinyl_theme_set(int theme); /* choose it, saved atomically; the theme or -1 */
+
+/* patch/libload.c (docs/modules/libload.md) */
+int lib_deque_swap(void *a, void *b); /* two deques' contents exchanged in place; 0 when refused (nothing changed) */
+void *lib_take_list(
+    void *
+        list); /* a deque of our own that takes the stock list's records (the list is left empty); a copy when refused */
 
 /* patch/filetime.c */
 int ft_statx(int dirfd, const char *path, int flags, unsigned mask,
@@ -122,7 +135,7 @@ void pulldown_page_opened(void *win); /* the Pull-down page's switches and arrow
 /* patch/display.c */
 int disp_light(void); /* stock's backlight time index, 0 never .. 4 five minutes */
 int disp_light_set(int index); /* ... chosen the way stock's own page does; -1 for an index stock does not have */
-int disp_led(void); /* stock's lamp mode: 0 off, 1 orange, 2 blue */
+int disp_led(void); /* stock's lamp mode: 0 off, 1 green, 2 blue */
 int disp_led_set(int mode);
 int disp_follow(void); /* stock's Follow Screen switch */
 int disp_follow_toggle(void);
@@ -139,5 +152,56 @@ int kp_standby_toggle(void);
 int kp_shutdown(void); /* Auto-Shutdown, stock's word 0 .. 4 */
 int kp_shutdown_set(int v);
 
+/* patch/playset.c: Settings > Playback Settings. A getter answers the shown state, a setter 0 or -1 (refused), a toggle the new state. */
+enum {
+    PS_CTL_MODE,
+    PS_CTL_MEM,
+    PS_CTL_GAIN,
+    PS_CTL_RG,
+    PS_CTL_DSD,
+    PS_CTL_USB,
+    PS_CTL_MAXVOL,
+    PS_CTL_BOOTVOL,
+    PS_CTL_BAL,
+    PS_CTLS
+}; /* the value rows, by ps_value_key */
+int ps_playmode(void);
+int ps_playmode_set(int v);
+int ps_gapless(void);
+int ps_gapless_toggle(void);
+int ps_memplay(void);
+int ps_memplay_set(int v);
+int ps_folderskip(void);
+int ps_folderskip_toggle(void);
+int ps_gain_locked(void); /* the Line Out byte: stock greys Gain and ignores its click */
+int ps_gain(void);
+int ps_gain_set(int v);
+int ps_replaygain(void);
+int ps_replaygain_set(int v);
+int ps_filter(void);
+int ps_filter_set(int v);
+int ps_dsd(void);
+int ps_dsd_set(int v);
+int ps_usbvol(void);
+int ps_usbvol_set(int v);
+int ps_digital(void);
+int ps_digital_toggle(void);
+int ps_foldercover(void); /* Settings > Library */
+int ps_foldercover_toggle(void);
+const char *ps_value_key(int ctl);
+int ps_value_text(int ctl, char *buf,
+                  int n); /* 1: buf holds the text (a number, L3), 0: the row shows ps_value_key's key */
+enum {
+    PS_VOL_MAX,
+    PS_VOL_BOOT,
+    PS_VOL_BAL,
+    PS_VOLS
+}; /* the loudness pages: stock's own handlers bound to our widgets */
+void ps_vol_opened(void *win, int which);
+void ps_vol_refresh(void *win, int which);
+int ps_bootmem(void); /* Volume Memory */
+int ps_bootmem_toggle(void);
+
 /* patch/onlineart.c */
 int onlineart_open(void);
+int onlineart_open_artist(const char *name);

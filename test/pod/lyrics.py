@@ -12,10 +12,10 @@ FIT, ROW, SNAP, FRAME, SPRING, OFF_MAX = O['LY_FIT_W'], O['LY_ROW_W'], O['LY_SNA
 MAXR, AMIN, AROOM, MARK = O['LY_LINES_MAX'], O['LY_ANCHOR_MIN'], O['LY_ANCHOR_ROOM'], '\u2026'
 
 
-def anchor(rows):
+def anchor(rows, lh=LINE_H, gap=GAP):
     """The model of ly_anchor: where the top of an anchored line of `rows` rows sits. ANCHOR up to three rows; a taller line higher, the next line's first row ending
     AROOM px above the view's bottom, but not above AMIN."""
-    a = VIEW_H - AROOM - LINE_H - (rows * LINE_H + GAP)
+    a = VIEW_H - AROOM - lh - (rows * lh + gap)
     return ANCHOR if a >= ANCHOR else max(a, AMIN)
 FADE, BROWSE = O['LY_FADE'], O['LY_BROWSE_OP']
 DOT, DPITCH, DX, DPAD, DMIN, DMS, DDIM, DFADE, DBR, DBRMIN = (O[k] for k in ('LY_DOT', 'LY_DOT_PITCH', 'LY_DOT_X', 'LY_DOT_PAD', 'LY_DOT_MIN_S', 'LY_DOT_MS', 'LY_DOT_DIM', 'LY_DOT_FADE_MS', 'LY_DOT_BREATH_MS', 'LY_DOT_BREATH_MIN'))
@@ -112,7 +112,7 @@ class LyMachine(nowplaying.NowMachine):
             t = ''.join(chr(c) for c in struct.unpack(f'<{n}I', self.u.mem_read(a1, 4 * n))) if n else ''
             st = self.resolved.get(a0)
             self.calls.append(('widget_measure_text', a0, st))
-            w = float(self.measure_fn(t)) * (1 if st in (BOLD, CJKF) else 0.6)
+            w = float(self.measure_fn(t)) * (1 if st and st.startswith(('np_lyric_style', 'np_lyric_cjk_style')) else 0.6)
             u.reg_write(UC_MIPS_REG_F0, struct.unpack('<I', struct.pack('<f', w))[0]); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
             return
         elif name == 'widget_use_style':
@@ -167,7 +167,7 @@ class LyMachine(nowplaying.NowMachine):
         """A pointer event (screen coordinates) for the page's listener; the handler's answer."""
         e = self.alloc(0x30); self.u.mem_write(e, bytes(0x30)); self.setword(e, kind); self.setword(e + O['PE_X'], x); self.setword(e + O['PE_Y'], y)
         self.calls = []
-        return self.call(PSYMS['ly_on_touch'], a0=0, a1=e, count=4000000)
+        return self.call(PSYMS['ly_on_touch'], a0=self.box, a1=e, count=4000000)
     # (box coordinates in, the screen's out: np_lyrics is at 28, 44)
     def down(self, x, y): return self.ptr(O['EVT_POINTER_DOWN'], 28 + x, 44 + y)
     def move(self, x, y): return self.ptr(O['EVT_POINTER_MOVE'], 28 + x, 44 + y)
@@ -475,7 +475,7 @@ def asset_tests(ctx):
     expect(all(word(stock, a) == w for a, w, _ in pod.LYRICS_PINS) and all(word(built, a) == w for a, w, _ in pod.LYRICS_PINS), 'the stock words patch/lyrics.c relies on are pinned and untouched (get_playtime, the rows\' "lrc_time", the timer)')
     expect(pod.FUNCTIONS['get_playtime'][2] == 0x4e02e4, 'get_playtime is the stock position call the lyric timer compares "lrc_time" with')
     expect(not any(a for a in (MANIFEST.get('hook_lyrics'),)), 'no new hook: the manifest has none for the lyrics')
-    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
+    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_lineout', 'hook_wifihub', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_loadclass', 'hook_loadclass_assign', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer'}, 'the hook set is the one the project documents')
 
 
 def start_tests(ctx):
@@ -943,6 +943,23 @@ def wrap_tests(ctx):
     m = LyMachine(SONG); m.init()
     expect(sum(c[0] == 'label_set_line_wrap' and c[2] == 1 for c in m.calls) == POOL + 1 and sum(c[0] == 'widget_set_prop_bool' and c[2] == 'word_wrap' and c[3] == 1 for c in m.calls) == POOL + 1,
            'every label wraps (line_wrap and word_wrap)')
+    # leading blanks are not drawn (stock keeps what follows the time stamp's ']', so "[00:12.34] text" is " text"): the line is measured, broken and set without them;
+    # blanks inside and at the end stay
+    one, two = 'Be what you want', 'one two three four five six seven eight'
+    for lead in (' ', '   ', '\t', '\xa0', '\u2003', '\u200b', '\u202f', '\u3000', '\ufeff', ' \u3000\t\xa0 '):
+        for body in (one, two, '你好，世界', 'Keep  inner '):
+            m = LyMachine([(0, 'a'), (1, lead + body), (2, 'b')]); measured = []
+            probe = lambda: [c[2].encode('latin-1').decode('utf-8') for c in m.calls if c[0] == 'widget_set_text_utf8' and c[1] not in m.pool()]
+            m.init(); measured += probe(); m.at(1); measured += probe(); m.frame(10000)   # (a frame clears the calls: the measures are taken before it)
+            labs =[m.label_text(h) for h in m.pool() if h in m.texts and m.props.get((h, 'visible'))]
+            want_text = '\n'.join(break_rows(body, m.measure_fn))
+            expect(want_text in labs and all(t in ('a', 'b', want_text) for t in labs) and (body != two or '\n' in want_text),
+                   f'{lead + body!r}: the label text is {want_text!r} ({labs})')
+            # (' ' alone is ly_break's measure of a space's width, made for a line of more than one row)
+            expect(body in measured and lead + body not in measured and not any(s != ' ' and s.startswith(tuple(lead)) for s in measured),
+                   f'{lead + body!r}: the line is measured without its leading blanks ({measured})')
+    m = LyMachine([(0, 'a'), (1, ' \u3000 '), (2, 'b')]); m.init(); m.at(1); m.frame(10000)
+    expect(all(m.label_text(h) in ('a', 'b', '') for h in m.pool() if h in m.texts and m.props.get((h, 'visible'))), 'a line of blanks only is an empty line')
 
 
 def tall_tests(ctx):
@@ -1112,6 +1129,137 @@ def face_tests(ctx):
     for t in ('字' * 16, 'x' * 16):
         mc = LyMachine([(0, t), (1, 'b')], measure=w31); mc.init(); mc.at(0); got.append(mc.shown()[t][3] // LINE_H)
     expect(got == [2, 2] and rows_of('字' * 16, w31) == 2 and rows_of('x' * 16, w31) == 2, f'the same 496 px take {got[0]} rows in the default font and {got[1]} in the bold one')
+
+LYRSIZE = '/mnt/data/m1plus/nowplaying-lyrics-size'
+# Settings > Now Playing > Lyrics Text Size (docs/modules/lyrics.md "Text size"): size index -> (font px, row pitch, gap, style suffix)
+SIZES = {0: (22, 25, 9, '_s'), 1: (26, 29, 10, '_m'), 2: (30, 34, 12, '')}
+
+
+def size_tests(ctx):
+    expect = ctx.expect
+    raw = os.path.join(WORK, 'rootfs', 'release/assets/default/raw')
+    # the asset: one style pair a size, in every state: the font, the spacer (the row pitch), the face
+    th = awtk_style.parse(open(os.path.join(raw, 'styles', 'playing_page.bin'), 'rb').read())
+    ls = {(i.style, i.state): i for i in th.items if i.widget == 'label' and i.style.startswith('np_lyric')}
+    names = {BOLD + sf for *_, sf in SIZES.values()} | {CJKF + sf for *_, sf in SIZES.values()}
+    expect({k[0] for k in ls} == names == set(mn.LYRIC_SIZE_STYLES) and all((n, st) in ls for n in names for st in mn.BTN_STATES), f'six label styles in every state: the bold and the default-font style for each size ({sorted(names)})')
+    ok = all(ls[(n + sf, st)].get('font_size') == px and ls[(n + sf, st)].get('spacer') == lh - px and ls[(n + sf, st)].get('text_align_h') == 2
+             and ls[(n + sf, st)].color('text_color').lower().startswith('#ffffff') and ls[(n + sf, st)].get('font_name') == ('lyrics' if n == BOLD and sf != '_s' else None)
+             for px, lh, gap, sf in SIZES.values() for n in (BOLD, CJKF) for st in mn.BTN_STATES)
+    expect(all(mn.LYR_GAPS[sf] == gap and mn.LYR_SIZES[sf] == (px, lh - px) for px, lh, gap, sf in SIZES.values()), 'the preview and style tables (LYR_SIZES, LYR_GAPS) are the payload\'s sizes')
+    expect(ok and SIZES[2][:3] == (O['LY_FONT'], O['LY_LINE_H'], O['LY_GAP']) and all(1.1 <= lh / px <= 1.15 for px, lh, *_ in SIZES.values()),
+           'Small 22 / 25, Medium 26 / 29, Large 30 / 34 px (font / row pitch), left aligned, white; the bold style names lyrics.ttf (the Small one names no font, like the CJK style), the other the default font; Large is the original style')
+    # stock's label paint draws a row of a wrapped label only while y + the font is at most the content area's bottom (0x62eb4c), from the top margin on: the last row of an n-row label
+    # (n x the pitch high) is drawn when margin_top + margin_bottom <= spacer (device report: at Medium and Small, spacer 3 under the default 2 + 2, every wrapped line lost its last row)
+    def drawn(st, px, lh, rows):
+        mt, mb = (st.get(k) if st.get(k) is not None else st.get('margin') if st.get('margin') is not None else 2 for k in ('margin_top', 'margin_bottom'))
+        y, n = mt, 0
+        while n < rows and y + px <= rows * lh - mb: y, n = y + lh, n + 1
+        return n
+    lost = [(n + sf, st, r) for px, lh, gap, sf in SIZES.values() for n in (BOLD, CJKF) for st in mn.BTN_STATES for r in range(2, MAXR + 1) if drawn(ls[(n + sf, st)], px, lh, r) != r]
+    side = {ls[k].get(m) for k in ls for m in ('margin', 'margin_left', 'margin_right')}
+    expect(not lost and side == {None} and all(ls[(n, st)].get('margin_top') is None and ls[(n, st)].get('margin_bottom') is None for n in (BOLD, CJKF) for st in mn.BTN_STATES),
+           f'at every size stock paints all 2..{MAXR} rows of a wrapped label inside its height (margin_top + margin_bottom <= spacer: Medium and Small set 1 + 1); the side margins stay the default (the {FIT} px content width) and Large sets none ({lost[:3]})')
+    expect(all(AMIN <= anchor(r, lh, gap) and anchor(r, lh, gap) + r * lh <= VIEW_H - AROOM for px, lh, gap, _ in SIZES.values() for r in range(1, MAXR + 1)),
+           f'at every size {MAXR} rows from their anchor end inside the view ({[[anchor(r, lh, gap) for r in range(1, MAXR + 1)] for _, lh, gap, _ in SIZES.values()]})')
+
+    # the setting: the file, read as a digit; a missing or invalid file is Large
+    mm = Machine()
+    got = []
+    for data in (None, b'0\n', b'0', b'1\n', b'2\n', b'3\n', b'x', b'', b'12'):
+        mm.fs.pop(LYRSIZE, None)
+        if data is not None: mm.fs[LYRSIZE] = data
+        got.append(mm.call(PSYMS['ly_size'], count=200000))
+    expect(got == [2, 0, 0, 1, 2, 2, 2, 2, 2], f'ly_size: Small "0", Medium "1", Large "2"; a missing or invalid file is Large ({got})')
+    mm.fs.pop(LYRSIZE, None); mm.calls = []
+    r = [mm.call(PSYMS['ly_size_set'], a0=v & 0xffffffff, count=400000) for v in (0, 1, 2)]
+    expect(r == [0, 1, 2] and mm.fs.get(LYRSIZE) == b'2\n' and ('rename', LYRSIZE + '.tmp', LYRSIZE) in mm.calls and mm.call(PSYMS['ly_size'], count=200000) == 2, 'ly_size_set saves the digit atomically (a temp file renamed) and returns it')
+    expect(mm.call(PSYMS['ly_size_set'], a0=3, count=400000) == 0xffffffff and mm.call(PSYMS['ly_size_set'], a0=0xffffffff, count=400000) == 0xffffffff and mm.fs.get(LYRSIZE) == b'2\n', 'a size past Large is refused and the file is as it was')
+
+    # the page: every size lays the lines out with its own pitch, gap, anchor and style names
+    long_line, four = 'x' * 70, 'y' * 100   # at the machine's 10 px a character: three and four rows
+    lines = [(0, 'Line zero'), (5, 'Line one'), (10, four), (15, 'Line three'), (20, long_line), (25, '你好，世界')]
+    for k, (px, lh, gap, sf) in SIZES.items():
+        m = LyMachine(lines); m.fs[LYRSIZE] = f'{k}\n'.encode(); m.init(); m.at(0); m.at(0)
+        sh = m.shown()
+        expect(sh['Line zero'][0] == ANCHOR and sh['Line zero'][2] == BOLD + sf and sh['Line zero'][3] == lh and sh['Line one'][0] == ANCHOR + lh + gap and sh['Line one'][3] == lh,
+               f'size {px}: the current line at the anchor {ANCHOR}, one row {lh} px, the next line one pitch ({lh} + {gap}) lower ({sh})')
+        expect(m.props.get((m.probe(), 'style')) in (BOLD + sf, CJKF + sf), f'size {px}: the probe uses the {BOLD + sf} or {CJKF + sf} style')
+        m.at(10); m.frame(10000)
+        sh = m.shown()
+        expect(sh[four][3] == 4 * lh and sh[four][0] == anchor(4, lh, gap) and sh['Line three'][0] == anchor(4, lh, gap) + 4 * lh + gap,
+               f'size {px}: a four row line is 4 x {lh} px from its anchor {anchor(4, lh, gap)}, the next line under it ({sh[four]})')
+        m.at(20); m.frame(10000)
+        sh = m.shown()
+        expect(sh[long_line][3] == 3 * lh and sh[long_line][0] == anchor(3, lh, gap) == ANCHOR, f'size {px}: three rows {sh[long_line][3]} px at the anchor')
+        m.at(25); m.frame(10000)
+        sh = m.shown()
+        expect(sh['你好，世界'][2] == CJKF + sf and m.props.get((m.probe(), 'style')) == CJKF + sf, f'size {px}: the default-font line takes {CJKF + sf}, and the probe measures in it')
+        # a tap on the second line seeks to it: the touch map follows the pitch and the gap
+        m = LyMachine(lines); m.fs[LYRSIZE] = f'{k}\n'.encode(); m.init(); m.at(0); m.frame(10000)
+        y = ANCHOR + lh + gap + lh // 2
+        m.down(50, y); m.up(50, y)
+        expect(m.seeks == [5], f'size {px}: a tap at y {y} seeks to the second line ({m.seeks})')
+    # the intro: the lines sit one pitch of the size below the anchor, the dots centred on the anchor row
+    for k, (px, lh, gap, sf) in SIZES.items():
+        m = LyMachine(INTRO); m.fs[LYRSIZE] = f'{k}\n'.encode(); m.init(); m.at(0); m.at(0)
+        sh = m.shown(); ds = m.dot_state()
+        expect(sh['Intro line'][0] == ANCHOR + lh + gap and all(d[2] == ANCHOR + (lh - DOT) // 2 for d in ds),
+               f'size {px}: the first line sits {lh + gap} px under the anchor while the dots show, the dots centred on the anchor row ({sh["Intro line"][0]}, {ds})')
+
+    # coming back to the front: a size changed in Settings is taken, the lines laid out again, no label is made again
+    m = LyMachine(lines); m.init(); m.at(5); m.frame(10000)
+    expect(m.shown()['Line one'][2] == BOLD and m.shown()['Line one'][3] == LINE_H, 'the default size is Large')
+    n_labels = m.names().count('label_create')
+    m.fs[LYRSIZE] = b'0\n'
+    m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0); m.tick(); m.frame(10000)
+    sh = m.shown()
+    expect(sh['Line one'][2] == BOLD + '_s' and sh['Line one'][3] == 25 and sh['Line one'][0] == ANCHOR and m.names().count('label_create') == n_labels
+           and m.props.get((m.probe(), 'style')) in (BOLD + '_s', CJKF + '_s') and set(v[2] for v in sh.values()) <= {BOLD + '_s', CJKF + '_s'},
+           f'a size picked in Settings is taken when the page is in front again: the current line Small, 25 px rows, the new styles, the probe\'s too ({sh})')
+    m.calls = []; m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0); m.tick()
+    expect(not any(c[0] in ('widget_use_style', 'widget_resize', 'widget_set_text_utf8') for c in m.calls), 'the same size again changes nothing')
+
+
+def size_setting_tests(ctx):
+    """Settings > Now Playing > Lyrics Text Size and its picker (m1plus_lyrsize): the saved size, read live; a pick saves it atomically."""
+    expect, P = ctx.expect, pod_pages
+    N, L = P.NPSET_PAGE, P.LYRSIZE_PAGE
+    rows_n = PSYMS[f'pod_rows_{P.NPSET_PAGE_INDEX}']
+    labels = [(r.label, r.action, r.arg) for r in N.rows]
+    expect(labels.index(('Lyrics Text Size', P.ACT_LYRSIZE, P.LYRSIZE_PAGE_INDEX)) == labels.index(('Base', P.ACT_VTHEME, P.VTHEME_PAGE_INDEX)) + 1 == len(labels) - 2 and P.ACT_LYRSIZE in P.VALUE_ACTIONS
+           and P.ACT_LYRSIZESET in P.CHECK_ACTIONS and P.VALUE_INIT[P.ACT_LYRSIZE] == 'Large', 'Settings > Now Playing: the Lyrics Text Size value row is its own card between Vinyl Mode and Idle Display; the picker\'s rows are check rows')
+    expect([(r.label, r.action, r.arg) for r in L.rows] == [('Small', P.ACT_LYRSIZESET, 0), ('Medium', P.ACT_LYRSIZESET, 1), ('Large', P.ACT_LYRSIZESET, 2)] and L.title == 'Lyrics Text Size'
+           and L.key == 'm1plus_lyrsize' and P.LYRSIZE_VALUES == ('Small', 'Medium', 'Large') and P.PAGES[P.LYRSIZE_PAGE_INDEX] is L, 'the picker: Small, Medium, Large, titled Lyrics Text Size')
+    expect(LYRSIZE.rsplit('/', 1)[1] in P.SETTING_FILES and LYRSIZE.rsplit('/', 1)[1] == 'nowplaying-lyrics-size' and LYRSIZE.rsplit('/', 1)[1] not in ' '.join(P.RETIRED_FILES), 'the file is a Settings Files row')
+    ids = [v for k, v in vars(P).items() if k.startswith('ACT_')]
+    expect(len(set(ids)) == len(ids) and P.ACT_LYRSIZE == 135 and P.ACT_LYRSIZESET == 136, 'the action ids are distinct')
+
+    def open_picker(data=None):
+        m = Machine()
+        m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(['btn_return', 'btn_backtoplayer'] + [f'pod_row{i}' for i in range(3)] + [f'pod_check{i}' for i in range(3)])}
+        if data is not None: m.fs[LYRSIZE] = data
+        m.call(PSYMS['on_row'], a0=rows_n + 12 * 3, count=3000000)   # the Lyrics Text Size row (the fourth)
+        return m
+
+    def checks(m):
+        out = []
+        for i in range(3):
+            v = [c[2] for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets[f'pod_check{i}']]
+            out.append(v[-1] if v else None)
+        return out
+
+    m = open_picker()
+    expect(('window_open', L.key) in m.calls and checks(m) == [0, 0, 1] and LYRSIZE not in m.fs, 'the row opens the picker, the check is on Large with no file, and reading writes nothing')
+    expect([checks(open_picker(d)) for d in (b'0\n', b'1\n', b'2\n', b'7', b'')] == [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1]], 'a saved Small or Medium has the check; an invalid file is Large')
+    m.click('pod_row0')
+    expect(m.fs.get(LYRSIZE) == b'0\n' and LYRSIZE + '.tmp' not in m.fs and ('rename', LYRSIZE + '.tmp', LYRSIZE) in m.calls and checks(m) == [1, 0, 0], 'Small: the file is written atomically and the check follows')
+    m.click('pod_row1')
+    expect(m.fs.get(LYRSIZE) == b'1\n' and checks(m) == [0, 1, 0], 'Medium')
+    m.fail.add(('write', LYRSIZE + '.tmp')); m.calls = []
+    m.click('pod_row2')
+    expect(m.fs.get(LYRSIZE) == b'1\n' and not any(c[0] == 'widget_set_visible' for c in m.calls), 'a save that fails changes neither the file nor the check')
+
 
 INTRO = [(10, 'Intro line'), (14, 'Second line'), (18, 'Third line'), (24, 'Fourth line')]
 
@@ -1339,4 +1487,120 @@ def font_tests(ctx):
     expect(not any(c[0] == 'font_manager_get_font' for c in m.calls) and m.shown(), 'no font manager: no font is asked for, the page still works')
 
 
-SECTIONS = [asset_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests]
+VH2, ANC2 = 358, 125   # the idle page's view: 0.35 x 358 (patch/idlelyrics.c)
+
+
+def retarget(m, h=VH2, y=80):
+    """The idle page's engine take-over: a window and a box of its own (at 28, y), the retarget's answer. m.box is the new box when it succeeded."""
+    win2, box2 = m.alloc(0x80), m.alloc(0x80)
+    m.setword(box2, 28); m.setword(box2 + 4, y)
+    m.np_box, m.win2, m.box2 = m.box, win2, box2
+    m.calls = []
+    r = m.call(PSYMS['ly_retarget'], a0=win2, a1=box2, a2=h, count=2000000)
+    if r == 0:
+        m.box = box2; m.stage(2, win2)
+    return r
+
+
+def idle_at(m, pos):
+    """The idle page's tick: the engine's own (Now Playing's page timer is not running under another window)."""
+    m.play = pos; m.calls = []; m.call(PSYMS['ly_tick'], count=8000000)
+    m.frame(10000)   # (the spring of a move settles)
+
+
+def idle_ptr(m, kind, x, y): return m.ptr(kind, 28 + x, 80 + y)
+
+
+def edge_vh(y, rows, lh, vh):
+    e = min(y + rows * lh - lh // 2, vh - (y + lh // 2))
+    return 0 if e <= 0 else 255 if e >= FADE else e * 255 // FADE
+
+
+def retarget_tests(ctx):
+    expect = ctx.expect
+    D, MV, UP = O['EVT_POINTER_DOWN'], O['EVT_POINTER_MOVE'], O['EVT_POINTER_UP']
+    m = LyMachine(SONG); m.init(); m.at(10); m.frame(10000)
+    before, np_box, np_pool = m.shown(), m.box, list(m.pool())
+    expect(m.call(PSYMS['ly_target']) == np_box and m.call(PSYMS['ly_lines']) == len(SONG), 'ly_target is np_lyrics and ly_lines the stock rows while Now Playing has the engine')
+    r = retarget(m)
+    calls = m.calls
+    expect(r == 0 and m.call(PSYMS['ly_target']) == m.box2, 'ly_retarget(window, box, 358) takes the engine: 0, ly_target is the page\'s box')
+    expect(m.children[m.box2] == m.pool() + [m.probe()] + m.dots() and len(m.children[m.box2]) == POOL + 4 and all(m.props.get((h, 'sensitive')) == 0 for h in m.children[m.box2]),
+           f'the page\'s box gets the {POOL} labels, the probe and the three dots, all insensitive')
+    expect([c[2] for c in calls if c[0] == 'widget_on' and c[1] == m.box2] == [D, MV, UP, O['EVT_POINTER_ABORT']] and not any(c[0] == 'widget_on' and c[1] != m.box2 for c in calls),
+           'four pointer listeners on the page\'s box and no other')
+    expect(not any(len(c) > 1 and c[1] in np_pool + [np_box, m.src_w, m.view] for c in calls),
+           'Now Playing\'s labels, box and the stock rows and list are not touched by the take-over')
+    expect(not any(c[0] == 'timer_add' for c in calls), 'the take-over adds no timer of its own')
+    idle_at(m, 10)
+    s = m.shown()
+    expect(s['Line two'][0] == ANC2 and s['Line two'][1] == 255 and s['Line three'][0] == ANC2 + PITCH, f'in the 358 px view the current line is at 0.35 of it, {ANC2}, and the next one pitch lower ({s})')
+    idx = {t: i for i, (_, t) in enumerate(SONG)}
+    bad = [(t, v) for t, v in s.items() if v[1] != OPACITY[min(abs(idx[t] - 2), 4)] * edge_vh(v[0], 1, LINE_H, VH2) // 255]
+    expect(not bad and len(s) >= 6, f'opacity by distance times the edge factor of the 358 px view ({bad}, {len(s)} lines)')
+    # touch: no seek on a tap; a vertical drag over 10 px browses; a touch of the other view's listener (Now Playing's ctx) does nothing
+    y3 = ANC2 + PITCH + 17
+    idle_ptr(m, D, 50, y3); idle_ptr(m, UP, 50, y3)
+    expect(m.seeks == [], 'a tap on a line seeks nothing on the idle page')
+    idle_ptr(m, D, 50, 200); idle_ptr(m, MV, 50, 190); idle_ptr(m, MV, 50, 160); idle_ptr(m, UP, 50, 160)
+    s = m.shown()
+    expect(s['Line two'][0] == ANC2 - 30 and m.seeks == [], f'a drag of 40 px up (the first 10 start it) moves the lines 30 px with the finger and seeks nothing ({s["Line two"]})')
+    m.box = np_box; m.down(50, 100); m.move(50, 60); m.up(50, 60); m.box = m.box2
+    expect(m.shown()['Line two'][0] == ANC2 - 30, 'a touch event for Now Playing\'s box is ignored while the page has the engine')
+    # the engine goes back
+    m.calls = []
+    m.call(PSYMS['ly_release'], count=2000000)
+    page_kids = set(m.children[m.box2])
+    m.box = np_box
+    expect(m.call(PSYMS['ly_target']) == np_box and m.shown() == {} and not any(len(c) > 1 and c[1] in page_kids for c in m.calls), 'ly_release: Now Playing\'s box is the target again, its labels are hidden, the page\'s widgets are not touched')
+    m.at(10); m.frame(10000)
+    expect(m.shown() == before, f'Now Playing lays the lines out exactly as before ({m.shown()} vs {before})')
+    m.down(50, ANCHOR + PITCH + 17); m.up(50, ANCHOR + PITCH + 17)
+    expect(m.seeks == [15], f'a tap on a line seeks again on Now Playing ({m.seeks})')
+    n_make = m.names().count('label_create')
+    m.calls = []; m.call(PSYMS['ly_release'], count=2000000)
+    expect(m.calls == [] and m.names().count('label_create') == n_make, 'a second release does nothing')
+    # taken twice, and given back by Now Playing coming to the front (ly_refresh)
+    expect(retarget(m) == 0, 'the engine can be taken again')
+    expect(m.call(PSYMS['ly_retarget'], a0=m.win2, a1=m.box2, a2=VH2, count=2000000) == 0xffffffff, 'a second take-over while it is taken is refused')
+    m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0); m.box = np_box
+    expect(m.call(PSYMS['ly_target']) == np_box, 'Now Playing in front again (np_on_foreground -> ly_refresh) gives the engine back')
+    # every size: the anchor, the pitch, the edge fade follow the 358 px view
+    for k, (px, lh, gap, sf) in SIZES.items():
+        m = LyMachine(SONG); m.fs[LYRSIZE] = f'{k}\n'.encode(); m.init(); m.at(10)
+        expect(retarget(m) == 0, 'taken')
+        idle_at(m, 10); m.frame(10000)
+        s = m.shown()
+        bad = [(t, v) for t, v in s.items() if v[1] != OPACITY[min(abs(idx[t] - 2), 4)] * edge_vh(v[0], 1, lh, VH2) // 255 or v[2] != BOLD + sf]
+        expect(s['Line two'][0] == ANC2 and s['Line three'][0] == ANC2 + lh + gap and not bad, f'size {px}: current line at {ANC2}, pitch {lh + gap}, the size\'s style, the 358 px edge fade ({s["Line two"]}, {bad})')
+        # a line of four rows: anchored higher than 125 only when the next line would not fit the view
+        idle_at(m, 20)
+        m.frame(10000)
+        expect(m.shown()['Line four'][0] == ANC2, f'size {px}: a one-row line stays at {ANC2}')
+    # a taller current line moves up by the 358 px rule (ly_anchor: 358 - 8 - lh - (rows x lh + gap))
+    long6 = 'x' * 160   # six rows at the machine's 10 px a character
+    m = LyMachine([(0, 'Line zero'), (5, long6), (10, 'Line two')]); m.init(); m.at(5)
+    retarget(m); idle_at(m, 5); m.frame(10000)
+    sh = m.shown()
+    rows = sh[long6][3] // LINE_H
+    want = min(ANC2, max(AMIN, VH2 - AROOM - LINE_H - (rows * LINE_H + GAP)))
+    expect(sh[long6][0] == want == 100 < ANC2, f'a {rows} row line in the 358 px view: its top at {want} ({sh[long6]})')
+    # a stop while the page has the engine (Now Playing destroyed): the engine is off and nothing is held
+    m.call(PSYMS['ly_stop'], count=2000000)
+    expect(m.call(PSYMS['ly_target']) == 0 and m.call(PSYMS['ly_lines']) == 0, 'ly_stop while the page has the engine: stopped')
+    m.calls = []; m.call(PSYMS['ly_release'], count=2000000)
+    expect(m.calls == [] and m.call(PSYMS['ly_target']) == 0, 'a release after that does nothing: Now Playing\'s parked widgets are gone with the engine')
+    # failures leave Now Playing's engine as it was: a refused label, a box too small, no engine at all
+    m = LyMachine(SONG); m.init(); m.at(10); m.frame(10000); before = m.shown(); np_box = m.box
+    m.create_fail = {'label_create'}
+    expect(retarget(m) == 0xffffffff and m.call(PSYMS['ly_target']) == np_box, 'a refused label: -1, the engine still Now Playing\'s')
+    m.create_fail = set()
+    expect(retarget(m, h=100) == 0xffffffff and m.call(PSYMS['ly_target']) == np_box, 'a view under three rows high: refused')
+    m.at(10); m.frame(10000)
+    expect(m.shown() == before and m.call(PSYMS['ly_retarget'], a0=0, a1=m.box2, a2=VH2, count=2000000) == 0xffffffff, 'Now Playing still lays out the same; a null window is refused')
+    m = LyMachine(SONG)   # the engine never started
+    w2, b2 = m.alloc(0x80), m.alloc(0x80)
+    expect(m.call(PSYMS['ly_retarget'], a0=w2, a1=b2, a2=VH2, count=2000000) == 0xffffffff and m.call(PSYMS['ly_target']) == 0, 'no engine to take: refused, nothing made')
+
+
+SECTIONS = [asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests]

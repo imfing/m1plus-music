@@ -193,6 +193,9 @@ typedef struct {
     unsigned pos, n; /* progress inside the phase; the size of the list being read */
     void *dq; /* the stock list being read in slices (and its guard: size, first and last record) */
     void *first, *last;
+    void *
+        lib; /* the library as PH_LIB read it, for PH_COPY (its guard: nlib, lib_first, lib_last); NULL once it is of no more use */
+    void *lib_first, *lib_last;
     unsigned day, seed, aseed, regen;
     ht_t oft, fav, art;
     unsigned rec[DM_REC_MAX], nrec;
@@ -640,14 +643,15 @@ static job_t *dm_job_new(void) {
 /* The stock list of a class, or NULL when it is empty. Every read replaces *pdeq_showlist (the Songs page's own call). */
 static void *dm_list(unsigned cls) { return loadLocalClassList((int)cls) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0; }
 
-/* The job keeps a list across ticks: a different one, or one of another size, ends the job. */
-static int dm_guard(job_t *j) {
+/* `want` (n records, from `first` to `last`) is still what *pdeq_showlist holds. */
+static int dm_same(const void *want, unsigned wn, const void *first, const void *last) {
     void *dq = *(void **)PDEQ_SHOWLIST;
     unsigned n = dq ? deque_size(dq) : 0;
-    if (!j->dq || dq != j->dq || n != j->n || (n && (deque_at(dq, 0) != j->first || deque_at(dq, n - 1) != j->last)))
-        return 0;
-    return 1;
+    return want && dq == want && n == wn && (!n || (deque_at(dq, 0) == first && deque_at(dq, n - 1) == last));
 }
+
+/* The job keeps a list across ticks: a different one, or one of another size, ends the job. */
+static int dm_guard(job_t *j) { return dm_same(j->dq, j->n, j->first, j->last); }
 
 static int dm_open_list(job_t *j, unsigned cls, unsigned max) {
     void *dq = dm_list(cls);
@@ -782,6 +786,8 @@ static int dm_ph_lib(job_t *j) {
     if (j->pos >= lim) {
         dm_small = j->nc < MIX_MIN_LIB;
         if (dm_small) return 0; /* too few songs for a mix worth a card */
+        j->lib = j->dq, j->lib_first = j->first,
+        j->lib_last = j->last; /* (PH_COPY reads the picks from it when nothing has queried since) */
         j->dq = (void *)0, j->pos = 0, j->phase = PH_SCORE;
         ht_free(&j->oft);
         ht_free(&j->fav);
@@ -900,25 +906,35 @@ static void dm_ranked(const job_t *j, int artist, unsigned n, unsigned *first) {
     for (; t < n; ++t) first[t] = ~0u;
 }
 
+/* The picks' records are copied from the library PH_LIB read while it is still the show list (the tick is the Home menu's and nothing else queried: dm_same), else
+ * from a second read; either way each pick's path is compared with the candidate's. The library is then of no more use to the job and is freed (it is the whole
+ * song table: nothing shows it while the Home menu is in front, and a page that held it reads it again as after any query). */
 static int dm_ph_copy(job_t *j) {
-    void *dq = dm_list(CLASS_ALL_SONGS);
+    void *dq = dm_same(j->lib, j->nlib, j->lib_first, j->lib_last) ? j->lib : dm_list(CLASS_ALL_SONGS);
     unsigned i, kept = 0, top[MIX_SONGS];
     pick_t *pk;
-    if (!dq || deque_size(dq) != j->nlib) return 0;
-    pk = calloc(j->npick, sizeof(pick_t));
-    if (!pk) return 0;
+    int same = 1;
+    j->lib = (void *)0;
+    if (!dq) return 0;
+    pk = deque_size(dq) == j->nlib ? calloc(j->npick, sizeof(pick_t)) : (pick_t *)0;
     j->pk = pk;
-    for (i = 0; i < j->npick; ++i) {
+    for (i = 0; pk && same && i < j->npick; ++i) {
         const cand_t *c = &j->c[j->pick[i]];
         void *r = deque_at(dq, c->idx);
         const char *path = r ? cc_str(r, REC_PATH) : "";
-        if (!r || dm_path_hash(path) != c->path) return 0; /* the library changed under the job */
+        if (!r || dm_path_hash(path) != c->path) {
+            same = 0; /* the library changed under the job */
+            break;
+        }
         if (!dm_path_ok(path) || access(path, F_OK))
             continue; /* (the mix file holds the path: one the file cannot hold is as good as missing) */
         dm_rec_copy(&pk[kept], r);
         ++kept;
     }
+    deque_clear(dq); /* (whatever the outcome: the picks are copies) */
+    if (!pk) return 0;
     j->npick = kept; /* (dm_free_picks frees the strings of the kept ones) */
+    if (!same) return 0;
     if (kept < MIX_MIN_SONGS) return 0;
     j->aseed = (j->seed ^ dm_path_hash(cc_str(pk[0].raw, REC_PATH)));
     dm_ranked(j, 1, DM_MAX_NAMES, top);

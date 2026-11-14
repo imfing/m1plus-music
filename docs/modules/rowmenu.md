@@ -54,7 +54,7 @@ The menu also closes when the page reads its list again (`sg_load` / `ab_load`: 
 | `UPNEXT_STREAM` (also while a Radio station connects, plays or is paused) | "Not available while streaming" |
 | `UPNEXT_FOLDER` | "Not available for folder playback" (also Podcasts' play type) |
 | `UPNEXT_PODCAST` | "Not available for podcasts" |
-| `UPNEXT_MISSING` | "Storage unavailable" |
+| `UPNEXT_MISSING` | "File not found" with the card in, "Storage unavailable" without it (`so_missing`) |
 | `UPNEXT_FULL` | "Queue is full" |
 | `UPNEXT_MEMORY` | "Not enough memory" |
 | `UPNEXT_DLNA` | "Not available while DLNA is on" |

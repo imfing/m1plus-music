@@ -104,7 +104,7 @@ file) **or Regenerate asked for one**; the previous mix stays on the card until 
 | `LIB` | the library: path / artist / album hashes, plays, recent position, favourite, the artist's play total, `DM_SLICE` songs a tick | the load tick 0.3k, then 8 slices of 1.94M..2.01M (about 1,300 instructions a song) |
 | `SCORE` | `2 x DM_SLICE` songs a tick | 4 ticks of 0.3M |
 | `PICK` | one pick a tick (a scan and an update over the candidates), then the shuffle | 25 ticks of 0.48M, the shuffle 1.4k |
-| `COPY` | the library read again; the picked records copied with their strings (`strdup`), a song whose file is not on the card dropped; the names and the top albums | 23k (+ the stock query) |
+| `COPY` | the picks read from the library `LIB` read while it is still the show list (read again only when another query came between, [libload](libload.md)), then the library freed; the picked records copied with their strings (`strdup`), a song whose file is not on the card dropped; the names and the top albums | 23k (+ the stock query) |
 | `ALBUM` | the cover keys from the stock album list once, then one tone a tick | 0.21M (1,024 albums scanned), then 0.6k a tone from the tone cache (a cover decode is `cc_decode`'s) |
 | `FIELD`, `BRIGHT`, `RENDER` | the blob field, the brightest pixel of the text zone, the render passes: `DM_ROWS` 20 rows a tick | 11 ticks of 0.72M..0.74M, 7 of 0.23M, 11 of 0.52M a pass (two passes here: the first scrim was one step short) |
 | `COMMIT` | the mix file (with the paths), the art file, the file read back, the card switched (no playlist work) | 2.17M (the FNV over 130 KB, the expansion into the bitmap with its corners): **the largest tick** |

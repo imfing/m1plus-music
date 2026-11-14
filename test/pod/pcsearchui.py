@@ -565,24 +565,21 @@ def preview_tests(ctx):
 
 
 def job_tests(ctx):
-    """One worker at a time: a download that runs pauses for the search; a refresh is waited for; a newer search cancels the running one."""
+    """One job at a time: a download that runs goes on beside the search; a refresh is waited for; a newer search cancels the running one."""
     expect = ctx.expect
     DL = sibling('pcdl')
     m = opened()
     # a download is running
     DL.poke_slot(m, 0, 'Sub One', 'a.mp3', 2, seq=1)
-    m.setword(DL.pn_at(DL.DKEY), DL.key_of('Sub One', 'a.mp3')); m.setword(DL.pn_at(DL.KIND), 2); m.setword(DL.pn_at(0), 1); m.setword(DL.pn_at(DL.DSEQ), 10)
+    m.setword(DL.pn_at(DL.DKEY), DL.key_of('Sub One', 'a.mp3')); m.setword(DL.pn_at(DL.DBUSY), 1); m.setword(DL.pn_at(DL.DSEQ), 10)
     enter(m); submit(m, 'all in')
-    expect(m.thread is None and m.word(DL.pn_at(DL.DPAUSE)) == 1 and hint(m) == 'Searching…', 'a download runs: it is asked to pause, the search waits ("Searching...")')
-    m.setword(DL.pn_at(0), 0); m.setword(DL.pn_at(DL.KIND), 0)   # the download thread has stopped
-    tick(m)
-    expect(m.thread is not None and m.thread[0] == PSYMS['pn_smain'], 'the next tick starts the search when the downloads have paused')
+    expect(m.thread is not None and m.thread[0] == PSYMS['pn_smain'] and m.word(DL.pn_at(DL.DBUSY)) == 1 and DL.fn(m, 'pn_dl_running') == 1 and m.word(PSYMS['pn']) == 1 and hint(m) == 'Searching…',
+           'a download runs: the search thread is created in the same submit ("Searching..."), the download thread keeps running, nothing is asked to pause')
     work(m); tick(m)
-    expect(len(level_rows(m)) >= 5, 'and its rows come')
-    # the awake timer / tick starts the downloads again when the job is over
-    m.calls = []
+    expect(len(level_rows(m)) >= 5 and DL.fn(m, 'pn_dl_running') == 1, 'its rows come, the download thread still running')
+    m.thread = None; m.calls = []
     tick(m)
-    expect(('curl_global_init', 3) in m.calls or 'pthread_create' in [c[0] for c in m.calls] or m.word(DL.pn_at(DL.DPAUSE)) == 1, 'afterwards the queued downloads are started again')
+    expect(m.thread is None and 'pthread_create' not in [c[0] for c in m.calls] and DL.fn(m, 'pn_dl_running') == 1, 'afterwards the tick starts nothing and stops nothing: the downloads were never paused')
     # a refresh in progress: the job waits, nothing is cancelled
     m = opened()
     m.setword(PSYMS['pn'], 1); m.setword(PSYMS['pn'] + 4, 0); m.setword(PSYMS['pn'] + 8, 3)   # busy (kind 0 counts as a refresh)
@@ -644,8 +641,11 @@ def width_tests(ctx):
             expect(w <= O['PS_LATEST_MAX'], f'{loc}: the {key} pill ({w} px) fits PS_LATEST_MAX')
         w = font.width(tr('Apple Podcasts'), 20)
         expect(w <= 200, f'{loc}: the keyboard page\'s title "Apple Podcasts" ({w} px of the 200 px title, 20 px) fits')
-        w = font.width(tr('Search Apple Podcasts'), 18)
-        expect(w + 4 <= O['PQ_TEXT_W'], f'{loc}: the field\'s hint "{tr("Search Apple Podcasts")}" ({w} px + the label\'s 2 px margins) fits the {O["PQ_TEXT_W"]} px text room')
+        for key in ('Search Apple Podcasts', 'Search Podcast Index'):
+            w = font.width(tr(key), 18)
+            expect(w + 4 <= O['PQ_TEXT_W'], f'{loc}: the field\'s hint "{tr(key)}" ({w} px + the label\'s 2 px margins) fits the {O["PQ_TEXT_W"]} px text room')
+        w = font.width(tr('Podcast Index'), 20)
+        expect(w <= 200, f'{loc}: the title "Podcast Index" ({w} px of the 200 px title, 20 px) fits')
         for key in ('Searching…', 'No results', 'Loading…', 'Not available'):
             w = font.width(tr(key), 18)
             expect(w <= 280, f'{loc}: "{tr(key)}" fits the status line ({w} px of 280)')
@@ -725,4 +725,221 @@ def field_tests(ctx):
            f'qk_clear.png is committed and its x is centred in the disc: ink centre ({cx:.2f}, {cy:.2f}) against ({im.width / 2}, {im.height / 2})')
 
 
-SECTIONS = [entry_tests, search_tests, input_tests, preview_tests, job_tests, off_tests, width_tests, field_tests]
+def directory_tests(ctx):
+    """Podcast Directory (docs/modules/podcasts.md "Podcast Directory") on the search level: with Podcast Index chosen the navbar title, the field's hint and the keyboard's title say Podcast Index, and the request goes to
+    api.podcastindex.org only; with Apple Podcasts (the default) they say Apple Podcasts and the request is the store's. The Discover row's grey Apple Podcasts stays (the charts are the store's)."""
+    expect = ctx.expect
+    IDX = 'https://api.podcastindex.org/search?limit=25&term='
+    for choice, title, hint_, first in ((b'1\n', 'Podcast Index', 'Search Podcast Index', IDX + 'all%20in'), (b'0\n', 'Apple Podcasts', 'Search Apple Podcasts', SEARCH + 'all%20in'), (None, 'Apple Podcasts', 'Search Apple Podcasts', SEARCH + 'all%20in')):
+        site = site_for(**{IDX + 'all%20in': {'body': ALL_IN}})
+        m = opened(site=site)
+        if choice is not None: m.fs['/mnt/data/m1plus/podcast-directory'] = choice
+        calls = enter(m)
+        expect(('window_open', 'm1plus_keyboard') in calls and flags(m, 'ps_field')[0] == 1 and text(m, 'label_title') == title and ('widget_set_tr_text', m.widgets['ps_hint'], hint_) in m.calls, f'{choice!r}: the level opens with the title {title} and the hint {hint_}')
+        submit(m, 'all in'); work(m); tick(m)
+        expect(site.log[0] == first and len([u for u in site.log if u.startswith((SEARCH, IDX))]) == 1 and text(m, 'label_title') == title, f'{choice!r}: only the chosen directory is asked, the title stays {title} ({site.log[:2]})')
+
+
+def dirchange_tests(ctx):
+    """The directory changes (Settings > Library > Podcasts > Directory) while the search level has an answer: coming back to the level in place, or leaving it and entering it again, shows the new directory's title and
+    hint, drops the old answer and asks the chosen directory once for the same text (none to the old one); a job still running for the old one never lands as the new one's rows."""
+    expect = ctx.expect
+    IDX = 'https://api.podcastindex.org/search?limit=25&term='
+    ONLY = json.dumps({'resultCount': 1, 'results': [{'collectionId': 9, 'collectionName': 'Idx Only', 'artistName': 'A', 'feedUrl': 'https://feeds.example/idx', 'artworkUrl100': ''}]}).encode()
+    F = '/mnt/data/m1plus/podcast-directory'
+    names = {'Apple Podcasts': (b'0\n', SEARCH), 'Podcast Index': (b'1\n', IDX)}
+
+    def fg(m): m.fire(O['EVT_WINDOW_TO_FG'])
+
+    def setup(first):
+        site = site_for(**{IDX + 'all%20in': {'body': ONLY}})
+        m = opened(site=site)
+        m.fs[F] = names[first][0]
+        enter(m)
+        submit(m, 'all in'); work(m); tick(m)
+        return m, site
+
+    for first, second in (('Apple Podcasts', 'Podcast Index'), ('Podcast Index', 'Apple Podcasts')):
+        for how in ('in place', 'leave and enter'):
+            m, site = setup(first)
+            expect(site.log[0] == names[first][1] + 'all%20in' and text(m, 'label_title') == first, f'{first}: the first search is its own')
+            m.fs[F] = names[second][0]
+            site.log.clear()
+            if how == 'in place': fg(m)
+            else:
+                PCP.click(m, 'btn_return'); tick(m); magnifier(m)
+            expect(text(m, 'label_title') == second and ('widget_set_tr_text', m.widgets['ps_hint'], 'Search ' + second) in m.calls or text(m, 'ps_hint') == 'Search ' + second,
+                   f'{first} -> {second}, {how}: the title and the hint follow')
+            expect(hint(m) == 'Searching…' and m.thread is not None and not [r for r in level_rows(m)], f'{first} -> {second}, {how}: the old rows are gone and the same text is searched again')
+            work(m); tick(m)
+            asked = [u for u in site.log if u.startswith((SEARCH, IDX))]
+            expect(asked == [names[second][1] + 'all%20in'], f'{first} -> {second}, {how}: exactly one request, to {second}, for the same term ({asked})')
+            rows = level_rows(m)
+            expect(text(m, 'ps_text') == 'all in' and (rows[0][0] == 'Idx Only' if second == 'Podcast Index' else bool(rows) and rows[0][0] != 'Idx Only'), f'{first} -> {second}, {how}: the rows are {second}\'s ({rows[:1]})')
+    # a job that still runs for the old directory
+    for first, second in (('Apple Podcasts', 'Podcast Index'), ('Podcast Index', 'Apple Podcasts')):
+        site = site_for(**{IDX + 'all%20in': {'body': ONLY}})
+        m = opened(site=site)
+        m.fs[F] = names[first][0]
+        enter(m)
+        submit(m, 'all in')
+        old, m.thread = m.thread, None
+        m.fs[F] = names[second][0]
+        fg(m)
+        PCN.work(m, old)   # the old worker ends with its answer
+        for _ in range(3):
+            tick(m)
+            if m.thread: work(m)
+        tick(m)
+        rows = level_rows(m)
+        expect(text(m, 'label_title') == second and (rows and rows[0][0] == 'Idx Only' if second == 'Podcast Index' else bool(rows) and rows[0][0] != 'Idx Only') and [u for u in site.log if u.startswith((SEARCH, IDX))][-1].startswith(names[second][1]),
+               f'{first} -> {second} while the first search runs: its answer is not shown, the rows are {second}\'s ({rows[:1]}, {site.log[:3]})')
+
+
+def dirchange_url_tests(ctx):
+    """A feed address or an Apple Podcasts link in the field is no directory term: a change of Directory behind its preview (Back) or behind the level (to-foreground), or while its feed is fetched, cancels,
+    fetches and reopens nothing; the level shows as it did, with the title and hint of the new choice."""
+    expect = ctx.expect
+    ILOOK = 'https://api.podcastindex.org/lookup?entity=podcast&id='
+    F = '/mnt/data/m1plus/podcast-directory'
+    names = {'Apple Podcasts': b'0\n', 'Podcast Index': b'1\n'}
+    link = 'https://podcasts.apple.com/us/podcast/x/id1493503146?i=5'
+    lookup = {'body': SE.data('lookup_1493503146.json')}
+    extra = {LOOKUP + '1493503146': lookup, ILOOK + '1493503146': lookup, 'https://feed.xyzfm.space/cv4bkgpuglwp': {'body': WSJ}}
+
+    def fg(m): m.fire(O['EVT_WINDOW_TO_FG'])
+
+    for first, second in (('Apple Podcasts', 'Podcast Index'), ('Podcast Index', 'Apple Podcasts')):
+        for text_ in (F_WSJ, link):
+            site = site_for(**extra)
+            m = opened(site=site)
+            m.fs[F] = names[first]
+            enter(m); submit(m, text_); work(m); tick(m)
+            expect(text(m, 'label_title') == 'WSJ Minute Briefing' and flags(m, 'ps_field')[0] == 0, f'{first}: {text_[:30]}: the preview is open')
+            m.fs[F] = names[second]
+            site.log.clear()
+            PCP.click(m, 'btn_return'); tick(m)
+            expect(not site.log and m.thread is None and flags(m, 'ps_field')[0] == 1 and text(m, 'label_title') == second and text(m, 'ps_text') == (text_ if len(text_) < 40 else text(m, 'ps_text'))
+                   and (('widget_set_tr_text', m.widgets['ps_hint'], 'Search ' + second) in m.calls or text(m, 'ps_hint') == 'Search ' + second),
+                   f'{first} -> {second}, Back from the preview of {text_[:30]}: the level, the new title and hint, no request, nothing started ({site.log})')
+            fg(m); tick(m)
+            expect(not site.log and m.thread is None and text(m, 'label_title') == second, 'and a to-foreground again does nothing more')
+            # to-foreground in place, the level in front with the address in the field
+            site = site_for(**extra)
+            m = opened(site=site)
+            m.fs[F] = names[first]
+            enter(m); submit(m, text_); work(m); tick(m)
+            PCP.click(m, 'btn_return'); tick(m)
+            site.log.clear()
+            m.fs[F] = names[second]
+            fg(m); tick(m)
+            expect(not site.log and m.thread is None and flags(m, 'ps_field')[0] == 1 and text(m, 'label_title') == second, f'{first} -> {second}, to-foreground in place with {text_[:30]} in the field: no request, the new title')
+        # the feed is being fetched when the choice changes: it is not cancelled
+        site = site_for(**extra)
+        m = opened(site=site)
+        m.fs[F] = names[first]
+        enter(m); submit(m, F_WSJ)
+        m.fs[F] = names[second]
+        fg(m)
+        work(m); tick(m)
+        expect(site.log[:1] == [F_WSJ] and text(m, 'label_title') == 'WSJ Minute Briefing', f'{first} -> {second}: a feed fetch that runs when the choice changes is not cancelled, the preview opens')
+
+
+def dirchange_table_tests(ctx):
+    """The invariant of the search level (patch/podcasts.c pg_srch_dir_sync): its rows are the chosen directory's answer or there are none. Driven as a table: the held rows (none, or a term's from directory A) x the
+    field's text when the level comes back (empty, the same term, a feed address, an Apple Podcasts link) x how it comes back (Back from the preview, to-foreground in place, leave and enter again) x the direction.
+    After each: the title and hint are B's, no row of A's answer is shown, one search to B for a term and no request at all otherwise, no preview reopened; then the old term typed again searches B once."""
+    expect = ctx.expect
+    IDX = 'https://api.podcastindex.org/search?limit=25&term='
+    ILOOK = 'https://api.podcastindex.org/lookup?entity=podcast&id='
+    F = '/mnt/data/m1plus/podcast-directory'
+    ONLY = json.dumps({'resultCount': 1, 'results': [{'collectionId': 9, 'collectionName': 'Idx Only', 'artistName': 'A', 'feedUrl': 'https://feeds.example/idx', 'artworkUrl100': ''}]}).encode()
+    link = 'https://podcasts.apple.com/us/podcast/x/id1493503146?i=5'
+    lookup = {'body': SE.data('lookup_1493503146.json')}
+    extra = {IDX + 'all%20in': {'body': ONLY}, LOOKUP + '1493503146': lookup, ILOOK + '1493503146': lookup, 'https://feed.xyzfm.space/cv4bkgpuglwp': {'body': WSJ}}
+    dirs = {'Apple Podcasts': (b'0\n', SEARCH), 'Podcast Index': (b'1\n', IDX)}
+
+    def fg(m): m.fire(O['EVT_WINDOW_TO_FG'])
+
+    def settle(m):
+        for _ in range(3):
+            tick(m)
+            if m.thread: work(m)
+        tick(m)
+
+    def searches(site): return [u for u in site.log if u.startswith((SEARCH, IDX))]
+
+    def own(rows, name):   # the rows are B's answer: Index has one row, Apple's has the first of the sample
+        return bool(rows) and (rows[0][0] == 'Idx Only') == (name == 'Podcast Index')
+
+    for A, B in (('Apple Podcasts', 'Podcast Index'), ('Podcast Index', 'Apple Podcasts')):
+        for held in ('none', 'rows'):
+            for now in ('empty', 'term', 'feed', 'link'):
+                for how in ('back', 'fg', 'reenter'):
+                    if (held == 'none' and now == 'term') or (held == 'rows' and now == 'empty') or (how == 'back' and now in ('empty', 'term')): continue
+                    tag = f'{A} -> {B}, held {held}, field {now}, return {how}'
+                    site = site_for(**extra)
+                    m = opened(site=site)
+                    m.fs[F] = dirs[A][0]
+                    enter(m)
+                    if held == 'rows':
+                        submit(m, 'all in'); settle(m)
+                        expect(own(level_rows(m), A), f'{tag}: the rows are {A}\'s to begin with')
+                    if now in ('feed', 'link'):
+                        submit(m, F_WSJ if now == 'feed' else link); settle(m)
+                        expect(text(m, 'label_title') == 'WSJ Minute Briefing', f'{tag}: the preview is open')
+                        if how != 'back': PCP.click(m, 'btn_return'); tick(m)
+                    m.fs[F] = dirs[B][0]
+                    site.log.clear()
+                    if how == 'back': PCP.click(m, 'btn_return')
+                    elif how == 'fg': fg(m)
+                    else:
+                        PCP.click(m, 'btn_return'); tick(m)
+                        site.log.clear()
+                        magnifier(m)
+                    settle(m)
+                    rows = level_rows(m)
+                    want = 1 if now == 'term' else 0
+                    expect(text(m, 'label_title') == B and (('widget_set_tr_text', m.widgets['ps_hint'], 'Search ' + B) in m.calls or text(m, 'ps_hint') == 'Search ' + B or now != 'empty'),
+                           f'{tag}: the title is {B}')
+                    expect(not (rows and not (now == 'term' and own(rows, B))) and 'No results' != hint(m), f'{tag}: no row of {A}\'s answer is shown ({rows[:1]}, {hint(m)})')
+                    asked = searches(site)
+                    expect(asked == ([dirs[B][1] + 'all%20in'] if want else []) and not [u for u in site.log if u == F_WSJ or u.endswith('cv4bkgpuglwp') or '/lookup' in u],
+                           f'{tag}: {"one search to " + B if want else "no request"} ({site.log[:3]})')
+                    expect(flags(m, 'ps_field')[0] == 1, f'{tag}: the level is shown, no preview reopened')
+                    # the old term typed again asks B, once
+                    site.log.clear()
+                    submit(m, 'all in'); settle(m)
+                    expect(searches(site) == [dirs[B][1] + 'all%20in'] and own(level_rows(m), B), f'{tag}: the term typed again searches {B} once ({searches(site)})')
+    # the exact sequence of the finding: a term on A, a feed address (its preview), the choice changed, Back
+    site = site_for(**extra)
+    m = opened(site=site)
+    m.fs[F] = b'0\n'
+    enter(m); submit(m, 'all in'); settle(m)
+    submit(m, F_WSJ); settle(m)
+    m.fs[F] = b'1\n'
+    PCP.click(m, 'btn_return'); settle(m)
+    expect(text(m, 'label_title') == 'Podcast Index' and not level_rows(m), 'the finding: the Apple rows are not shown under Podcast Index after Back from the feed\'s preview')
+    # a term search still running when the choice changes is cancelled and never shown; a feed fetch is not
+    for A, B in (('Apple Podcasts', 'Podcast Index'), ('Podcast Index', 'Apple Podcasts')):
+        site = site_for(**extra)
+        m = opened(site=site)
+        m.fs[F] = dirs[A][0]
+        enter(m); submit(m, 'all in')
+        old, m.thread = m.thread, None
+        m.fs[F] = dirs[B][0]
+        fg(m)
+        PCN.work(m, old)
+        settle(m)
+        expect(own(level_rows(m), B) and searches(site)[-1].startswith(dirs[B][1]), f'{A} -> {B}: a term search in flight is stopped, its answer is never shown')
+        site = site_for(**extra)
+        m = opened(site=site)
+        m.fs[F] = dirs[A][0]
+        enter(m); submit(m, 'all in'); settle(m)
+        submit(m, F_WSJ)
+        m.fs[F] = dirs[B][0]
+        fg(m); settle(m)
+        expect(F_WSJ in site.log and text(m, 'label_title') == 'WSJ Minute Briefing', f'{A} -> {B}: a feed fetch in flight is not cancelled')
+
+
+SECTIONS = [entry_tests, search_tests, input_tests, preview_tests, job_tests, off_tests, width_tests, field_tests, directory_tests, dirchange_tests, dirchange_url_tests, dirchange_table_tests]

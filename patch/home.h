@@ -61,6 +61,9 @@
 #define IDLE_FILE \
     "/mnt/data/m1plus/nowplaying-idle" /* where Now Playing's timed view goes: "1" Cassette, "2" Vinyl (each with an optional newline), anything else or missing = Album Cover (the default; docs/modules/bigcover.md "Idle view") */
 #define IDLE_TMP "/mnt/data/m1plus/nowplaying-idle.tmp"
+#define LYRSIZE_FILE \
+    "/mnt/data/m1plus/nowplaying-lyrics-size" /* the lyrics page's text size: "0" Small (22 px), "1" Medium (26), "2" Large (30; also a missing or invalid file); docs/modules/lyrics.md "Text size" */
+#define LYRSIZE_TMP "/mnt/data/m1plus/nowplaying-lyrics-size.tmp"
 #define VINYLREC_FILE \
     "/mnt/data/m1plus/vinyl-record" /* Vinyl Mode's record colour: "1" Cover (with an optional newline), anything else or missing = Black (the default) */
 #define VINYLREC_TMP "/mnt/data/m1plus/vinyl-record.tmp"
@@ -120,9 +123,18 @@
 #define PCSEARCH_FILE \
     "/mnt/data/m1plus/podcast-online-search" /* Podcast Discover: "0" = off, anything else or missing = on (Settings > Library > Podcasts; patch/podcasts.c) */
 #define PCSEARCH_TMP "/mnt/data/m1plus/podcast-online-search.tmp"
+#define PCDIR_FILE \
+    "/mnt/data/m1plus/podcast-directory" /* Podcast Directory: "1" = Podcast Index, anything else or missing = Apple Podcasts (Settings > Library > Podcasts; patch/podcasts.c) */
+#define PCDIR_TMP "/mnt/data/m1plus/podcast-directory.tmp"
 #define WIFINET_FILE \
     "/mnt/data/m1plus/wifi-networks" /* the saved networks a stock 2.9 supplicant cannot read (WPA3, Enhanced Open, Enterprise): network={} blocks the Wi-Fi page writes (patch/wifipage.c) and /usr/bin/wifi_connect.sh adds to the copy of the configuration only the newer supplicant reads */
 #define WIFINET_TMP "/mnt/data/m1plus/wifi-networks.tmp"
+#define SCROBBLE_FILE \
+    "/mnt/data/m1plus/scrobbling" /* the scrobble log: "1" = on, anything else or missing = off (Settings > Library; patch/scrobble.c) */
+#define SCROBBLE_TMP "/mnt/data/m1plus/scrobbling.tmp"
+#define SCROBBLE_AUTO_FILE \
+    "/mnt/data/m1plus/scrobble-auto" /* Settings > Library > Scrobbling > Auto Upload: "1" = on, anything else or missing = off (patch/scrobble.c sa_*) */
+#define SCROBBLE_AUTO_TMP "/mnt/data/m1plus/scrobble-auto.tmp"
 #define MIX_DIR \
     CARD_DIR \
     "/daily-mix" /* the Daily Mix's own folder inside the card folder (CARD_DIR, patch/covercache.h); made by the writer */
@@ -207,7 +219,7 @@ extern void homecover_stat(
     int idx, char *buf,
     unsigned n); /* a value of that page: 0 Albums, 1 Covers, 2 No art, 3 Missing, 4 Old files, 5 Size, 6 Status */
 extern void setfiles_open(void); /* the Settings Files page is opening: read the files once (patch/setfiles.c) */
-extern void setfiles_stat(int idx, char *buf, unsigned n); /* a row's text as read: 0..24 the rows (patch/setfiles.c) */
+extern void setfiles_stat(int idx, char *buf, unsigned n); /* a row's text as read: 0..28 the rows (patch/setfiles.c) */
 extern int setfiles_present(int idx); /* the row's file was there at its last read: tappable (patch/setfiles.c) */
 extern int setfiles_delete(int idx); /* unlinks a setting file, reads its row again; 0 when gone (patch/setfiles.c) */
 extern int
@@ -233,6 +245,7 @@ extern int pod_home_open(int id); /* patch/m1plus.c: a stock Home destination th
 extern void pod_page_refresh(int index); /* patch/m1plus.c: the page's values are read again */
 extern int pod_open_lock(void); /* patch/m1plus.c */
 extern int pod_open_peq(void); /* patch/m1plus.c: open_page(POD_PEQ_PAGE) */
+extern int pod_open_playset(void); /* patch/m1plus.c: open_page(POD_PLAYSET_PAGE); 0 once its window is up */
 extern int pod_open_peqlib(void); /* patch/m1plus.c: open_page(POD_PEQLIB_PAGE) */
 extern int pod_open_peqpage(void); /* patch/m1plus.c: open_page(POD_PEQP_PAGE) */
 extern int pod_confirm_code(
@@ -273,6 +286,12 @@ extern int kb_zh_toggle(void); /* flip it, saved atomically; the new state, or -
 extern int pcsearch_setting(
     void); /* patch/podcasts.c: Settings > Library > Podcasts > Podcast Discover: 1 on (the default), 0 off */
 extern int pcsearch_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
+extern int pcdir_setting(
+    void); /* patch/podcasts.c: Settings > Library > Podcasts > Podcast Directory: PCDIR_APPLE (the default) or PCDIR_INDEX */
+extern int
+pcdir_set(int dir); /* choose one, saved atomically; the choice, or -1 when it is not one or could not be saved */
+#define PCDIR_APPLE 0
+#define PCDIR_INDEX 1
 extern int battpct_setting(
     void); /* patch/battery.c: Settings > System > Battery > Battery Percentage: 1 on, 0 off (the default) */
 extern int battpct_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */

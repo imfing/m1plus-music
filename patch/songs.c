@@ -73,7 +73,6 @@
 #define ROW LIST_ROW_H
 #define SG_MARK_UP \
     1 /* a source row's marks sit 1 px above the grey line's box centre: that box centres the font's whole line, and the letters' own middle (cap height) is higher */
-#define SG_WIN_H 450 /* the window's height (the spinner is centred in it) */
 #define SG_W 320 /* the content's width: the list_view's (the scroll_view clips at 310) */
 #define SG_AHEAD 2 /* rows loaded beyond the view in the scroll direction */
 #if GRID_TILES < (GRID_VIEW_H / LIST_ROW_H) + 2 + 2 + 2
@@ -260,8 +259,11 @@ static int sg_searches(void) {
             LS_CAP_SEARCH); /* (sg_artist: a composer's songs too, which sg_artist_songs leaves out) */
 } /* a list with the Search button (a genre's songs: the stock navbar has none; an artist's: Cover Flow has its place; a playlist's: no Search inside a playlist; a source without the control: none) */
 static int sg_selects(void) { return (ls_caps(sg.src) & LS_CAP_SELECT) != 0; }
+static int sg_cleans(void) {
+    return sg.cls == CLASS_PLAYLIST_SONGS && !sg.src;
+} /* a stock playlist's songs: the card has Clean Up Playlist under Select (a source's playlist is the server's: nothing to clean) */
 static int sg_direct(void) {
-    return !sg_lib() && !sg_recent();
+    return !sg_lib() && !sg_recent() && !sg_cleans();
 } /* a list whose "..." card would hold Select alone: the navbar has the Select button instead (btn_select), no card */
 static int sg_mid(void) {
     return !sg_direct() || sg_selects();
@@ -277,6 +279,7 @@ static int sg_title_end(void) {
 static unsigned sg_offers(void) {
     if (sg_lib()) return VS_WITH_SELECT | VS_ALL_SORTS;
     if (sg_recent()) return VS_WITH_VIEWS | (sg.rv ? 0 : VS_WITH_SELECT);
+    if (sg_cleans()) return VS_WITH_SELECT | VS_WITH_ACT2; /* a playlist: Select, Clean Up Playlist (slot 8) */
     return VS_WITH_SELECT;
 }
 
@@ -876,10 +879,13 @@ static unsigned sg_sig(void *rec, unsigned key, unsigned rank) {
 
 static int sg_on_gen(const void *unused);
 
-/* The one loading spinner (patch/libsrc.c ls_spin): centred in the window, a playlist's where its Play pill will be (the header's Play pill and cover are hidden while its tracks are on their way). */
+/* The one loading spinner (patch/libsrc.c ls_spin): centred in the room under the large title (the rule of ls_room, in view_grid's coordinates: the spinner is its child, 50 px under the window's top), a playlist's where its Play pill will be (the header's Play pill and cover are hidden while its tracks are on their way). */
 static void sg_spinner(int on) {
     if (!sg.spin) return;
-    if (on) widget_move(sg.spin, (SG_W - 14) / 2, sg.head ? PH_BTN_Y + (AH_BTN_H - 14) / 2 : (SG_WIN_H - 14) / 2);
+    if (on && sg.head)
+        widget_move(sg.spin, (SG_W - 14) / 2, PH_BTN_Y + (AH_BTN_H - 14) / 2);
+    else if (on)
+        widget_move(sg.spin, (SG_W - 14) / 2, SG_TITLE_H + (450 - LS_ROOM_NAV - SG_TITLE_H - 14) / 2);
     ls_spin(sg.spin, on);
 }
 
@@ -1471,10 +1477,71 @@ static void sg_set_flag(int flag) {
 
 static void sg_search(void);
 
+/* Clean Up Playlist (the card's row on a playlist; docs/modules/playlists.md "Clean Up Playlist"). Stock Update Library never touches the playlist table, so a song
+ * whose file left the card (deleted, or moved to another folder) stays in the playlist with its old path. The row checks this playlist's songs against the card
+ * (sg_gone: so_gone_mark, only paths under /mnt/mmc/). First the repair, unasked (so_relink: nothing is lost by it): a missing row whose song is in the library
+ * under another path gets that path, and the list is read again. Then, for the rows still missing, a confirm and the removal (so_clean: this playlist's rows by their
+ * own ids, never a file, never another playlist). Guards, nothing written: no card (/tmp/mmc_add, the stock "No TF Card Found"); a card that is in but not mounted
+ * (m1_card_mounted: every path would look missing); nothing missing. The page's select bitset holds the marks (the page is not in select mode) and is cleared again;
+ * the rows are marked again after the dialog (it is modal: the page may have read its list again under it) and only those that were asked about (their row ids,
+ * so_marked_ids / so_keep_ids) and are still missing are removed: a file that went under the dialog is left for the next clean-up. */
+static unsigned sg_gone(void) {
+    unsigned checked;
+    return sg.count && sg.sel && sg_valid() ? so_gone_mark(sg.list, sg.count, sg.sel, &checked) : 0;
+}
+
+static void sg_clean(void) {
+    char buf[200];
+    unsigned gone, fixed, done = 0;
+    if (!sg_cleans() || !sg.view || sg.select) return;
+    if (!so_card()) {
+        pod_toast(TR("msg_nottf"));
+        return;
+    }
+    if (!sg_valid())
+        sg_load(1); /* (another page's query replaced the stock list: read again, then check what is shown) */
+    gone = sg_gone();
+    if (!gone) {
+        pod_toast(TR("All songs are on the card"));
+        return;
+    }
+    if (!m1_card_mounted()) {
+        memset(sg.sel, 0, (sg.count + 7) / 8);
+        pod_toast(TR("Card not readable, nothing removed"));
+        return;
+    }
+    fixed = so_relink(sg.list, sg.count, sg.sel);
+    if (fixed) sg_load(1); /* the rows with their new paths (the marks go with the old list) */
+    gone = sg_gone();
+    if (gone) {
+        m1_fmt(buf, sizeof buf,
+               TR(gone == 1 ? "Remove %d missing song from this playlist?"
+                            : "Remove %d missing songs from this playlist?"),
+               (int)gone);
+        int *ids = so_marked_ids(sg.list, sg.count, sg.sel, gone); /* the rows the dialog's count is of */
+        if (ids && pod_confirm(buf) && so_card() && m1_card_mounted() && sg_gone() &&
+            so_keep_ids(sg.list, sg.count, sg.sel, ids, gone))
+            done = so_clean(sg.list, sg.count, sg.sel);
+        free(ids);
+    }
+    if (sg.sel && sg.count) memset(sg.sel, 0, (sg.count + 7) / 8);
+    if (done) {
+        pod_toast(TR("Playlist cleaned up"));
+        sg_load(1);
+    } else if (fixed) {
+        m1_fmt(buf, sizeof buf, TR(fixed == 1 ? "%d song updated" : "%d songs updated"), (int)fixed);
+        pod_toast(buf);
+    }
+}
+
 static int sg_on_item(void *ctx, void *e) {
     int k = (int)(long)ctx, cur = sg.sort > 3 ? 3 : sg.sort;
     (void)e;
     sg_menu(0);
+    if (k == VS_ACT2) { /* a playlist's Clean Up Playlist */
+        sg_clean();
+        return RET_OK;
+    }
     if (k == VS_SELECT) { /* the old Select button: select mode (an empty list has nothing to select) */
         if (sg.view && sg.count && !sg.rv) sg_select(1);
         return RET_OK;

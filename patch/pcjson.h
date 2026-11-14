@@ -11,7 +11,8 @@
 #define PJ_MAX 25 /* results kept (the request asks for 25) */
 #define PJ_NAME 80 /* a show's name, UTF-8 bytes with the NUL (cut before a continuation byte) */
 #define PJ_AUTHOR 56
-#define PJ_ART 160 /* the artwork url; one that does not fit is no url ("") */
+#define PJ_ART \
+    320 /* the artwork url; one that does not fit is no url (""). Podcast Index names the feed's own picture, whose address is often 230 to 250 bytes */
 #define PJ_DEPTH 32 /* nesting skipped; a deeper value ends the walk */
 
 typedef struct {
@@ -62,6 +63,11 @@ int pj_episodes(const char *json, unsigned n, pj_ep_t *out, int max);
 
 /* The same for Deezer's album search (https://api.deezer.com/search/album): the objects of the top-level "data" array, with title as name, artist.name as author, cover_medium (250 px) as art and id. -1: no "data" array. */
 int pj_deezer(const char *json, unsigned n, pj_result_t *out, int max);
+/* The same for Deezer's artist search (https://api.deezer.com/search/artist): name as name and, not cut, as feed ("" for one longer than the field: the match of a name is made on it), picture_medium (250 px) as art and nb_fan (the artist's followers) as id; author is "". -1: no "data" array. */
+int pj_deezer_artists(const char *json, unsigned n, pj_result_t *out, int max);
+/* The same for NetEase Cloud Music's artist search (https://music.163.com/api/search/get?type=100, not a documented service): the objects of the "artists" array of the top-level "result" object, with name as name and feed
+ * (as Deezer's artist), img1v1Url (the square picture) as art, picUrl as art6 and fansSize as id. 0 for a "result" with no "artists" (the answer when nothing is found); -1: no "result" object (an error answer). */
+int pj_netease_artists(const char *json, unsigned n, pj_result_t *out, int max);
 
 typedef struct {
     char title[PJ_NAME], artist[PJ_AUTHOR], album[PJ_NAME]; /* trackName, artistName, albumName */
@@ -75,3 +81,23 @@ typedef struct {
  * records passed to fn, or -1 when the answer is not an object or an array. An object cut short by the end of the text is not passed. */
 int pj_lrc_each(const char *json, unsigned n, unsigned cap, char *a, char *b,
                 int (*fn)(void *, const pj_lrc_t *, const char *), void *ctx);
+
+#define PJ_M_NONE 0 /* no such member, or the text is not one whole object */
+#define PJ_M_STRING 1 /* a string: decoded into dst */
+#define PJ_M_TRUE 2
+#define PJ_M_FALSE 3
+#define PJ_M_OTHER 4 /* a number, null, an object or an array */
+
+/* The member called want (under 15 bytes) of the top-level object of the n bytes at json (ListenBrainz's validate-token answer): one PJ_M_* kind, a string's text decoded into dst
+ * (cap bytes with the NUL, cut on a character boundary; "" for every other kind). The first member of that name counts. The object must be whole: a text that ends before its closing
+ * brace, or is not an object, has no member. Never reads outside json[0, n) or writes outside dst[0, cap). */
+int pj_member(const char *json, unsigned n, const char *want, char *dst, unsigned cap);
+
+/* pj_member that also gives the member's own text (Last.fm's answers nest: session.key, scrobbles.scrobble[i].ignoredMessage.code): *val the value's first byte inside json and *len its
+ * length (a string with its quotes, an object or an array with its brackets, a number's digits), so that it can be read again as an object (pj_member, pj_span) or an array (pj_next).
+ * dst may be NULL (a string is then not decoded), val may be NULL. *val and *len are set only when a kind other than PJ_M_NONE is returned. */
+int pj_span(const char *json, unsigned n, const char *want, char *dst, unsigned cap, const char **val, unsigned *len);
+
+/* The elements of the array that is the n bytes at json, one a call: *at is 0 before the first and is moved on; 1 with *val / *len the element's text, 0 at the array's end, when the
+ * text is no array, or when it ends inside an element. */
+int pj_next(const char *json, unsigned n, unsigned *at, const char **val, unsigned *len);

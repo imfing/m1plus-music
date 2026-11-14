@@ -630,6 +630,29 @@ def shelf_tests(ctx):
     expect(centre_px(m) == cols[10] and not any(c[0] in ('widget_load_image', 'timer_add') for c in m.calls),
            'then paint shows the album, with nothing left to load')
 
+    # S4b. The frame is composited over the page's own background: black on Black (and on Tinted + Neutral, which is
+    #      Black), the washed black on Tinted with an accent (it was black there: a black block on the tinted page),
+    #      paper in Light. The centre cover is the album's colour on all of them.
+    import palette as L
+    S = '/mnt/data/m1plus/appearance-'
+    def corner(m):
+        v = m.word(m.bitmap[1])
+        return v & 255, v >> 8 & 255, v >> 16 & 255
+    for bgf, acc, name, want in ((None, None, 'Black', (0, 0, 0)), (b'1\n', None, 'Tinted + Neutral', (0, 0, 0)), (None, b'1\n', 'Black + red', (0, 0, 0)),
+                                 (b'1\n', b'1\n', 'Tinted + red', L.wash((0, 0, 0), 'red')), (b'1\n', b'4\n', 'Tinted + teal', L.wash((0, 0, 0), 'teal')),
+                                 (b'2\n', None, 'Light', (L.C['LIGHT_PAPER'],) * 3)):
+        m = cover_machine(albums=5); cols = coloured(m, 5)
+        if bgf: m.fs[S + 'background'] = bgf
+        if acc: m.fs[S + 'accent'] = acc
+        m.call(PSYMS['coverflow_open'], count=20000000); paint(m)
+        expect(corner(m) == want and centre_px(m) == cols[0], f'{name}: the frame is over the page colour {want} ({corner(m)}), the centre cover as it is ({centre_px(m)})')
+    expect(L.wash((0, 0, 0), 'red') != (0, 0, 0), 'the Tinted page colour is not black')
+    # the background changes under the open page (the accent picked in Settings, Light Auto's clock): the next paint draws the frame again, at the same position
+    m.fs[S + 'background'] = b'1\n'; m.fs[S + 'accent'] = b'4\n'; m.call(PSYMS['pal_load'], count=20000000); paint(m)   # (pal_load: the read of both settings, without pal_apply's stock repaint)
+    expect(corner(m) == L.wash((0, 0, 0), 'teal') and centre_px(m) == cols[0], f'Light to Tinted + teal with the page open: the frame follows without a drag ({corner(m)})')
+    m.fs[S + 'accent'] = b'1\n'; m.call(PSYMS['pal_load'], count=20000000); paint(m)
+    expect(corner(m) == L.wash((0, 0, 0), 'red'), f'teal to red: the frame follows ({corner(m)})')
+
     # S5. Prefetch follows the travel and the cover left behind survives a reversal.
     def step(m, v):
         put_value(m, v); paint(m)

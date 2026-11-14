@@ -11,3 +11,17 @@ void ly_start(void *win);
 void ly_tick(void);
 /* The page is over (or replaced): the animation timer goes, the state is cleared. */
 void ly_stop(void);
+/* Another view drives the engine (the idle page, patch/idlelyrics.c; docs/modules/idlelyrics.md): box, a scroll_view of its own h px high in window win, gets the pool and the touch
+ * listeners; the lines are still Now Playing's stock rows. 0, or -1 with nothing changed (Now Playing has no engine, it is already taken, a label is refused). ly_release gives the engine back
+ * to Now Playing (idempotent; ly_refresh does it as well when Now Playing is in front); ly_target is the box the engine drives now (0 stopped); ly_lines the rows it reads. */
+int ly_retarget(void *win, void *box, int h);
+void ly_release(void);
+void *ly_target(void);
+int ly_lines(void);
+int ly_has_rows(
+    void); /* 1 when Now Playing's scroll_lrc holds at least one row right now (read live from the widget; 0 with the engine stopped) */
+/* The page is in front again: a text size changed in Settings is taken (the lines are laid out again). */
+void ly_refresh(void);
+/* Settings > Now Playing > Lyrics Text Size (file LYRSIZE_FILE): the saved size, 0 Small (22 px), 1 Medium (26), 2 Large (30, the default); ly_size_set saves one atomically (the size or -1). */
+int ly_size(void);
+int ly_size_set(int size);

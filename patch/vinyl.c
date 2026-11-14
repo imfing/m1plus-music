@@ -25,6 +25,11 @@
 #include "covercache.h"
 #include "libsrc.h"
 #include "entries.h"
+#include "scrobble.h"
+
+extern unsigned np_file_key(const char *path); /* patch/nowplaying.c: a hash of the picture file, 0 if unreadable */
+extern const char *
+np_cover_file(int *busy); /* the /tmp file of the playing track's cover, NULL for none; busy while demo makes it */
 
 enum { K_NONE, K_CLOSE, K_PREV, K_PLAY, K_NEXT, K_RECORD };
 
@@ -710,6 +715,7 @@ static int vn_tick(const void *timer) {
         vn.timer = 0;
         return RET_OK;
     }
+    scrobble_note(cc_playing()); /* lit or dark (patch/scrobble.c) */
     if (m1_screen_lit())
         vn_update(0); /* dark: nothing drawn, nothing read; the first lit tick catches up (dt is capped) */
     vn_retime();

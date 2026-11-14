@@ -449,7 +449,8 @@ def layout_tests(ctx):
            and all(('widget_on', view0, O[e], PSYMS[f], 0) in calls for e, f in (('EVT_POINTER_DOWN', 'al_on_down'), ('EVT_POINTER_UP', 'al_on_up'), ('EVT_POINTER_ABORT', 'al_on_abort'))),
            'the scroll_view\'s EVT_SCROLL / scroll end re-arm the loader; the content view takes the pointer events the scroll_view passes down, and grabs nothing')
     expect((content_h(m), m.s32(sv0 + SC_VH)) == (TOP + 10 + 15 * 200,) * 2, f'the content view is as high as the title block and the library (52 + 15 rows x 200 + 10) and the scroll_view\'s virtual_h is the same ({content_h(m)})')
-    expect(('loadLocalClassList', O['CLASS_ALBUMS']) in calls and ('deque_assign', 30) in calls, 'the stock album list is copied')
+    expect(('loadLocalClassList', O['CLASS_ALBUMS']) in calls and ('lib_deque_swap', 30, 1) in calls and not [c for c in calls if c[0] == 'deque_assign'] and m.deques[m.word(pod.DATA['PDEQ_SHOWLIST'][0])] == [],
+           'the stock album list is taken, not copied (lib_take_list): the page\'s deque holds the 30 rows and *pdeq_showlist is left empty')
     expect(not any(n in names for n in ('image_create', 'list_item_create', 'label_create', 'hscroll_label_create', 'widget_factory_create_widget')),
            'no widget is created per album')
     expect(not any(n in names for n in ('pthread_create', 'toolsGetAlbumCover', 'toolsGetExternCover', 'mkdir')),
@@ -1632,6 +1633,28 @@ def rev_file(k): return (chr(ord('a') + k) + '\n').encode()
 def titles(order): return [SORT_LIB[i][0] for i in order]
 
 
+def reread_tests(ctx):
+    """Back on the page, the local list is read again (docs/modules/albums.md "Returning to the page"): an album removed elsewhere is gone, and a changed
+    sort order (Year, Recently Added: a deleted track moves an album with the rows the same) makes the tiles again, so a tap opens the row shown."""
+    expect = ctx.expect
+    m = sort_machine(**{SORT_FILE: b'3\n'}); open_grid(m)
+    expect(shown(m) == titles(SORT_ORDERS[3]), 'Year order at open')
+    m.setword(m.class_lists[O['CLASS_ALL_SONGS']][3] + O['REC_YEAR'], 1900)   # the earliest year of Epsilon moves it from first to fourth: the rows are the same
+    fired(m, 'al_on_fg')
+    expect(shown(m) == titles([1, 2, 0, 4, 3]), f'the same albums in another order: the tiles follow it at foreground ({shown(m)})')
+    calls = tap_at(m, 100, TOP + 10)
+    expect(('navigator_to_with_context', 'albuminfo_page', O['CLASS_ALBUMS'], 1) in calls, 'a tap on the first row opens the row it shows (beta, stock row 1)')
+    m = sort_machine(**{SORT_FILE: b'3\n'}); open_grid(m)
+    before = shown(m)
+    fired(m, 'al_on_fg')
+    expect(shown(m) == before, 'the same list in the same order is left as it is')
+    m = sort_machine(**{SORT_FILE: b'0\n'}); open_grid(m)
+    expect(len(shown(m)) == 5, 'five albums at open')
+    m.showlist = m.showlist[:2] + m.showlist[3:]   # Gamma's songs were all removed
+    fired(m, 'al_on_fg')
+    expect(shown(m) == ['Alpha', 'beta', 'Delta', 'Epsilon'], f'a removed album is gone at foreground ({shown(m)})')
+
+
 def card_asset_tests(ctx):
     expect = ctx.expect
     asset = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_albums.bin')
@@ -1727,6 +1750,7 @@ def sort_card_tests(ctx):
     m.calls = []; m.click('btn_more'); m.click('vs_item2')
     expect([c[1] for c in m.calls if c[0] == 'loadLocalClassList'] == [O['CLASS_ALL_SONGS']] and m.word(pod.DATA['SORT_FLAG'][0]) == flag0 and m.word(pod.DATA['G_CLASS_TYPE'][0]) == cls0,
            'Recently Added reads the library song list once, and sort_flag and the browsing class are as they were')
+    expect(m.deques[m.word(pod.DATA['PDEQ_SHOWLIST'][0])] == [] and ('deque_clear', m.word(pod.DATA['PDEQ_SHOWLIST'][0])) in m.calls, 'and the song list read for the scan is freed, not left in *pdeq_showlist')
     m.calls = []; m.click('btn_more'); m.click('vs_item2')
     expect(m.fs.get(SORT_FILE) == b'c\n' and [c[1] for c in m.calls if c[0] == 'loadLocalClassList'] == [O['CLASS_ALL_SONGS']], 'the row already ticked flips its direction (saved as its letter) and the order is made again')
     # no songs: no ranks, the albums keep the stock (title) order
@@ -2474,4 +2498,4 @@ def loading_tests(ctx):
     expect(not any(e[0] == 'state' for e in m.fake_log) and not spin(m) and not status(m), 'cached rows: shown at once, the state is not asked, no spinner')
 
 
-SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests, az_tests, src_tests, loading_tests, nextalbum_tests]   # tools/check.py runs each as its own task
+SECTIONS = [layout_tests, taps_list_tests, toggle_tests, stock_widget_tests, background_build_tests, foreground_loader_tests, reread_tests, card_asset_tests, sort_card_tests, reverse_tests, title_tests, az_tests, src_tests, loading_tests, nextalbum_tests]   # tools/check.py runs each as its own task

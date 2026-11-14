@@ -49,6 +49,9 @@ enum {
     ACT_THEMESET = 31,
     ACT_INFO = 33,
     ACT_PCSEARCH = 34,
+    ACT_PCDIR =
+        137, /* Settings > Library > Podcasts > Directory: a value row opening its picker; dimmed and inert while Podcast Discover is off (as Podcast Region) */
+    ACT_PCDIRSET = 138, /* the Podcast Directory picker's rows (arg = PCDIR_APPLE or PCDIR_INDEX) */
     ACT_BATTPCT = 36,
     ACT_FOLDERS = 37,
     ACT_VREC = 38,
@@ -80,7 +83,7 @@ enum {
     ACT_CHGLIMSET = 81, /* the Charge Limit picker's rows (arg = the limit, 80 .. 100) */
     ACT_IDLE =
         82, /* Settings > Now Playing > Idle Display: a value row (Off, Album Cover, Cassette, Vinyl) opening its picker */
-    ACT_IDLESET = 83, /* the picker's rows (arg 0 Off, 1 Album Cover, 2 Cassette, 3 Vinyl) */
+    ACT_IDLESET = 83, /* the picker's rows (arg 0 Off, 1 Album Cover, 2 Cassette, 3 Vinyl, 4 Lyrics) */
     ACT_LOCKWP = 84, /* Settings > Lock Screen > Wallpaper: our picker page (patch/lockscreen.c lkwp_open) */
     ACT_LOCKSTYLE =
         85, /* Settings > Lock Screen > Player Style: a value row (Large Cover / Mini Player) opening its picker */
@@ -93,7 +96,7 @@ enum {
     ACT_LIGHT = 97, /* Settings > System > Display: Screen Timeout, a value row opening its picker */
     ACT_LIGHTSET = 98, /* the Screen Timeout picker's rows (arg = stock's backlight time index, 0 .. 4) */
     ACT_LED = 99, /* Settings > System > Display: LED Light, a value row opening its picker */
-    ACT_LEDSET = 100, /* the LED Light picker's rows (arg = stock's lamp mode: 0 off, 1 orange, 2 blue) */
+    ACT_LEDSET = 100, /* the LED Light picker's rows (arg = stock's lamp mode: 0 off, 1 green, 2 blue) */
     ACT_LEDFOLLOW = 101, /* Settings > System > Display: Follow Screen, a switch row, stock's own switch */
     ACT_KEYLOCK = 102, /* Settings > System > Buttons & Power: Button Lock, a value row opening its picker */
     ACT_KEYLOCKSET =
@@ -101,11 +104,48 @@ enum {
     ACT_TAPWAKE = 104, /* Buttons & Power: Tap to Wake, a switch row, stock's own byte */
     ACT_STANDBY = 105, /* Buttons & Power: Auto-Standby, a switch row, stock's own switch */
     ACT_SHUTDOWN = 106, /* Buttons & Power: Auto-Shutdown, a value row opening its picker */
+    ACT_LYRSIZE =
+        135, /* Settings > Now Playing > Lyrics Text Size: a value row (Small, Medium, Large) opening its picker */
+    ACT_LYRSIZESET = 136, /* the picker's rows (arg 0 Small, 1 Medium, 2 Large) */
     ACT_SHUTDOWNSET =
         107, /* the Auto-Shutdown picker's rows (arg = stock's word: 0 off, 1 .. 4 = 1, 3, 5, 10 minutes) */
+    ACT_PLAYMODE = 129, /* Settings > Playback Settings: Play Mode, a value row opening its picker */
+    ACT_PLAYMODESET =
+        130, /* the Play Mode picker's rows (arg = the mode as shown: 0 List Play, 1 Repeat Track, 2 Shuffle, 3 Repeat All) */
+    ACT_GAPLESS = 133, /* Playback Settings: Gapless, a switch row, stock's own switch */
+    ACT_MEMPLAY = 134, /* Playback Settings: Memory Playback, a value row opening its picker */
+    ACT_MEMPLAYSET = 131, /* the Memory Playback picker's rows (arg = stock's word: 0 off, 1 track, 2 location) */
+    ACT_FOLDERSKIP = 132, /* Playback Settings: Folder Skip, a switch row, stock's own switch */
+    ACT_GAIN = 114, /* Playback Settings: Gain, a value row opening its picker; dimmed and inert while Line Out is on */
+    ACT_GAINSET = 115, /* the Gain picker's rows (arg = stock's mode: 0 low, 1 high) */
+    ACT_REPLAYGAIN = 116, /* Playback Settings: ReplayGain, a value row opening its picker */
+    ACT_RGSET = 117, /* the ReplayGain picker's rows (arg = stock's word: 0 off, 1 track, 2 album) */
+    ACT_FILTERSET =
+        118, /* the Digital Filter picker's rows (arg = stock's filter 0 .. 7); the Digital Filter row is a plain link */
+    ACT_DSD = 119, /* Playback Settings: DSD Output Mode, a value row opening its picker */
+    ACT_DSDSET = 120, /* the DSD Output Mode picker's rows (arg = stock's word: 0 D2P, 1 DOP, 2 Native) */
+    ACT_DIGITAL = 121, /* Playback Settings: Digital Output, a switch row, stock's own switch */
+    ACT_USBVOL = 122, /* Playback Settings: USB Volume, a value row opening its picker */
+    ACT_USBVOLSET = 123, /* the USB Volume picker's rows (arg = stock's word: 0 fixed, 1 variable) */
+    ACT_FOLDERCOVER = 124, /* Settings > Library: Folder Album Cover, a switch row, stock's own byte */
+    ACT_MAXVOL = 125, /* Playback Settings: Max Volume, a value row opening its slider page */
+    ACT_BOOTVOL = 126, /* Playback Settings: Default Volume, a value row opening its page */
+    ACT_BALANCE = 127, /* Playback Settings: Channel Balance, a value row opening its slider page */
+    ACT_BOOTMEM = 128, /* the Default Volume page: Volume Memory, a switch row, stock's own byte */
     ACT_AREBUILD =
         92, /* Settings > Library: Rebuild Artist Photos, an action row (a confirm, then the request file Home's pass acts on) */
-    ACT_SUBSONIC = 93 /* the Navidrome root page (tools/pod_pages.py); ids 93 .. 95 are the Navidrome rows */
+    ACT_SUBSONIC = 93, /* the Navidrome root page (tools/pod_pages.py); ids 93 .. 95 are the Navidrome rows */
+    ACT_SCROBBLE =
+        96, /* Settings > Library > Scrobbling: a switch row, off by default (patch/scrobble.c scrobble_toggle) */
+    ACT_LB =
+        108, /* Settings > Library > Scrobbling > ListenBrainz: a value row (the account's user name) opening the ListenBrainz page */
+    ACT_SCROBUP =
+        109, /* Settings > Library > Scrobbling > Upload Scrobbles: an action row (patch/scrobpage.c lb_upload_tap) */
+    ACT_LBAUTO =
+        112, /* Settings > Library > Scrobbling > Auto Upload: a switch row, off by default (patch/scrobble.c scrobble_auto_toggle) */
+    ACT_LF =
+        113, /* Settings > Library > Scrobbling > Last.fm: a value row (the account's user name) opening the Last.fm page */
+    ACT_SCROBPAGE = 139 /* Settings > Library > Scrobbling: a value row (On or Off) opening the Scrobbling page */
 };
 
 struct pod_row {
@@ -141,12 +181,14 @@ enum {
     INFO_CAP,
     INFO_FREE,
     INFO_CC, /* the Cache page's seven Covers values start here: homecover_stat(kind - INFO_CC) */
-    INFO_SF = INFO_CC + 7, /* the Settings Files page's 45 values: setfiles_stat(kind - INFO_SF) */
-    INFO_SFOLD = INFO_SF + 45, /* the Unsupported Files count (setfiles_old_count), above those rows */
+    INFO_SF = INFO_CC + 7, /* the Settings Files page's 49 values: setfiles_stat(kind - INFO_SF) */
+    INFO_SFOLD = INFO_SF + 49, /* the Unsupported Files count (setfiles_old_count), above those rows */
     INFO_DUR = INFO_SFOLD + 1, /* the Cache page's Measured Tracks: dur_stat (patch/durations.c) */
     INFO_APHOTOS = INFO_DUR +
         1, /* the Cache page's Artist Photos card: the photos, and the artists with none (homecover_stat 7, 8) */
-    INFO_ANONE = INFO_DUR + 2
+    INFO_ANONE = INFO_DUR + 2,
+    INFO_LBACCT = INFO_DUR + 3, /* the ListenBrainz page's Account row: lb_account_text (patch/scrobpage.c) */
+    INFO_LFACCT = INFO_DUR + 4 /* the Last.fm page's: lf_account_text */
 };
 
 enum {
@@ -163,11 +205,25 @@ enum {
     VK_CHGLIM,
     VK_LOCKSTYLE,
     VK_IDLE,
+    VK_LYRSIZE,
     VK_NA,
     VK_LIGHT,
     VK_LED,
     VK_KEYLOCK,
-    VK_SHUTDOWN
+    VK_SHUTDOWN,
+    VK_LB, /* the Scrobbling page's ListenBrainz row */
+    VK_LF, /* ... and its Last.fm row */
+    VK_SCROB, /* the Library page's Scrobbling row: On or Off, as the switch on the Scrobbling page */
+    VK_PSMODE, /* the Playback Settings value rows, in the order of entries.h PS_CTL_* (value_text asks ps_value_key) */
+    VK_PSMEM,
+    VK_PSGAIN,
+    VK_PSRG,
+    VK_PSDSD,
+    VK_PSUSB,
+    VK_PSMAXVOL,
+    VK_PSBOOTVOL,
+    VK_PSBAL,
+    VK_PCDIR
 };
 
 /* stock.h (generated by tools/pod.py) supplies the stock-function address macros, the libc GOT
@@ -198,6 +254,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "albums.h"
 #include "artists.h"
 #include "entries.h"
+#include "lyrics.h"
 #include "peqlib.h"
 #include "peqpage.h"
 #include "playlists.h"
@@ -206,6 +263,8 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "search.h"
 #include "shot.h"
 #include "tenband.h"
+#include "scrobble.h"
+#include "scrobpage.h"
 static int pod_off(void) { return home_off(); } /* the SD file and the flash one */
 
 static int home_open(int id) {
@@ -387,15 +446,31 @@ static const struct pick_def {
     {ACT_BG, VK_BG, ACT_BGSET, pal_bg_mode, pal_bg_set},
     {ACT_ACCENT, VK_ACCENT, ACT_ACCENTSET, pal_accent_saved, pal_accent_set},
     {ACT_REGION, VK_REGION, ACT_REGIONSET, pcregion_saved, pcregion_set},
+    {ACT_PCDIR, VK_PCDIR, ACT_PCDIRSET, pcdir_setting, pcdir_set},
     {ACT_PEQ, VK_EQ, 0, (int (*)(void))0, (int (*)(int))0},
     {ACT_CHGLIM, VK_CHGLIM, ACT_CHGLIMSET, chg_limit, chg_set},
     {ACT_LOCKSTYLE, VK_LOCKSTYLE, ACT_LOCKSET, lk_layout, lk_layout_set},
     {ACT_IDLE, VK_IDLE, ACT_IDLESET, idle_choice, idle_set},
+    {ACT_LYRSIZE, VK_LYRSIZE, ACT_LYRSIZESET, ly_size, ly_size_set},
     {ACT_NEXTALBUM, VK_NA, ACT_NASET, na_setting, na_set},
     {ACT_LIGHT, VK_LIGHT, ACT_LIGHTSET, disp_light, disp_light_set},
     {ACT_LED, VK_LED, ACT_LEDSET, disp_led, disp_led_set},
     {ACT_KEYLOCK, VK_KEYLOCK, ACT_KEYLOCKSET, kp_lock, kp_lock_set},
     {ACT_SHUTDOWN, VK_SHUTDOWN, ACT_SHUTDOWNSET, kp_shutdown, kp_shutdown_set},
+    {ACT_LB, VK_LB, 0, (int (*)(void))0, (int (*)(int))0},
+    {ACT_LF, VK_LF, 0, (int (*)(void))0, (int (*)(int))0},
+    {ACT_SCROBPAGE, VK_SCROB, 0, (int (*)(void))0, (int (*)(int))0},
+    {ACT_PLAYMODE, VK_PSMODE, ACT_PLAYMODESET, ps_playmode, ps_playmode_set},
+    {ACT_MEMPLAY, VK_PSMEM, ACT_MEMPLAYSET, ps_memplay, ps_memplay_set},
+    {ACT_GAIN, VK_PSGAIN, ACT_GAINSET, ps_gain, ps_gain_set},
+    {ACT_REPLAYGAIN, VK_PSRG, ACT_RGSET, ps_replaygain, ps_replaygain_set},
+    {-1, VK_NONE, ACT_FILTERSET, ps_filter, ps_filter_set}, /* the Digital Filter row is a plain link: no value */
+    {ACT_DSD, VK_PSDSD, ACT_DSDSET, ps_dsd, ps_dsd_set},
+    {ACT_USBVOL, VK_PSUSB, ACT_USBVOLSET, ps_usbvol, ps_usbvol_set},
+    {ACT_MAXVOL, VK_PSMAXVOL, 0, (int (*)(void))0,
+     (int (*)(int))0}, /* the loudness rows open their own slider pages: no picker */
+    {ACT_BOOTVOL, VK_PSBOOTVOL, 0, (int (*)(void))0, (int (*)(int))0},
+    {ACT_BALANCE, VK_PSBAL, 0, (int (*)(void))0, (int (*)(int))0},
 };
 
 static const struct pick_def *pick_value_of(int act) {
@@ -423,6 +498,8 @@ static int on_row(void *ctx, void *e) {
     if (!row) return RET_OK;
     if (row->action == ACT_HOME)
         home_open(row->arg);
+    else if (row->action == ACT_SCROBUP)
+        lb_upload_tap(); /* the scrobble log to the services now: a toast, no page */
     else if (row->action == ACT_PAGE || pick_value_of(row->action)) /* the value rows open their picker page */
         open_page(row->arg, 0);
     else if (row->action == ACT_PLAYER)
@@ -521,6 +598,14 @@ static void switch_show(void *img, int on) {
 static void *regen_row __attribute__((section(".scratch"))), *regen_note __attribute__((section(".scratch")));
 #define KB_EN_DIM 153 /* 60 %: Settings > Keyboards > English, always on and not switchable */
 
+/* Settings > Library > Podcasts: the Directory and Podcast Region rows are dimmed and take no tap while Podcast Discover is off (there is then no search to ask and no Discover to show). */
+static void *pcdir_row __attribute__((section(".scratch"))), *pcreg_row __attribute__((section(".scratch")));
+static void pcdir_show(void) {
+    int on = pcsearch_setting();
+    if (pcdir_row) widget_set_opacity(pcdir_row, on ? 255 : KB_EN_DIM), widget_set_sensitive(pcdir_row, on);
+    if (pcreg_row) widget_set_opacity(pcreg_row, on ? 255 : KB_EN_DIM), widget_set_sensitive(pcreg_row, on);
+}
+
 static void regen_show(void) {
     int on = dailymix_can_regen();
     if (regen_row) widget_set_visible(regen_row, on, 0), widget_set_sensitive(regen_row, on);
@@ -552,6 +637,13 @@ static const struct pod_switch {
     {ACT_LEDFOLLOW, disp_follow, disp_follow_toggle},
     {ACT_TAPWAKE, kp_tap, kp_tap_toggle},
     {ACT_STANDBY, kp_standby, kp_standby_toggle},
+    {ACT_SCROBBLE, scrobble_setting, scrobble_toggle},
+    {ACT_LBAUTO, scrobble_auto_setting, scrobble_auto_toggle},
+    {ACT_GAPLESS, ps_gapless, ps_gapless_toggle},
+    {ACT_FOLDERSKIP, ps_folderskip, ps_folderskip_toggle},
+    {ACT_DIGITAL, ps_digital, ps_digital_toggle},
+    {ACT_FOLDERCOVER, ps_foldercover, ps_foldercover_toggle},
+    {ACT_BOOTMEM, ps_bootmem, ps_bootmem_toggle},
 };
 #define SW_N ((int)(sizeof sw_tab / sizeof *sw_tab))
 struct swctx {
@@ -578,7 +670,9 @@ static int on_switch(void *ctx, void *e) {
     on = s->sw->toggle();
     if (on >= 0) switch_show(s->img, on);
     if (s->sw->action == ACT_DAILY) regen_show();
+    if (s->sw->action == ACT_PCSEARCH) pcdir_show();
     if (s->sw->action == ACT_STANDBY) pod_page_refresh(POD_KEYSPOWER_PAGE); /* turning it on turned Auto-Shutdown off */
+    if (s->sw->action == ACT_BOOTMEM) pod_page_refresh(POD_PSBOOTVOL_PAGE); /* the slider's cards follow the switch */
     return RET_OK;
 }
 
@@ -599,7 +693,8 @@ static void bind_switch(void *win, unsigned i, const struct pod_row *row) {
 
 /* The values (tr keys of the stock tables where the value is stock's own, so they follow Settings > Language): Wi-Fi and Bluetooth On / Off (the flags the status bar reads), the EQ (Off, or the preset's name from stock's own lookup), the album order and the
  * cassette theme (ours). */
-static const char *const idle_key[4] = {"Off", "Album Cover", "Cassette", "Vinyl"};
+static const char *const idle_key[5] = {"Off", "Album Cover", "Cassette", "Vinyl", "Lyrics"};
+static const char *const lyrsize_key[3] = {"Small", "Medium", "Large"};
 static const char *const tape_theme_key[4] = {"Normal", "Chrome", "Metal", "Auto"};
 static const char *const record_key[VN_RECS] = {"Black", "Cover"};
 static const char *const vtheme_key[VN_THEMES] = {"Graphite", "Snow"};
@@ -621,6 +716,8 @@ static void value_text(void *label, int kind) {
         key = tape_theme_key[tape_theme()];
     else if (kind == VK_IDLE)
         key = idle_key[idle_choice()];
+    else if (kind == VK_LYRSIZE)
+        key = lyrsize_key[ly_size()];
     else if (kind == VK_RECORD)
         key = record_key[vinyl_record()];
     else if (kind == VK_VTHEME)
@@ -633,6 +730,8 @@ static void value_text(void *label, int kind) {
         pcregion_value(buf, sizeof buf);
         widget_set_text_utf8(label, buf);
         return;
+    } else if (kind == VK_PCDIR) { /* the two directories are names, the same in every language */
+        key = pcdir_setting() == PCDIR_INDEX ? "Podcast Index" : "Apple Podcasts";
     } else if (kind == VK_LOCKSTYLE) {
         key = lk_layout() == 1 ? "Mini Player" : "Large Cover";
     } else if (
@@ -648,7 +747,7 @@ static void value_text(void *label, int kind) {
         }
         key = light[0];
     } else if (kind == VK_LED) {
-        key = disp_led() == 1 ? "Orange" : disp_led() == 2 ? "Blue" : "Off";
+        key = disp_led() == 1 ? "Green" : disp_led() == 2 ? "Blue" : "Off";
     } else if (kind == VK_KEYLOCK) {
         static const char *const lock[] = {"Off", "Volume", "Buttons", "Both"};
         key = lock[kp_lock()];
@@ -660,6 +759,25 @@ static void value_text(void *label, int kind) {
             return;
         }
         key = off[0];
+    } else if (kind == VK_SCROB) {
+        key = scrobble_setting() ? "On" : "Off";
+    } else if (kind == VK_LB ||
+               kind == VK_LF) { /* a scrobble account (patch/scrobpage.c): already translated, or a user name */
+        if (kind == VK_LB)
+            lb_row_text(buf, sizeof buf);
+        else
+            lf_row_text(buf, sizeof buf);
+        widget_set_text_utf8(label, buf);
+        return;
+    } else if (
+        kind >= VK_PSMODE &&
+        kind <=
+            VK_PSBAL) { /* Playback Settings: stock's own state, as its picker names it (the loudness rows: a number) */
+        if (ps_value_text(kind - VK_PSMODE, buf, sizeof buf)) {
+            widget_set_text_utf8(label, buf);
+            return;
+        }
+        key = ps_value_key(kind - VK_PSMODE);
     } else if (kind == VK_CHGLIM) { /* "80%" .. "100%" (100: no limit) */
         snprintf(buf, sizeof buf, "%d%%", chg_limit());
         widget_set_text_utf8(label, buf);
@@ -696,6 +814,14 @@ static void info_text(void *label, int kind) {
     const char *s = buf;
     float cap, rem;
     buf[0] = 0;
+    if (kind == INFO_LBACCT || kind == INFO_LFACCT) { /* a scrobble account's user name or state, or nothing (no "-") */
+        if (kind == INFO_LBACCT)
+            lb_account_text(buf, sizeof buf);
+        else
+            lf_account_text(buf, sizeof buf);
+        widget_set_text_utf8(label, buf);
+        return;
+    }
     if (kind == INFO_APHOTOS || kind == INFO_ANONE)
         homecover_stat(kind == INFO_APHOTOS ? 7 : 8, buf, sizeof buf);
     else if (kind == INFO_DUR)
@@ -746,10 +872,23 @@ static void page_refresh(void *win, const struct pod_page *page) {
     int i;
     stock_front = (void *)0;
     if (page == &POD_PAGES[POD_DISPLAY_PAGE]) disp_refresh(win); /* the slider follows the pull-down's */
+    if (page == &POD_PAGES[POD_PSMAXVOL_PAGE])
+        ps_vol_refresh(win, PS_VOL_MAX); /* stock's refresh: the label and the slider from the word */
+    if (page == &POD_PAGES[POD_PSBOOTVOL_PAGE])
+        ps_vol_refresh(win, PS_VOL_BOOT); /* ... and the cards dimmed under Volume Memory */
+    if (page == &POD_PAGES[POD_PSBAL_PAGE]) ps_vol_refresh(win, PS_VOL_BAL);
     for (i = 0; i < page->count; i++) {
         const struct pod_row *row = &page->rows[i];
         void *w;
         int kind = row_value(row);
+        if (row->action == ACT_PCDIR)
+            pcdir_show(); /* Podcast Discover's state, each time the Podcasts page is back in front */
+        if (row->action ==
+            ACT_GAIN) { /* stock greys the Gain row and ignores its click while Line Out is on (the Line Out byte) */
+            void *item = widget_lookup(win, row->name, 1);
+            int off = ps_gain_locked();
+            if (item) widget_set_opacity(item, off ? KB_EN_DIM : 255), widget_set_sensitive(item, !off);
+        }
         if (switch_of(row->action) >= 0) {
             snprintf(name, sizeof name, "pod_switch%d", i);
             switch_show(widget_lookup(win, name, 1), sw_tab[switch_of(row->action)].state());
@@ -784,8 +923,9 @@ static void page_refresh(void *win, const struct pod_page *page) {
             if (w)
                 value_text(w, kind),
                     value_fit(win, (unsigned)i, w, POD_VALUE_RIGHT, POD_VALUE_MAX,
-                              row->action == ACT_REGION ? POD_INFO_LABEL_X
-                                                        : POD_LABEL_X); /* (the Podcast Region row has no glyph) */
+                              (row->action == ACT_REGION || row->action == ACT_PCDIR)
+                                  ? POD_INFO_LABEL_X
+                                  : POD_LABEL_X); /* (the Podcast Region and Podcast Directory rows have no glyph) */
         } else if (is_pick(row)) {
             snprintf(name, sizeof name, "pod_check%d", i);
             w = widget_lookup(win, name, 1);
@@ -804,6 +944,13 @@ static void page_refresh(void *win, const struct pod_page *page) {
 /* A page whose values changed on their own (the Cache page's counts and status): read them again. */
 void pod_page_refresh(int index) {
     if (index >= 0 && index < POD_PAGE_COUNT && pod_fg[index]) page_refresh(pod_fg[index], &POD_PAGES[index]);
+}
+
+/* The Scrobbling page and the two account pages read the accounts' rows again (patch/scrobpage.c: the file changed, or a check ended). */
+void pod_lb_refresh(void) {
+    pod_page_refresh(POD_SCROBBLING_PAGE);
+    pod_page_refresh(POD_LB_PAGE);
+    pod_page_refresh(POD_LF_PAGE);
 }
 
 /* A picker row (Cassette Theme, Record, Background, Accent): choose it (saved first: a failed save leaves the old choice and its check), then the checks follow. */
@@ -827,13 +974,19 @@ static int on_page_fg(void *ctx, void *e) {
     long i = (long)ctx;
     (void)e;
     if (pod_fg[i]) page_refresh(pod_fg[i], &POD_PAGES[i]);
+    if (i == POD_SCROBBLING_PAGE || i == POD_LB_PAGE || i == POD_LF_PAGE)
+        lb_on_front(); /* the scrobble.ini watch (patch/scrobpage.c) */
     return RET_OK;
 }
 
 static int on_page_gone(void *ctx, void *e) {
     long i = (long)ctx;
+    int k;
     (void)e;
     pod_fg[i] = (void *)0;
+    for (k = 0; k < POD_PAGES[i].count; k++)
+        if (POD_PAGES[i].rows[k].action == ACT_PCDIR)
+            pcdir_row = pcreg_row = (void *)0; /* the Podcasts page: its rows go with the window */
     return RET_OK;
 }
 
@@ -842,11 +995,14 @@ static int on_page_gone(void *ctx, void *e) {
 static int open_page(int index, int as_home) {
     const struct pod_page *page;
     void *win;
-    int i, refresh = 0;
+    int i, refresh = 0, pcrows = 0;
     if (index < 0 || index >= POD_PAGE_COUNT) return -1;
     page = &POD_PAGES[index];
     win = window_open(page->asset);
     if (!win) return -1;
+    for (i = 0; i < page->count; i++)
+        if (page->rows[i].action == ACT_PCDIR)
+            pcdir_row = pcreg_row = (void *)0; /* the rows of its last window are gone */
     if (index == POD_FILES_PAGE) setfiles_open(); /* the files, read once as the page opens */
     for (i = 0; i < 32; i++)
         if (page->wrap_notes >> i & 1) { /* a note of more than one line is a plain label: its wrap is on at run time */
@@ -872,12 +1028,19 @@ static int open_page(int index, int as_home) {
                 row->action == ACT_SFOLD || row_value(row) || is_pick(row))
                 refresh = 1;
         }
+        if (row->action == ACT_PCDIR) pcdir_row = widget_lookup(win, row->name, 1), pcrows = 1;
+        if (row->action == ACT_REGION) pcreg_row = widget_lookup(win, row->name, 1), pcrows = 1;
         if (row->action == ACT_REGEN) {
             regen_row = widget_lookup(win, row->name, 1);
             regen_note = widget_lookup(win, "pod_note3", 1);
             regen_show();
         }
     }
+    if (pcrows) pcdir_show(); /* once both rows are this window's: never through a row of the page's last window */
+    if (index >= POD_PSMAXVOL_PAGE && index <= POD_PSBAL_PAGE)
+        refresh = 1; /* the loudness pages follow stock's words when they are back in front */
+    if (index == POD_SCROBBLING_PAGE || index == POD_LB_PAGE || index == POD_LF_PAGE)
+        refresh = 1; /* back in front: the page's rows and the scrobble.ini watch (on_page_fg) */
     if (refresh) { /* the state the page shows, now and each time it is back in front */
         pod_fg[index] = win;
         page_refresh(win, page);
@@ -916,6 +1079,19 @@ static int open_page(int index, int as_home) {
         peqband_opened(win);
     else if (index == POD_DISPLAY_PAGE)
         disp_opened(win); /* the brightness card: stock's slider handlers */
+    else if (index == POD_SCROBBLING_PAGE || index == POD_LB_PAGE || index == POD_LF_PAGE)
+        lb_opened(
+            win,
+            index == POD_LB_PAGE ? 1
+            : index == POD_LF_PAGE
+                ? 2
+                : 0); /* the card's scrobble.ini read again, and the upload's or a check's result while the page is up */
+    else if (index == POD_PSMAXVOL_PAGE)
+        ps_vol_opened(win, PS_VOL_MAX); /* stock's own slider and button handlers, bound to our widgets */
+    else if (index == POD_PSBOOTVOL_PAGE)
+        ps_vol_opened(win, PS_VOL_BOOT);
+    else if (index == POD_PSBAL_PAGE)
+        ps_vol_opened(win, PS_VOL_BAL);
     { /* the Settings page is the way out to the grid; the menu may be the Home instance (no navbar) */
         int entry = as_home && index == POD_ENTRY_PAGE;
         if (index == POD_SETTINGS_PAGE || entry) home_menu_opened(win, index == POD_SETTINGS_PAGE, entry);
@@ -930,6 +1106,9 @@ int pod_open_lock(void) { return open_page(POD_LOCK_PAGE, 0); }
 
 /* The preset page, for the Presets page's rows (patch/peqpage.c): the normal instance, with Back. */
 int pod_open_peqpage(void) { return open_page(POD_PEQP_PAGE, 0); }
+
+/* The Playback Settings page, for the pull-down's Playback tile (patch/pulldown.c): the normal instance, with Back. */
+int pod_open_playset(void) { return open_page(POD_PLAYSET_PAGE, 0); }
 
 /* The Equalizer page, for the All Playback Settings Equalizer row (patch/peq_ui.c peq_open): the normal instance, with Back. */
 int pod_open_peq(void) { return open_page(POD_PEQ_PAGE, 0); }

@@ -458,16 +458,16 @@ void az_free(az_t *az) {
 
 /* The UTF-8 text on label w, cut with an ellipsis to the label's width, measured in its own style (grid_fit's rule: the longest prefix that fits with the
  * ellipsis after it, a binary search). At most SG_NAME_MAX wide chars are looked at. */
-void az_fit(void *w, const char *text) {
+int az_fit(void *w, const char *text) { return w ? az_fit_room(w, text, I(w, W_W)) : 0; }
+
+int az_fit_room(void *w, const char *text, int room) {
     unsigned s[SG_NAME_MAX + 1], len = 0, lo, hi, i, o = 0, c;
     char out[4 * SG_NAME_MAX + 1];
     const unsigned *t;
-    int room;
-    if (!w) return;
-    room = I(w, W_W);
+    if (!w) return 0;
     widget_set_text_utf8(w, text);
     t = widget_get_text(w);
-    if (!t || m1_text_w(w, t) <= room) return;
+    if (!t || m1_text_w(w, t) <= room) return 0;
     while (t[len] && len < SG_NAME_MAX) s[len] = t[len], ++len;
     s[len] = 0;
     lo = 0, hi = len - 1;
@@ -488,4 +488,5 @@ void az_fit(void *w, const char *text) {
     }
     out[o] = 0;
     widget_set_text_utf8(w, out);
+    return 1;
 }

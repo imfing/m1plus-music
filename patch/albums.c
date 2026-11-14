@@ -155,6 +155,7 @@ static struct {
      * rk: the re-check of this artist (patch/artistphoto.c ap_recheck) 0 not made, 1 running on the page's set, 2 done (a source's page: 2 = the server has no picture for the artist); rk_ep: ap_epoch() when it started */
     int circ, rk;
     unsigned rk_ep;
+    int finding; /* Find Artist Photo is open over this page (the "..." card's row): al_on_fg looks at the photo again when it comes back */
     ls_cpoll_t
         cp; /* the shared cover poll (patch/libsrc.c ls_cover_poll): asks again and turns the cover spinners while a tile's cover is on its way */
     grid_t
@@ -408,6 +409,14 @@ static int al_head_url(char *url) {
     return st == AP_PHOTO || st == AP_LEAD;
 }
 
+/* An artist's page of the library (not a composer's, a source's or Unknown Artist's): the "..." card has Find Artist Photo. */
+static int al_can_find(void) {
+    const char *name;
+    if (!al.head || al.src || al.scope != CLASS_ARTISTS || !al.artist_row) return 0;
+    name = cc_str(deque_at(al.artist_row, 0), REC_TITLE);
+    return I(deque_at(al.artist_row, 0), REC_ID) != -1 && ap_key(name) && ap_key(name) != ap_key("Unknown Artist");
+}
+
 /* Is there a photo for this artist now? */
 static int al_has_photo(void) {
     char url[80];
@@ -623,10 +632,28 @@ static void al_build_later(void) {
         al.build_timer = timer_add(al_on_build_start, (void *)0, AL_BUILD_START_MS);
 }
 
+static void al_reload_with(void *albums, unsigned n, unsigned *keys, unsigned *years);
+static void al_scoped_reload(void);
 static int al_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     al.fg = 1;
+    /* The local library's list is read once at open: songs deleted on an album page above leave the removed album in the grid, and its tile then opens
+     * whatever the stock query makes of the stale row. The unscoped list is read again (same list: the records swap, nothing redraws). */
+    if (al.started && !al.src) {
+        if (al.artist_row)
+            al_scoped_reload();
+        else {
+            void *fresh = cc_albums();
+            if (fresh || !cc_list_failed())
+                al_reload_with(fresh, fresh ? deque_size(fresh) : 0, (unsigned *)0,
+                               (unsigned *)0); /* (a failed read keeps the grid) */
+        }
+    }
+    if (al.finding) { /* back from Find Artist Photo: a photo that was picked shows at once */
+        al.finding = 0;
+        if (ap_epoch() != al.rk_ep) al_recheck_done();
+    }
     al_kick();
     al_build_later();
     return RET_OK;
@@ -988,7 +1015,10 @@ static int al_on_item(void *ctx, void *e) {
     (void)e;
     if (!al.view) return RET_OK;
     vs_menu(&al.vs, 0, al.sort, al.rev, al.list);
-    if (k == VS_SEARCH) {
+    if (k == VS_SEARCH && al_can_find()) {
+        al.rk_ep = ap_epoch(); /* (what the page shows now: al_on_fg looks again when the Find page closes) */
+        al.finding = onlineart_open_artist(cc_str(deque_at(al.artist_row, 0), REC_TITLE)) == 0;
+    } else if (k == VS_SEARCH) {
         if (al.src)
             search_open_src_in(al.src, SEARCH_ALBUMS); /* the server's search, not the card's */
         else if (search_open_in(SEARCH_ALBUMS) < 0)
@@ -1076,6 +1106,11 @@ static void al_empty(void) {
     if (al.src && !al.count && al.src->state)
         st = al.src->state(al.src, LS_ALBUMS, al.artist_row ? deque_at(al.artist_row, 0) : (void *)0);
     m1_show(al.view, al.src != (const lib_src_t *)0 && !al.count);
+    ls_room(al.status, al.spin,
+            LS_ROOM_NAV + (!al.src || al.count ? 0
+                           : al.head
+                               ? AL_HEAD_END - al_gone()
+                               : SG_TITLE_H)); /* (under the title, or the artist's header, the source's page keeps) */
     m1_show(al.status, !(st == LS_ST_LOADING && al.spin));
     ls_spin(al.spin, st == LS_ST_LOADING && al.spin != (void *)0);
     if (al.az_ok) m1_show(al.az.rail, 0), m1_show(al.az.bubble, 0); /* (nothing to index) */
@@ -1089,21 +1124,55 @@ static void al_empty(void) {
 static void al_src_reload(void) {
     void *albums = al.src->list(al.src, LS_ALBUMS, al.artist_row ? deque_at(al.artist_row, 0) : (void *)0);
     unsigned n = albums ? deque_size(albums) : 0;
-    int max;
     if (n && al.artist_row && I(deque_at(albums, n - 1), REC_ID) == ID_ALL_SONGS && n - 1 < 2)
         --n; /* (the stock rule: the All Songs tile needs two albums) */
+    al_reload_with(albums, n, (unsigned *)0, (unsigned *)0);
+}
+
+/* The scoped local list again (an artist's, a composer's): the albums, their cache keys and the years, as al_open reads them. */
+static void al_scoped_reload(void) {
+    void *albums = (void *)0, *songs;
+    unsigned *keys = (unsigned *)0, *years = (unsigned *)0;
+    int n = coverflow_artist_albums(al.artist_row, al.scope, 1, &albums, &keys);
+    if (n < 0) n = 0;
+    if (n && (songs = songs_artist_list(deque_at(al.artist_row, 0), al.scope)) != (void *)0)
+        years = cc_album_years(albums, songs);
+    al_reload_with(albums, (unsigned)n, keys, years);
+}
+
+static int al_same_u(const unsigned *a, const unsigned *b, unsigned n) {
+    unsigned i;
+    if (!a || !b) return a == b;
+    for (i = 0; i < n; ++i)
+        if (a[i] != b[i]) return 0;
+    return 1;
+}
+
+/* The list is now albums (n of them, with keys and years by stock row for a scoped page; the page owns all three). The same albums in the same order with the same years and keys swap the records only; anything else
+ * makes the tiles again, which are by display position and hold the years as text and the cover keys. */
+static void al_reload_with(void *albums, unsigned n, unsigned *keys, unsigned *years) {
+    int max, same = 0;
     if (al.started && n && al.count == n && ls_same_list(al.albums, n, albums, n)) {
-        free(al.order);
+        unsigned *old = al.order;
         deque_destroy(al.albums);
         al.albums = albums;
         al.order = al_order();
-        return;
+        /* (a deleted track can move an album in the Year or Recently Added order with the rows the same, change a year, or, for a compilation whose library representative was deleted, its cover key: the tiles are by display position and hold the year and the key, so they are made again) */
+        same = old && al.order && al_same_u(old, al.order, n) && al_same_u(al.years, years, n) &&
+               al_same_u(al.keys, keys, n);
+        free(old);
+    } else {
+        free(al.order);
+        if (al.albums) deque_destroy(al.albums);
+        al.albums = albums;
+        al.order = al_order();
     }
-    free(al.order);
-    if (al.albums) deque_destroy(al.albums);
-    al.albums = albums, al.count = n;
+    free(al.keys);
+    free(al.years);
+    al.keys = keys, al.years = years;
+    if (same) return;
+    al.count = n;
     al.az.count = (int)n;
-    al.order = al_order();
     if (n) ls_spin(al.spin, 0);
     if (!al.started) {
         if (!n || !al_begin()) {
@@ -1189,11 +1258,16 @@ static int al_open(int list, void *artist_row, unsigned scope, const lib_src_t *
     if (vs_bind(
             &al.vs, al.win, al_on_item, al_on_scrim,
             (artist_row ? VS_ALL_SORTS & ~(1u << CC_SORT_ARTIST) : VS_ALL_SORTS) | VS_WITH_VIEWS |
-                (!artist_row && (ls_caps(al.src) & LS_CAP_SEARCH)
+                ((artist_row ? al_can_find() : ls_caps(al.src) & LS_CAP_SEARCH)
                      ? VS_WITH_SEARCH
-                     : 0))) { /* (one artist's albums: no Artist row, and no Search row: it searched the whole library's albums; a source without Search: no row) */
+                     : 0))) { /* (one artist's albums: no Artist row, and no Search row: it searched the whole library's albums; a source without Search: no row. A library artist's page has Find Artist Photo in the Search row's slot) */
         navigator_back(); /* an asset that is not ours */
         return -2;
+    }
+    if (artist_row && al_can_find()) { /* the slot's own text and glyph */
+        widget_set_tr_text(al.vs.label[VS_SEARCH], "Find Artist Photo");
+        if (al.vs.glyph[VS_SEARCH - VS_SORTS])
+            image_base_set_image(al.vs.glyph[VS_SEARCH - VS_SORTS], "pod_ic_vsphoto");
     }
     al.sort = artist_row ? cc_scoped_sort() : cc_sort_mode();
     al.rev = cc_sort_rev();

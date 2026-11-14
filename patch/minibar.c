@@ -155,22 +155,28 @@ static void mb_labels(void *t) {
 
 /* The four corners' alpha: 255 less the coverage outside the arc (the colour channels are left as they are). */
 /* The bitmap's locked pixels, the bitmap and its corner table made on first use; NULL: no cover (the card paints none). */
+#define MBS(a) ((a)->size ? (a)->size : MB_ART)
+#define MBR(a) ((a)->size ? (a)->r : MB_ART_R)
+void mb_art_size(mb_art_t *a, int size, int r) {
+    a->size = (unsigned char)size, a->r = (unsigned char)(r > MB_ART_RMAX ? MB_ART_RMAX : r);
+}
+
 unsigned *mb_art_begin(mb_art_t *a) {
     if (!a->bmp) {
-        a->bmp = bitmap_create_ex(MB_ART, MB_ART, MB_ART * 4, BITMAP_RGBA8888);
-        if (a->bmp) m1_corner_fill(a->corner, MB_ART_R);
+        a->bmp = bitmap_create_ex(MBS(a), MBS(a), MBS(a) * 4, BITMAP_RGBA8888);
+        if (a->bmp) m1_corner_fill(a->corner, MBR(a));
     }
     return a->bmp ? (unsigned *)bitmap_lock_buffer_for_write(a->bmp) : (unsigned *)0;
 }
 
 /* The four corners' alpha: 255 less the coverage outside the arc (the colour channels are left as they are); unlocks. */
 void mb_art_end(mb_art_t *a, unsigned *px) {
-    unsigned k, x, y;
+    unsigned k, x, y, s = MBS(a), r = MBR(a);
     for (k = 0; k < 4; ++k)
-        for (y = 0; y < MB_ART_R; ++y)
-            for (x = 0; x < MB_ART_R; ++x) {
-                unsigned *p = px + (k & 2 ? MB_ART - 1 - y : y) * MB_ART + (k & 1 ? MB_ART - 1 - x : x);
-                *p = (*p & 0xffffff) | (255u - a->corner[y * MB_ART_R + x]) << 24;
+        for (y = 0; y < r; ++y)
+            for (x = 0; x < r; ++x) {
+                unsigned *p = px + (k & 2 ? s - 1 - y : y) * s + (k & 1 ? s - 1 - x : x);
+                *p = (*p & 0xffffff) | (255u - a->corner[y * r + x]) << 24;
             }
     bitmap_unlock_buffer(a->bmp);
 }
@@ -204,10 +210,10 @@ int mb_art_cover(mb_art_t *a, void *win, void *t, int first) {
             }
         }
     }
-    if (!file || !cc_decode(win, file, 1, MB_ART, 1,
+    if (!file || !cc_decode(win, file, 1, MBS(a), 1,
                             px)) { /* the stock placeholder disc, as the grid's tiles have it, else flat grey */
-        for (i = 0; i < MB_ART * MB_ART; ++i) px[i] = MB_GREY;
-        cc_decode(win, "p_default", 0, MB_ART, 1, px);
+        for (i = 0; i < (unsigned)MBS(a) * MBS(a); ++i) px[i] = MB_GREY;
+        cc_decode(win, "p_default", 0, MBS(a), 1, px);
     }
     mb_art_end(a, px);
     return 1;
@@ -234,13 +240,15 @@ int mb_art_settle(mb_art_t *a, void *win, void *t) {
 }
 
 /* In the card's coordinates (the card's EVT_AFTER_PAINT): the resident cover. Nothing is decoded here. */
-void mb_art_paint(mb_art_t *a, void *canvas) {
+void mb_art_paint_at(mb_art_t *a, void *canvas, int x, int y) {
     int src[4], dst[4];
     if (!canvas || !a->bmp) return;
-    src[0] = 0, src[1] = 0, src[2] = MB_ART, src[3] = MB_ART;
-    dst[0] = MB_ART_X, dst[1] = MB_ART_Y, dst[2] = MB_ART, dst[3] = MB_ART;
+    src[0] = 0, src[1] = 0, src[2] = MBS(a), src[3] = MBS(a);
+    dst[0] = x, dst[1] = y, dst[2] = MBS(a), dst[3] = MBS(a);
     canvas_draw_image(canvas, a->bmp, src, dst);
 }
+
+void mb_art_paint(mb_art_t *a, void *canvas) { mb_art_paint_at(a, canvas, MB_ART_X, MB_ART_Y); }
 
 void mb_art_free(mb_art_t *a) {
     if (a->bmp) bitmap_destroy(a->bmp);

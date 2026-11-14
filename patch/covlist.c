@@ -1,4 +1,4 @@
-/* M1+ Music cover lists: the plain list of the albums that have no art, or no cache file at all (Settings > Developer > Cache, docs/modules/settings.md "Cache").
+/* M1+ Music cover lists: the plain list of the albums that have no art, or no cache file at all (Settings > Developer > Cache, docs/modules/homecover.md "Cache page").
  *
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  *

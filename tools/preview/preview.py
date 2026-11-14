@@ -277,6 +277,7 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     raw = os.path.join(work, RAW)
     s = PI.Side(work, True); s.mark = lambda *a: None   # no C/K markers here
+    PI.eq_bars(s).save(os.path.join(os.path.dirname(os.path.abspath(out)), 'eqmark.png'))   # the EQ mark: off, on, on with Line Out, the pull-down's bar
     PI.lineout_bars(s).save(os.path.join(os.path.dirname(os.path.abspath(out)), 'lineout.png'))   # the Line Out pill: bar off / on, then the pull-down's bar copies on
     run('preview_recent_albums.py', work, os.path.dirname(os.path.abspath(out)))   # recent-songs-view.png, recent-album-view.png: Recently Added's two views (docs/modules/recent-albums.md)
     run('preview_ndserver.py', work, os.path.dirname(os.path.abspath(out)))   # nd-server.png, nd-signin-*.png: the Navidrome Server page and its Sign In page (docs/modules/subsonic.md)

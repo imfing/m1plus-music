@@ -16,6 +16,7 @@
 | [UI](ui.md) | Preview, layout rules, fonts, assets and rendering |
 | [Firmware](firmware.md) | Stock hashes, updater behaviour, partitions and space recovery |
 | [History](history.md) | Recorded milestones, device findings and lessons |
+| [Idle lyrics page](modules/idlelyrics.md) | The Lyrics idle display: header and lyrics over Now Playing, the lyrics engine retargeted |
 | [Subsonic / Navidrome](modules/subsonic.md) | Remote library, raw streaming, SD downloads and validation limits |
 
 Read the relevant `modules/` doc for implementation, pins and tests before changing a feature.

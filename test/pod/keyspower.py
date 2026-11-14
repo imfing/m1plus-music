@@ -164,7 +164,7 @@ def settings_tests(ctx):
     V, K, L, S = P.SETTINGS_PAGE, P.KEYSPOWER_PAGE, P.KEYLOCK_PAGE, P.SHUTDOWN_PAGE
     labels = [r.label for r in V.rows]
     ki = labels.index('Buttons & Power')
-    expect(V.rows[ki].action == P.ACT_PAGE and V.rows[ki].arg == P.KEYSPOWER_PAGE_INDEX == 73 and P.row_kind(V.rows[ki]) == 'link' and labels[ki - 1] == 'Display' and labels[ki + 1] == 'Appearance',
+    expect(V.rows[ki].action == P.ACT_PAGE and V.rows[ki].arg == P.KEYSPOWER_PAGE_INDEX and P.PAGES[P.KEYSPOWER_PAGE_INDEX] is P.KEYSPOWER_PAGE and P.row_kind(V.rows[ki]) == 'link' and labels[ki - 1] == 'Display' and labels[ki + 1] == 'Appearance',
            'Settings > System > Buttons & Power: after Display, opens our page')
     expect(P.PAGES[P.KEYSPOWER_PAGE_INDEX] is K and P.PAGES[P.KEYLOCK_PAGE_INDEX] is L and P.PAGES[P.SHUTDOWN_PAGE_INDEX] is S and (P.KEYLOCK_PAGE_INDEX, P.SHUTDOWN_PAGE_INDEX) == (74, 75)
            and (K.key, K.title, L.key, L.title, S.key, S.title) == ('m1plus_keyspower', 'Buttons & Power', 'm1plus_keylock', 'Button Lock', 'm1plus_shutdown', 'Auto-Shutdown'), 'the three pages')

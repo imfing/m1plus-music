@@ -5,10 +5,15 @@
  * ONE detached pthread does all the network and card writes of a refresh, one show at a time; the UI never calls into it. The page asks pn_refresh (UI thread: the guards, then the
  * thread) and afterwards only READS the status record (pn_busy / pn_gen / pn_progress / pn_current / pn_status) from its own timer, and reloads the shows when pn_gen changed: AWTK is
  * not thread safe, and the model's list functions stay the one source of the page's rows (the worker writes the same .episodes / .show files they read).
+ *
+ * Two lanes: the JOB lane (a refresh, a search, a preview, a chart, Find Cover & Lyrics, Software Update, AutoEq, the archive: one at a time, PN_BUSY to the next) and the DOWNLOAD lane (the episode
+ * queue's own thread, pn_dl_*). A download runs beside a job and never gives way to one: no page pauses the downloads.
  */
 #pragma once
 
 #include "common.h"
+#include "net.h"
+#include "netfile.h"
 #define PN_CA M1_CA /* (common.h) */
 #define PN_MIN_EPOCH M1_MIN_EPOCH
 #define PN_FEED_CAP 8388608u /* a feed larger than this (after gzip) is refused */
@@ -37,7 +42,6 @@ enum {
     PN_CARDFULL, /* a download: the card would keep less than PN_DL_MARGIN_KB free */
     PN_NOTAUDIO, /* a download: the answer is a web page (Content-Type text/...), not an episode */
     PN_QFULL, /* the download queue is full (PN_QMAX) */
-    PN_PAUSED, /* a download stopped for a refresh and kept in the queue (never shown) */
     PN_NOFEED, /* search: an Apple Podcasts address whose show has no feed address */
     PN_NOLYRICS, /* lyrics: no LRCLIB record has any */
     PN_OVERLOAD, /* find cover & lyrics: the service answered 503 or 429 (busy) on every try */
@@ -53,7 +57,7 @@ enum {
  * refused (the file offsets are 32 bit). PN_FAILS: download failures remembered for the rows. */
 #define PN_QMAX 32
 #define PN_DL_BUF 524288u
-#define PN_DL_MARGIN_KB 32768u
+#define PN_DL_MARGIN_KB NET_RESERVE_KB /* (patch/netfile.h: one reserve for every download) */
 #define PN_DL_PATH_MAX 240
 #define PN_DL_STALL 60
 #define PN_DL_RETRIES 3
@@ -68,8 +72,29 @@ int pn_guard(void);
 int pn_refresh(const char *root, const pc_show_t *shows, const int *idx, int n);
 int pn_busy(
     void); /* a refresh worker is running (a download worker is pn_dl_running, a search or preview worker pn_job_busy) */
-void pn_cancel(
-    void); /* UI thread: ask the worker to stop: the transfer in progress is aborted (libcurl's transfer-info callback), no further show is started */
+/* What a job's thread does. A page cancels only the kinds it starts (pn_cancel): another page's job is never its to stop. */
+enum {
+    PN_KIND_REFRESH = 1, /* Refresh All, one show, Import (the Podcasts page's dialog) */
+    PN_KIND_SEARCH = 3,
+    PN_KIND_PREVIEW = 4,
+    PN_KIND_ART = 5, /* Find Cover & Lyrics, Find Artist Photo: the lookup */
+    PN_KIND_PICK = 6, /* ... and the save */
+    PN_KIND_UPDATE = 7, /* Software Update: the check and the download */
+    PN_KIND_CHART = 8,
+    PN_KIND_EQ = 9, /* AutoEq */
+    PN_KIND_ARCH = 10 /* a show's whole episode list */
+};
+#define PN_K(kind) (1u << (kind))
+#define PN_K_REFRESH PN_K(PN_KIND_REFRESH)
+#define PN_K_PODCASTS \
+    (PN_K(PN_KIND_SEARCH) | PN_K(PN_KIND_PREVIEW) | PN_K(PN_KIND_CHART) | \
+     PN_K(PN_KIND_ARCH)) /* the Podcasts page's jobs */
+#define PN_K_ART (PN_K(PN_KIND_ART) | PN_K(PN_KIND_PICK))
+#define PN_K_UPDATE PN_K(PN_KIND_UPDATE)
+#define PN_K_EQ PN_K(PN_KIND_EQ)
+/* UI thread: ask the running job to stop if it is one of kinds (PN_K_*): the transfer in progress is aborted (libcurl's transfer-info callback), no further show is started. A job of another
+ * kind, another page's, goes on; with no job running nothing happens. */
+void pn_cancel(unsigned kinds);
 int pn_cancelling(void); /* a worker is running and was asked to stop */
 unsigned pn_part(
     void); /* how far the show being refreshed has come, 0..1000 (the feed's length when the server gave it; the picture is the last tenth) */
@@ -83,7 +108,7 @@ int pn_status(
     unsigned *
         fresh); /* the last result of the feed (pc_hash of its url) in this session: 1 and *code (PN_*), *fresh new items; 0 when there is none */
 /* Subscribe to the feeds the card offers that no show has yet: the lines of <root>/subscriptions.txt and the outlines of <root>/subscriptions.opml and of every *.opml in the card's root (patch/pcopml.h), one
- * source after another sharing the 40 shows' room. A folder and a .show file each (the title is the OPML's name, else the host, until the first refresh names it). An OPML file all of whose outlines were seen
+ * source after another sharing the PC_MAX_SHOWS shows' room. A folder and a .show file each (the title is the OPML's name, else the host, until the first refresh names it). An OPML file all of whose outlines were seen
  * (and that held one) is renamed <name>.imported; subscriptions.txt stays. Returns how many were added (the shows already there do not count), -1 when there is no source at all. shows[0..nshows): the folders now there. */
 int pn_import(const char *root, const pc_show_t *shows, int nshows);
 /* How many import sources the card has now (subscriptions.txt, subscriptions.opml, *.opml in the card's root): the Shows page's "..." shows Import from Card when it is not 0. */
@@ -95,7 +120,7 @@ int pn_unsubscribe(const char *root, const pc_show_t *show);
 /* Unsubscribe completely, as the Show page does: pn_unsubscribe, the .part files and queued downloads of the show gone, and with no episode file left its own files and folder too. 0 not written (nothing touched), 1 the show stays (files left), 2 gone. */
 int pn_unsubscribe_show(const char *root, const pc_show_t *show);
 
-/* ---- Downloads. All of these run on the UI thread; the worker thread (one at a time, never beside a refresh) only reads and writes the status record. */
+/* ---- Downloads. All of these run on the UI thread; the download thread (one, with one episode at a time; it runs beside a job) only reads and writes the status record. */
 /* The key of an episode in the queue and the failure table: pc_hash of "<show folder>/<file name>". */
 unsigned pn_dl_key(const char *dir, const char *file);
 /* Queue the download of file in the show folder dir (the names as the model has them; root is the Podcasts folder). The guards run first (card, Wi-Fi, clock, CA bundle: PN_*), a path over PN_DL_PATH_MAX is PN_STORAGE, a full queue PN_QFULL;
@@ -103,11 +128,12 @@ unsigned pn_dl_key(const char *dir, const char *file);
 int pn_dl_add(const char *root, const char *dir, const char *file);
 /* Take the episode out of the queue; one that is running is aborted at once (the .part stays: a later add resumes it). */
 void pn_dl_cancel(unsigned key);
-/* Start the worker for the queued downloads when none runs (the page's timer calls this after a refresh and after a pause). The guards run first; when they fail every queued download fails with their code (shown on its row). 0 or PN_*. */
+/* Cancel and delete (Remove Download, Delete, Unsubscribe; the caller unlinks the .part and the file itself): as pn_dl_cancel, and the running one writes nothing more, never puts its file in place and removes its .part when it ends.
+ * A download whose file is already in place (the thread may still be syncing the folder) is a finished episode: the drop flags nothing and the file is the caller's to keep or unlink. An add of the same episode before the thread has ended is queued afresh behind it. */
+void pn_dl_drop(unsigned key);
+/* Start the download thread for the queued downloads when it does not run (pn_dl_add does; the Podcasts page's timer asks again for a queue whose thread could not be made). The guards run first; when they fail every queued download fails with their code (shown on its row). 0 or PN_*. */
 int pn_dl_start(void);
-/* Ask a running download worker to stop and keep the queue (for a refresh); pn_dl_running() turns 0 when it has. */
-void pn_dl_pause(void);
-int pn_dl_running(void); /* the download worker thread is running */
+int pn_dl_running(void); /* the download thread is running */
 int pn_dl_count(void); /* downloads queued or running */
 int pn_dl_waiting(void); /* downloads queued and not running */
 unsigned pn_dl_gen(
@@ -123,12 +149,20 @@ unsigned pn_dl_listed(int n, char *dir, char *file, int *code);
 /* KB free on the file system of path (common.h m1_free_kb). The Downloads page's storage line. */
 #define pn_free_kb m1_free_kb
 
-/* ---- Search (docs/modules/podcasts.md "Search"). One worker at a time, never beside a refresh or a download (the page pauses the downloads first, as for a refresh). All of these run on the UI thread; the worker only
+/* ---- Search (docs/modules/podcasts.md "Search"). One job at a time, never beside a refresh (a download goes on). All of these run on the UI thread; the worker only
  * writes the record they read. The store's country is the Podcast Region (patch/pcregion.h): the search puts pcregion_code() after PN_SEARCH_URL's "country=", then "&term=". */
 #define PN_SEARCH_URL "https://itunes.apple.com/search?media=podcast&entity=podcast&limit=25&country="
 #define PN_LOOKUP_URL "https://itunes.apple.com/lookup?id="
+/* Podcast Index's answers of the same shape and with the same parser (no key, no country; it refuses a request whose User-Agent does not name the application, which every request of ours does: patch/net.c NET_AGENT).
+ * Used instead of the store's, never besides it, while Settings > Library > Podcasts > Podcast Directory says Podcast Index (pcdir_index, patch/podcasts.c): the search, and the lookup of a result's or a link's id. Discover's
+ * charts and a chart row's lookup stay the store's whatever it says. */
+#define PN_INDEX_SEARCH_URL "https://api.podcastindex.org/search?limit=25&term="
+#define PN_INDEX_LOOKUP_URL "https://api.podcastindex.org/lookup?entity=podcast&id="
+int pcdir_index(void); /* patch/podcasts.c: 1 when the chosen directory is Podcast Index */
 #define PN_JSON_CAP 98304u /* a search or lookup answer over 96 KB is cut there (25 results are about 44 KB) */
 #define PN_THUMB_CAP 262144u /* a result's artwork (about 5 KB) over this is refused */
+#define PN_INDEX_THUMB_CAP \
+    2097152u /* the same for a Podcast Index result: its artwork is the feed's own picture (often 3000 x 3000, 100 KB to 2 MB), shrunk after the download */
 #define PN_SEARCH_DIR \
     "/mnt/mmc/.m1plus/podcasts/search" /* the thumbnails t<n>.jpg|png and the preview's cover preview.jpg: scratch, made again by every search */
 #define PN_PREVIEW_COVER PN_SEARCH_DIR "/preview.jpg"
@@ -140,8 +174,6 @@ int pn_classify(const char *text, char *id, unsigned size);
 /* Start the search for the UTF-8 term: the guards, the old thumbnails removed, one worker (the query, then the artwork of each result one by one). 0 when it runs; PN_BUSY when a worker runs (the page waits and asks again). */
 int pn_search(const char *term);
 int pn_job_busy(void); /* a search or preview worker is running */
-/* The options every request of ours sets on a libcurl easy handle (redirect hops, connect and total time-outs in seconds): see patch/pcnet.c. */
-void pn_easy_net(void *h, int redirs, int connect_s, int total_s);
 int pn_search_state(
     void); /* PN_S_*: the query runs / its answer is in and the artwork follows / the worker has ended */
 int pn_search_code(
@@ -190,10 +222,14 @@ int pn_chart_thumb(int kind, int i, char *path,
 int pn_chart_pending(int kind); /* rows of a held chart whose artwork has not been tried */
 void pn_chart_clean(void); /* remove the artwork files and forget that any was tried (the answers stay) */
 
-/* ---- Find Cover & Lyrics (docs/modules/onlineart.md): album covers from the iTunes Search API then Deezer, lyrics from LRCLIB. One worker at a time, never beside a refresh or a download (the page pauses the downloads first);
+/* ---- Find Cover & Lyrics (docs/modules/onlineart.md): album covers from the iTunes Search API then Deezer, lyrics from LRCLIB. One job at a time, never beside a refresh (a download goes on);
  * the same guards, libcurl options and thread rules as the search. All of these run on the UI thread; the worker only writes the record they read. */
 #define PN_ART_MAX 12 /* covers offered: iTunes' first (at most PN_ART_ITUNES_MAX), Deezer's after them */
 #define PN_ART_ITUNES_MAX 6
+#define PN_ARTIST_MAX 6 /* photos offered for an artist: those under the very name first */
+#define PN_ARTIST_OTHER 4 /* of them, at most this many of Deezer's under another name */
+#define PN_ARTIST_NETEASE 2 /* ... and at most this many of NetEase's */
+#define PN_NETEASE_MAX 10 /* NetEase's artists read (the request asks for 10) */
 #define PN_ART_Q \
     96 /* a query field (artist, album, title), UTF-8 bytes with the NUL; longer is cut on a character boundary */
 #define PN_LYR_MAX 20 /* lyrics candidates kept: the exact match, then LRCLIB's search results */
@@ -204,9 +240,13 @@ void pn_chart_clean(void); /* remove the artwork files and forget that any was t
 #define PN_ART_ITUNES "https://itunes.apple.com/search?media=music&entity=album&limit=8&term="
 #define PN_ART_DEEZER "https://api.deezer.com/search/album?limit=8&q="
 #define PN_ART_LRCLIB "https://lrclib.net/api/"
+#define PN_ART_DEEZER_ARTIST "https://api.deezer.com/search/artist?limit=25&q="
+#define PN_ART_NETEASE_ARTIST "https://music.163.com/api/search/get?type=100&limit=10&s="
+#define PN_NETEASE_BLANK "/5639395138885805.jpg" /* the picture NetEase gives an artist that has none */
+#define PN_NETEASE_THUMB "?param=250y250" /* NetEase's picture at 250 px (pn_art_full asks for 500y500) */
 
 enum { PN_A_IDLE = 0, PN_A_COVERS = 1, PN_A_THUMBS = 2, PN_A_DONE = 3 };
-enum { PN_SRC_ITUNES = 0, PN_SRC_DEEZER = 1 };
+enum { PN_SRC_ITUNES = 0, PN_SRC_DEEZER = 1, PN_SRC_NETEASE = 2 };
 
 /* A lyrics candidate (LRCLIB record with lyrics): the texts are UTF-8, cut on a character boundary. */
 typedef struct {
@@ -259,6 +299,14 @@ int pn_lyr_save(int i, const char *path);
  * honours) and, when dir is not empty, put the original JPEG into that folder as the folder picture stock's Now Playing reads. The larger picture is the one pn_art_fetch downloaded for i, else it is
  * downloaded now. 0 when the worker runs; PN_BUSY, or a guard's code. */
 int pn_art_pick(int i, const char *dir, unsigned key0, unsigned key1);
+/* Find Artist Photo (docs/modules/onlineart.md "Artist photos"): the same lookup for an artist's name alone. The covers part is the artist search of Deezer, then NetEase's: Deezer's artists
+ * under the very name, then NetEase's (those of the very name, else its first; at most PN_ARTIST_NETEASE), then at most PN_ARTIST_OTHER of Deezer's others, the most followed first in each, PN_ARTIST_MAX in all, each with a picture
+ * of its own; pn_art_name is the artist, pn_art_artist "", the source PN_SRC_DEEZER or PN_SRC_NETEASE. A service that fails while the other answers is left out without a word. There is no lyrics part (pn_art_again takes
+ * PN_PART_COVERS only). Thumbnails, pn_art_fetch and the larger picture as for a cover. Same returns as pn_art. */
+int pn_artist(const char *name);
+/* Make picture i the photo of the artist with this key (patch/artistphoto.c ap_key, ap_pick: both cache files and the .pick marker). 0 when the worker runs; PN_BUSY, or a guard's code. The result is pn_pick_state /
+ * pn_pick_code (PN_STORAGE: the files could not be made). */
+int pn_artist_pick(int i, unsigned key);
 int pn_pick_state(void); /* 0 none, 1 running, 2 done */
 int pn_pick_code(
     void); /* PN_OK: the cover is in the cache (or, after pn_art_fetch, the picture is there); else why not */
@@ -266,12 +314,13 @@ void pn_art_clean(
     void); /* remove the thumbnails, the larger picture and the held lyrics, forget the results (no worker must run) */
 
 /* ---- Software Update (docs/modules/update.md): the newest release of the project from GitHub, downloaded to the card as update.bin for stock's own TF card update. Two jobs of the one worker slot (never beside
- * another job; the page pauses the Podcasts downloads first). All of these run on the UI thread; the worker only writes the record they read. Cancel is pn_cancel(). */
+ * another job; the Podcasts downloads go on). All of these run on the UI thread; the worker only writes the record they read. Cancel is pn_cancel(PN_K_UPDATE). */
 #define PN_UP_DIR "/mnt/mmc"
 #define PN_UP_FILE PN_UP_DIR "/update.bin" /* where stock's TF card update looks */
 #define PN_UP_PART PN_UP_FILE ".part" /* the download, until it is checked */
 #define PN_UP_NEED_KB \
     112640u /* free on the card before a download starts: 110 MB (the package is about 55 MB, and the one it replaces stays until the rename) */
+#define PN_UP_LOC 256 /* the longest redirect address the check reads the tag from; a longer one is no release news */
 #define PN_UP_CAP 134217728u /* a package larger than this (128 MB) is refused while it downloads */
 
 enum {
@@ -322,8 +371,8 @@ void pn_up_reset(void);
 
 enum { PN_E_IDLE = 0, PN_E_RUNNING = 1, PN_E_DONE = 2, PN_E_FAILED = 3 };
 
-/* See All (docs/modules/podcasts.md "All episodes"): the show's feed fetched again with every item kept, into its .archive. pn_arch_start: the guards, then the worker (0 when it runs; PN_BUSY while another job or a
- * download runs, the page pauses the downloads and asks again; PN_NOFEED for a show with no feed address). State: PN_AR_*, of the show pn_arch_hash() (pc_show_t.hash); after a failure pn_arch_code() is the PN_* why. pn_arch_reset forgets a
+/* See All (docs/modules/podcasts.md "All episodes"): the show's feed fetched again with every item kept, into its .archive. pn_arch_start: the guards, then the worker (0 when it runs; PN_BUSY while another job
+ * runs, the page asks again; PN_NOFEED for a show with no feed address). State: PN_AR_*, of the show pn_arch_hash() (pc_show_t.hash); after a failure pn_arch_code() is the PN_* why. pn_arch_reset forgets a
  * finished job (nothing while one runs). A finished job bumps pn_gen. */
 enum { PN_AR_IDLE = 0, PN_AR_RUNNING = 1, PN_AR_DONE = 2, PN_AR_FAILED = 3 };
 int pn_arch_start(const char *root, const pc_show_t *s);

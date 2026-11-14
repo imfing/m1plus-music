@@ -55,8 +55,8 @@ def layout_tests(ctx):
     """Every cards page under demo's own layouter, plus the asset against the model."""
     expect, P = ctx.expect, pod_pages
     pages = [p for p in P.PAGES if p.kind in ('cards', 'peq')]   # (the Equalizer page is a cards page its payload binds itself: its layout is the asset's, every row shown)
-    expect([p.key for p in pages] == ['m1plus_settings', 'm1plus_library', 'm1plus_homeset', 'm1plus_developer', 'm1plus_npset', 'm1plus_keyboards', 'm1plus_tapetheme', 'm1plus_about', 'm1plus_vinylrec', 'm1plus_vinyltheme', 'm1plus_cache', 'm1plus_files', 'm1plus_background', 'm1plus_accent', 'm1plus_appearance', 'm1plus_podcastregion', 'm1plus_peq', 'm1plus_battery', 'm1plus_chargelimit', 'm1plus_idleview', 'm1plus_lockscreen', 'm1plus_lockstyle', 'm1plus_nextalbum', 'm1plus_display', 'm1plus_lighttime', 'm1plus_ledlight', 'm1plus_keyspower', 'm1plus_keylock', 'm1plus_shutdown'],
-           'the cards pages: Settings, Library, Home Screen, Developer, Now Playing, Keyboards, the three pickers, About, Cache, Settings Files, the Background picker, the Accent picker, Appearance and the Podcast Region picker, Equalizer, Battery, the Charge Limit picker, the Idle Display picker, the Lock Screen page, the Player Style picker, the Continue Playing picker, the Display page and its Screen Timeout and LED Light pickers, and the Buttons & Power page and its Button Lock and Auto-Shutdown pickers last')
+    expect([p.key for p in pages] == ['m1plus_settings', 'm1plus_library', 'm1plus_homeset', 'm1plus_developer', 'm1plus_npset', 'm1plus_keyboards', 'm1plus_tapetheme', 'm1plus_about', 'm1plus_vinylrec', 'm1plus_vinyltheme', 'm1plus_cache', 'm1plus_files', 'm1plus_background', 'm1plus_accent', 'm1plus_appearance', 'm1plus_podcastregion', 'm1plus_peq', 'm1plus_battery', 'm1plus_chargelimit', 'm1plus_idleview', 'm1plus_lockscreen', 'm1plus_lockstyle', 'm1plus_nextalbum', 'm1plus_display', 'm1plus_lighttime', 'm1plus_ledlight', 'm1plus_keyspower', 'm1plus_keylock', 'm1plus_shutdown', 'm1plus_listenbrainz', 'm1plus_lastfm', 'm1plus_scrobbling', 'm1plus_playset', 'm1plus_psmode', 'm1plus_psmem', 'm1plus_psgain', 'm1plus_psrg', 'm1plus_psfilter', 'm1plus_psdsd', 'm1plus_psusb', 'm1plus_psmaxvol', 'm1plus_psbootvol', 'm1plus_psbal', 'm1plus_lyrsize', 'm1plus_podcastsettings', 'm1plus_podcastdirectory'],
+           'the cards pages: Settings, Library, Home Screen, Developer, Now Playing, Keyboards, the three pickers, About, Cache, Settings Files, the Background picker, the Accent picker, Appearance and the Podcast Region picker, Equalizer, Battery, the Charge Limit picker, the Idle Display picker, the Lock Screen page, the Player Style picker, the Continue Playing picker, the Display page and its Screen Timeout and LED Light pickers, the Buttons & Power page and its Button Lock and Auto-Shutdown pickers, the ListenBrainz, Last.fm and Scrobbling pages, and the Playback Settings page, its seven pickers and the three loudness pages, then the Lyrics Text Size picker, then the Podcasts page and the Podcast Directory picker last')
     expect(mod_icons.CARD_PIECE == {'ROW_W': ST.ROW_W, 'ROW_H': ST.ROW_H, 'CARD_X': ST.CM, 'CARD_W': ST.CARD_W, 'CARD_R': ST.CARD_R, 'FILL': (0x1C, 0x1C, 0x1E), 'LIT': (0x2C, 0x2C, 0x2E)}
            and ST.CARD_RGB == '#1C1C1E' and ST.PRESSED_RGB == '#2C2C2E', 'the pieces\' geometry in tools/mod_icons.py is the layout model\'s')
     expect(mod_icons.CARD_TALL == ST.LIB_ROW_H == 60 and ST.piece_images('top', tall=True) == ('pod_cdl_top', 'pod_cdl_top_down') and ST.piece_images('mid') == ('pod_cd_mid', 'pod_cd_mid_down')
@@ -82,6 +82,7 @@ def layout_tests(ctx):
             elif isinstance(it, P.Hdr): names.append((f'pod_sec{n_h}', y, ST.HDR_H)); n_h += 1
             elif isinstance(it, P.Note): names.append((f'pod_note{n_n}', y, ST.item_h(it))); n_n += 1
             elif isinstance(it, P.Brightness): names.append(('pod_bright', y, ST.ROW_H))   # the Display page's brightness card: a row's height
+            elif isinstance(it, P.VolCard): names.append(('pod_vsval' if it.part == 'value' else 'pod_vsctl', y, ST.ROW_H))   # the loudness pages' cards: a row's height
             else: names.append((f'pod_row{n_r}', y, ST.ROW_H)); n_r += 1
         expect([(c.name, c.y, c.h) for c in sv.children] == names, f'{page.key}: the scroll_view\'s children are the model\'s column in display order, each as high as the model says (asset y = the stacked y)')
         # demo's own layouter on the structs
@@ -98,7 +99,7 @@ def layout_tests(ctx):
             r, kind = rows[n], P.row_kind(it)
             last = kinds[n] in ('single', 'bot')
             swatch = it.action == P.ACT_ACCENTSET   # the Accent picker's rows: a round swatch where a glyph goes (pod_swatch)
-            has_icon = swatch or (kind not in ('check', 'info', 'preset') and it.action not in (P.ACT_CCLIST, P.ACT_SFOLD, P.ACT_UPDATE, P.ACT_REGION, P.ACT_PEQ_PRESETS, P.ACT_PEQ_TENBAND))
+            has_icon = swatch or (kind not in ('check', 'info', 'preset', 'delete') and it.action not in (P.ACT_CCLIST, P.ACT_SFOLD, P.ACT_UPDATE, P.ACT_REGION, P.ACT_PCDIR, P.ACT_PEQ_PRESETS, P.ACT_PEQ_TENBAND))   # (the ListenBrainz page's rows have no glyph: Token, Account, the red Sign Out and the Auto Upload switch)
             lab = next(c for c in r.children if c.name == f'pod_label{n}')
             lx, lw = ST.label_box(kind, has_icon)
             if it.action == P.ACT_PEQ_PICK and it.label: lw = ST.curve_box()[0] - ST.VALUE_LABEL_GAP - lx   # the 10-Band EQ row's grey curve name
@@ -156,6 +157,10 @@ def layout_tests(ctx):
                     expect(n in got_path and not any(c.startswith(('pod_value', 'pod_switch', 'pod_chevron', 'pod_icon', 'pod_check', 'pod_hair')) for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches its list_item ({got_path})')
                 elif n == 'pod_bright':   # the Display page's brightness card: the slider takes the touch over its own width; the card (a sensitive view, or stock's hit test would not look into it) has nothing bound
                     expect(got_path[-1] == ('slider_brightness' if x == 160 else 'pod_bright') and not any(c.startswith('pod_row') for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches the slider only over the slider ({got_path})')
+                elif n in ('pod_vsval', 'pod_vsctl'):   # the loudness pages' cards: the value card takes the touch itself (its label is insensitive); in the control card the two buttons and the slider take it over their own width
+                    sl = next(c.name for c in t.find('pod_vsctl').children if c.type == 'slider')
+                    want = n if n == 'pod_vsval' else {30: 'btn_dec', 160: sl, 290: 'btn_add'}[x]
+                    expect(got_path[-1] == want and not any(c.startswith('pod_row') for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches {want} ({got_path})')
                 else:
                     expect(not any(c.startswith('pod_row') for c in got_path) and got_path[-1] in ('pod_scrollview', 'pod_listview', page.name), f'{page.key}: a tap at x {x} on {n} reaches nothing actionable ({got_path})')
     # the Home Screen page with Daily Mix off: the regen row and its note are hidden (the payload's visible + sensitive), the layouter skips them and nothing else moves
@@ -272,7 +277,7 @@ def stock_tests(ctx):
         expect([c for c in m.calls if c[0] == 'navigator_to'] == [('navigator_to', name)] and 'navigator_to_with_context' not in m.names() and opened == (['m1plus_wifi'] if label == 'Wi-Fi' else []),
                f'{label}: one plain navigator_to("{name}"), no context, no window of ours' + (' but the Wi-Fi page, which opens first and (here, an asset without its widgets) hands over to the stock page' if label == 'Wi-Fi' else ''))
     m = settings_machine()
-    m.click(f'pod_row{rows["All Playback Settings"]}'); m.click(f'pod_row{rows["All System Settings"]}')
+    m.click(f'pod_row{rows["All System Settings"]}')
     # (the Home dispatcher's ids 16 and 17 are bound to the two rows: tests/pod/menu.py checks the table)
     expect(len(P.STOCK_PAGES) == 2 and all(r.action == P.ACT_STOCK for r in S.rows if r.label in want) and [r.label for r in S.rows if r.action == P.ACT_STOCK] == list(want),
            'two stock pages, each opened by an ACT_STOCK row (Display is our own page, display/settings_tests; Lock Screen > Custom Wallpaper too, lockscreen/setting_tests)')

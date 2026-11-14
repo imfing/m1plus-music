@@ -65,7 +65,7 @@ def row_h(row):
 def item_h(item):
     """The height of a layout item: Hdr, Note, GAP, Row or TOP / END."""
     return (HDR_H if isinstance(item, pod_pages.Hdr) else NOTE_H + (item.lines - 1) * WRAP_LINE if isinstance(item, pod_pages.Note) else GAP_H if item is pod_pages.GAP
-            else REGION_H if item is pod_pages.REGION else GRAPH_H if isinstance(item, pod_pages.Graph) else SLIDERS_H if isinstance(item, pod_pages.Sliders) else SEG_H if isinstance(item, pod_pages.Segment) else ROW_H if isinstance(item, pod_pages.Brightness) else HSL_H if isinstance(item, pod_pages.HSliders) else CM if item == TOP else END_H if item == END else row_h(item))
+            else REGION_H if item is pod_pages.REGION else GRAPH_H if isinstance(item, pod_pages.Graph) else SLIDERS_H if isinstance(item, pod_pages.Sliders) else SEG_H if isinstance(item, pod_pages.Segment) else ROW_H if isinstance(item, (pod_pages.Brightness, pod_pages.VolCard)) else HSL_H if isinstance(item, pod_pages.HSliders) else CM if item == TOP else END_H if item == END else row_h(item))
 
 
 def layout(items):

@@ -124,8 +124,8 @@ TEXT = dict([
        'Desactivado', 'Disattivo', 'ปิด', 'Wył.', 'Выкл.', 'Вимк.'),
     _t('EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ',
        'EQ', 'EQ', 'EQ', 'EQ', 'EQ', 'EQ'),
-    _t('All Playback Settings', '全部播放设置', '全部播放設定', 'すべての再生設定', '모든 재생 설정', 'Réglages de lecture', 'Wiedergabe-Optionen',
-       'Ajustes de reproducción', 'Impostazioni riproduzione', 'การตั้งค่าการเล่นทั้งหมด', 'Ustawienia odtwarzania', 'Параметры плеера', 'Параметри плеєра'),
+    _t('Playback Settings', '播放设置', '播放設定', '再生設定', '재생 설정', 'Réglages de lecture', 'Wiedergabe-Optionen',
+       'Ajustes de reproducción', 'Impostazioni riproduzione', 'การตั้งค่าการเล่น', 'Ustawienia odtwarzania', 'Параметры плеера', 'Параметри плеєра'),
     _t('System', '系统', '系統', 'システム', '시스템', 'Système', 'System',
        'Sistema', 'Sistema', 'ระบบ', 'System', 'Система', 'Система'),
     # Settings > System > Appearance > Control Center (patch/pulldown.c; iOS's names for its Control Center): the page, and the two tile captions whose stock text shows the
@@ -194,6 +194,15 @@ TEXT = dict([
        'Vinilo', 'Vinile', 'แผ่นเสียง', 'Winyl', 'Винил', 'Вініл'),
     _t('Shown after 10 seconds on Now Playing.', '在正在播放界面停留10秒后显示。', '在正在播放畫面停留10秒後顯示。', '再生画面で10秒後に表示されます。', '지금 재생 화면에서 10초 후 표시됩니다.', "Affichée après 10 s sur Lecture en cours.", 'Nach 10 Sekunden auf „Jetzt läuft“.',
        'Se muestra tras 10 s en Reproduciendo.', 'Mostrata dopo 10 secondi in Riproduzione.', 'แสดงหลัง 10 วินาทีในหน้ากำลังเล่น', 'Pokazywane po 10 s na ekranie odtwarzania.', 'Через 10 с на экране «Сейчас играет».', 'Через 10 секунд на екрані «Зараз грає».'),
+    # Settings > Now Playing > Lyrics Text Size (patch/lyrics.c, docs/modules/lyrics.md "Text size"); machine translations, unreviewed
+    _t('Lyrics Text Size', '歌词字号', '歌詞字級', '歌詞の文字サイズ', '가사 글자 크기', 'Taille du texte', 'Songtext-Größe',
+       'Tamaño texto', 'Dimensione testo', 'ขนาดเนื้อเพลง', 'Rozmiar tekstu', 'Текст песен', 'Текст пісень'),
+    _t('Small', '小', '小', '小', '작게', 'Petite', 'Klein',
+       'Pequeño', 'Piccolo', 'เล็ก', 'Mały', 'Мелкий', 'Малий'),
+    _t('Medium', '中', '中', '中', '보통', 'Moyenne', 'Mittel',
+       'Medio', 'Medio', 'กลาง', 'Średni', 'Средний', 'Середній'),
+    _t('Large', '大', '大', '大', '크게', 'Grande', 'Groß',
+       'Grande', 'Grande', 'ใหญ่', 'Duży', 'Крупный', 'Великий'),
     # The Wi-Fi page (patch/wifipage.c, docs/modules/wifi.md): the group headers, Other..., the toasts and the Bluetooth question
     _t("Enterprise isn't supported yet", '暂不支持企业级网络', '暫不支援企業級網路', 'エンタープライズは未対応です', '엔터프라이즈는 아직 지원되지 않음', 'Entreprise : pas encore pris en charge', 'Enterprise wird noch nicht unterstützt',
        'Empresarial aún no es compatible', 'Enterprise non ancora supportato', 'ยังไม่รองรับเครือข่ายองค์กร', 'Enterprise nie jest jeszcze obsługiwane', 'Корпоративные сети пока не поддерживаются', 'Корпоративні мережі ще не підтримуються'),
@@ -462,6 +471,33 @@ TEXT = dict([
        'Eliminar listas', 'Elimina playlist', 'ลบเพลย์ลิสต์', 'Usuń playlisty', 'Удалить плейлисты', 'Видалити плейлисти'),
     _t('No playlists', '没有歌单', '沒有歌單', 'プレイリストがありません', '재생 목록 없음', 'Aucune playlist', 'Keine Playlists',
        'No hay listas', 'Nessuna playlist', 'ไม่มีเพลย์ลิสต์', 'Brak playlist', 'Нет плейлистов', 'Немає плейлистів'),
+    # A playlist's "..." > Clean Up Playlist (patch/songs.c sg_clean; docs/modules/playlists.md "Clean Up Playlist"): the card's row, the confirm text (the key by
+    # 1 / more; ru, pl, uk, th and the CJK languages need no plural), the messages; "File not found" is the toast of a song whose file is not on the card that is in
+    # (patch/songops.c so_missing). Machine translations, unreviewed.
+    _t('Clean Up Playlist', '清理歌单', '清理歌單', 'プレイリストを整理', '재생 목록 정리', 'Nettoyer la playlist', 'Playlist bereinigen',
+       'Limpiar lista', 'Pulisci playlist', 'ล้างเพลย์ลิสต์', 'Wyczyść playlistę', 'Очистить плейлист', 'Очистити плейлист'),
+    _t('Remove %d missing song from this playlist?', '从此歌单移除 %d 首缺失歌曲？', '從此歌單移除 %d 首缺失歌曲？', '存在しない曲を%d曲、このプレイリストから削除しますか？',
+       '없는 곡 %d곡을 이 재생 목록에서 제거할까요?', 'Retirer %d titre manquant de cette playlist ?', '%d fehlenden Titel aus dieser Playlist entfernen?',
+       '¿Quitar %d canción que falta de esta lista?', 'Rimuovere %d brano mancante da questa playlist?', 'ลบเพลงที่ไม่พบ %d เพลงออกจากเพลย์ลิสต์นี้?',
+       'Usunąć brakujące utwory z tej playlisty: %d?', 'Удалить отсутствующие треки из плейлиста: %d?', 'Видалити відсутні треки з плейлиста: %d?'),
+    _t('Remove %d missing songs from this playlist?', '从此歌单移除 %d 首缺失歌曲？', '從此歌單移除 %d 首缺失歌曲？', '存在しない曲を%d曲、このプレイリストから削除しますか？',
+       '없는 곡 %d곡을 이 재생 목록에서 제거할까요?', 'Retirer %d titres manquants de cette playlist ?', '%d fehlende Titel aus dieser Playlist entfernen?',
+       '¿Quitar %d canciones que faltan de esta lista?', 'Rimuovere %d brani mancanti da questa playlist?', 'ลบเพลงที่ไม่พบ %d เพลงออกจากเพลย์ลิสต์นี้?',
+       'Usunąć brakujące utwory z tej playlisty: %d?', 'Удалить отсутствующие треки из плейлиста: %d?', 'Видалити відсутні треки з плейлиста: %d?'),
+    _t('%d song updated', '已更新 %d 首歌曲', '已更新 %d 首歌曲', '%d曲を更新しました', '%d곡 업데이트됨', '%d titre mis à jour', '%d Titel aktualisiert',
+       '%d canción actualizada', '%d brano aggiornato', 'อัปเดตแล้ว %d เพลง', 'Zaktualizowano utwory: %d', 'Обновлено треков: %d', 'Оновлено треків: %d'),
+    _t('%d songs updated', '已更新 %d 首歌曲', '已更新 %d 首歌曲', '%d曲を更新しました', '%d곡 업데이트됨', '%d titres mis à jour', '%d Titel aktualisiert',
+       '%d canciones actualizadas', '%d brani aggiornati', 'อัปเดตแล้ว %d เพลง', 'Zaktualizowano utwory: %d', 'Обновлено треков: %d', 'Оновлено треків: %d'),
+    _t('File not found', '找不到文件', '找不到檔案', 'ファイルが見つかりません', '파일을 찾을 수 없음', 'Fichier introuvable', 'Datei nicht gefunden',
+       'Archivo no encontrado', 'File non trovato', 'ไม่พบไฟล์', 'Nie znaleziono pliku', 'Файл не найден', 'Файл не знайдено'),
+    _t('All songs are on the card', '所有歌曲都在存储卡中', '所有歌曲都在記憶卡中', 'すべての曲がカードにあります', '모든 곡이 카드에 있습니다', 'Tous les titres sont sur la carte',
+       'Alle Titel sind auf der Karte', 'Todas las canciones están en la tarjeta', 'Tutti i brani sono sulla scheda', 'เพลงทั้งหมดอยู่ในการ์ด', 'Wszystkie utwory są na karcie',
+       'Все треки на карте', 'Усі треки на карті'),
+    _t('Card not readable, nothing removed', '无法读取存储卡，未移除任何内容', '無法讀取記憶卡，未移除任何內容', 'カードを読み取れません。削除していません', '카드를 읽을 수 없어 제거하지 않았습니다',
+       'Carte illisible, rien retiré', 'Karte nicht lesbar, nichts entfernt', 'Tarjeta ilegible, nada eliminado', 'Scheda non leggibile, nulla rimosso', 'อ่านการ์ดไม่ได้ ไม่มีการลบ',
+       'Nie można odczytać karty, nic nie usunięto', 'Карта не читается, ничего не удалено', 'Картку не прочитано, нічого не видалено'),
+    _t('Playlist cleaned up', '歌单已清理', '歌單已清理', 'プレイリストを整理しました', '재생 목록을 정리했습니다', 'Playlist nettoyée', 'Playlist bereinigt',
+       'Lista limpiada', 'Playlist pulita', 'ล้างเพลย์ลิสต์แล้ว', 'Playlista wyczyszczona', 'Плейлист очищен', 'Плейлист очищено'),
     # The song count under the last row of the Songs page and its lists (patch/songs.c sg_foot_text; chosen by n == 1 as the track count above;
     # pl, ru, uk the label form that needs no plural)
     _t('%d song', '%d 首歌曲', '%d 首歌曲', '%d 曲', '%d곡', '%d titre', '%d Titel',
@@ -506,9 +542,23 @@ TEXT = dict([
        'Top 25 programas en %s', 'Top 25 programmi in %s', 'รายการยอดนิยม 25 อันดับใน %s', 'Top 25 programów: %s', 'Топ-25 шоу: %s', 'Топ-25 шоу: %s'),
     _t('Top 25 Episodes in %s', '%s 热门单集前 25', '%s 熱門單集前 25', '%sの人気エピソードトップ25', '%s 인기 에피소드 TOP 25', 'Top 25 des épisodes : %s', 'Top 25 Folgen in %s',
        'Top 25 episodios en %s', 'Top 25 episodi in %s', 'ตอนยอดนิยม 25 อันดับใน %s', 'Top 25 odcinków: %s', 'Топ-25 выпусков: %s', 'Топ-25 випусків: %s'),
-    _t('Search words are sent to Apple.', '搜索词会发送给 Apple。', '搜尋詞會傳送給 Apple。', '検索語は Apple に送信されます。', '검색어는 Apple로 전송됩니다.', 'Les mots recherchés sont envoyés à Apple.',
-       'Suchbegriffe werden an Apple gesendet.', 'Los términos se envían a Apple.', 'Le parole cercate vanno ad Apple.', 'คำค้นหาจะถูกส่งไปยัง Apple', 'Szukane słowa trafiają do Apple.',
-       'Слова запроса отправляются в Apple.', 'Слова запиту надсилаються до Apple.'),
+    # Settings > Library > the scrobble log's switch and its note (patch/scrobble.c); Last.fm's word is kept where the language uses it as is
+    _t('Scrobbling', '听歌记录', '聽歌記錄', 'Scrobble', '스크로블', 'Scrobbling', 'Scrobbling',
+       'Scrobbling', 'Scrobbling', 'Scrobble', 'Scrobbling', 'Скробблинг', 'Скроблінг'),
+    _t('Saved to .scrobbler.log on the card.', '保存到卡上的 .scrobbler.log。', '儲存到卡上的 .scrobbler.log。',
+       'カードの .scrobbler.log に保存', '카드의 .scrobbler.log에 저장', 'Dans .scrobbler.log sur la carte.',
+       'In .scrobbler.log auf der Karte.', 'En .scrobbler.log en la tarjeta.', 'In .scrobbler.log sulla scheda.',
+       'บันทึกใน .scrobbler.log บนการ์ด', 'W .scrobbler.log na karcie.', 'В .scrobbler.log на карте.',
+       'У .scrobbler.log на картці.'),
+    _t('Podcast Directory', '播客目录', '播客目錄', 'ディレクトリ', '디렉터리', 'Annuaire', 'Verzeichnis',
+       'Directorio', 'Directory', 'ไดเรกทอรี', 'Katalog', 'Каталог', 'Каталог'),   # (the row has no glyph and its value needs the room: the short word under the Podcasts header)
+    _t('Directory', '目录', '目錄', 'ディレクトリ', '디렉터리', 'Annuaire', 'Verzeichnis',
+       'Directorio', 'Directory', 'ไดเรกทอรี', 'Katalog', 'Каталог', 'Каталог'),   # (the row's label: it shares the room with the name of the directory)
+    _t('Search Podcast Index', '搜索 Podcast Index', '搜尋 Podcast Index', 'Podcast Index を検索', 'Podcast Index 검색', 'Chercher sur Podcast Index', 'Podcast Index durchsuchen',
+       'Buscar en Podcast Index', 'Cerca su Podcast Index', 'ค้นหา Podcast Index', 'Szukaj w Podcast Index', 'Поиск в Podcast Index', 'Пошук у Podcast Index'),
+    _t('Search words go to the chosen directory.', '搜索词会发送给所选目录。', '搜尋詞會傳送給所選目錄。', '検索語は選択したディレクトリに送信されます。', '검색어는 선택한 디렉터리로 전송됩니다.',
+       'Les mots recherchés vont à l\'annuaire choisi.', 'Suchbegriffe gehen an das gewählte Verzeichnis.', 'Los términos van al directorio elegido.', 'Le parole cercate vanno alla directory scelta.',
+       'คำค้นหาจะถูกส่งไปยังไดเรกทอรีที่เลือก', 'Szukane słowa trafiają do wybranego katalogu.', 'Слова запроса отправляются в выбранный каталог.', 'Слова запиту надсилаються до вибраного каталогу.'),
     # Battery Percentage (patch/battery.c, docs/modules/battery.md): Settings > System > Battery
     _t('Battery Percentage', '电量百分比', '電量百分比', 'バッテリー残量', '배터리 잔량', 'Pourcentage', 'Akkustand',
        'Porcentaje', 'Percentuale', 'เปอร์เซ็นต์แบต', 'Poziom baterii', 'Процент заряда', 'Відсоток заряду'),
@@ -517,7 +567,7 @@ TEXT = dict([
        'ระดับแบตที่แน่นอนข้างไอคอน', 'Dokładny poziom obok ikony', 'Точный заряд рядом со значком', 'Точний заряд поруч зі значком'),
     # Continue with Next Album (patch/nextalbum.c, docs/modules/nextalbum.md): Settings > Playback
     _t('Continue Playing', '继续播放', '繼續播放', '続けて再生', '계속 재생', 'Enchaîner', 'Weiterspielen',
-       'Continuar', 'Continua', 'เล่นต่อ', 'Kontynuuj', 'Продолжить', 'Продовжити'),
+       'Continuar', 'Continua', 'เล่นต่อ', 'Kontynuuj', 'Возобновить', 'Відновити'),
     _t('Next Albums', '下一张专辑', '下一張專輯', '次のアルバム', '다음 앨범', 'Albums suivants', 'Nächste Alben',
        'Álbumes siguientes', 'Album successivi', 'อัลบั้มถัดไป', 'Kolejne albumy', 'След. альбомы', 'Наст. альбоми'),
     _t('Plays the next album in the order of Albums, the artist or Cover Flow', '按专辑、艺人或封面流的顺序播放下一张专辑', '依專輯、藝人或封面流的順序播放下一張專輯',
@@ -537,7 +587,7 @@ TEXT = dict([
     _t('Resumes a little below the limit', '略低于上限时恢复充电', '略低於上限時恢復充電', '上限を少し下回ると再開', '한도보다 조금 낮아지면 재개',
        'Reprend un peu sous la limite', 'Lädt knapp unter dem Limit weiter', 'Se reanuda algo por debajo del límite', 'Riprende poco sotto il limite',
        'ชาร์จต่อเมื่อต่ำกว่าขีดจำกัดเล็กน้อย', 'Wznawia nieco poniżej limitu', 'Возобновится чуть ниже предела', 'Відновиться трохи нижче межі'),
-    # Settings > System > Display (patch/display.c, docs/modules/settings.md "Display"): our page's rows and the pickers' rows that are new. Our own short labels: stock's English for the backlight time is
+    # Settings > System > Display (patch/display.c, docs/modules/display.md): our page's rows and the pickers' rows that are new. Our own short labels: stock's English for the backlight time is
     # "Screen Off" with the choice "Off", its LED row is "Atmosphere Lamp Settings", and its Follow Screen is English in every table but the Chinese ones. The other four backlight choices (15s .. 5min) are
     # stock's plain texts, the same in every language (BRANDS). (Lock Screen, Off and Orange are above.)
     _t('Follow Screen', '跟随屏幕', '跟隨螢幕', '画面に連動', '화면과 연동', 'Suivre l’écran', 'Bildschirm folgen',
@@ -578,6 +628,78 @@ TEXT = dict([
        'Veille auto et Arrêt auto ne peuvent pas être activés ensemble', 'Auto-Standby und Auto-Abschaltung sind nie gleichzeitig aktiv', 'Espera auto y Autoapagado no pueden estar activos a la vez',
        'Standby auto e Spegni auto non possono essere attivi insieme', 'เปิดได้ครั้งละหนึ่งอย่างระหว่างสแตนด์บายอัตโนมัติและปิดเครื่องอัตโนมัติ', 'Auto-gotowość i Auto-wyłączanie nie mogą działać jednocześnie',
        'Автоожидание и Автовыключение не работают одновременно', 'Автоочікування й Автовимкнення не працюють одночасно'),
+    # Settings > Playback Settings (patch/playset.c, docs/modules/playset.md): our own short labels (stock's translations of these rows are partly wrong: "avoir ralenti" for ReplayGain in French, "Modalità di gioco" for Play Mode in
+    # Italian) and the picker values. Machine translations, checked for fit only. The words that stay English by design are in test/pod/i18n.py SAME_AS_ENGLISH.
+    _t('Play Mode', '播放模式', '播放模式', '再生モード', '재생 모드', 'Mode', 'Modus',
+       'Modo', 'Modalità', 'โหมดเล่น', 'Tryb', 'Режим', 'Режим'),
+    _t('List Play', '顺序播放', '順序播放', 'リスト再生', '목록 재생', 'Dans l’ordre', 'Der Reihe nach',
+       'En orden', 'In ordine', 'เล่นตามลำดับ', 'Po kolei', 'По порядку', 'По порядку'),
+    _t('Repeat Track', '单曲循环', '單曲循環', '1曲リピート', '한 곡 반복', 'Répéter le titre', 'Titel wiederholen',
+       'Repetir pista', 'Ripeti brano', 'เล่นเพลงซ้ำ', 'Powtórz utwór', 'Повтор трека', 'Повтор треку'),
+    _t('Repeat All', '全部循环', '全部循環', '全曲リピート', '전체 반복', 'Tout répéter', 'Alle wiederholen',
+       'Repetir todo', 'Ripeti tutto', 'เล่นซ้ำทั้งหมด', 'Powtórz wszystko', 'Повтор всех', 'Повтор усіх'),
+    _t('Gapless', '无缝播放', '無縫播放', 'ギャップレス', '갭리스', 'Sans pause', 'Lückenlos',
+       'Sin pausas', 'Senza pause', 'ไร้รอยต่อ', 'Bez przerw', 'Без пауз', 'Без пауз'),
+    _t('Resume', '记忆播放', '記憶播放', 'メモリー再生', '메모리 재생', 'Reprise', 'Fortsetzen',
+       'Reanudar', 'Riprendi', 'กลับมาเล่น', 'Wznów', 'Возобновить', 'Відновити'),
+    _t('Track', '曲目', '曲目', 'トラック', '트랙', 'Piste', 'Titel',
+       'Pista', 'Traccia', 'เพลง', 'Utwór', 'Трек', 'Трек'),
+    _t('Location', '位置', '位置', '位置', '위치', 'Position', 'Position',
+       'Posición', 'Posizione', 'ตำแหน่ง', 'Pozycja', 'Позиция', 'Позиція'),
+    _t('Folder Skip', '文件夹跳曲', '資料夾跳曲', 'フォルダ間移動', '폴더 건너뛰기', 'Saut de dossier', 'Ordnersprung',
+       'Saltar carpeta', 'Salta cartella', 'ข้ามโฟลเดอร์', 'Pomiń folder', 'Пропуск папки', 'Пропуск папки'),
+    _t('Low', '低', '低', 'ロー', '낮음', 'Bas', 'Niedrig',
+       'Bajo', 'Basso', 'ต่ำ', 'Niskie', 'Низкий', 'Низький'),
+    _t('High', '高', '高', 'ハイ', '높음', 'Haut', 'Hoch',
+       'Alto', 'Alto', 'สูง', 'Wysokie', 'Высокий', 'Високий'),
+    _t('ReplayGain', '回放增益', '回放增益', 'リプレイゲイン', '리플레이게인', 'ReplayGain', 'ReplayGain',
+       'ReplayGain', 'ReplayGain', 'ReplayGain', 'ReplayGain', 'ReplayGain', 'ReplayGain'),
+    _t('Digital Filter', '数字滤波器', '數位濾波器', 'デジタルフィルター', '디지털 필터', 'Filtre numérique', 'Digitalfilter',
+       'Filtro digital', 'Filtro digitale', 'ฟิลเตอร์ดิจิทัล', 'Filtr cyfrowy', 'Цифровой фильтр', 'Цифровий фільтр'),
+    # the eight filters of the DAC, stock's order, shortened: Minimum / Linear is the phase response, Fast / Slow the roll-off (the three with a second word are fast, fast, slow roll-off); Thai writes the terms as they are said
+    _t('Minimum Phase', '最小相位', '最小相位', 'ミニマムフェーズ', '최소 위상', 'Phase minimale', 'Minimalphasig',
+       'Fase mínima', 'Fase minima', 'มินิมัมเฟส', 'Faza minimalna', 'Мин. фаза', 'Мін. фаза'),
+    _t('Linear Fast Apodizing', '线性快速切趾', '線性快速切趾', 'リニア高速 アポダイジング', '선형 고속 아포다이징', 'Linéaire rapide, apodisant', 'Linear schnell, apodisierend',
+       'Lineal rápido, apodizante', 'Lineare veloce, apodizz.', 'ลิเนียร์ เร็ว อะโพไดซ์', 'Liniowy szybki, apodyz.', 'Лин. быстрый, апод.', 'Лін. швидкий, апод.'),
+    _t('Linear Fast', '线性快速', '線性快速', 'リニア高速', '선형 고속', 'Linéaire rapide', 'Linear schnell',
+       'Lineal rápido', 'Lineare veloce', 'ลิเนียร์ เร็ว', 'Liniowy szybki', 'Лин. быстрый', 'Лін. швидкий'),
+    _t('Linear Fast Low Ripple', '线性快速低纹波', '線性快速低紋波', 'リニア高速 低リップル', '선형 고속 저리플', 'Linéaire rapide, peu d’ond.', 'Linear schnell, wenig Rippel',
+       'Lineal rápido, poco rizado', 'Lineare veloce, ripple basso', 'ลิเนียร์ เร็ว ริปเปิลต่ำ', 'Liniowy szybki, mała tętn.', 'Лин. быстрый, мало пульс.', 'Лін. швидкий, мала пульс.'),
+    _t('Linear Slow', '线性慢速', '線性慢速', 'リニア低速', '선형 저속', 'Linéaire lente', 'Linear langsam',
+       'Lineal lento', 'Lineare lento', 'ลิเนียร์ ช้า', 'Liniowy wolny', 'Лин. медленный', 'Лін. повільний'),
+    _t('Minimum Fast', '最小快速', '最小快速', 'ミニマム高速', '최소 고속', 'Minimale rapide', 'Minimal schnell',
+       'Mínima rápida', 'Minima veloce', 'มินิมัม เร็ว', 'Minimalny szybki', 'Мин. быстрый', 'Мін. швидкий'),
+    _t('Minimum Slow', '最小慢速', '最小慢速', 'ミニマム低速', '최소 저속', 'Minimale lente', 'Minimal langsam',
+       'Mínima lenta', 'Minima lento', 'มินิมัม ช้า', 'Minimalny wolny', 'Мин. медленный', 'Мін. повільний'),
+    _t('Minimum Low Dispersion', '最小低色散', '最小低色散', 'ミニマム 低分散', '최소 저분산', 'Minimale, faible dispers.', 'Minimal, geringe Dispers.',
+       'Mínima, baja dispersión', 'Minima, bassa dispers.', 'มินิมัม กระจายต่ำ', 'Minimalny, mała dysp.', 'Мин. малая дисперсия', 'Мін. мала дисперсія'),
+    _t('DSD Output Mode', 'DSD输出模式', 'DSD輸出模式', 'DSD出力モード', 'DSD 출력 모드', 'Sortie DSD', 'DSD-Modus',
+       'Modo salida DSD', 'Uscita DSD', 'โหมดเอาต์พุต DSD', 'Wyjście DSD', 'Вывод DSD', 'Вивід DSD'),
+    _t('D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P', 'D2P'),
+    _t('DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP', 'DOP'),
+    _t('Native', '原生', '原生', 'ネイティブ', '네이티브', 'Natif', 'Nativ',
+       'Nativo', 'Nativo', 'เนทีฟ', 'Natywny', 'Нативный', 'Нативний'),
+    _t('Digital Output', '数字输出', '數位輸出', 'デジタル出力', '디지털 출력', 'Sortie numérique', 'Digitalausgang',
+       'Salida digital', 'Uscita digitale', 'เอาต์พุตดิจิทัล', 'Wyjście cyfrowe', 'Цифровой выход', 'Цифровий вихід'),
+    _t('USB Volume', 'USB 音量', 'USB 音量', 'USB音量', 'USB 볼륨', 'Volume USB', 'USB-Lautstärke',
+       'Volumen USB', 'Volume USB', 'ระดับเสียง USB', 'Głośność USB', 'Громкость USB', 'Гучність USB'),
+    _t('Fixed', '固定', '固定', '固定', '고정', 'Fixe', 'Fest',
+       'Fijo', 'Fisso', 'คงที่', 'Stała', 'Фикс.', 'Фікс.'),
+    _t('Variable', '可调', '可調', '可変', '가변', 'Variable', 'Variabel',
+       'Variable', 'Variabile', 'ปรับได้', 'Zmienna', 'Перем.', 'Змінна'),
+    _t('Folder Album Cover', '文件夹专辑封面', '資料夾專輯封面', 'フォルダのカバー', '폴더 앨범 커버', 'Pochette de dossier', 'Ordner-Cover',
+       'Portada de carpeta', 'Copertina cartella', 'ปกอัลบั้มโฟลเดอร์', 'Okładka folderu', 'Обложка папки', 'Обкладинка папки'),
+    # the three loudness rows (Max Volume, Default Volume, Channel Balance): their labels, the Volume Memory switch and the value Memory (Default Volume with the switch on); machine translations, checked for fit only
+    _t('Max Volume', '最大音量', '最大音量', '最大音量', '최대 볼륨', 'Volume max.', 'Max. Lautstärke',
+       'Volumen máx.', 'Volume max.', 'ระดับเสียงสูงสุด', 'Maks. głośność', 'Макс. громкость', 'Макс. гучність'),
+    _t('Default Volume', '默认音量', '預設音量', '起動時の音量', '기본 볼륨', 'Volume initial', 'Startlautstärke',
+       'Volumen inicial', 'Volume iniziale', 'ระดับเสียงเริ่มต้น', 'Głośn. startowa', 'Громк. старта', 'Гучність старту'),
+    _t('Channel Balance', '声道平衡', '聲道平衡', 'チャンネルバランス', '채널 밸런스', 'Balance', 'Balance',
+       'Balance', 'Bilanciamento', 'บาลานซ์ช่องเสียง', 'Balans kanałów', 'Баланс каналов', 'Баланс каналів'),
+    _t('Volume Memory', '记忆音量', '記憶音量', '音量を記憶', '볼륨 기억', 'Mémoire du volume', 'Lautstärke merken',
+       'Recordar volumen', 'Memoria volume', 'จำระดับเสียง', 'Zapamiętaj głośność', 'Память громкости', 'Пам’ять гучності'),
+    _t('Memory', '记忆', '記憶', '記憶', '기억', 'Mémoire', 'Merken',
+       'Memoria', 'Memoria', 'จำค่า', 'Pamięć', 'Память', 'Пам’ять'),
     # A-Z lists (patch/azlist.c, docs/modules/settings.md): Settings > Library, the Index Rail and Section Headers switches
     _t('Index Rail', '索引栏', '索引欄', '索引バー', '색인 막대', 'Index latéral', 'Index-Leiste',
        'Índice lateral', 'Indice laterale', 'แถบดัชนี', 'Indeks boczny', 'Указатель', 'Покажчик'),
@@ -645,6 +767,7 @@ TEXT = dict([
     # Podcasts, Feeds view and refresh (patch/podcasts.c, patch/pcnet.c; docs/modules/podcasts.md "Feeds")
     _t('Never refreshed', '从未刷新', '從未更新', '未更新', '새로고침 안 함', 'Jamais actualisé', 'Nie aktualisiert', 'Nunca actualizado', 'Mai aggiornato', 'ยังไม่เคยรีเฟรช', 'Nie odświeżano', 'Не обновлялось', 'Не оновлювалось'),
     _t('%d new', '%d 个新节目', '%d 個新節目', '新着 %d 件', '새 에피소드 %d개', '%d nouveaux', '%d neue', '%d nuevos', '%d nuovi', 'ใหม่ %d', '%d nowe', 'Новых: %d', 'Нових: %d'),
+    _t('Too many shows', '节目过多', '節目過多', '番組が多すぎます', '프로그램이 너무 많습니다', 'Trop d’émissions', 'Zu viele Sendungen', 'Demasiados programas', 'Troppi programmi', 'รายการมากเกินไป', 'Zbyt wiele programów', 'Слишком много шоу', 'Забагато шоу'),   # (Subscribe and Import from Card with PC_MAX_SHOWS shows on the card; machine translations, unreviewed)
     _t('Nothing new to import', '没有可导入的新内容', '沒有可匯入的新內容', '読み込む新しい項目はありません', '가져올 새 항목이 없습니다', 'Rien de nouveau à importer', 'Nichts Neues zu importieren',
        'Nada nuevo que importar', 'Niente di nuovo da importare', 'ไม่มีรายการใหม่ให้นำเข้า', 'Brak nowych pozycji do zaimportowania', 'Нечего импортировать', 'Немає що імпортувати'),
     _t('%d added', '已添加 %d 个', '已新增 %d 個', '%d 件追加', '%d개 추가됨', '%d ajoutés', '%d hinzugefügt', '%d añadidos', '%d aggiunti', 'เพิ่ม %d รายการ', 'Dodano: %d', 'Добавлено: %d', 'Додано: %d'),
@@ -801,7 +924,9 @@ TEXT = dict([
     _t('Mark as Played', '标为已播放', '標為已播放', '再生済みにする', '재생함으로 표시', 'Marquer comme lu', 'Als gehört markieren', 'Marcar como reproducido', 'Segna come riprodotto', 'ทำเครื่องหมายว่าเล่นแล้ว', 'Oznacz jako odtworzone', 'Отметить как прослушанное', 'Позначити як прослухане'),
     _t('Mark as Unplayed', '标为未播放', '標為未播放', '未再生にする', '재생 안 함으로 표시', 'Marquer comme non lu', 'Als ungehört markieren', 'Marcar como no reproducido', 'Segna come non riprodotto', 'ทำเครื่องหมายว่ายังไม่เล่น', 'Oznacz jako nieodtworzone', 'Отметить как непрослушанное', 'Позначити як непрослухане'),
     _t('Retry', '重试', '重試', '再試行', '다시 시도', 'Réessayer', 'Erneut', 'Reintentar', 'Riprova', 'ลองใหม่', 'Ponów', 'Повторить', 'Повторити'),
-    # the episode page (patch/pcdetail.c, docs/modules/podcasts.md "The episode page"): the hint of an episode with no description
+    _t('Pause', '暂停', '暫停', '一時停止', '일시 중지', 'Pause', 'Pause', 'Pausar', 'Pausa', 'หยุดชั่วคราว', 'Wstrzymaj', 'Приостановить', 'Призупинити'),   # an In Progress row's sheet (patch/podcasts.c SH_IP)
+    _t('Resume', '继续', '繼續', '再開', '재개', 'Reprendre', 'Fortsetzen', 'Reanudar', 'Riprendi', 'ดำเนินการต่อ', 'Wznów', 'Возобновить', 'Відновити'),
+    # the episode page (patch/pcdetail.c, docs/modules/podcasts.md "The episodepage"): the hint of an episode with no description
     _t('No description', '没有简介', '沒有簡介', '説明はありません', '설명 없음', 'Aucune description', 'Keine Beschreibung', 'Sin descripción', 'Nessuna descrizione', 'ไม่มีคำอธิบาย', 'Brak opisu', 'Нет описания', 'Немає опису'),
     _t('%dm', '%d分钟', '%d分鐘', '%d分', '%d분', '%d min', '%d Min.', '%d min', '%d min', '%d นาที', '%d min', '%d мин', '%d хв'),   # the pill's length: short, no "left"
     _t('%dm left', '剩余%d分钟', '剩餘%d分鐘', '残り%d分', '%d분 남음', 'Reste %d min', 'Noch %d Min.', 'Quedan %d min', '%d min rimasti', 'เหลือ %d นาที', 'Zostało %d min', 'Ещё %d мин', 'Ще %d хв'),
@@ -881,6 +1006,7 @@ TEXT = dict([
     _t('Search', '搜索', '搜尋', '検索', '검색', 'Chercher', 'Suchen',
        'Buscar', 'Cerca', 'ค้นหา', 'Szukaj', 'Поиск', 'Пошук'),
     _t('Apple Podcasts', *['Apple Podcasts'] * 12),
+    _t('Podcast Index', *['Podcast Index'] * 12),
     _t('Discover', '发现', '探索', '見つける', '탐색', 'Découvrir', 'Entdecken',
        'Descubrir', 'Scopri', 'ค้นพบ', 'Odkrywaj', 'Обзор', 'Огляд'),   # the Podcasts page's row that opens the Discover charts, and the level's title
     _t('Search Apple Podcasts', '搜索 Apple Podcasts', '搜尋 Apple Podcasts', 'Apple Podcasts を検索', 'Apple Podcasts 검색', 'Chercher sur Apple Podcasts', 'Apple Podcasts durchsuchen',
@@ -915,7 +1041,23 @@ TEXT = dict([
        'Użyj tej okładki', 'Выбрать обложку', 'Вибрати обкладинку'),
     _t('Replace Cover', '替换封面', '取代封面', 'ジャケットを置き換え', '커버 바꾸기', 'Remplacer la pochette', 'Cover ersetzen', 'Reemplazar portada', 'Sostituisci copertina', 'แทนที่ปก',
        'Zastąp okładkę', 'Заменить обложку', 'Замінити обкладинку'),
-    # Software Update (patch/update.c, docs/modules/update.md): the Settings row and the page's title, the states' titles and explanations, the pills. %s is the version (put in by the payload, never a printf format).
+    # Find Artist Photo (patch/onlineart.c onlineart_open_artist, docs/modules/onlineart.md "Artist photos"): the artist page's "..." card row, the page's title, the confirmation's pills and the states; machine translations, unreviewed
+    _t('Find Artist Photo', '查找歌手照片', '尋找歌手相片', 'アーティスト写真を検索', '아티스트 사진 찾기', 'Chercher une photo', 'Künstlerfoto suchen', 'Buscar foto del artista', 'Cerca foto artista', 'ค้นหารูปศิลปิน',
+       'Znajdź zdjęcie artysty', 'Найти фото артиста', 'Знайти фото артиста'),
+    _t('Artist Photo', '歌手照片', '歌手相片', 'アーティスト写真', '아티스트 사진', "Photo d'artiste", 'Künstlerfoto', 'Foto del artista', 'Foto artista', 'รูปศิลปิน', 'Zdjęcie artysty', 'Фото артиста', 'Фото артиста'),
+    _t('Use This Photo', '使用此照片', '使用此相片', 'この写真を使用', '이 사진 사용', 'Utiliser cette photo', 'Dieses Foto verwenden', 'Usar esta foto', 'Usa questa foto', 'ใช้รูปนี้', 'Użyj tego zdjęcia', 'Выбрать фото', 'Вибрати фото'),
+    _t('Replace Photo', '替换照片', '取代相片', '写真を置き換え', '사진 바꾸기', 'Remplacer la photo', 'Foto ersetzen', 'Reemplazar foto', 'Sostituisci foto', 'แทนที่รูป', 'Zastąp zdjęcie', 'Заменить фото', 'Замінити фото'),
+    _t('No Photos Found', '未找到照片', '未找到相片', '写真が見つかりません', '사진을 찾을 수 없음', 'Aucune photo trouvée', 'Keine Fotos gefunden', 'No se encontraron fotos', 'Nessuna foto trovata', 'ไม่พบรูป',
+       'Nie znaleziono zdjęć', 'Фото не найдены', 'Фото не знайдено'),
+    _t('Photo Service Busy', '照片服务繁忙', '相片服務繁忙', '写真サービスが混雑中', '사진 서비스 혼잡', 'Service de photos occupé', 'Foto-Dienst ausgelastet', 'Servicio de fotos ocupado', 'Servizio foto occupato', 'บริการรูปไม่ว่าง',
+       'Usługa zdjęć zajęta', 'Сервис фото занят', 'Сервіс фото зайнятий'),
+    _t('The photo service is busy. Try again in a moment.', '照片服务繁忙，请稍后再试。', '相片服務繁忙，請稍後再試。', '写真サービスが混み合っています。しばらくしてからお試しください。', '사진 서비스가 혼잡합니다. 잠시 후 다시 시도하세요.',
+       'Le service de photos est occupé. Réessayez dans un instant.', 'Der Fotodienst ist ausgelastet. Gleich noch einmal versuchen.', 'El servicio de fotos está ocupado. Inténtalo en un momento.', 'Il servizio foto è occupato. Riprova tra un momento.',
+       'บริการรูปภาพไม่ว่าง ลองใหม่อีกสักครู่', 'Serwis zdjęć jest zajęty. Spróbuj za chwilę.', 'Сервис фото занят. Повторите чуть позже.', 'Сервіс фото зайнятий. Спробуйте за мить.'),
+    _t('No photos online for this artist.', '网上没有这位歌手的照片。', '網上沒有這位歌手的相片。', 'このアーティストの写真はオンラインにありません。', '온라인에 이 아티스트의 사진이 없습니다.', 'Aucune photo en ligne pour cet artiste.',
+       'Keine Fotos online zu diesem Künstler.', 'No hay fotos en línea de este artista.', 'Nessuna foto online per questo artista.', 'ไม่พบรูปของศิลปินนี้ทางออนไลน์', 'Brak zdjęć tego artysty w sieci.', 'В сети нет фото этого артиста.',
+       'У мережі немає фото цього артиста.'),
+    _t('NetEase', '网易云音乐', '網易雲音樂', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase', 'NetEase'),
     _t('Software Update', '软件更新', '軟體更新', 'ソフトウェア更新', '소프트웨어 업데이트', 'Mise à jour', 'Software-Update', 'Actualización', 'Aggiornamenti', 'อัปเดตซอฟต์แวร์',
        'Aktualizacja', 'Обновление ПО', 'Оновлення ПЗ'),
     _t('Check for Update', '检查更新', '檢查更新', 'アップデートを確認', '업데이트 확인', 'Rechercher', 'Nach Update suchen', 'Buscar actualización', 'Controlla aggiornamenti', 'ตรวจสอบอัปเดต',
@@ -1481,7 +1623,7 @@ TEXT.update([
     _t('%dh ago', '%d小时前', '%d小時前', '%d時間前', '%d시간 전', 'il y a %d h', 'vor %d Std.', 'hace %d h', '%d h fa', '%d ชั่วโมงที่แล้ว', '%d godz. temu', '%d ч назад', '%d год тому'),
     _t('%dd ago', '%d天前', '%d天前', '%d日前', '%d일 전', 'il y a %d j', 'vor %d T.', 'hace %d d', '%d g fa', '%d วันที่แล้ว', '%d dn. temu', '%d дн. назад', '%d дн. тому'),
 ])
-DATE_KEYS = _MONTH_KEYS + (', %d', '%dm ago', '%dh ago', '%dd ago', 'Refreshing %d/%d…', 'Exported %d show', 'Exported %d shows', 'Band %d', 'Updating library… %d/%d', 'Loading covers… %d/%d', 'Loading artist images… %d/%d')   # keys with a %d that do not start with it (the tables test, test/pod/i18n.py)
+DATE_KEYS = _MONTH_KEYS + (', %d', '%dm ago', '%dh ago', '%dd ago', 'Refreshing %d/%d…', 'Exported %d show', 'Exported %d shows', 'Band %d', 'Updating library… %d/%d', 'Loading covers… %d/%d', 'Loading artist images… %d/%d', 'Scrobbles sent: %d', 'Card error, %d sent', 'Upload failed, %d sent')   # keys with a %d that do not start with it (the tables test, test/pod/i18n.py)
 # The Navidrome Server page (patch/ndserver.c, tools/pod_ndserver.py): the row labels (the keyboard's titles and placeholders too), the two confirmations and the toasts. "Navidrome" stays as it is.
 TEXT.update([
     _t('Server', '服务器', '伺服器', 'サーバー', '서버', 'Serveur', 'Server', 'Servidor', 'Server', 'เซิร์ฟเวอร์', 'Serwer', 'Сервер', 'Сервер'),
@@ -1542,6 +1684,66 @@ TEXT.update([
        'Navidrome, Gonic, Airsonic และเซิร์ฟเวอร์ Subsonic อื่นๆ', 'Navidrome, Gonic, Airsonic i inne serwery Subsonic', 'Navidrome, Gonic, Airsonic и другие серверы Subsonic', 'Navidrome, Gonic, Airsonic та інші сервери Subsonic'),
     _t('Add Server', '添加服务器', '新增伺服器', 'サーバーを追加', '서버 추가', 'Ajouter un serveur', 'Server hinzufügen', 'Añadir servidor', 'Aggiungi server', 'เพิ่มเซิร์ฟเวอร์', 'Dodaj serwer', 'Добавить сервер', 'Додати сервер'),
 ])
+# The ListenBrainz settings (patch/scrobpage.c, docs/modules/scrobble.md "Settings"): the Library page's rows, the ListenBrainz and Last.fm pages and the toasts.
+# "ListenBrainz" and the file name scrobble.ini stay as they are.
+TEXT['ListenBrainz'] = {loc: 'ListenBrainz' for loc in LOCALES}
+TEXT['Last.fm'] = {loc: 'Last.fm' for loc in LOCALES}
+TEXT.update([
+    _t('Upload Scrobbles', '上传听歌记录', '上載聽歌記錄', 'Scrobble を送信', '스크로블 업로드', 'Envoyer les scrobbles', 'Scrobbles hochladen', 'Subir scrobbles', 'Carica scrobble', 'อัปโหลด Scrobble',
+       'Wyślij scrobble', 'Отправить скробблы', 'Надіслати скробли'),
+    _t('Account', '账户', '帳戶', 'アカウント', '계정', 'Compte', 'Konto', 'Cuenta', 'Account', 'บัญชี', 'Konto', 'Аккаунт', 'Акаунт'),
+    _t('Not Set', '未设置', '未設定', '未設定', '설정 안 됨', 'Non défini', 'Nicht festgelegt', 'Sin definir', 'Non impostato', 'ไม่ได้ตั้งค่า', 'Nie ustawiono', 'Не задан', 'Не задано'),
+    _t('Invalid Token', '令牌无效', '權杖無效', '無効なトークン', '잘못된 토큰', 'Jeton non valide', 'Token ungültig', 'Token no válido', 'Token non valido', 'โทเค็นไม่ถูกต้อง',
+       'Nieprawidłowy token', 'Неверный токен', 'Недійсний токен'),
+    _t('Already uploading', '正在上传', '正在上載', 'すでに送信中です', '이미 업로드 중', 'Envoi déjà en cours', 'Upload läuft bereits', 'Ya se está subiendo', 'Caricamento già in corso', 'กำลังอัปโหลดอยู่แล้ว',
+       'Wysyłanie już trwa', 'Отправка уже идёт', 'Надсилання вже триває'),
+    _t('Set up an account first', '请先设置账户', '請先設定帳戶', '先にアカウントを設定', '먼저 계정을 설정', 'Configurez d’abord un compte', 'Erst ein Konto einrichten',
+       'Configura una cuenta primero', 'Configura prima un account', 'ตั้งค่าบัญชีก่อน', 'Najpierw skonfiguruj konto', 'Сначала настройте аккаунт', 'Спершу налаштуйте акаунт'),
+    _t('Sign-in Failed', '登录失败', '登入失敗', 'サインイン失敗', '로그인 실패', 'Échec de la connexion', 'Anmeldung fehlgeschlagen', 'Error de inicio de sesión', 'Accesso non riuscito', 'เข้าสู่ระบบไม่สำเร็จ',
+       'Logowanie nieudane', 'Ошибка входа', 'Помилка входу'),
+    # (the note of the Last.fm page: the four keys of the file's [LASTFM] section; the key names, the section, the file name and last.fm/api stay as they are)
+    _t('Put USER, PASSWORD, API_KEY and API_SECRET under [LASTFM] in scrobble.ini on the card. Get an API key at last.fm/api.',
+       '在存储卡上的 scrobble.ini 的 [LASTFM] 下写入 USER、PASSWORD、API_KEY 和 API_SECRET。API 密钥可在 last.fm/api 申请。',
+       '在記憶卡上的 scrobble.ini 的 [LASTFM] 下寫入 USER、PASSWORD、API_KEY 和 API_SECRET。API 金鑰可在 last.fm/api 申請。',
+       'カードの scrobble.ini の [LASTFM] に USER、PASSWORD、API_KEY、API_SECRET を書き込んでください。API キーは last.fm/api で取得できます。',
+       '카드의 scrobble.ini에서 [LASTFM] 아래에 USER, PASSWORD, API_KEY, API_SECRET을 넣으세요. API 키는 last.fm/api에서 받습니다.',
+       'Placez USER, PASSWORD, API_KEY et API_SECRET sous [LASTFM] dans scrobble.ini sur la carte. Clé API sur last.fm/api.',
+       'USER, PASSWORD, API_KEY und API_SECRET unter [LASTFM] in scrobble.ini auf der Karte eintragen. API-Schlüssel: last.fm/api.',
+       'Pon USER, PASSWORD, API_KEY y API_SECRET bajo [LASTFM] en scrobble.ini en la tarjeta. Clave de API en last.fm/api.',
+       'Metti USER, PASSWORD, API_KEY e API_SECRET sotto [LASTFM] in scrobble.ini sulla scheda. Chiave API su last.fm/api.',
+       'ใส่ USER, PASSWORD, API_KEY และ API_SECRET ใต้ [LASTFM] ใน scrobble.ini บนการ์ด ขอคีย์ API ได้ที่ last.fm/api',
+       'Umieść USER, PASSWORD, API_KEY i API_SECRET pod [LASTFM] w scrobble.ini na karcie. Klucz API: last.fm/api.',
+       'Запишите USER, PASSWORD, API_KEY и API_SECRET в [LASTFM] в scrobble.ini на карте. Ключ API: last.fm/api.',
+       'Запишіть USER, PASSWORD, API_KEY і API_SECRET у [LASTFM] у scrobble.ini на картці. Ключ API: last.fm/api.'),
+    _t('Not available in USB mode', 'USB 模式下不可用', 'USB 模式下無法使用', 'USB モードでは使用できません', 'USB 모드에서는 사용할 수 없음', 'Indisponible en mode USB', 'Im USB-Modus nicht verfügbar',
+       'No disponible en modo USB', 'Non disponibile in modalità USB', 'ใช้ไม่ได้ในโหมด USB', 'Niedostępne w trybie USB', 'Недоступно в режиме USB', 'Недоступно в режимі USB'),
+    _t('Uploading scrobbles', '正在上传听歌记录', '正在上載聽歌記錄', 'Scrobble を送信中', '스크로블 업로드 중', 'Envoi des scrobbles', 'Scrobbles werden hochgeladen', 'Subiendo scrobbles', 'Carico gli scrobble',
+       'กำลังอัปโหลด Scrobble', 'Wysyłanie scrobbli', 'Отправка скробблов', 'Надсилання скроблів'),
+    _t('Scrobbles sent: %d', '已上传听歌记录：%d', '已上載聽歌記錄：%d', '送信した Scrobble：%d', '보낸 스크로블: %d', 'Scrobbles envoyés : %d', 'Gesendete Scrobbles: %d', 'Scrobbles enviados: %d',
+       'Scrobble inviati: %d', 'ส่ง Scrobble แล้ว: %d', 'Wysłane scrobble: %d', 'Отправлено скробблов: %d', 'Надіслано скроблів: %d'),
+    _t('Nothing to upload', '没有可上传的记录', '沒有可上載的記錄', '送信するものはありません', '업로드할 항목 없음', 'Rien à envoyer', 'Nichts hochzuladen', 'Nada que subir', 'Niente da caricare',
+       'ไม่มีอะไรให้อัปโหลด', 'Nie ma nic do wysłania', 'Нечего отправлять', 'Нічого надсилати'),
+    _t('%d sent, %d rejected', '已上传 %d，被拒绝 %d', '已上載 %d，被拒絕 %d', '送信 %d、拒否 %d', '보냄 %d, 거부됨 %d', '%d envoyés, %d refusés', '%d gesendet, %d abgelehnt', '%d enviados, %d rechazados',
+       '%d inviati, %d rifiutati', 'ส่งแล้ว %d, ถูกปฏิเสธ %d', 'Wysłano %d, odrzucono %d', 'Отправлено %d, отклонено %d', 'Надіслано %d, відхилено %d'),
+    _t('Card error, %d sent', '存储卡错误，已上传 %d', '記憶卡錯誤，已上載 %d', 'カードエラー、送信 %d', '카드 오류, 보냄 %d', 'Erreur de carte, %d envoyés', 'Kartenfehler, %d gesendet', 'Error de tarjeta, %d enviados',
+       'Errore della scheda, %d inviati', 'การ์ดผิดพลาด ส่งแล้ว %d', 'Błąd karty, wysłano %d', 'Ошибка карты, отправлено %d', 'Помилка картки, надіслано %d'),
+    _t('Upload failed, %d sent', '上传失败，已上传 %d', '上載失敗，已上載 %d', '送信に失敗、送信 %d', '업로드 실패, 보냄 %d', 'Échec de l’envoi, %d envoyés', 'Upload fehlgeschlagen, %d gesendet',
+       'Error al subir, %d enviados', 'Caricamento non riuscito, %d inviati', 'อัปโหลดไม่สำเร็จ ส่งแล้ว %d', 'Wysyłanie nieudane, wysłano %d', 'Сбой отправки, отправлено %d', 'Помилка надсилання, надіслано %d'),
+    # the Scrobbling page's Auto Upload row (patch/scrobble.c, the automatic upload): the switch and its one-line note
+    _t('Auto Upload', '自动上传', '自動上載', '自動送信', '자동 업로드', 'Envoi automatique', 'Auto-Upload', 'Subida automática', 'Invio automatico', 'อัปโหลดอัตโนมัติ',
+       'Autowysyłanie', 'Автоотправка', 'Автонадсилання'),
+    _t('Uploads on Wi-Fi while music plays.', '播放音乐时通过 Wi-Fi 上传。', '播放音樂時透過 Wi-Fi 上載。', '再生中に Wi-Fi で送信します。', '음악 재생 중 Wi-Fi로 업로드합니다.', 'Envoi en Wi-Fi pendant la lecture.',
+       'Lädt per WLAN hoch, während Musik läuft.', 'Sube por Wi-Fi mientras suena la música.', 'Carica in Wi-Fi durante la riproduzione.', 'อัปโหลดผ่าน Wi-Fi ขณะเล่นเพลง',
+       'Wysyła przez Wi-Fi podczas odtwarzania.', 'Отправка по Wi-Fi во время музыки.', 'Надсилання через Wi-Fi під час музики.'),
+    # (the note under the Account card: the token lives in scrobble.ini on the card, written on a computer; machine translations, unreviewed)
+    _t('Put your token from listenbrainz.org in scrobble.ini on the card.', '将 listenbrainz.org 上的令牌写入存储卡上的 scrobble.ini。',
+       '將 listenbrainz.org 上的權杖寫入記憶卡上的 scrobble.ini。', 'listenbrainz.org のトークンをカードの scrobble.ini に書き込んでください。',
+       'listenbrainz.org의 토큰을 카드의 scrobble.ini에 넣으세요.', 'Placez votre jeton de listenbrainz.org dans scrobble.ini sur la carte.',
+       'Token von listenbrainz.org in scrobble.ini auf der Karte eintragen.', 'Pon tu token de listenbrainz.org en scrobble.ini en la tarjeta.',
+       'Metti il token di listenbrainz.org in scrobble.ini sulla scheda.', 'ใส่โทเค็นจาก listenbrainz.org ไว้ใน scrobble.ini บนการ์ด',
+       'Umieść token z listenbrainz.org w scrobble.ini na karcie.', 'Запишите токен с listenbrainz.org в scrobble.ini на карте.',
+       'Запишіть токен із listenbrainz.org у scrobble.ini на картці.'),
+])
 DPAGE_KEYS = ('Updated today', 'Updated yesterday', 'Updated %s', 'Play', 'Songs you love and some to rediscover, made fresh every day.')   # the Daily Mix page's keys
 DAILY_KEYS =('Made for You', 'Daily Mix', 'Regenerate Daily Mix', '%s and more', '%s, %s')     # the card's keys (tools/pod_dailymix.py TEXT)
 
@@ -1557,7 +1759,7 @@ def english(key):
 
 
 import pod_pages
-BRANDS = ('M1+ Music', 'Tidal', 'Pod') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',) + tuple(f'{p}%' for p in pod_pages.CHGLIMIT_VALUES) + pod_pages.LIGHTTIME_VALUES[1:] + pod_pages.SHUTDOWN_VALUES[1:]   # shown as they are, no key (the Settings Files labels are file names)
+BRANDS = ('M1+ Music', 'Tidal', 'Pod') + pod_pages.GUARD_FILES + (pod_pages.FOLDER_LABEL,) + pod_pages.SETTING_FILES + pod_pages.pcregion.NAMES + pod_pages.GRAPH_TEXTS + pod_pages.SLIDER_TEXTS + ('Q',) + tuple(f'{p}%' for p in pod_pages.CHGLIMIT_VALUES) + pod_pages.LIGHTTIME_VALUES[1:] + pod_pages.SHUTDOWN_VALUES[1:] + ('−',)   # shown as they are, no key (the Settings Files labels are file names; the minus is the loudness pages' - button)
 
 
 def key_for(english):

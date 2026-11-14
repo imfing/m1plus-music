@@ -44,9 +44,9 @@ OBJCOPY = os.path.join(LLVM, 'llvm-objcopy')
 LD = os.path.join(LLD, 'ld.lld')
 
 # compiled in this order, linked with --gc-sections (docs/architecture.md)
-SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'menu.c', 'covercache.c', 'artistphoto.c', 'durations.c', 'coverflow.c', 'albums.c', 'artists.c', 'shuffle.c', 'nowplaying.c', 'bigcover.c', 'lockscreen.c', 'display.c', 'keyspower.c', 'minibar.c', 'grid.c', 'recent.c', 'dailymix.c', 'homecover.c', 'covlist.c', 'setfiles.c', 'rows.c', 'shot.c', 'home.c', 'fontregion.c', 'textgamma.c',
-           'scroll.c', 'playmore.c', 'pulldown.c', 'playlists.c', 'azlist.c', 'songops.c', 'libsrc.c', 'rowmenu.c', 'songs.c', 'albumpage.c', 'queuepage.c', 'upnext.c', 'ipod.c', 'ipod_cf.c', 'ipod_theme.c', 'ipod_render.c', 'pcmodel.c', 'pcfeed.c', 'pcjson.c', 'pcopml.c', 'pcpng.c', 'pccover.c', 'pcwrap.c', 'pcnotes.c', 'pcdetail.c', 'upver.c', 'pcnet.c', 'podcasts.c', 'pcfind.c', 'radio.c', 'radiopage.c', 'radionp.c', 'radioinfo.c', 'songinfo.c', 'tape.c', 'palette.c', 'vinyl.c', 'onlineart.c', 'update.c', 'relnotes.c', 'keyboard.c', 'search.c', 'battery.c', 'charging.c', 'nextalbum.c', 'lineout.c', 'lyrics.c', 'picker.c', 'folders.c', 'timezones.c', 'pcregion.c', 'viewsort.c', 'wifictl.c', 'wifipage.c', 'sbnet.c', 'sbparse.c', 'sbdl.c', 'sbapi.c', 'sbsrc.c', 'ndserver.c', 'ndroot.c',
-           'tidalkb.c', 'peq.c', 'peq_ui.c', 'peqpage.c', 'peqlib.c', 'autoeq.c', 'tenband.c', 'peqband.c', 'peqout.c']
+SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'libload.c', 'menu.c', 'covercache.c', 'artistphoto.c', 'durations.c', 'coverflow.c', 'albums.c', 'artists.c', 'shuffle.c', 'nowplaying.c', 'bigcover.c', 'lockscreen.c', 'display.c', 'keyspower.c', 'playset.c', 'idlelyrics.c', 'minibar.c', 'grid.c', 'recent.c', 'dailymix.c', 'homecover.c', 'covlist.c', 'setfiles.c', 'rows.c', 'shot.c', 'home.c', 'fontregion.c', 'textgamma.c',
+           'scroll.c', 'playmore.c', 'pulldown.c', 'playlists.c', 'azlist.c', 'songops.c', 'libsrc.c', 'rowmenu.c', 'songs.c', 'albumpage.c', 'queuepage.c', 'upnext.c', 'ipod.c', 'ipod_cf.c', 'ipod_theme.c', 'ipod_render.c', 'pcmodel.c', 'pcfeed.c', 'pcjson.c', 'pcopml.c', 'pcpng.c', 'pccover.c', 'pcwrap.c', 'pcnotes.c', 'pcdetail.c', 'upver.c', 'net.c', 'netfile.c', 'pcnet.c', 'podcasts.c', 'pcfind.c', 'radio.c', 'radiopage.c', 'radionp.c', 'radioinfo.c', 'songinfo.c', 'tape.c', 'palette.c', 'vinyl.c', 'onlineart.c', 'update.c', 'relnotes.c', 'keyboard.c', 'search.c', 'battery.c', 'charging.c', 'nextalbum.c', 'lineout.c', 'lyrics.c', 'picker.c', 'folders.c', 'timezones.c', 'pcregion.c', 'viewsort.c', 'wifictl.c', 'wifipage.c', 'sbnet.c', 'sbparse.c', 'sbdl.c', 'sbapi.c', 'sbsrc.c', 'ndserver.c', 'ndroot.c',
+           'tidalkb.c', 'peq.c', 'peq_ui.c', 'peqpage.c', 'peqlib.c', 'autoeq.c', 'tenband.c', 'peqband.c', 'peqout.c', 'scrobble.c', 'scrobup.c', 'scrobpage.c']
 
 # Navidrome data layer (patch/sbapi.c): kept by the linker until the pages that call it exist; the integration drops names as callers appear
 ND_KEEP = ['sba_free_tracks', 'sba_free_albums', 'sba_free_artists', 'sba_free_playlists', 'sba_user', 'sba_conf_url_set', 'sba_conf_user_set', 'sba_conf_password_set', 'sba_conf_clear', 'sba_cancel', 'sba_sync_due', 'sba_sync', 'sba_fetch_album', 'sba_fetch_artist', 'sba_fetch_playlist', 'sba_fetch_songs', 'sba_search', 'sba_star', 'sba_cover', 'sba_cover_path', 'sba_cover_have', 'sba_cover_get', 'sba_track_cover', 'sba_rec_cover', 'sba_albums', 'sba_artists', 'sba_playlists', 'sba_starred_tracks', 'sba_album_tracks', 'sba_artist_albums', 'sba_playlist_tracks', 'sba_songs', 'sba_songs_more', 'sba_search_tracks', 'sba_search_albums', 'sba_search_artists', 'sba_songs_cached', 'sba_stream_url', 'sba_track_filename', 'sba_is_dsd', 'sba_now_cover', 'sba_rec_track', 'sba_queue_note', 'sba_net_open']
@@ -171,8 +171,11 @@ FUNCTIONS = {
     'loadAlbumdetailList':     ('int', 'int, void *', 0x4eea98),   # an album row (a RECORD pointer, not an index) to its songs: loadLocalClassList(0xff11) for the All songs row
     'loadSongList':            ('int', 'void *, const char *, int, int', 0x4e2ce0),
     'toolsQueryDbTable':       ('int', 'const char *, const char *, void *, int', 0x5ee77c),   # (db, sql, row callback, sort); hooked (pc_library_query), so a call goes through the Library filter
+    # Clean Up Playlist (patch/songops.c so_relink / so_clean, docs/modules/playlists.md; PLAYLIST_PINS): one statement on the shared database handle, and one row out by its id
+    'toolsUpdateDbTable':      ('int', 'const char *, const char *', 0x5eefb0),   # (db, sql): sqlite3_exec(sql) with no callback; 1 done, -1 failed (stock: the Most Played count)
+    'toolsDeleteItemById':     ('int', 'const char *, const char *, int', 0x5ef370),   # (table, db, id): `delete from %s where id=%d`; 1 done, 0 failed (stock: deletePlaylist)
     'navigator_to_with_context': ('int', 'const char *, const void *', 0x4d1d48),
-    'toolsGetAlbumCover':      ('int', 'const char *, const char *, int, int', 0x5eaee0),
+    'toolsGetAlbumCover':     ('int', 'const char *, const char *, int, int', 0x5eaee0),
     'toolsGetExternCover':     ('int', 'const char *, const char *, int, int', 0x5eafec),
     # Shuffle (patch/shuffle.c, docs/architecture.md): the stock play mode as the Play settings page
     # sets it (@0x49fc78), the random seed, and the message box
@@ -240,6 +243,15 @@ FUNCTIONS.update({
     'mclSetPlayPos':           ('void', 'int', 0x5d42d8),
     # the Gapless setter: stores the setting byte, and for 0 with a preload open sends {mcl-closegapless} and stores -1 in the preload state (the one cancel helper of patch/shuffle.c cancel_preload: reorders, insert, Clear)
     'mclSetGaplessMode':       ('int', 'int', 0x5d28ac),
+    # Playback settings (patch/playset.c, docs/modules/playset.md): the mcl getters and setters the stock click handlers call, and the stop / restart pair the DSD mode runs on USB audio (hooked by Internet Radio, SAVE_STOP)
+    'mclGetGaplessMode':       ('int', 'void', 0x5d44b4),
+    'mclGetJumpFolder':        ('int', 'void', 0x5d4450), 'mclSetJumpFolder': ('int', 'int', 0x5d4468),
+    'mclGetGainMode':          ('int', 'void', 0x5d44cc), 'mclSetGainMode': ('int', 'int, int', 0x5d5a4c),
+    'mclGetReplayGain':        ('int', 'void', 0x5d44e4), 'mclSetReplayGain': ('int', 'int', 0x5d292c),
+    'mclGetfilter':            ('int', 'void', 0x5d452c), 'mclSetFilter': ('int', 'int', 0x5d5b64),
+    'mclGetDsdMode':           ('int', 'void', 0x5d44fc), 'mclSetDsdMode': ('int', 'int', 0x5d29d8),
+    'mclSetLineOut':           ('int', 'int', 0x5d5e98),
+    'save_stop_player':        ('int', 'void', 0x4e2304), 'save_start_player': ('int', 'int', 0x4e23e8),
 })
 # Localisation (patch/i18n.h): the stock translation. locale_info() is the app's locale, locale_info_tr(locale, key) the
 # table lookup (the key itself when absent), widget_set_tr_text(widget, key) stores the key on the widget (the window
@@ -433,6 +445,10 @@ LIBCSTL_SHA = '91d6c02ceb93bea8eb1a7e980668223bdb89e8eadfb19ea15fb0b0ad73ae615a'
 CSTL_SIZE, CSTL_SIZE_WORDS = 0x391f4, (0x3c1c0006, 0x279c9fbc, 0x0399e021, 0x27bdffb8, 0x00801025, 0x8f998ff0, 0x8c840114, 0x8c490124)
 CSTL_POP, CSTL_POP_WORDS = 0x3ad64, (0x3c1c0006, 0x279c844c, 0x0399e021, 0x8f999194, 0x03200008, 0x24050001)
 CSTL_SHRINK = 0x3f3dc
+# The library list hand-over (patch/libload.c ll_swap) exchanges two deque_t structs as libcstl's deque_swap (0x3ac1c, 0x148 bytes) does: 0x14c bytes each way, then the two iterators'
+# container pointers (+0x124, +0x140) set to their own deque again. The payload does not call the function (it would compare the lists first, deque_equal); the pin proves the layout it repeats.
+CSTL_SWAP, CSTL_SWAP_LEN, CSTL_SWAP_SHA = 0x3ac1c, 0x148, 'fd2536c1a33b1f2834e100de1666d2aa45b070958100e9bfc78cf16932d576fc'
+CSTL_DEQUE_SIZE, CSTL_DEQUE_SELF = 0x14c, (0x124, 0x140)
 
 # The Add to Playlist picker (patch/picker.c, docs/modules/picker.md): batch_add_file(class, 0xf00b, list, selection, playlist id) as the stock picker's row handler 0x53d300 calls it
 FUNCTIONS['batch_add_file'] = ('int', 'int, int, void *, void *, int', 0x4da7dc)
@@ -444,6 +460,7 @@ DATA = {
     'TIDAL_TRACKS':       (0xa10264, None), 'TIDAL_ARTISTS': (0xa10254, None), 'TIDAL_ALBUMS': (0xa10244, None), 'TIDAL_SCROLL': (0xa04150, None),
     'BACKLIGHT_STATUS':   (0x97cae4, 'backlight_status'), # byte: 0 off, 1 lit (awake_screen)
     'PDEQ_SHOWLIST':      (0xa045d8, 'pdeq_showlist'),   # deque_t * of the loaded list
+    'DELETE_FLAG':        (0xa05a5a, 'delete_flag'),     # byte: batch_delete_file sets it to 1 after every delete (@0x4e1474), the stock list pages read it; Clean Up Playlist sets it as that would
     'PDEQ_TOOLS_TMP':     (0xa03964, 'tools_pdeq_directory'),   # deque_t * the stock song row callback fills (toolsQueryDbTable clears it first; loadLocalClassList assigns it to the show list, then clears it)
     'PARSE_COVER_MUTEX':  (0xa04588, 'parse_cover_mutex'),  # the lock every stock art caller holds
     # g_class_type: albuminfo_page_init stores classinfo[0] (0xff10) there @0x5268ec, and the row
@@ -536,6 +553,10 @@ DATA = {
 }
 LIBC = {
     'atoi': ('int', 'const char *'), 'access': ('int', 'const char *, int'),
+    # why an open failed (patch/scrobup.c su_window: only ENOENT is "no log")
+    '__errno_location': ('int *', 'void'),
+    # Last.fm's request signature (patch/scrobup.c su_lf_call): libcrypto's MD5, which demo imports itself (toolsMd5String); the context is an MD5_CTX (92 bytes)
+    'MD5_Init': ('int', 'void *'), 'MD5_Update': ('int', 'void *, const void *, unsigned'), 'MD5_Final': ('int', 'unsigned char *, void *'),
     # the Daily Mix's day number (patch/dailymix.c dm_today): the wall clock and its local calendar fields (struct tm: seconds, minutes, hours, mday, mon, year first)
     'time': ('long', 'long *'), 'localtime': ('const int *', 'const long *'),
     # Home (patch/home.c): the marker, the setting and the opt-in log
@@ -567,7 +588,7 @@ LIBC = {
     # struct stat 144 bytes, st_mtime at +0x40; stock's own stat(), @0x741b20, is __xstat(3, ..)), the ring is moved in place
     'opendir': ('void *', 'const char *'), 'readdir': ('char *', 'void *'), 'closedir': ('int', 'void *'),
     '__xstat': ('int', 'int, const char *, void *'), 'memmove': ('void *', 'void *, const void *, unsigned'),
-    # Podcast network (patch/pcnet.c): the libcurl easy interface, already imported by demo (stock's curl_init)
+    # Network (patch/net.c): the libcurl easy interface, already imported by demo (stock's curl_init)
     'curl_global_init': ('int', 'long'), 'curl_easy_init': ('void *', 'void'), 'curl_easy_setopt': ('int', 'void *, int, ...'),
     'curl_easy_perform': ('int', 'void *'), 'curl_easy_getinfo': ('int', 'void *, int, ...'), 'curl_easy_cleanup': ('void', 'void *'),
     'pthread_detach': ('int', 'unsigned long'), 'sleep': ('unsigned', 'unsigned'),
@@ -619,7 +640,7 @@ DATA.update({
     'LOCK_ON':            (0xa05aa3, 'screensaver_mode'),   # byte: stock's lock screen switch ([SYSSET] SCREENSAVER; patch/lockscreen.c lk_enabled)
     'LOCK_TIMESHOW':      (0xa05aa2, 'screensaver_timeshow'),   # byte: stock's lock screen "show time" switch ([SYSSET] SSAVERTIMESHOW; patch/lockscreen.c lk_time)
     'LIGHT_MODE':         (0xa05a7c, 'backlighttime_mode'),   # int: stock's backlight time index, 0 never .. 4 five minutes ([SYSSET] LIGHTTIME; patch/display.c disp_light)
-    'LED_MODE':           (0xa05a75, 'atmosphereled_mode'),   # byte: stock's lamp mode, 0 off, 1 orange, 2 blue ([SYSSET] ATMOSPHERELEDMODE; patch/display.c disp_led)
+    'LED_MODE':           (0xa05a75, 'atmosphereled_mode'),   # byte: stock's lamp mode, 0 off, 1 green, 2 blue ([SYSSET] ATMOSPHERELEDMODE; patch/display.c disp_led)
     'LED_FOLLOW':         (0xa05a74, 'ledfollowscreen_flag'),   # byte: stock's Follow Screen switch ([SYSSET] LEDFOLLOWSCREEN; patch/display.c disp_follow)
     # Settings > System > Buttons & Power (patch/keyspower.c, docs/modules/keyspower.md): stock's own state words
     'KEY_LOCK_FLAG':      (0xa05aa0, 'keylock_flag'),   # byte: Button Lock on ([SYSSET] LOCKFLAG; the Control Center tile system_keylock writes it too)
@@ -638,6 +659,28 @@ DATA.update({
     'FOLDER_TITLE':       (0xa0533c, None),
     'FOLDER_M3U':         (0xa0483c, None),
     'FOLDER_COVER':       (0xa05a67, 'foldercover_flag'),   # byte: stock's Folder cover switch ([PLAYSET] FOLDERCOVER; patch/folders.c reads it, docs/modules/folders.md)
+    # Playback settings (patch/playset.c, docs/modules/playset.md): stock's own words behind the rows that have no mcl getter
+    'MEMORY_PLAY':        (0xa05ac4, 'memory_play'),   # int: Memory Playback, 0 off, 1 track, 2 location ([PLAYSET] MEMORYPLAY)
+    'DIGITAL_FLAG':       (0xa05ac1, 'digital_flag'),   # byte: Digital Output ([PLAYSET] DIGITALMODE)
+    'USBVOL_MODE':        (0xa05aac, 'usbvol_mode'),   # int: USB Audio Output, 0 fixed, 1 variable ([SYSSET] USBVOLMODE)
+    # the three loudness pages (docs/modules/playset.md "Loudness pages"): stock's own words, and the entries of stock's code bound to our widgets (no symbols; the entries, the bindings and every store and call are pinned, PLAYSET_PINS)
+    'MAX_VOLUME':         (0x97cb08, 'max_volume'),   # int: Max Volume, 0 .. 100 ([PLAYSET] MAXVOLUME)
+    'BOOT_VOLUME':        (0x97cb04, 'boot_volume'),   # int: Default Volume, 0 .. 100 ([PLAYSET] BOOTVOLUME)
+    'BOOT_VOLFLAG':       (0xa05ac8, 'boot_volflag'),   # byte: Volume Memory, 1 keeps the last volume at boot ([PLAYSET] BOOTVOLFLAG)
+    'BALANCE':            (0x97cafc, 'balance'),   # int: Channel Balance, 0 .. 20, centre 10 ([PLAYSET] BALANCE)
+    'HEADSET_OUTPUT':     (0xa05a10, 'headset_output'),   # int: the output selector (2 = Bluetooth), read by stock's handlers; the tests set it
+    'VOL_REFRESH':        (0x49efec, None),   # int (window): Max Volume page: label_vol and vol_slider from max_volume
+    'VOL_SLIDER':         (0x49f24c, None),   # int (window, event): its slider's EVT_VALUE_CHANGING handler
+    'VOL_DEC':            (0x49f16c, None),   # int (window): its btn_dec click handler
+    'VOL_ADD':            (0x49f0f4, None),   # int (window): its btn_add click handler
+    'BOOT_REFRESH':       (0x49d160, None),   # int (window, mode): Default Volume page: mode 1 label_vol and vol_slider from boot_volume (mode 2 shows the switch: not used)
+    'BOOT_SLIDER':        (0x49d418, None),
+    'BOOT_DEC':           (0x49d39c, None),
+    'BOOT_ADD':           (0x49d4c8, None),
+    'BAL_REFRESH':        (0x49cb8c, None),   # int (window): Channel Balance page: label_balance and slider_balance from balance
+    'BAL_SLIDER':         (0x49cd78, None),
+    'BAL_DEC':            (0x49ce4c, None),
+    'BAL_ADD':            (0x49ccd8, None),
 })
 
 
@@ -785,6 +828,14 @@ def check_libcstl_bytes(data):
     check(load['p_vaddr'] == load['p_offset'] == 0 and load['p_filesz'] > CSTL_POP + 24, 'libcstl: the first segment is not the text at its file offsets')
     check(struct.unpack_from('<8I', data, CSTL_SIZE) == CSTL_SIZE_WORDS, 'libcstl: deque_size words differ from the pin')
     check(struct.unpack_from('<6I', data, CSTL_POP) == CSTL_POP_WORDS, 'libcstl: deque_pop_back words differ from the pin')
+    check(syms.get('deque_swap') == CSTL_SWAP and sha(data[CSTL_SWAP:CSTL_SWAP + CSTL_SWAP_LEN]) == CSTL_SWAP_SHA, 'libcstl: deque_swap moved or differs from the pin (the deque_t layout ll_swap repeats)')
+
+
+def check_lcl_tables(image):
+    """loadLocalClassList's two jump tables are the pinned cases (LCL_TABLES): the proof of which classes end at the show list."""
+    for at, cases in LCL_TABLES:
+        got = tuple((w + GP) & 0xffffffff for w in struct.unpack_from(f'<{len(cases)}I', image, fileoff(image, at)))
+        check(got == cases, f'loadLocalClassList: the jump table at {at:#x} differs from the pin')
 
 
 def check_libcstl(demo_path):
@@ -821,6 +872,7 @@ def gen_stock_h(out, demo_path):
         h.append(f'#define {name} 0x{addr:x}u')
     h.append(f'#define GOT_DEQUE_SIZE 0x{slots["deque_size"]:x}u')   # demo's GOT slot of deque_size: the resolved address locates libcstl's deque_pop_back (patch/shuffle.c cstl_pop_back)
     h.append(f'#define STOCK_IMAGE_END 0x{image_end:x}u')   # the first address above demo's segments: a lazily bound slot holds a stub below it until the first call
+    h.append(f'#define CSTL_DEQUE_SIZE 0x{CSTL_DEQUE_SIZE:x}u'); h.append(f'#define CSTL_DEQUE_SELF_A 0x{CSTL_DEQUE_SELF[0]:x}u'); h.append(f'#define CSTL_DEQUE_SELF_B 0x{CSTL_DEQUE_SELF[1]:x}u')
     h.append(f'#define CSTL_SIZE_OFF 0x{CSTL_SIZE:x}u'); h.append(f'#define CSTL_POP_OFF 0x{CSTL_POP:x}u')
     h.append('#define CSTL_SIZE_WORDS {' + ','.join(f'0x{w:08x}u' for w in CSTL_SIZE_WORDS) + '}'); h.append('#define CSTL_POP_WORDS {' + ','.join(f'0x{w:08x}u' for w in CSTL_POP_WORDS) + '}')
     h.append('#define STOCK_DB_PATH ((const char *)0x745a34u)')   # "/mnt/data/database.db" (QUERY_PINS)
@@ -926,24 +978,8 @@ def gen_stock_h(out, demo_path):
     h.append(f'#define POD_ENTRY_ID {pod_pages.HOME_ENTRY}')
     h.append('#define POD_ENTRY_PAGE 0')
     h.append('#define POD_MENU_PAGE 0')
-    h.append(f'#define POD_SETTINGS_PAGE {pod_pages.SETTINGS_PAGE_INDEX}')
-    h.append(f'#define POD_EXTRAS_PAGE {pod_pages.EXTRAS_PAGE_INDEX}')
-    h.append(f'#define POD_MENUCFG_PAGE {pod_pages.MENUCFG_PAGE_INDEX}')
-    h.append(f'#define POD_EXTRASCFG_PAGE {pod_pages.EXTRASCFG_PAGE_INDEX}')
-    h.append(f'#define POD_DEVELOPER_PAGE {pod_pages.DEVELOPER_PAGE_INDEX}')
-    h.append(f'#define POD_CACHE_PAGE {pod_pages.CACHE_PAGE_INDEX}')
-    h.append(f'#define POD_DISPLAY_PAGE {pod_pages.DISPLAY_PAGE_INDEX}')
-    h.append(f'#define POD_KEYSPOWER_PAGE {pod_pages.KEYSPOWER_PAGE_INDEX}')
-    h.append(f'#define POD_FILES_PAGE {pod_pages.FILES_PAGE_INDEX}')
-    h.append(f'#define POD_PULLDOWN_PAGE {pod_pages.PULLDOWN_PAGE_INDEX}')
-    h.append(f'#define POD_PEQ_PAGE {pod_pages.PEQ_PAGE_INDEX}')
-    h.append(f'#define POD_LOCK_PAGE {pod_pages.LOCK_PAGE_INDEX}')
-    h.append(f'#define POD_PEQP_PAGE {pod_pages.PEQP_PAGE_INDEX}')
-    h.append(f'#define POD_PEQLIB_PAGE {pod_pages.PEQLIB_PAGE_INDEX}')
-    h.append(f'#define POD_TENBAND_PAGE {pod_pages.TENBAND_PAGE_INDEX}')
-    h.append(f'#define POD_TENCURVE_PAGE {pod_pages.TENCURVE_PAGE_INDEX}')
-    h.append(f'#define POD_TENPREAMP_PAGE {pod_pages.TENPREAMP_PAGE_INDEX}')
-    h.append(f'#define POD_PEQBAND_PAGE {pod_pages.PEQBAND_PAGE_INDEX}')
+    for macro in ('SETTINGS', 'EXTRAS', 'MENUCFG', 'EXTRASCFG', 'DEVELOPER', 'CACHE', 'DISPLAY', 'KEYSPOWER', 'LIBRARY', 'LB', 'LF', 'SCROBBLING', 'PLAYSET', 'PSMAXVOL', 'PSBOOTVOL', 'PSBAL', 'FILES', 'PULLDOWN', 'PEQ', 'LOCK', 'PEQP', 'PEQLIB', 'TENBAND', 'TENCURVE', 'TENPREAMP', 'PEQBAND'):   # the pages patch/m1plus.c opens by number: POD_<macro>_PAGE is pod_pages.<macro>_PAGE_INDEX, a place in pod_pages.PAGE_ORDER
+        h.append(f'#define POD_{macro}_PAGE {getattr(pod_pages, macro + "_PAGE_INDEX")}')
     (out / 'pages.h').write_text('\n'.join(h) + '\n')
     return slots
 
@@ -982,7 +1018,7 @@ def gen_asm(out, slots):
     asm += ['.globl stock_backtoplayer_trampoline', 'stock_backtoplayer_trampoline:',
             f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{BACKTOPLAYER + 12:x}', 'nop']
     # and for the two Library query functions
-    for nm, at in (('dbquery', QUERY_DB), ('sorted_query', QUERY_SORT), ('setmode', SETMODE), ('loadplaylist', LOADPL), ('file_created', FILETIME)):
+    for nm, at in (('dbquery', QUERY_DB), ('sorted_query', QUERY_SORT), ('setmode', SETMODE), ('loadplaylist', LOADPL), ('file_created', FILETIME), ('loadclass', LCL)):
         asm += [f'.globl stock_{nm}_trampoline', f'stock_{nm}_trampoline:',
                 f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{at + 12:x}', 'nop']
     # and for Light Mode's style_get_color and image_manager_add (style_get_gradient is a leaf the hook reimplements: no trampoline)
@@ -1046,7 +1082,7 @@ def compile_payload(out, demo_path, tag=TAG):
             '--undefined=m1plus_playmore_init', '--undefined=stock_playmore_init_trampoline', '--undefined=m1plus_pulldown_init', '--undefined=pd_open_settings', '--undefined=stock_pulldown_init_trampoline', '--undefined=rd_start_player', '--undefined=rd_step', '--undefined=stock_start_player_trampoline', '--undefined=rd_save_stop', '--undefined=rd_save_start', '--undefined=stock_save_stop_trampoline', '--undefined=stock_save_start_trampoline', '--undefined=rn_backtoplayer', '--undefined=stock_backtoplayer_trampoline', '--undefined=pc_id3_path', '--undefined=pc_library_query', '--undefined=pc_sorted_query', '--undefined=stock_dbquery_trampoline', '--undefined=stock_sorted_query_trampoline',
             '--undefined=sba_parse_tracks', '--undefined=sba_parse_albums', '--undefined=sba_parse_artists', '--undefined=sba_parse_playlists', '--undefined=sba_parse_ping',   # (sbparse.c until sbapi.c calls them)
             '--undefined=m1plus_style_color', '--undefined=m1plus_style_gradient', '--undefined=m1plus_image_add', '--undefined=stock_style_color_trampoline', '--undefined=stock_image_add_trampoline', '--undefined=pal_map', '--undefined=pal_active', '--undefined=pal_background', '--undefined=pal_accent', '--undefined=pal_accent_saved', '--undefined=pal_accent_set', '--undefined=pal_accent_color', '--undefined=pal_fill',
-            '--undefined=bc_timed_open', '--undefined=m1_scan_dir', '--undefined=sh_set_mode', '--undefined=sbs_play_record', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=pod_na_site', '--undefined=na_next_key', '--undefined=na_set_cur', '--undefined=na_cur', '--undefined=na_active', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=tidal_kb_focus', '--undefined=pod_eq_site', '--undefined=pod_lock_site', '--undefined=pf_items', '--undefined=pf_seen', '--undefined=so_play_src', '--undefined=lib_navidrome', '--undefined=sba_songs_window', '--undefined=sbs_playing', '--undefined=sbs_track']   # (pf_items, pf_seen: accessors of the parser the tests read; so_play_src, albums_open_src: the library seam, no caller yet)
+            '--undefined=bc_timed_open', '--undefined=m1_scan_dir', '--undefined=sh_set_mode', '--undefined=sbs_play_record', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=pod_na_site', '--undefined=na_next_key', '--undefined=na_set_cur', '--undefined=na_cur', '--undefined=na_active', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=ll_load', '--undefined=ll_assign', '--undefined=stock_loadclass_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=tidal_kb_focus', '--undefined=pod_eq_site', '--undefined=pod_lock_site', '--undefined=pf_items', '--undefined=pf_seen', '--undefined=so_play_src', '--undefined=lib_navidrome', '--undefined=sba_songs_window', '--undefined=sbs_playing', '--undefined=sbs_track']   # (pf_items, pf_seen: accessors of the parser the tests read; so_play_src, albums_open_src: the library seam, no caller yet)
     keep += ['--undefined=' + n for n in ND_KEEP]   # (the Navidrome data layer has no caller until the pages land: patch/sbapi.h; the tests call these)
     run(LD, '-m', 'elf32ltsmip', '--gc-sections', '-T', os.path.join(PATCH, 'link.ld'),
         '-e', 'm1plus_home_click', '--undefined=m1plus_home_click', '--undefined=stock_home_click_trampoline',
@@ -1210,7 +1246,7 @@ def patch_demo(raw, payload, ps, demo_path):
     patch_pulldown(patched, ps, len(payload))
     check_pins(patched, RADIO_PINS)
     patch_radio(patched, ps, len(payload))
-    check_pins(patched, LOCKROW_PINS + KEYSPOWER_PINS + PLAYLIST_PINS + SONGS_PINS + IPOD_PINS + PODCAST_PINS + SETTINGS_PINS + TIDALKB_PINS + PINYIN_PINS + JPEG_PINS + COVER_PINS + TAPE_PINS + LYRICS_PINS + SCAN_PINS + QUERY_PINS + FONT_PINS + TEXTGAMMA_PINS + BATTERY_PINS + PLAYREC_PINS + LINEOUT_PINS + SHUFFLE_PINS + NEXTALBUM_PINS + FILETIME_PINS + PICKER_PINS + FOLDER_PINS + UPDATE_PINS + TFUPDATE_PINS + LIGHT_PINS + EQ_PINS)   # stock code the Playlists and Songs pages call: checked, not written
+    check_pins(patched, LOCKROW_PINS + KEYSPOWER_PINS + PLAYSET_PINS + PLAYLIST_PINS + SONGS_PINS + IPOD_PINS + PODCAST_PINS + SETTINGS_PINS + TIDALKB_PINS + PINYIN_PINS + JPEG_PINS + COVER_PINS + TAPE_PINS + LYRICS_PINS + SCAN_PINS + QUERY_PINS + FONT_PINS + TEXTGAMMA_PINS + BATTERY_PINS + PLAYREC_PINS + LINEOUT_PINS + SHUFFLE_PINS + NEXTALBUM_PINS + FILETIME_PINS + LCL_PINS + PICKER_PINS + FOLDER_PINS + UPDATE_PINS + TFUPDATE_PINS + LIGHT_PINS + EQ_PINS)   # stock code the Playlists and Songs pages call: checked, not written
     for at, text in ((0x74bad8, ALBUM_SQL.replace('songtable', '%s')), (0x74ba4c, 'songtable')):   # the strings getAllAlbum fills: the payload's STOCK_ALBUM_SQL is their sprintf
         want = text.encode() + b'\0'
         check(bytes(patched[fileoff(patched, at):fileoff(patched, at) + len(want)]) == want, f'{at:#x}: not the string "{text}" the album cover map reproduces')
@@ -1234,9 +1270,12 @@ def patch_demo(raw, payload, ps, demo_path):
     for a, _ in LINEOUT_SITES: struct.pack_into('<I', patched, fileoff(patched, a), jal(ps['lo_set_text'], a))   # (the pins checked each site's lw t9 GOT widget_set_text_utf8, a1, the jalr and the delay slot)
     check(BASE <= target8 < BASE + len(payload), 'battery hook symbol outside payload')
     struct.pack_into('<I', patched, fileoff(patched, BATTERY_SITE), jal(target8, BATTERY_SITE))   # (the pins above checked the site's word, its delay slot and its neighbours)
-    for nm, at, pro in (('sh_set_mode', SETMODE, SETMODE_PROLOGUE), ('sh_load_playlist', LOADPL, LOADPL_PROLOGUE), ('ft_created', FILETIME, FILETIME_PROLOGUE)):   # Apple-style Shuffle (patch/shuffle.c)
+    for nm, at, pro in (('sh_set_mode', SETMODE, SETMODE_PROLOGUE), ('sh_load_playlist', LOADPL, LOADPL_PROLOGUE), ('ft_created', FILETIME, FILETIME_PROLOGUE), ('ll_load', LCL, LCL_PROLOGUE)):   # Apple-style Shuffle (patch/shuffle.c); song dates; the library list hand-over (patch/libload.c)
         check(BASE <= ps[nm] < BASE + len(payload), f'{nm} outside payload')
         hook(patched, at, pro, ps[nm], nm)
+    check_lcl_tables(patched)
+    check(BASE <= ps['ll_assign'] < BASE + len(payload), 'll_assign outside payload')
+    struct.pack_into('<I', patched, fileoff(patched, LCL_ASSIGN_SITE), jal(ps['ll_assign'], LCL_ASSIGN_SITE))   # (LCL_PINS checked the site's word, its delay slot and the whole tail)
     check(BASE <= ps['sh_display_mode'] < BASE + len(payload), 'sh_display_mode outside payload')
     check(BASE <= ps['sh_clear_queue'] < BASE + len(payload), 'sh_clear_queue outside payload')
     struct.pack_into('<I', patched, fileoff(patched, CLEAR_SITE), jal(ps['sh_clear_queue'], CLEAR_SITE))   # the delay slot (a0 = *queue) stays stock's
@@ -1267,7 +1306,7 @@ def patch_demo(raw, payload, ps, demo_path):
     check(dynsym(demo_path).get('playsong_id3info') == 0xa0d88c, 'playsong_id3info moved')
     edits = patch_rows(patched, ps)
     # no row edit may touch a PIC prologue (the hooks are the only ones) or a hook site
-    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, PLAYMORE_INIT, PULLDOWN_INIT, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, timezones.SELECT)) and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8
+    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, PLAYMORE_INIT, PULLDOWN_INIT, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, LCL, timezones.SELECT)) and int(a, 16) != LCL_ASSIGN_SITE and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) != WIFIHUB_SITE and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8
               for a, *_ in edits), 'row edit on a hook')
     check(all(not (SCROLL_SLOT <= int(a, 16) < SCROLL_SLOT + 4 or a in {hex(p[0]) for p in SCROLL_PINS}) for a, *_ in edits),
           'row edit on a list gesture word')
@@ -1323,6 +1362,7 @@ def main():
         'hook_style_color': {'addr': STYLE_COLOR, 'target': ps['m1plus_style_color']}, 'hook_style_gradient': {'addr': STYLE_GRADIENT, 'target': ps['m1plus_style_gradient']},
         'hook_image_add': {'addr': IMAGE_ADD, 'target': ps['m1plus_image_add']},
         'hook_setmode': {'addr': SETMODE, 'target': ps['sh_set_mode']}, 'hook_loadplaylist': {'addr': LOADPL, 'target': ps['sh_load_playlist']}, 'hook_file_created': {'addr': FILETIME, 'target': ps['ft_created']},
+        'hook_loadclass': {'addr': LCL, 'target': ps['ll_load']}, 'hook_loadclass_assign': {'addr': LCL_ASSIGN_SITE, 'target': ps['ll_assign']},
         'hook_clear_queue': {'addr': CLEAR_SITE, 'target': ps['sh_clear_queue']}, 'hook_eq_row': {'addr': EQ_ROW, 'target': ps['pod_eq_site']}, 'hook_next_album': {'addr': NEXTALBUM_SITE, 'target': ps['pod_na_site']}, 'hook_lock_row': {'addr': LOCKROW, 'target': ps['pod_lock_site']},
         'hook_display_mode': {'sites': [hex(a) for a, _ in MODE_SITES], 'target': ps['sh_display_mode']},
         'scroll_slot': {'addr': SCROLL_SLOT, 'target': ps['m1plus_scroll_event']}, 'scroll_edit': scroll,

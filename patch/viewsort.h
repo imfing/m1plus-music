@@ -10,7 +10,7 @@
 
 typedef struct {
     void *scrim, *card, *hair, *item[10], *label[10], *tick[6], *glyph[6],
-        *sub[4]; /* (glyph[0..5] = slots 4..9; the action rows (6..9) have no tick; slots 8 and 9 only exist in the Playlists asset: NULL elsewhere) */
+        *sub[4]; /* (glyph[0..5] = slots 4..9; the action rows (6..9) have no tick; slot 8 only exists in the Playlists and Songs assets, slot 9 in the Playlists asset: NULL elsewhere) */
     int on;
     int sort, rev; /* what vs_menu last showed: the ticked sort row and its direction */
     unsigned

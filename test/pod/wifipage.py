@@ -700,6 +700,35 @@ def page(supp=None, wifi=True, bt=False, copy=True, tick=True, language=None, co
     return m
 
 
+class Fit(PM):
+    """The widgets' text and its measure (13 px a character) for az_fit_room and the info page's name lines; `char_w` is the width of a character
+    (a window whose styles are not resolved yet measures in the default style's smaller font)."""
+    char_w = 13.0
+
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address, '')
+        if name not in ('widget_get_text', 'widget_measure_text'): return super()._hook(u, address, size, _)
+        a0, a1 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1))
+        if name == 'widget_measure_text':
+            u.reg_write(UC_MIPS_REG_F0, struct.unpack('<I', struct.pack('<f', self.char_w * len(self.words_until_zero(a1))))[0])
+        else:
+            t = next((c[2] for c in reversed(self.hist + self.calls) if c[0] == 'widget_set_text_utf8' and c[1] == a0), '').encode('latin-1').decode('utf-8')
+            ret = self.alloc(4 * len(t) + 4); self.u.mem_write(ret, struct.pack(f'<{len(t) + 1}I', *map(ord, t), 0))
+            u.reg_write(UC_MIPS_REG_V0, ret)
+        u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+
+
+def fit_page(supp):
+    """A page whose texts are measured (Fit), with the asset's widths on the labels the payload fits a name to: the rows' names, the navbar's title, the info page's name lines."""
+    global PM
+    real, PM = PM, Fit
+    try: m = page(supp)
+    finally: PM = real
+    info = {w.name: w.w for w in awtk_ui.parse(open(os.path.join(WORK, UI_INFO), 'rb').read()).walk() if w.name in ('label_title', 'wi_name0', 'wi_name1')}
+    for n, w in [(f'wf_name{i}', pod_ui.WF_NAME_W) for i in range(WP_ROWS)] + list(info.items()): m.setword(m.widgets[n] + O['W_W'], w)
+    return m
+
+
 def opened(m):
     r = m.call(PSYMS['wifipage_open'], count=30000000)
     return struct.unpack('<i', struct.pack('<I', r))[0]
@@ -784,8 +813,25 @@ def layout_tests(ctx):
            and (m.widgets['wf_hdr_my'], 'sensitive') not in m.props and (m.widgets['wf_hdr_net'], 'sensitive') not in m.props, 'hidden rows are insensitive, shown rows sensitive, the headers never touch targets')
     expect(m.visible('wf_hdr_net_spin') and m.image('wf_hdr_net_spin').startswith('wf_spin') and m.props.get((m.widgets['wf_hdr_net_spin'], 'x')) == 24 + 2 + 76 + 8, 'a scan is under way: the header\'s spinner, after the text')
     expect(m.text(f'wf_name{got[1][6]}') == 'Sam’s iPhone'.encode().decode('latin-1'), 'the apostrophe is the UTF-8 character the supplicant printed as \\xe2\\x80\\x99')
+    # a name wider than the label's text room (its 156 px less the hscroll_label's 2 px margins) is cut with an ellipsis, so the label never scrolls it
+    names = [b'ElevenChars', b'TwelveChars!', b'A very long network name of 32 b', '咖啡店的无线网络名字很长很长'.encode()]
+    m = fit_page(Supp(scan=[(-40 - i, '[WPA2-PSK-CCMP][ESS]', n) for i, n in enumerate(names)], known=[]))
+    opened(m)
+    shown = [g[0].encode('latin-1').decode('utf-8') for g in m.rows()]
+    expect(shown == ['ElevenChars', 'TwelveChar…', 'A very lon…', '咖啡店的无线网络名字…'], f'11 characters (143 px) stay whole, 12 (156 px, the box but not its 152 px of text room) and longer names end in an ellipsis: {shown}')
+    # the page opens before stock resolves the styles (EVT_WINDOW_WILL_OPEN, from an idle): the names of the supplicant's table are measured in the default style
+    # (18 px for the row's 21: 11 px a character here) and cut again in the row's style when the window is about to open, with no change in the list
+    m = fit_page(Supp(scan=[(-40 - i, '[WPA2-PSK-CCMP][ESS]', n) for i, n in enumerate(names)], known=[]))
+    m.char_w = 11.0
+    opened(m)
+    early = [g[0].encode('latin-1').decode('utf-8') for g in m.rows()]
+    m.char_w = 13.0
+    m.fire(O['EVT_WINDOW_WILL_OPEN'])
+    shown = [g[0].encode('latin-1').decode('utf-8') for g in m.rows()]
+    expect(early[1] == 'TwelveChars!' and shown == ['ElevenChars', 'TwelveChar…', 'A very lon…', '咖啡店的无线网络名字…'],
+           f'names cut too long in the default style at open are cut to the row\'s style when the window is about to open: {early} -> {shown}')
     # every row is bound
-    bound = {n: m.bound.get((m.widgets[n], O['EVT_CLICK'])) for n in ('wf_row_sw', 'wf_row_other', 'wf_row0', 'wf_row1', f'wf_row{WP_ROWS - 1}', 'btn_return', 'btn_backtoplayer')}
+    bound ={n: m.bound.get((m.widgets[n], O['EVT_CLICK'])) for n in ('wf_row_sw', 'wf_row_other', 'wf_row0', 'wf_row1', f'wf_row{WP_ROWS - 1}', 'btn_return', 'btn_backtoplayer')}
     expect(all(bound.values()) and bound[f'wf_row{WP_ROWS - 1}'][1] == WP_ROWS and bound['wf_row0'][1] == 1 and bound['wf_row_sw'][0] != bound['wf_row_other'][0], 'the rows, Back and Now Playing take a tap')
     # the connected network sits in the switch row's card
     supp = Supp(scan=SCAN, known=KNOWN); supp.state, supp.cur, supp.ip = 'COMPLETED', 0, '192.168.1.20'
@@ -1502,6 +1548,24 @@ def info_tests(ctx):
     m = page(); opened(m)
     open_info(m, 'Sam’s iPhone')
     expect(m.text('label_title') == 'Sam’s iPhone'.encode().decode('latin-1') and card(m)[0][0] == 'field' and card(m)[-1][0] == 'join', 'a name with an apostrophe: the title is the UTF-8 name')
+    # a title that cannot hold the name (202 px: 15 characters of 13 px) is cut, and the whole name is above the cards in one line (300 px: 23 characters) or two
+    def named(name, shown):
+        m = fit_page(Supp(scan=[(-40, '[ESS]', name)], known=[])); opened(m)
+        open_info(m, shown)
+        # the stock layouter stacks the shown children by their heights: every shown row is where the heights above it put it
+        kids = [n for n in ('wi_nm0', 'wi_nm1', 'wi_row_forget', 'wi_gap0', 'wi_f0', 'wi_f1', 'wi_f2', 'wi_f3', 'wi_gap1', 'wi_row_auto', 'wi_gap2', 'wi_row_join') if m.visible(n)]
+        hs = [m.props.get((m.widgets[n], 'h'), 20 if 'gap' in n or 'nm' in n else 52) for n in kids]
+        expect([m.y(n) for n in kids] == [10 + sum(hs[:k]) for k in range(len(kids))], f'{name}: the rows are stacked by their heights (a stock relayout moves nothing): {[(n, m.y(n)) for n in kids]} {hs}')
+        return m, [m.text(f'wi_name{i}') for i in range(2) if m.visible(f'wi_nm{i}')], [m.y(f'wi_nm{i}') for i in range(2) if m.visible(f'wi_nm{i}')], [r[1] for r in card(m)]
+    m, lines, ys, rows = named(b'FifteenChars!!!', 'FifteenCha…')
+    expect(m.text('label_title') == 'FifteenChars!!!' and lines == [] and rows == [10, 82], f'a name the title holds: no name line, the cards where they were: {m.text("label_title")} {lines} {rows}')
+    m, lines, ys, rows = named(b'TwentyCharactersLong', 'TwentyChar…')
+    expect(m.text('label_title').encode('latin-1').decode() == 'TwentyCharacte…' and lines == ['TwentyCharactersLong'] and ys == [10] and rows == [38, 110], f'a cut title: the whole name in one line, the cards 28 px lower: {lines} {ys} {rows}')
+    m, lines, ys, rows = named(b'A very long network name of 32 b', 'A very lon…')
+    expect(lines == ['A very long network', 'name of 32 b'] and ys == [10, 30] and rows == [58, 130], f'a name longer than a line: two lines, broken at a space: {lines} {ys} {rows}')
+    expect(m.props[(m.widgets['wifiinfo_scrollview'], 'virtual_h')] == 130 + 52 + 10, 'and the list is as long as its rows')
+    m, lines, ys, rows = named(b'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123', 'ABCDEFGHIJ…')
+    expect(lines == ['ABCDEFGHIJKLMNOPQRSTUVW', 'XYZ0123'] and ys == [10, 30], f'no space: broken after the last character that fits: {lines}')
 
     # the connected network: the address and the router
     supp = Supp(scan=SCAN, known=KNOWN); supp.state, supp.cur, supp.ip = 'COMPLETED', 0, '192.168.1.20'

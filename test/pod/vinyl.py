@@ -1007,6 +1007,11 @@ def life_tests(ctx):
     expect(('timer_modify', 0x777, 1000) in m2.calls and not m2.rects and not any(c[0] in ('get_playtimeandlength', 'mclGetPlayStatus', 'widget_set_text_utf8') for c in m2.calls), 'screen off: 1 s, nothing read, drawn or set')
     m2.tick(1000)
     expect('timer_modify' not in m2.names() and not m2.rects, 'dark: the interval is not set again')
+    # scrobbling (patch/scrobble.c): the page's tick notes the listen, lit or dark, as the Cassette page's does (Now Playing's timer is off under this window)
+    m3 = opened(); m3.fs['/mnt/data/m1plus/scrobbling'] = b'1\n'
+    m3.screen(False); m3.calls = []; m3.tick(1000)
+    expect(('open', '/mnt/data/m1plus/scrobbling', 0) in m3.calls and not m3.rects,
+           'screen off: the tick still polls scrobbling (its first poll reads the setting; the page itself asks for the position either way) and draws nothing')
     m2.screen(True); m2.tick(1000)
     expect(('timer_modify', 0x777, O['VN_PLAY_MS']) in m2.calls and m2.rects, 'lit again: the interval returns and the tick draws')
     m2.calls = []; m2.fire(EVT_BG, WIN)

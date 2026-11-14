@@ -15,6 +15,7 @@
 #include "podcasts.h"
 #include "fnv.h"
 #include "utf8.h"
+#include "scrobble.h"
 
 _Static_assert(sizeof(pc_ep_t) == PC_EP_SIZE, "pc_ep_t");
 _Static_assert(sizeof(pc_show_t) == PC_SHOW_SIZE, "pc_show_t");
@@ -1321,7 +1322,13 @@ __attribute__((noinline)) char *pc_id3_path(char *info, const char *path) {
     while (n < 0x3ff && path[n])
         info[n] = path[n], ++n; /* stock: strcpy(info, path); the field is 0x400 bytes (the CUE start follows it) */
     info[n] = 0;
-    if (!pc_is_path(path) || home_off()) return info;
+    if (!pc_is_path(path)) {
+        scrobble_started(
+            info,
+            path); /* music: a track starts (patch/scrobble.c; RAM and time_now_ms only, the player is not asked) */
+        return info;
+    }
+    if (home_off()) return info;
     p = path + sizeof PM_ROOT "/podcasts/" - 1;
     for (n = 0; p[n] != '/'; ++n) {
     }

@@ -1,7 +1,7 @@
 # Buttons & Power
 
 Settings > System > Buttons & Power is one own cards page (`m1plus_keyspower`, `KEYSPOWER_PAGE`, `patch/keyspower.c`) that replaces four stock controls the way
-[Display](settings.md#display) replaced stock's Display list: our own rows, stock's own state words and config saves, no row opening a stock
+[Display](display.md) replaced stock's Display list: our own rows, stock's own state words and config saves, no row opening a stock
 page, nothing of ours saved. Sections 1 to 3 are the static analysis of V2.1 `demo` and what our setters do (all addresses are `demo`
 virtual addresses; disassembly by `tools/disasm.py`, cache `work/cache/demo.dis`). Not run on a device; the emulator tests run stock's
 own handlers (`test/pod/keyspower.py`).
@@ -166,7 +166,7 @@ Never both on holds after every operation from every state stock can be in.
 ## The page
 
 Settings > System, the row after Display (`Row('Buttons & Power', ACT_PAGE, KEYSPOWER_PAGE_INDEX)`, glyph `power`). `m1plus_keyspower`
-(page index 73), three cards:
+(`KEYSPOWER_PAGE`), three cards:
 
 | Card | Row | Kind | Action |
 |---|---|---|---|

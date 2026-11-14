@@ -69,8 +69,11 @@ def unpack(raw):
 class DM(PCN.NM):
     """The card machine plus stock's library scan (scanSpecFolder), which the worker calls after a DSD file."""
     scans = ()
+    on_step = None   # sweep_tests: called with the name before each card call of STEP_CALLS (a place where the UI thread may run between two steps of the worker)
+    STEP_CALLS = frozenset(('open', 'write', 'rename', 'unlink', 'statfs', 'fsync', 'scanSpecFolder'))
 
     def _hook(self, u, address, size, _):
+        if self.on_step and self.handlers.get(address, '') in self.STEP_CALLS: self.on_step(self.handlers[address])
         if self.handlers.get(address, '') == 'scanSpecFolder':
             a0, a1 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1))
             self.scans = (*self.scans, (self.read_cstr(a0), a1))
@@ -320,6 +323,8 @@ def transfer_tests(ctx):
     expect('secret' not in o[10002], 'the password is not in the URL')
     expect(not o.get(10007), 'no Range on a fresh download')
     expect(o.get(19) == 512 and o.get(20) == 45 and o.get(10065) == PCN.CA and o.get(64, 1) == 1 and o.get(81, 2) == 2, 'sbnet\'s stall limit (512 B/s for 45 s), CA bundle and verification are on')
+    expect(64 not in o and 81 not in o and o[99] == 1 and o[52] == 1 and o[68] == 5 and o[181] == 3 and o[182] == 3 and o[45] == 1 and o[78] == 12 and o[10018].startswith('M1PlusMusic/') and o.get(10102) is None,
+           'the request is made by the shared layer (patch/net.c): verification left at libcurl\'s defaults, no signals, 5 hops to http(s), an HTTP error fails, the app\'s user agent, no Accept-Encoding')
     expect(m.fs.get(final) == DATA and f'{final}.part' not in m.fs, 'the file is complete under its name (<artist>/<album>/<nn> <title>.<suffix>) and the .part file is gone')
     expect(final == ALBUM_DIR + '/03 Song One.flac' and [c[1] for c in calls if c[0] == 'mkdir' and c[1].startswith(MUSIC)] == [MUSIC, MUSIC + '/An Artist', ALBUM_DIR],
            f'the artist and album folders are made for it ({final})')
@@ -805,6 +810,151 @@ def order_tests(ctx):
     expect(state(m, 'tr-2')[0] == DL['DONE'] and not fn(m, 'sba_dl_busy') and QUEUE not in m.fs, 'which fetches it and ends')
 
 
+def sweep_runner():
+    """The page's actions at every step of the download worker (as pcdl/sweep_tests does for the episode queue). Two tracks are asked for; the first transfer of tr-1 breaks in the middle
+    (the worker stops there and the queue waits), then the page resumes, as it does when the network is back. A run's steps are the worker's card calls of DM.STEP_CALLS
+    and the transfer-info calls of its transfers (the message box's spin lock is inline and held over no call, so every such place is outside it); sweep_tests runs it for every step with each
+    action there, sweep_pair_tests for pairs of steps with one action at each. An action is the UI thread's whole call (sba_dl_add, _cancel, _cancel_all, _resume, _delete of tr-1); while the worker holds
+    the file lock (sbd.mf) a Delete is left out, since the UI thread would wait there for the lock (the later steps are that case). Nothing is said about how a run goes: only what must hold
+    when the worker has stopped for the fault (the card's queue is the memory's) and when it has ended after the resume. Returns run(plan)
+    -> (the steps' kinds, the actions done, why the end is wrong or None); plan is {step: the actions there}."""
+    T = {'tr-1': track(), 'tr-2': track('tr-2', 'Song Two')}
+    F = {i: f'{MUSIC}/{name_of(t)}' for i, t in T.items()}
+    CH, MF, HEAD = 524288, PSYMS['sbd'] + 24, PSYMS['sbd'] + 8   # (patch/sbdl.c sbd: job {lock, busy, head, tail}, all {next, op}, mf)
+
+    def on_card(m):
+        """The tracks dlq.idx holds: the last line of a track counts (a row, or a cancel's "-=<id>")."""
+        ids = {}
+        for line in m.fs.get(QUEUE, b'').decode().split('\n'):
+            if line.startswith('i='): ids[line.split('\t')[0][2:]] = True
+            elif line.startswith('-='): ids[line[2:]] = False
+        return sorted(i for i, v in ids.items() if v)
+
+    def run(plan):
+        m = machine(); good = server(m, chunk=CH)
+        st = dict(busy=True, kinds=[], done=[], broke=False, ret=0, last={i: 'add' for i in T}, was_done=False, after={i: [0, 0] for i in T})   # after: the requests started and the transfer-info calls made for a track since the last action on it
+
+        def act(name):
+            if name == 'delete' and m.word(MF): return
+            if name == 'cancel': cancel_in(m, 'tr-1')
+            elif name == 'all': m.nested(PSYMS['sba_dl_cancel_all'])
+            elif name == 'resume': m.nested(PSYMS['sba_dl_resume'])
+            elif name == 'add': st['ret'] = st['ret'] or add_in(m, T['tr-1'])
+            else:
+                st['was_done'] = state(m, inside=True)[0] == DL['DONE']
+                m.nested(PSYMS['sba_dl_delete'], m.cstr('tr-1'))
+            if name != 'resume':
+                for i in (T if name == 'all' else ('tr-1',)): st['last'][i], st['after'][i] = 'cancel' if name == 'all' else name, [0, 0]
+            st['done'].append(name)
+
+        def tick(kind):
+            if st['busy']: return   # (a step of the action itself, or of the test's own calls)
+            i = len(st['kinds']); st['kinds'].append(kind + ('+mf' if m.word(MF) else ''))
+            st['busy'] = True
+            for name in plan.get(i, ()): act(name)
+            st['busy'] = False
+
+        def site(url, o):
+            tid = url.split('id=')[1].split('&')[0]
+
+            def xfer(*a):   # (the step first: a cancel made at this call is taken by it, so the call counts after the cancel; the counters are looked up each time, an action replaces them)
+                tick('xfer')
+                st['after'][tid][1] += 1
+            st['after'][tid][0] += 1
+            out = dict(good(url, o), xfer=xfer)
+            if 'id=tr-1' in url and not st['broke']:
+                st['broke'] = True
+                out.update(rc=28, partial=True, body=out['body'][:2 * CH])
+            return out
+        m.curl_site = site
+        m.on_step = tick
+        r, th = add(m, T['tr-1']); add(m, T['tr-2'])
+        why = None
+
+        def drive(th):
+            while th:
+                st['busy'] = False
+                m.thread = None
+                work(m, th)
+                st['busy'] = True
+                th = m.thread
+        drive(th)
+        # the worker has stopped (at the fault, or with nothing left): what waits on the card is what waits in memory, and a restart would find the same
+        mem = sorted(i for i in T if state(m, i)[0] in (DL['WAIT'], DL['FAILED']))
+        if m.word(HEAD) or fn(m, 'sba_dl_busy') or m.word(MF): why = 'at the stop: a message, a worker or the file lock is left'
+        elif on_card(m) != mem or fn(m, 'sba_dl_pending') != len(mem): why = f'at the stop: the card\'s queue {on_card(m)} is not the memory\'s {mem} ({fn(m, "sba_dl_pending")} pending)'
+        elif not plan and sorted(t['id'] for t in waiting(reboot(m))) != mem: why = f'at the stop: a restart would queue {[t["id"] for t in waiting(reboot(m))]}, not {mem}'   # (the plain run only: on_card reads the file as the loader does, persist_tests)
+        left = [i for i in mem if st['last'][i] != 'add']
+        if not why and left: why = f'at the stop: {left} still wait after a cancel'
+        for _ in range(3):   # the network is back: the page resumes (a second time when an action left a track stopped behind the first resume)
+            n, th = resume(m)
+            if not th: break
+            drive(th)
+        m.on_step = None
+        idx = m.fs.get(IDX, b'').decode()
+        for i in T:
+            if why: break
+            file, part, s, last = m.fs.get(F[i]), m.fs.get(F[i] + '.part'), state(m, i)[0], st['last'][i]
+            if s not in (DL['NONE'], DL['DONE']): why = f'{i} is left in the queue (state {s})'
+            elif file is not None and file != DATA: why = f'the file of {i} is not the track ({len(file)} bytes)'
+            elif part is not None and (file is not None or not DATA.startswith(part)): why = f'the .part of {i} is not a start of the track, or is beside the file ({len(part)} bytes)'
+            elif (file is not None) != (f'i={i}\t' in idx) or (file is not None) != (s == DL['DONE']): why = f'{i}: file {file is not None}, manifest row {f"i={i}" in idx}, state {s}'
+            elif last == 'add' and file is None: why = f'{i} was asked for last and is not downloaded'
+            elif last == 'delete' and st['was_done'] and file is not None: why = f'{i} was deleted when it was downloaded and is on the card'
+            elif last != 'add' and st['after'][i][1] and file is not None: why = f'{i} is downloaded though a transfer-info call of its transfer came after its cancel'
+            elif last != 'add' and (st['after'][i][0] > 1 or st['after'][i][1] > 1):   # (the one call is the one that takes the cancel and stops the transfer, the one request that of a track taken up
+                why = f'{i} went on after its cancel ({st["after"][i][0]} requests, {st["after"][i][1]} transfer-info calls)'   # before the cancel, stopped at its first call with no byte; a file whose last call was before the cancel is done)
+        if why: pass
+        elif m.word(HEAD) or fn(m, 'sba_dl_busy') or m.word(MF): why = 'a message, a worker or the file lock is left'
+        elif QUEUE in m.fs or fn(m, 'sba_dl_pending'): why = f'the queue is not empty ({on_card(m)}, {fn(m, "sba_dl_pending")} pending)'
+        elif st['ret']: why = f'an add failed ({st["ret"]})'
+        elif failure(m)[0] not in (0, SBA['NET']): why = 'a failure other than the broken transfer\'s is kept'
+        return st['kinds'], st['done'], why
+    return run
+
+
+SWEEP_ONE = (('cancel',), ('all',), ('delete',), ('cancel', 'add'), ('all', 'add'), ('cancel', 'add', 'cancel'))
+SWEEP_TWO = (('cancel', 'add'), ('all', 'add'), ('add', 'delete'))
+SWEEP_HOLDS = ('nothing is left in the box or the queue, a file is whole and has its manifest row or is not there, a .part is a start of the file, the card\'s queue is the memory\'s at the stop, '
+               'the track asked for last is downloaded, one deleted when downloaded is gone, one cancelled last does not wait at the stop, and gets no byte after the transfer-info call that takes the cancel')
+
+
+def sweep_tests(ctx):
+    """One place: each action, and each sequence of actions, at every step of the worker (sweep_runner)."""
+    expect = ctx.expect
+    run = sweep_runner()
+    kinds, _, why = run({})
+    n = len(kinds)
+    seen = {k.split('+')[0] for k in kinds}
+    expect(why is None and seen == {*DM.STEP_CALLS, 'xfer'} and 'open+mf' in kinds and n >= 60,
+           f'the two downloads alone, the break and the resume: both whole, and the {n} steps are of every kind, some under the file lock ({why}; {sorted(seen)})')
+    bad, runs = [], 0
+    for i in range(n):
+        for acts in SWEEP_ONE + ((('resume',),) if i % 6 == 0 else ()):   # (sba_dl_resume does nothing while a worker runs: looked at every 6th step only)
+            k, done, why = run({i: acts})
+            runs += 1
+            if why: bad.append((i, kinds[i], acts, why))
+    expect(not bad and runs > 500, f'each action at each of the {n} steps ({runs} runs): {SWEEP_HOLDS} ({len(bad)} wrong: {bad[:6]})')
+
+
+def sweep_pair_tests(ctx):
+    """Two places: one action at a step and another at a later one. Every pair of steps would be some 20,000 runs, so the second step is the next one (the two actions on both sides of whatever
+    the worker does between two steps) for every first step, and for the steps further apart both are taken from every 6th step."""
+    expect = ctx.expect
+    run = sweep_runner()
+    n = len(run({})[0])
+    far = range(0, n, 6)
+    pairs = [(i, i + 1) for i in range(n)] + [(i, j) for i in far for j in far if j > i]
+    bad, runs = [], 0
+    for first, second in SWEEP_TWO:
+        for i, j in pairs:
+            if (j - i > 1) and first == 'add': continue   # (the far pairs: the two that start with a cancel)
+            k, done, why = run({i: (first,), j: (second,)})
+            if why: bad.append((i, k[i], first, j, k[j] if j < len(k) else None, second, done, why))
+            runs += len(done) == 2   # (not counted: the run had no such step after the first action, or the Delete met the file lock)
+    expect(not bad and runs > 400, f'two actions at two steps ({runs} runs of {len(pairs)} pairs): {SWEEP_HOLDS} ({len(bad)} wrong: {bad[:6]})')
+
+
 def collision_tests(ctx):
     """A file on the card is never overwritten."""
     expect = ctx.expect
@@ -1161,4 +1311,4 @@ def manifest_tests(ctx):
     expect(m.fs.get(IDX) == big, 'an oversized manifest is kept, not replaced by one row')
 
 
-SECTIONS = [queue_tests, cap_tests, transfer_tests, resume_tests, validator_tests, failure_tests, report_tests, control_tests, order_tests, collision_tests, scan_tests, layout_tests, persist_tests, qread_tests, qlast_tests, qlist_tests, manifest_tests]
+SECTIONS = [queue_tests, cap_tests, transfer_tests, resume_tests, validator_tests, failure_tests, report_tests, control_tests, order_tests, sweep_tests, sweep_pair_tests, collision_tests, scan_tests, layout_tests, persist_tests, qread_tests, qlast_tests, qlist_tests, manifest_tests]

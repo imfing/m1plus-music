@@ -72,6 +72,8 @@ SCRIM_ALPHA, SCRIM_EDGE = 128, 36 # 50 % black; the edges ramp from 0 over SCRIM
 # 2.3:1 on the worst tone (test/pod/lyrics.py). The edges ease in over LSCRIM_EDGE rows (smoothstep), so there is no visible band edge; the text area (44..288) is the full-strength middle.
 LSCRIM = (0, 0, W, 332)
 LSCRIM_ALPHA, LSCRIM_EDGE = 68, 44
+IH = 480                         # the idle lyrics page is fullscreen (320 x 480, no status bar; patch/offsets.inc IL_H)
+ISCRIM = (0, 0, W, IH)           # np_scrim_idle.png: the same scrim over the whole window of the idle lyrics page (patch/idlelyrics.c; its ramps at the window's top and bottom, as preview_idlelyrics); np_tint_idle.png is the tint over the same 480 rows
 DOT = 10                         # the interlude dots' diameter (patch/offsets.inc LY_DOT): np_dot.png, white, anti-aliased; the payload makes three image widgets
 
 M = 28                           # side margin: the cover, the text column and the bar share it
@@ -106,6 +108,18 @@ LYR_WHITE = '#FFFFFF'        # every lyric line is white; the current one is onl
 LYR_FACE = 'lyrics'          # font_name of the bold face: assets/default/raw/fonts/lyrics.ttf (tools/mod_font.py lyric_face)
 # patch/lyrics.c: a line of Latin, Greek and Cyrillic only is drawn in the bold file, any other line in the default font (AWTK has no per-glyph fallback)
 LYRIC_LABEL_STYLES = {'np_lyric_style': LYR_FACE, 'np_lyric_cjk_style': None}
+# Settings > Now Playing > Lyrics Text Size (patch/lyrics.c ly_sizes): one style pair per size, name suffix -> (font px, spacer): Large is the pair above, Medium is _m, Small is _s.
+# The row pitch is the font + the spacer: 34, 29, 25 (patch/lyrics.c LYH).
+LYR_SIZES = {'': (LYR_FONT, LYR_SPACER), '_m': (26, 3), '_s': (22, 3)}
+# A wrapped label loses its last row unless the rows fit between the top and bottom margins: stock's label paint (0x62eb4c) draws a row only while y + the font size is at most the content
+# area's bottom, the first row is at the top margin and the content area (widget_get_content_area, 0x672978) is the label less margin_top / margin_bottom (each defaults to `margin`, default 2).
+# A label of n rows is n x (font + spacer) high, so the last row needs margin_top + margin_bottom <= spacer: 2 + 2 fits Large's 4 (the style sets none), Medium and Small (3) take 1 + 1.
+# A one-row label is painted by another path (centred in the content area), which equal margins do not move; the left and right margins stay 2 (the 260 px content width, LY_FIT_W).
+LYR_DEFAULT_MARGIN = 2
+def lyr_vmargin(spacer): return min(LYR_DEFAULT_MARGIN, spacer // 2)
+LYR_GAPS = {'': 12, '_m': 10, '_s': 9}   # the gap between lines (patch/lyrics.c ly_sizes: about 0.4 of the font; Large is LY_GAP)
+LYR_BOLD_SIZES = ('', '_m')      # the sizes whose Latin lines use the bold face; Small (22 px) draws them in the default font like every other line
+LYRIC_SIZE_STYLES = {n + suf: (face if suf in LYR_BOLD_SIZES else None, *LYR_SIZES[suf]) for suf in LYR_SIZES for n, face in (('np_lyric_style', LYR_FACE), ('np_lyric_cjk_style', None))}
 LYR_Y, LYR_H = 44, 244           # the lyrics list; the info lines end at 288 too (the dots sit at 296)
 
 # The A-B repeat markers: demo moves img_repeata/b to x = 12 + (pos - cue) * 296 / len, y = 364 (getx_by_playtime
@@ -146,18 +160,18 @@ def corner_table():
     if not _CORNER: _CORNER.append(corner_alpha())
     return _CORNER[0]
 
-def tint_alpha(y):
-    """The gradient's alpha (0..255) on window row y."""
-    return TINT_ALPHA[0] + ((TINT_ALPHA[1] - TINT_ALPHA[0]) * y + (H - 1) // 2) // (H - 1)
+def tint_alpha(y, rows=H):
+    """The gradient's alpha (0..255) on window row y of a window of `rows` rows (np_tint_idle.png: IH)."""
+    return TINT_ALPHA[0] + ((TINT_ALPHA[1] - TINT_ALPHA[0]) * y + (rows - 1) // 2) // (rows - 1)
 
 # ---------------------------------------------------------------------------------------------- images
 
 # PIL is imported where it is used, so build.py (plain python3) can import added_rels() without pillow
-def tint_gradient():
+def tint_gradient(rows=H):
     """Black, alpha rising down the window: the cover's colour fades to black."""
     from PIL import Image
-    im = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    for y in range(H): im.paste((0, 0, 0, tint_alpha(y)), (0, y, W, y + 1))
+    im = Image.new('RGBA', (W, rows), (0, 0, 0, 0))
+    for y in range(rows): im.paste((0, 0, 0, tint_alpha(y, rows)), (0, y, W, y + 1))
     return im
 
 def scrim_alpha(y):
@@ -165,14 +179,14 @@ def scrim_alpha(y):
     d = min(y, SCRIM[3] - 1 - y)
     return SCRIM_ALPHA if d >= SCRIM_EDGE else SCRIM_ALPHA * d // SCRIM_EDGE
 
-def lscrim_alpha(y):
-    """np_scrim_lyrics.png's alpha on row y of its LSCRIM[3] rows: LSCRIM_ALPHA in the middle, easing (smoothstep 3t^2 - 2t^3) to 0 over LSCRIM_EDGE rows at both ends."""
-    d = min(y, LSCRIM[3] - 1 - y)
+def lscrim_alpha(y, rows=LSCRIM[3]):
+    """np_scrim_lyrics.png's alpha on row y of its LSCRIM[3] rows (np_scrim_idle.png: ISCRIM[3]): LSCRIM_ALPHA in the middle, easing (smoothstep 3t^2 - 2t^3) to 0 over LSCRIM_EDGE rows at both ends."""
+    d = min(y, rows - 1 - y)
     return LSCRIM_ALPHA if d >= LSCRIM_EDGE else LSCRIM_ALPHA * (3 * d * d * LSCRIM_EDGE - 2 * d ** 3) // LSCRIM_EDGE ** 3
 
-def scrim_image(lyrics=False):
+def scrim_image(lyrics=False, idle=False):
     from PIL import Image
-    box, alpha = (LSCRIM, lscrim_alpha) if lyrics else (SCRIM, scrim_alpha)
+    box, alpha = (ISCRIM, lambda y: lscrim_alpha(y, ISCRIM[3])) if idle else (LSCRIM, lscrim_alpha) if lyrics else (SCRIM, scrim_alpha)
     im = Image.new('RGBA', box[2:], (0, 0, 0, 0))
     for y in range(box[3]): im.paste((0, 0, 0, alpha(y)), (0, y, box[2], y + 1))
     return im
@@ -240,8 +254,10 @@ def write_images(rootfs_xx):
         p = os.path.join(rootfs_xx, name + '.png')
         assert not os.path.exists(p), p
         if name == 'np_tint': tint_gradient().save(p, optimize=True)     # PIL PNG output has no timestamp
+        elif name == 'np_tint_idle': tint_gradient(IH).save(p, optimize=True)
         elif name == 'np_scrim': scrim_image().save(p, optimize=True)
         elif name == 'np_scrim_lyrics': scrim_image(True).save(p, optimize=True)
+        elif name == 'np_scrim_idle': scrim_image(idle=True).save(p, optimize=True)
         elif name == 'np_dot': dot_image().save(p, optimize=True)
         elif name == 'np_shadow': shadow_image().save(p, optimize=True)
         elif name in ('rn_live_l', 'rn_live_r'): live_bar_image(LIVE_BAR_W, name.endswith('r')).save(p, optimize=True)
@@ -249,7 +265,7 @@ def write_images(rootfs_xx):
         os.chmod(p, IMG_MODE); os.utime(p, (IMG_MTIME, IMG_MTIME))
     return list(NP_IMAGES)
 
-NP_IMAGES = sorted(mod_icons.np_names() + ['np_tint', 'np_scrim', 'np_scrim_lyrics', 'np_dot', 'np_shadow', 'rn_live_l', 'rn_live_r'])
+NP_IMAGES = sorted(mod_icons.np_names() + ['np_tint', 'np_tint_idle', 'np_scrim', 'np_scrim_lyrics', 'np_scrim_idle', 'np_dot', 'np_shadow', 'rn_live_l', 'rn_live_r'])
 
 def added_rels(stock_rootfs=None):
     """Rootfs-relative paths of the added images (for fwtool --allow-added; all new in any tree)."""
@@ -485,14 +501,16 @@ def apply_style(th):
             s.set_color('bg_color', '#00000000'); s.set_color('border_color', '#00000000')
             s.set('font_size', 18); s.set_color('text_color', rgb); th.items.append(s)
     # our lyrics page's labels (patch/lyrics.c np_lyric_style, bold face / np_lyric_cjk_style, default font): white, as label styles (a style is found by widget type and name)
-    for name, face in LYRIC_LABEL_STYLES.items():
+    for name, (face, px, spacer) in LYRIC_SIZE_STYLES.items():
         assert not th.find(style=name)
         for st in BTN_STATES:
             s = awtk_style.Item('label', name, st)
             s.set('text_align_h', LYR_LEFT, awtk_style.T_INT32)       # left, the Apple Music lyrics look (the hidden stock list_item styles stay centred)
             s.set_color('bg_color', '#00000000'); s.set_color('border_color', '#00000000')
-            s.set('font_size', LYR_FONT); s.set('spacer', LYR_SPACER, awtk_style.T_INT32); s.set_color('text_color', LYR_WHITE)
+            s.set('font_size', px); s.set('spacer', spacer, awtk_style.T_INT32); s.set_color('text_color', LYR_WHITE)
             if face: s.set('font_name', face)
+            if lyr_vmargin(spacer) != LYR_DEFAULT_MARGIN:
+                s.set('margin_top', lyr_vmargin(spacer), awtk_style.T_INT32); s.set('margin_bottom', lyr_vmargin(spacer), awtk_style.T_INT32)
             th.items.append(s)
     return th
 

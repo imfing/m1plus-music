@@ -18,15 +18,22 @@ RAW = PI.RAW
 
 # What a typical device shows: widget name -> text (values), name -> on (switches), name -> shown (checks, the hidden card), per page key.
 STATE = {
-    'm1plus_settings': {'values': {'pod_value0': 'Off', 'pod_value1': 'Off', 'pod_value5': 'Repeat All', 'pod_value6': 'Off', 'pod_value7': 'Off'}},
+    'm1plus_settings': {'values': {'pod_value0': 'Off', 'pod_value1': 'Off', 'pod_value5': 'Rock'}},   # Wi-Fi, Bluetooth and EQ (the 10-Band EQ's curve name, or Off)
     'm1plus_appearance': {'values': {'pod_value0': 'Neutral'}},
     'm1plus_background': {'shown': {'pod_check1'}},
     'm1plus_accent': {'shown': {'pod_check0'}},
     'm1plus_battery': {'values': {'pod_value1': '80%'}, 'switches': {'pod_switch0': True}},
     'm1plus_chargelimit': {'shown': {'pod_check0'}},
-    'm1plus_display': {'values': {'pod_value0': '30s', 'pod_value2': 'Orange'}, 'switches': {'pod_switch3': True}},
+    'm1plus_display': {'values': {'pod_value0': '30s', 'pod_value2': 'Green'}, 'switches': {'pod_switch3': True}},
     'm1plus_lighttime': {'shown': {'pod_check2'}},
     'm1plus_keyspower': {'values': {'pod_value0': 'Both', 'pod_value3': '5min'}, 'switches': {'pod_switch1': True, 'pod_switch2': False}},
+    'm1plus_playset': {'values': {'pod_value0': 'Repeat All', 'pod_value2': 'Location', 'pod_value4': 'Off', 'pod_value5': 'Low', 'pod_value6': '80', 'pod_value7': 'Memory', 'pod_value8': 'L3', 'pod_value9': 'Off', 'pod_value11': 'D2P', 'pod_value12': 'Variable'}, 'switches': {'pod_switch1': False, 'pod_switch3': True, 'pod_switch13': False}},
+    'm1plus_psmaxvol': {'vol_text': '80', 'vol': 80},
+    'm1plus_psbootvol': {'vol_text': '30', 'vol': 30, 'switches': {'pod_switch0': False}},
+    'm1plus_psbal': {'vol_text': 'L3', 'vol': 7},
+    'm1plus_psmode': {'shown': {'pod_check3'}},
+    'm1plus_psfilter': {'shown': {'pod_check3'}},
+    'm1plus_psgain': {'shown': {'pod_check0'}},
     'm1plus_keylock': {'shown': {'pod_check3'}},
     'm1plus_shutdown': {'shown': {'pod_check3'}},
     'm1plus_ledlight': {'shown': {'pod_check1'}},
@@ -34,7 +41,7 @@ STATE = {
     'm1plus_lockscreen': {'switches': {'pod_switch0': True, 'pod_switch2': True}, 'values': {'pod_value3': 'Large Cover'}},
     'm1plus_lockstyle': {'shown': {'pod_check0'}},
     'm1plus_homeset': {'switches': {'pod_switch0': True, 'pod_switch1': True}},
-    'm1plus_library': {'switches': {'pod_switch2': True, 'pod_switch3': True, 'pod_switch4': False}},
+    'm1plus_library': {'switches': {'pod_switch3': True, 'pod_switch4': True, 'pod_switch5': True, 'pod_switch6': False}},
     'm1plus_npset': {'values': {'pod_value0': 'Chrome'}},
     'm1plus_tapetheme': {'shown': {'pod_check1'}},
     'm1plus_developer': {'switches': {'pod_switch0': True}},
@@ -84,6 +91,7 @@ def draw_page(s, key, full=False, state=None, lit=False, pal=None, pressed=None,
             lab = next(t for t in c.children if t.name.startswith('pod_label'))
             draw_row(s, im, d, c, y, values, switches, shown, ink, img, pal, pal is not None and pressed is not None and s.shown(lab) == pressed)
         if c.name == 'pod_bright': draw_brightness(im, c, y, img, st.get('brightness', 60))
+        elif c.name in ('pod_vsval', 'pod_vsctl'): draw_volcard(s, im, c, y, img, ink, st.get('vol_text', ''), st.get('vol', 0), st.get('vol_dim', False))
         else: draw_text_item(s, im, c, y, ink)
         y += c.h
     d.rectangle((0, 0, W - 1, NAV - 1), fill=base)   # the list is under the navbar: it clips at its top
@@ -103,13 +111,35 @@ def draw_brightness(im, c, y, img, value):
     for t in c.children:
         if t.type == 'image' and t.get('visible') != 'false':
             g = img(t.get('image')); im.alpha_composite(g, (t.x + (t.w - g.width) // 2, y + t.y + (t.h - g.height) // 2))
-        elif t.type == 'slider':
-            bar, dot = int(t.get('bar_size')), img(t.get('style:normal:icon'))
-            by, travel = y + t.y + (t.h - bar) // 2, t.w - dot.width
-            x = t.x + dot.width // 2 + travel * value // int(t.get('max'))
-            im.alpha_composite(img(t.get('style:normal:bg_image')).resize((t.w, bar)), (t.x, by))
-            if x > t.x: im.alpha_composite(img(t.get('style:normal:fg_image')).resize((x - t.x, bar)), (t.x, by))
-            im.alpha_composite(dot, (x - dot.width // 2, y + t.y + (t.h - dot.height) // 2))
+        elif t.type == 'slider': draw_slider(im, t, y, img, value)
+
+
+def draw_slider(im, t, y, img, value):
+    """A slider of the pages (the Display page's, the loudness pages'): its bar images stretched to its width, the fill up to the thumb, the thumb's image centred on `value` (0 .. its max)."""
+    bar, dot = int(t.get('bar_size')), img(t.get('style:normal:icon'))
+    by, travel = y + t.y + (t.h - bar) // 2, t.w - dot.width
+    x = t.x + dot.width // 2 + travel * value // int(t.get('max'))
+    im.alpha_composite(img(t.get('style:normal:bg_image')).resize((t.w, bar)), (t.x, by))
+    if x > t.x: im.alpha_composite(img(t.get('style:normal:fg_image')).resize((x - t.x, bar)), (t.x, by))
+    im.alpha_composite(dot, (x - dot.width // 2, y + t.y + (t.h - dot.height) // 2))
+
+
+def draw_volcard(s, im, c, y, img, ink, text, value, dim=False):
+    """A loudness page's card (tools/pod_ui.py cards_volcard): the card piece; the value card's label (the text stock's refresh writes) centred; the control card's two buttons (their texts) and the slider at `value`. dim: 60 % opacity, as
+    the payload dims Default Volume's cards while Volume Memory is on."""
+    layer = Image.new('RGBA', im.size, (0, 0, 0, 0))
+    layer.alpha_composite(img(c.get('style:normal:bg_image')), (0, y))
+    for t in c.children:
+        px = int(style(t, 'font_size')) if t.type in ('label', 'button') else 0
+        if t.type == 'label': s.text(layer, t.x + t.w / 2, y + t.y + t.h / 2, text, px, ink(rgb(style(t, 'text_color'))), anchor='m')
+        elif t.type == 'button': s.text(layer, t.x + t.w / 2, y + t.y + t.h / 2, t.get('text'), px, ink(rgb(style(t, 'text_color'))), anchor='m')
+        elif t.type == 'slider': draw_slider(layer, t, y, img, value)
+        elif t.type == 'view':   # a button's disc: its fill, round (drawn at 4x and reduced for the edge)
+            disc = Image.new('RGBA', (t.w * 4, t.h * 4), (0, 0, 0, 0)); fill = style(t, 'bg_color').lstrip('#')
+            ImageDraw.Draw(disc).ellipse((0, 0, t.w * 4 - 1, t.h * 4 - 1), fill=ink(rgb(fill)) + (int(fill[6:8], 16),))
+            layer.alpha_composite(disc.resize((t.w, t.h), Image.LANCZOS), (t.x, y + t.y))
+    if dim: layer.putalpha(layer.getchannel('A').point(lambda a: a * 153 // 255))
+    im.alpha_composite(layer)
 
 
 def draw_text_item(s, im, c, y, ink=lambda c: c):
@@ -151,7 +181,8 @@ def draw_row(s, im, d, row, y, values, switches, shown, ink=lambda c: c, img=Non
         elif c.name == 'pod_hair':
             d.rectangle((c.x, y + c.y, c.x + c.w - 1, y + c.y), fill=ink(rgb(style(c, 'bg_color'))))
     sub = next((c for c in row.children if c.name.startswith('pod_sub')), None)   # a two line row (the Presets page's files): the name on the first line, the grey line under it
-    s.text(im, label.x, y + (label.y + label.h / 2 if sub else row.h / 2), s.clip(s.shown(label), 21, lab_w), 21, ink((255, 255, 255)))
+    own = values.get(label.name + '.color') or style(label, 'text_color')   # a label with a colour of its own (the red Sign Out; a page's state may grey it as the payload does)
+    s.text(im, label.x, y + (label.y + label.h / 2 if sub else row.h / 2), s.clip(s.shown(label), 21, lab_w), 21, ink(rgb(own) if own else (255, 255, 255)))
     if sub: s.text(im, sub.x, y + sub.y + sub.h / 2, s.clip(s.shown(sub), int(style(sub, 'font_size', 18)), sub.w), int(style(sub, 'font_size', 18)), ink(rgb(style(sub, 'text_color', '#AAAAAA'))))
 
 
@@ -291,6 +322,16 @@ def draw_wifiinfo(s, title, fields, saved=True, auto=True):
     def centred(name, y):
         w = by[name]; s.text(im, w.x + w.w // 2, y + ST.ROW_H / 2, s.shown(w), 21, (255, 255, 255), 'm')
     y = ST.CM
+    lt = by['label_title']; tpx = PI.title_px(s.tree); cut = s.clip(title, tpx, lt.w)
+    if cut != title:   # wi_name: the whole name in one grey line, or two (broken at a space in the first line's second half, else at the last character that fits)
+        nl = by['wi_name0']; npx = int(nl.get('style:normal:font_size')); lines = [title]
+        if s.font.width(title, npx) > nl.w:
+            lo = max(k for k in range(1, len(title)) if k == 1 or s.font.width(title[:k], npx) <= nl.w)
+            sp = title.rfind(' ', lo // 2 + 1, lo + 1)
+            lines = [title[:sp], s.clip(title[sp + 1:], npx, nl.w)] if sp > 0 else [title[:lo], s.clip(title[lo:], npx, nl.w)]
+        for t in lines:
+            s.text(im, nl.x + nl.w // 2, y + nl.h / 2, t, npx, grey, 'm'); y += nl.h
+        y += 8   # patch/wifipage.c WI_NAME_GAP
     if saved:
         row(y, 'single', False); centred('wi_forget_t', y); y += ST.ROW_H + ST.GAP_H
     for i, (lab, val) in enumerate(fields):
@@ -306,8 +347,7 @@ def draw_wifiinfo(s, title, fields, saved=True, auto=True):
     else:
         centred('wi_join_t', y)
     out = Image.new('RGBA', (W, SCREEN), (0, 0, 0, 255)); out.alpha_composite(im.crop((0, 0, W, SCREEN - NAV)), (0, NAV))
-    lt = by['label_title']; tpx = PI.title_px(s.tree)
-    s.text(out, lt.x, NAV / 2, title, tpx)
+    s.text(out, lt.x, NAV / 2, cut, tpx)
     for name, bx, bw in (('ah_nav_back', 7, 44), ('ah_nav_np', 260, 60)):
         g = s.img(name); out.alpha_composite(g, (bx + (bw - g.width) // 2, (NAV - g.height) // 2))
     return out
@@ -354,6 +394,7 @@ def main():
            ('Settings, whole list (red = screen bottom)', draw_page(s, 'm1plus_settings', full=True)),
            ('Settings > Home Screen', draw_page(s, 'm1plus_homeset')),
            ('Settings > Library', draw_page(s, 'm1plus_library')),
+           ('Settings > Library, whole list', draw_page(s, 'm1plus_library', full=True)),
            ('Settings > Now Playing', draw_page(s, 'm1plus_npset')),
            ('Settings > Now Playing > Theme', draw_page(s, 'm1plus_tapetheme')),
            ('Settings > Developer', draw_page(s, 'm1plus_developer')),
@@ -365,11 +406,14 @@ def main():
            ('Settings > About (first screen)', draw_page(s, 'm1plus_about')),
            ('Settings > Wi-Fi', draw_wifi(s, True, WIFI_NETS)),
            ('Settings > Wi-Fi, scrolled', draw_wifi(s, True, WIFI_NETS, scroll=116)),
+           ('Settings > Wi-Fi, long names', draw_wifi(s, True, [('TwentyCharactersLong 5G', 4, True, True, True), ('A very long network name of 32 b', 3, True, True, False), ('一个很长的无线网络名字', 3, True, False, False)] + WIFI_NETS[3:])),
            ('Settings > Wi-Fi, joining', draw_wifi(s, True, WIFI_NETS, scanning=False, joining=True)),
            ('Settings > Wi-Fi, off', draw_wifi(s, False)),
            ('Wi-Fi > info (saved)', draw_wifiinfo(s, 'Studio', [('Security', 'WPA2/WPA3')])),
            ('Wi-Fi > info (connected)', draw_wifiinfo(s, 'Home', [('Security', 'WPA/WPA2'), ('IP Address', '192.168.1.42'), ('Router', '192.168.1.1')], auto=False)),
            ('Wi-Fi > info (not saved)', draw_wifiinfo(s, 'Cafe Open', [('Security', 'Open')], saved=False)),
+           ('Wi-Fi > info (long name)', draw_wifiinfo(s, 'TwentyCharactersLong 5G', [('Security', 'WPA2')])),
+           ('Wi-Fi > info (longest name)', draw_wifiinfo(s, 'A very long network name of 32 b', [('Security', 'WPA2')], saved=False)),
            ('Wi-Fi > Join Wi-Fi Network > Security', draw_wifisec(s)),
            ('Settings > Appearance', draw_page(s, 'm1plus_appearance')),
            ('Settings > Appearance > Accent', draw_page(s, 'm1plus_accent')),
@@ -397,6 +441,18 @@ def main():
                ('Buttons & Power', draw_page(t, 'm1plus_keyspower', state={'values': {'pod_value0': tr('Both'), 'pod_value3': '5min'}, 'switches': {'pod_switch1': True}})),
                ('Button Lock', draw_page(t, 'm1plus_keylock')),
                ('Auto-Shutdown', draw_page(t, 'm1plus_shutdown'))], os.path.join(os.path.dirname(out), 'keyspower', f'keyspower-{tag}.png'))
+    # Playback Settings (docs/modules/playset.md): the Settings list, the page (whole) and three of its pickers, in English and in two long languages (out/preview/playset/)
+    for loc, tag in (('en_US', 'en'), ('ge_DE', 'de'), ('ru_RU', 'ru')):
+        t = PI.Side(sys.argv[1], True, loc); t.mark = lambda *a: None
+        tr = lambda k: t.strings.get(k, k)
+        sheet([('Settings, whole list', draw_page(t, 'm1plus_settings', full=True, state={'values': {'pod_value0': tr('Off'), 'pod_value1': tr('Off'), 'pod_value5': tr('Rock')}})),
+               ('Playback', draw_page(t, 'm1plus_playset', full=True, state={'values': {'pod_value0': tr('Repeat All'), 'pod_value2': tr('Location'), 'pod_value4': tr('Off'), 'pod_value5': tr('Low'), 'pod_value6': '80', 'pod_value7': tr('Memory'), 'pod_value8': 'L3',
+                                                                                          'pod_value9': tr('Off'), 'pod_value11': tr('D2P'), 'pod_value12': tr('Variable')}, 'switches': {'pod_switch1': True, 'pod_switch3': True, 'pod_switch13': False}})),
+               ('Max Volume', draw_page(t, 'm1plus_psmaxvol', state={'vol_text': '80', 'vol': 80})),
+               ('Default Volume (Volume Memory off)', draw_page(t, 'm1plus_psbootvol', state={'vol_text': '30', 'vol': 30, 'switches': {'pod_switch0': False}})),
+               ('Default Volume (Volume Memory on)', draw_page(t, 'm1plus_psbootvol', state={'vol_text': '30', 'vol': 30, 'vol_dim': True, 'switches': {'pod_switch0': True}})),
+               ('Channel Balance', draw_page(t, 'm1plus_psbal', state={'vol_text': 'L3', 'vol': 7})),
+               ('Play Mode', draw_page(t, 'm1plus_psmode'))], os.path.join(os.path.dirname(out), 'playset', f'playset-{tag}.png'))
     # Light Mode (docs/modules/accent.md): the same pages with the hooks' colours and images (tools/palette.py); the Settings page with Light Mode On, and the picker
     lit = os.path.join(os.path.dirname(out), 'settings-light.png')
     sheet([('Light Mode: Settings, first screen', draw_page(s, 'm1plus_settings', lit=True)),

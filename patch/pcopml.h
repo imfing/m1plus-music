@@ -11,8 +11,11 @@
 
 /* (the PC_* sizes are patch/offsets.inc's, pc_show_t is patch/podcasts.h's: include them first) */
 
-#define PO_FILE_MAX 262144 /* bytes of an OPML file read; the rest is not looked at */
-#define PO_EXPORT_MAX 131072 /* bytes of the export: 40 shows of the worst escaping (about 2.8 kB each) */
+#define PO_FILE_MAX \
+    524288 /* bytes of an OPML file read; the rest is not looked at. Not under PO_EXPORT_MAX: our own export is read back whole */
+#define PO_EXPORT_MAX \
+    327680 /* bytes of the export: PC_MAX_SHOWS (100) shows of the worst escaping (about 2.8 kB each) */
+_Static_assert(PO_FILE_MAX >= PO_EXPORT_MAX, "an export must be importable whole");
 
 typedef struct {
     const unsigned char *s, *e; /* the text still to scan: from s to e */

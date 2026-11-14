@@ -77,3 +77,4 @@ If M1+ Music is useful to you, you can support its development on [Ko-fi](https:
 
 Inspired by Diamond Bond's [q2-pod](https://github.com/DiamondBond/q2-pod) for the Shanling Q2.
 The radio placeholder glyph derives from [IconPark](https://github.com/bytedance/IconPark) `radio` (Apache-2.0).
+The Last.fm mark is from [Simple Icons](https://simpleicons.org) (CC0-1.0), the MusicBrainz mark from Wikimedia Commons (public domain); both are trademarks of their owners.

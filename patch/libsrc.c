@@ -305,6 +305,11 @@ void ls_spin(void *img, int on) {
     if (!on && !ls_sp_timer) ls_sp[k].img = (void *)0;
 }
 
+void ls_room(void *status, void *spin, int top) {
+    if (status) widget_move(status, 10, top + (450 - top - 30) / 2);
+    if (spin) widget_move(spin, (320 - 14) / 2, top + (450 - top - 14) / 2);
+}
+
 void ls_spin_end(void *img) {
     int k, live = 0;
     for (k = 0; img && k < 4; ++k)

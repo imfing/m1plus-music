@@ -141,7 +141,7 @@ int upnext_add(void *rows, int after);   /* rows: a deque_t of stSongInfo (the c
 | `UPNEXT_STREAM` | -2 | a stream is playing, or a Radio station is running (`rd_running`) | "Not available while streaming" |
 | `UPNEXT_FOLDER` | -3 | folder playback (play type 1; also Podcasts) | "Not available for folder playback" |
 | `UPNEXT_PODCAST` | -4 | a podcast episode among the rows | "Not available for podcasts" |
-| `UPNEXT_MISSING` | -5 | a row has no file on the card | "Storage unavailable" |
+| `UPNEXT_MISSING` | -5 | a row has no file on the card | "File not found" (the card in, `/tmp/mmc_add`), "Storage unavailable" (no card): `so_missing`, `patch/songops.c` |
 | `UPNEXT_FULL` | -6 | the queue would pass 65536 songs | "Queue is full" |
 | `UPNEXT_MEMORY` | -7 | no memory for Shuffle's order | "Not enough memory" |
 | `UPNEXT_DLNA` | -8 | the DLNA renderer service runs (`dmr_serverflag` == 1), as for Clear | "Not available while DLNA is on" |

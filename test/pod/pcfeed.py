@@ -55,6 +55,10 @@ def cut_utf8(s, cap):
     return b.decode('utf-8').rstrip(' ')
 
 
+UNI_WS = re.compile('[\xa0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]')  # the Unicode spaces the sink takes as white space
+ZERO_W = re.compile('[\u200b\u2060\ufeff]')  # the zero width characters it drops
+
+
 def plain(s):
     """The documented plain text of a description (what xml.etree gives it): tags dropped (a boundary tag is a space), entities decoded once more, white space and U+00A0 one space, trimmed, at most 200 bytes."""
     def rep(m):
@@ -63,7 +67,7 @@ def plain(s):
             return ' ' if re.match(r'</?([A-Za-z0-9]*)', m.group(2)).group(1).lower() in BOUNDARY else ''
         cp = ent_cp(m.group(3)[1:-1])
         return chr(cp) if cp else m.group(3)
-    t = TOKEN.sub(rep, s).replace('\xa0', ' ')
+    t = UNI_WS.sub(' ', ZERO_W.sub('', TOKEN.sub(rep, s)))
     return cut_utf8(re.sub(r'[\x00-\x20]+', ' ', t).strip(' '), DESC_CUT)
 
 
@@ -306,6 +310,9 @@ def run(ctx):
     desc_of('<description>5 &amp;amp; 6 &amp;lt;b&amp;gt; a&amp;nbsp;b &amp;#8217; &amp;#x2019; &amp;quot;q&amp;apos; &amp;unknown; AT&amp;T &amp;#0; &amp;#xD800; &amp;AMP; &amp;#x110000;</description>',
             '5 & 6 <b> a b ’ ’ "q\' &unknown; AT&T &#0; &#xD800; &AMP; &#x110000;', 'double-encoded entities: named, numeric (decimal and hex), nbsp as a space, unknown, invalid and a lone & stay as written; a decoded < is no tag')
     desc_of('<description>  a \n\t b\r\n\r\n c &#160; d &amp;#160; e  </description>', 'a b c d e', 'white space runs, tabs, newlines, U+00A0 from a character, an entity and the feed: one space, trimmed')
+    desc_of('<description>\ufeff\u3000a\u3000\u2009b\u200bc\u2028d &amp;#8203;&amp;#12288;e\u2060 f、g\u200dh\u3000</description>', 'a bc d e f、g\u200dh',
+            'Unicode spaces (U+3000, U+2009, U+2028) are white space, the zero width U+FEFF, U+200B (also from an entity) and U+2060 go; their neighbours U+3001 and U+200D stay')
+    desc_of('<itunes:summary>\ufeff&lt;p&gt;\u3000&lt;/p&gt;\u200b</itunes:summary><description>Fallback</description>', 'Fallback', 'a summary with only invisible characters is empty: the description is used')
     desc_of('<description>x&lt;br&gt;y</description><itunes:summary></itunes:summary>', 'x y', 'an empty itunes:summary is not present: the description is used')
     desc_of('<itunes:summary> <b></b> \n </itunes:summary><description>Fallback</description>', 'Fallback', 'a summary with only tags and blanks is empty: the description is used')
     desc_of('<content:encoded><![CDATA[<p>Only <b>content</b></p>]]></content:encoded>', 'Only content', 'content:encoded alone')

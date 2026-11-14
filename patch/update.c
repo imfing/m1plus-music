@@ -245,14 +245,10 @@ static void up_sync(void) {
     up.sig = up_sig();
 }
 
-/* The job, once no other job (a refresh, a podcast download, a search) holds the slot: downloads are asked to pause first, as the lookups of the Search and Cover & Lyrics pages do. */
+/* The job, once no other job (a refresh, a search) holds the slot; a podcast download goes on beside it. */
 static void up_start(void) {
     int kind = up.want, rc;
     if (!kind) return;
-    if (pn_dl_running()) {
-        pn_dl_pause();
-        return;
-    }
     if (pn_busy() || pn_job_busy()) return;
     rc = kind == UA_CHECK ? pn_up_check() : pn_up_download();
     if (rc == PN_BUSY) return;
@@ -360,7 +356,7 @@ static int up_on_cancel(void *ctx, void *e) {
     if (up.want)
         up.want = 0;
     else if (!up.cancelling)
-        up.cancelling = 1, up.fetched = 0, pn_cancel();
+        up.cancelling = 1, up.fetched = 0, pn_cancel(PN_K_UPDATE);
     up_sync();
     return RET_OK;
 }
@@ -389,8 +385,7 @@ static int up_on_destroy(void *ctx, void *e) {
     if (ctx != up.win) return RET_OK; /* an earlier window's end leaves a newer page alone */
     m1_timer_stop(&up.timer);
     if (pn_up_state() == PN_U_CHECKING || pn_up_state() == PN_U_DOWNLOADING)
-        pn_cancel(); /* the worker ends by itself and removes its .part */
-    if (!pn_job_busy() && pn_dl_waiting() && !pn_dl_running()) pn_dl_start();
+        pn_cancel(PN_K_UPDATE); /* the worker ends by itself and removes its .part */
     memset(&up, 0, sizeof up);
     return RET_OK;
 }
@@ -422,7 +417,6 @@ static int up_tick(const void *timer) {
                 1; /* the file is there: stock's TF card update takes over at its own confirmation, one tick later, the block cleared and painted before the dialog opens */
     } else if (up.fetched && st != PN_U_DOWNLOADING)
         up.fetched = 0;
-    if (up.win && !up.want && !pn_job_busy() && pn_dl_waiting() && !pn_dl_running()) pn_dl_start();
     return RET_REPEAT;
 }
 

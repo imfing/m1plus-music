@@ -28,6 +28,18 @@ static void lo_sync(void *parent, int kill) {
     if (ind && !widget_get_visible(ind) != !on) m1_show(ind, on);
 }
 
+/* The EQ mark (docs/modules/lineout.md "EQ mark"): pod_eq in the bar's left group, shown while the Equalizer switch is on (stock's equalizer_flag, the byte the Equalizer page and the per-output EQ keep) and the kill
+ * switch is absent. Hidden while stock's digital-out glyph shows: with both, the group would run into the clock. Stock sets that glyph later in the same tick, so the mark follows it one tick late.
+ * Set only when it changes. A bar without the widget is left alone. */
+static void lo_eq(void *parent, int kill) {
+    void *ind = widget_lookup(parent, EQ_IND, 0), *dig;
+    int on;
+    if (!ind) return;
+    on = !kill && *(volatile unsigned char *)EQ_FLAG != 0;
+    if (on && (dig = widget_lookup(parent, EQ_DIGITAL, 0)) != 0 && widget_get_visible(dig)) on = 0;
+    if (!widget_get_visible(ind) != !on) m1_show(ind, on);
+}
+
 /* The hooks (tools/pod.py LINEOUT_SITES): stock's widget_set_text_utf8(label, text), then the pill swap. */
 int lo_set_text(void *label, const char *text) {
     int r = widget_set_text_utf8(label, text);
@@ -39,6 +51,7 @@ int lo_set_text(void *label, const char *text) {
     kill = access(KILL_SD, F_OK) == 0;
     lo_sync(parent, kill);
     if (!kill) peqout_sync(1); /* the per-output EQ follows Line Out and a USB DAC within a second (patch/peqout.c) */
+    lo_eq(parent, kill); /* after the sync above, which can turn the switch for the new output */
     pill = widget_lookup(parent, LO_PILL, 0);
     if (!pill) return r; /* no pill in this bar: stock's "LO" text stays */
     if (text && text[0] == 'L' && text[1] == 'O' && !text[2] && !kill) {

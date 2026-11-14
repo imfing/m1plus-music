@@ -110,9 +110,17 @@ static void pd_start(void *dlg) {
  * in the stack with none of those above it is (flag 1; so a page the user returns to has its tile disabled again, as stock). Windows between the page and the front are its sub-pages. */
 static const struct {
     const char *window, *nav; /* the page's window name (the asset's root) and the name navigator_to opens it by */
+    const char *own; /* the window of our own page that replaces it (its sub-pages are windows above it), or none */
     volatile int *flag;
-} PD_SET[2] = {{"sysset_page", "systemset/sysset_page", (volatile int *)SYSSET_FLAG},
-               {"playset_page", "playset/playset_page", (volatile int *)PLAYSET_FLAG}};
+} PD_SET[2] = {{"sysset_page", "systemset/sysset_page", (const char *)0, (volatile int *)SYSSET_FLAG},
+               {"playset_page", "playset/playset_page", "m1plus_playset_page", (volatile int *)PLAYSET_FLAG}};
+
+static const char *pd_name(void *w) { return w ? *(const char **)((char *)w + WIDGET_NAME) : (const char *)0; }
+
+/* A window that leaves settings: the player, Radio Now Playing, Home. */
+static int pd_leaves(const char *nm) {
+    return !strcmp(nm, "playing_page") || !strcmp(nm, "m1plus_radionp") || !strcmp(nm, "home_page");
+}
 
 /* The named window in the manager and whether a window that leaves settings is above it; 0 when there is none. */
 static void *pd_window(void *wm, const char *name, int *above) {
@@ -120,12 +128,31 @@ static void *pd_window(void *wm, const char *name, int *above) {
     *above = 0;
     while (n--) {
         void *w = widget_get_child(wm, n);
-        const char *nm = w ? *(const char **)((char *)w + WIDGET_NAME) : (const char *)0;
+        const char *nm = pd_name(w);
         if (!nm) continue;
         if (!strcmp(nm, name)) return w;
-        if (!strcmp(nm, "playing_page") || !strcmp(nm, "m1plus_radionp") || !strcmp(nm, "home_page")) *above = 1;
+        if (pd_leaves(nm)) *above = 1;
     }
     return (void *)0;
+}
+
+/* Our page's sub-pages left in the stack (the windows right above it, up to the first that leaves settings: a picker or a slider page the top-right Now Playing button covered) are closed before the page is
+ * restacked. A page of ours keeps one window (pod_fg, the slider pages' widgets): a sub-page left under the restacked page and opened again from it would be a second instance, and closing that one would
+ * leave the first with no refresh and with the pointers of a destroyed window. */
+static void pd_close_subpages(const char *name) {
+    void *wm = window_manager(), *sub[8];
+    unsigned n, i, k = 0;
+    if (!wm) return;
+    n = widget_count_children(wm);
+    for (i = 0; i < n && (!pd_name(widget_get_child(wm, i)) || strcmp(pd_name(widget_get_child(wm, i)), name)); i++) {
+    }
+    for (i++; i < n && k < 8; i++) {
+        void *w = widget_get_child(wm, i);
+        const char *nm = pd_name(w);
+        if (nm && pd_leaves(nm)) break;
+        if (w && widget_is_window_opened(w)) sub[k++] = w;
+    }
+    while (k--) window_close(sub[k]); /* (the topmost first) */
 }
 
 static void pd_reconcile(void) {
@@ -133,19 +160,27 @@ static void pd_reconcile(void) {
     unsigned i;
     if (!wm) return;
     for (i = 0; i < 2; i++) {
-        int above;
+        int above, above_own = 1;
         void *win = pd_window(wm, PD_SET[i].window, &above);
-        *PD_SET[i].flag = win && widget_is_window_opened(win) && !above; /* (a page that is closing is gone) */
+        void *own = PD_SET[i].own ? pd_window(wm, PD_SET[i].own, &above_own) : (void *)0;
+        *PD_SET[i].flag = (win && widget_is_window_opened(win) && !above) ||
+                          (own && widget_is_window_opened(own) && !above_own); /* (a page that is closing is gone) */
     }
 }
 
 /* The hook at the two navigator_to calls of on_wm_tsmove_fun that open the page a tile chose (flag 2): the page when it is still in the stack is brought to the front the way stock brings the player back
  * (window_manager_switch_to, nothing closed, Back returns to where the user came from); otherwise (or if that fails) stock's call. The page's own init sets the flag when it opens; a restacked page runs no
- * init, so the flag is set here; a page that will not open leaves no flag of 2. Any other name is the stock call. A tap only. */
+ * init, so the flag is set here; a page that will not open leaves no flag of 2. Any other name is the stock call. A tap only. The Playback name opens our Playback Settings page (m1plus_playset_page: restacked
+ * when in the stack, else pod_open_playset), the stock list only when ours will not open; either window keeps the Playback flag (pd_reconcile). */
 int pd_open_settings(const char *name) {
     unsigned i;
     int ret;
     for (i = 0; i < 2 && strcmp(name, PD_SET[i].nav); i++) {
+    }
+    if (i < 2 && PD_SET[i].own) pd_close_subpages(PD_SET[i].own);
+    if (i < 2 && PD_SET[i].own && (m1_restack_window(PD_SET[i].own) || pod_open_playset() == 0)) {
+        *PD_SET[i].flag = 1; /* our page replaces stock's list: restacked, else opened as the Settings row opens it */
+        return RET_OK;
     }
     if (i < 2 && m1_restack_window(PD_SET[i].window)) {
         *PD_SET[i].flag = 1;

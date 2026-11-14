@@ -18,7 +18,7 @@ SC_YOFF = O['SC_YOFF']
 DATA = SU.DATA_DC
 CHART, LOOKUP, SDIR = SU.CHART, SU.LOOKUP, SU.SDIR
 REGION_FILE = pcregion.FILE
-NAME, AUTHOR, ART = 80, 56, 160
+NAME, AUTHOR, ART = 80, 56, 320
 ID = 16
 REC = ID + NAME + AUTHOR + ART + ID   # (pj_chart_t: the episode's own id last)
 REGION, SIZE = 0x30000000, 0x40000
@@ -127,7 +127,7 @@ def json_tests(ctx):
     expect(res[0][1] == 'last', 'a member given twice: the last one')
     n, res = P.run(doc(o(id='1', name='n', genres=[{'name': 'Politics', 'url': 'https://itunes.apple.com/us/genre/id1324', 'genreId': '1324'}], kind='podcasts', url='https://itunes.apple.com/x')))
     expect(res == [('1', 'n', '', '')], 'nested members (genres with their own name and url) are not the row\'s')
-    n, res = P.run(doc(o(id='1', name='n', artworkUrl100='https://x/' + 'y' * 200)))
+    n, res = P.run(doc(o(id='1', name='n', artworkUrl100='https://x/' + 'y' * 310)))
     expect(res[0][3] == '', 'an artwork address that does not fit is none')
     n, res = P.run(doc(o(id='1', name='é' * 60, artistName='中' * 30)))
     expect(len(res[0][1].encode()) <= NAME - 1 and res[0][1] == 'é' * 39 and len(res[0][2].encode()) <= AUTHOR - 1 and res[0][2] == '中' * 18, 'names are cut on a character boundary')
@@ -872,8 +872,9 @@ def state_tests(ctx):
         expect(SU.hint(m) == word and SU.hint(m) and m.props.get((m.sv, 'virtual_h')) == pod_show.discover_layout(0)['h'] and SU.at_disc(m), f'{label}: "{word}" under the control, no rows')
     L0, off = pod_show.discover_layout(0), 30
     d0, d1 = texts_style(m, 'label_ps_cdim', 0), texts_style(m, 'label_ps_cdim', off)
-    expect(d0 and d1 and d0[0][1][1] == L0['hint_y'] and d1[0][1][1] == L0['hint_y'] - off, f'the status text is painted in the content at DC_TOP + 8 and moves with the scroll offset ({d0[:1]}, {d1[:1]})')
-    expect(L0['h'] == O_['DC_TOP'] + 8 + 4 * O_['PS_TITLE_PITCH'] and m.props.get((m.sv, 'virtual_h')) == L0['h'], 'the content is DC_TOP + the hint\'s room (it only scrolls when that does not fit)')
+    expect(d0 and d1 and d0[0][1][1] == L0['hint_y'] and d1[0][1][1] == L0['hint_y'] - off, f'the status text is painted in the content, in the middle of the room under the control, and moves with the scroll offset ({d0[:1]}, {d1[:1]})')
+    expect(L0['h'] == O_['GRID_VIEW_H'] and O_['DC_TOP'] + 8 + 4 * O_['PS_TITLE_PITCH'] < L0['h'] and m.props.get((m.sv, 'virtual_h')) == L0['h'] and O_['DC_TOP'] < L0['hint_y'] < L0['h'] - O_['PS_TITLE_PITCH'],
+           'the content is the view\'s height (the hint\'s room runs to its bottom: nothing to scroll), the text inside it')
     expect(flags(m, 'label_status')[0] == 0, 'the status label is not used on the Discover level')
     # the failed chart is not asked again every tick; switching the control and back (or entering again) asks again
     m = SU.opened(site=disc_site(**{CHART + 'podcasts.json': {'rc': 6}}))
@@ -912,19 +913,17 @@ def state_tests(ctx):
     PCP.click(m, 'btn_return')
     expect(PCP.title_text(m) == 'Podcasts' and SU.has_row(m), 'and Back from the chart: the Shows level')
     # a search started from the Shows level path does not exist any more: the keyboard's Back with nothing typed returns to the chart
-    # downloads that run pause for the chart; the refresh in progress is waited for
+    # downloads that run go on beside the chart; the refresh in progress is waited for
     DL = sibling('pcdl')
     m = SU.opened()
     DL.poke_slot(m, 0, 'Sub One', 'a.mp3', 2, seq=1)
-    m.setword(DL.pn_at(DL.DKEY), DL.key_of('Sub One', 'a.mp3')); m.setword(DL.pn_at(DL.KIND), 2); m.setword(DL.pn_at(0), 1); m.setword(DL.pn_at(DL.DSEQ), 10)
+    m.setword(DL.pn_at(DL.DKEY), DL.key_of('Sub One', 'a.mp3')); m.setword(DL.pn_at(DL.DBUSY), 1); m.setword(DL.pn_at(DL.DSEQ), 10)
     PCP.tap_discover(m); SU.tick(m)
-    expect(m.thread is None and m.word(DL.pn_at(DL.DPAUSE)) == 1 and SU.hint(m) == 'Loading…', 'a download runs: it is asked to pause, the chart waits (Loading...)')
-    m.setword(DL.pn_at(0), 0); m.setword(DL.pn_at(DL.KIND), 0)
-    SU.tick(m)
-    expect(m.thread is not None and m.thread[0] == PSYMS['pn_cmain'], 'the next tick starts the chart when the downloads have paused')
+    expect(m.thread is not None and m.thread[0] == PSYMS['pn_cmain'] and DL.fn(m, 'pn_dl_running') == 1 and SU.hint(m) == 'Loading…',
+           'a download runs: the chart thread is created at once (Loading...), the download thread keeps running, nothing is asked to pause')
     SU.work(m); SU.tick(m)
-    m.calls = []; SU.tick(m)
-    expect(('curl_global_init', 3) in m.calls or 'pthread_create' in [c[0] for c in m.calls] or m.word(DL.pn_at(DL.DPAUSE)) == 1, 'afterwards the queued downloads are started again')
+    m.thread = None; m.calls = []; SU.tick(m)
+    expect(m.thread is None and 'pthread_create' not in [c[0] for c in m.calls] and DL.fn(m, 'pn_dl_running') == 1, 'afterwards the tick starts nothing: the downloads were never stopped')
     m = SU.opened()
     m.setword(PSYMS['pn'], 1); m.setword(PSYMS['pn'] + 4, 0); m.setword(PSYMS['pn'] + 8, 3)   # a refresh in progress (kind 0)
     PCP.tap_discover(m); SU.tick(m)
@@ -981,7 +980,7 @@ def width_tests(ctx):
         for key in ('Shows', 'Episodes'):
             w = font.width(tr(key), 18)
             expect(w <= O_['DC_SEG_W'] // 2 - 2 * O_['SEG_PAD'] - 8, f'{loc}: the label "{tr(key)}" ({w} px) fits its half of the control')
-        expect(all(tr(k) for k in ('Podcast Region', 'Automatic', 'Search words are sent to Apple.', 'Podcasts')) and '%s' in tr('Top 25 Shows in %s') and '%s' in tr('Top 25 Episodes in %s'), f'{loc}: the strings have a text, the line\'s keep their %s')
+        expect(all(tr(k) for k in ('Podcast Region', 'Automatic', 'Search words go to the chosen directory.', 'Podcasts')) and '%s' in tr('Top 25 Shows in %s') and '%s' in tr('Top 25 Episodes in %s'), f'{loc}: the strings have a text, the line\'s keep their %s')
     print('  widest Discover line (px, max %d):' % (320 - 2 * O_['PP_LINE_X']), max(worst))
 
 
@@ -1012,8 +1011,10 @@ def spin_tests(ctx):
     PCP.tap_discover(m)
     SU.tick(m)
     sp, d = spin(m), dim(m)
-    expect(SU.hint(m) == 'Loading…' and len(sp) == 1 and sp[0][2][0] == O_['PP_LINE_X'] and sp[0][2][1] == L0['hint_y'] + (O_['PS_TITLE_PITCH'] - 14) // 2 and d[0][1][0] == O_['PP_LINE_X'] + 14 + O_['PS_SPIN_GAP'],
-           f'the chart is asked for: one 14 px spinner at the line\'s left edge, Loading… after it ({[b[2] for b in sp]}, {d[:1]})')
+    HL = pod_show.hint_layout(O_['DC_TOP'], [SU.PCS.sw().hint_w(m, 'Loading…')], busy=True)
+    expect(SU.hint(m) == 'Loading…' and len(sp) == 1 and tuple(sp[0][2][:2]) == HL['spin'] and tuple(d[0][1][:2]) == HL['lines'][0] and HL['lines'][0][0] == HL['spin'][0] + 14 + O_['PS_SPIN_GAP']
+           and HL['lines'][0][1] == L0['hint_y'] and HL['spin'][0] > O_['PP_LINE_X'] and abs(HL['spin'][0] - (320 - (HL['lines'][0][0] + SU.PCS.sw().hint_w(m, 'Loading…')))) <= 1,
+           f'the chart is asked for: one 14 px spinner and Loading… after it, the two centred as one group across the page and in the room under the control ({[b[2] for b in sp]}, {d[:1]}, {HL})')
     expect(len(adds(m)) == 1, 'one spinner timer')
     a = sp[0][0]
     expect(m.call(SU.PSYMS['pg_spin_tick'], a0=0, count=40000000) == O_['RET_REPEAT'] and spin(m)[0][0] != a, 'the timer turns the frame while the line is busy')
@@ -1022,7 +1023,8 @@ def spin_tests(ctx):
     m = opened(disc_site(**{CHART + 'podcasts.json': {'rc': 6}}))
     SU.discover(m)
     d = dim(m)
-    expect(SU.hint(m) == "Can't connect" and spin(m) == [] and d[0][1][0] == O_['PP_LINE_X'], f'a failure: no spinner, the words at the line\'s left edge ({d[:1]})')
+    HL = pod_show.hint_layout(O_['DC_TOP'], [SU.PCS.sw().hint_w(m, "Can't connect")])
+    expect(SU.hint(m) == "Can't connect" and spin(m) == [] and tuple(d[0][1][:2]) == HL['lines'][0] and HL['spin'] is None, f'a failure: no spinner, the words centred where the busy line was ({d[:1]}, {HL})')
 
 
 SECTIONS = [spin_tests, json_tests, episode_json_tests, pf_iso_tests, net_tests, failure_tests, layout_tests, segmented_tests, switch_tests, tap_tests, episode_tests, notavail_tests, state_tests, width_tests, asset_tests]

@@ -138,18 +138,18 @@ DAILY = DAILY + VINYL
 # chevron (Lucide chevron-right fitted to 9 x 15, #777777, stroke 2) and the picker's check (20 px, white).
 CARD_GLYPH_PX, CARD_CHEVRON, CARD_CHECK = 20, ('pod_chev', 10, 16, (0x8A,) * 3), ('pod_check', 20)
 CARD_GLYPHS = {'Wi-Fi': 'wifi', 'Bluetooth': 'bluetooth', 'Home Screen': 'house', 'Library': 'disc-3', 'Now Playing': 'audio-lines',
-               'EQ': 'sliders-vertical', 'All Playback Settings': 'headphones', 'Display': 'sun', 'Buttons & Power': 'power', 'Button Lock': 'lock-keyhole', 'Tap to Wake': 'pointer', 'Auto-Standby': 'moon', 'Auto-Shutdown': 'power', 'Screen Timeout': 'timer', 'LED Light': 'lightbulb', 'Follow Screen': 'smartphone', 'Appearance': 'palette', 'Accent': 'palette', 'Background': '+contrast',
+               'EQ': 'sliders-vertical', 'Playback Settings': 'headphones', 'Play Mode': 'repeat', 'Gapless': 'infinity', 'Resume': 'history', 'Folder Skip': 'folder', 'Gain': 'gauge', 'ReplayGain': 'scale', 'Digital Filter': 'waves', 'DSD Output Mode': 'audio-lines', 'USB Volume': 'usb', 'Digital Output': 'cable', 'Folder Album Cover': 'image', 'Max Volume': 'volume-2', 'Default Volume': 'volume-1', 'Channel Balance': 'sliders-horizontal', 'Volume Memory': 'memory-stick', 'Display': 'sun', 'Buttons & Power': 'power', 'Button Lock': 'lock-keyhole', 'Tap to Wake': 'pointer', 'Auto-Standby': 'moon', 'Auto-Shutdown': 'power', 'Screen Timeout': 'timer', 'LED Light': 'lightbulb', 'Follow Screen': 'smartphone', 'Appearance': 'palette', 'Accent': 'palette', 'Background': '+contrast',
                'Control Center': 'layout-grid', 'Lock Screen': 'lock', 'Wallpaper': 'image', 'Enable': 'lock', 'Show Time': 'clock', 'Player Style': 'square-play', 'Custom Wallpaper': 'info',
                'Keyboards': '+keyboard', 'About': 'info', 'All System Settings': 'settings', 'Developer': 'code', 'Main Menu': 'list-checks', 'Extras': 'ellipsis',
                'Recent Albums': 'history', 'Daily Mix': 'shuffle', 'Regenerate Daily Mix': 'refresh-cw', 'Update Library': 'refresh-cw',
-               'Landscape': 'rotate-cw-square', 'Volume Buttons': 'volume-2', 'Rebuild Covers': 'image-up', 'Rebuild Artist Photos': 'mic-vocal', 'Idle Display': 'timer', 'Theme': '+cassette-tape', 'Record': '+turntable', 'Base': 'palette', 'Boot to M1+ Music': 'power', 'Open Shanling Home': '@shanling', 'Equalizer': 'sliders-vertical',
-               'Screenshot': 'camera', 'Clear Cover Cache': 'trash', 'Clear Track Durations': 'trash', 'Delete Unsupported Files': 'trash', 'Reset All Settings': 'rotate-ccw', 'Cache': 'hard-drive','Settings Files': 'file-cog', 'Download from AutoEq': 'download', 'Podcast Discover': 'compass', 'English': 'languages', 'Chinese (Pinyin)': 'languages', 'Battery Percentage': 'battery-charging', 'Battery': 'battery-full', 'Charge Limit': 'battery-medium',
+               'Landscape': 'rotate-cw-square', 'Volume Buttons': 'volume-2', 'Rebuild Covers': 'image-up', 'Rebuild Artist Photos': 'mic-vocal', 'Idle Display': 'timer', 'Lyrics Text Size': 'mic-vocal', 'Theme': '+cassette-tape', 'Record': '+turntable', 'Base': 'palette', 'Boot to M1+ Music': 'power', 'Open Shanling Home': '@shanling', 'Equalizer': 'sliders-vertical',
+               'Screenshot': 'camera', 'Clear Cover Cache': 'trash', 'Clear Track Durations': 'trash', 'Delete Unsupported Files': 'trash', 'Reset All Settings': 'rotate-ccw', 'Cache': 'hard-drive','Settings Files': 'file-cog', 'Download from AutoEq': 'download', 'Podcast Discover': 'compass', 'Podcasts': 'podcast', 'Scrobbling': 'list-music', 'ListenBrainz': '+musicbrainz:filled', 'Upload Scrobbles': 'upload', 'Last.fm': '+lastdotfm:filled', 'Auto Upload': 'clock', 'English': 'languages', 'Chinese (Pinyin)': 'languages', 'Battery Percentage': 'battery-charging', 'Battery': 'battery-full', 'Charge Limit': 'battery-medium',
                'Index Rail': 'list', 'Section Headers': 'list-start', 'Continue Playing': 'skip-forward'}
 
 
 def card_name(g):
     """The image of a card row's glyph: pod_ci_<glyph>."""
-    return 'pod_ci_' + g.lstrip('+@').replace('-', '_')
+    return 'pod_ci_' + g.lstrip('+@').split(':')[0].replace('-', '_')
 
 
 # A card is drawn by its rows (the stock list_view layouter stacks the scroll_view's children and ignores their y, so a card cannot be a view of its own: tools/pod_settings.py): the background of
@@ -165,7 +165,7 @@ SWATCH_PX = 20
 SWATCHES = [f'pod_sw{i}' for i in range(7)]
 CARD_IMAGES = sorted({card_name(g) for g in CARD_GLYPHS.values()}) + [CARD_CHEVRON[0], CARD_CHECK[0]] + CARD_PIECE_IMAGES + CARD_TALL_IMAGES + SWATCHES + ['pod_sl_thumb']
 # Find Cover & Lyrics' empty and failed states (docs/modules/onlineart.md): a muted grey glyph, ES_PX px, stroke 2, over the state's title (tools/pod_ui.py oa_es_icon; patch/onlineart.c names them)
-ES_ICONS = {'pod_es_timer': 'timer', 'pod_es_music': 'music', 'pod_es_image': 'image', 'pod_es_wifi': 'wifi-low', 'pod_es_calendar': 'calendar', 'pod_es_lock': 'lock', 'pod_es_plug': 'plug',
+ES_ICONS = {'pod_es_timer': 'timer', 'pod_es_music': 'music', 'pod_es_image': 'image', 'pod_es_wifi': 'wifi-off', 'pod_es_calendar': 'calendar', 'pod_es_lock': 'lock', 'pod_es_plug': 'plug',
             'pod_es_info': 'info', 'pod_es_card': 'memory-stick', 'pod_es_drive': 'hard-drive', 'pod_es_download': 'download', 'pod_es_check': 'badge-check'}
 ES_PX, ES_RGB = 40, (0x8E, 0x8E, 0x93)
 # The Wi-Fi page's network rows (patch/wifipage.c, docs/modules/wifi.md): a Wi-Fi fan signal glyph (wf_sig0..3: Lucide's wifi drawn whole in the dim grey, the level's arcs white over it: 3 wifi, 2 wifi-high, 1 wifi-low, 0 all dim; 20 x 16), the lock (16 px) and info (22 px)
@@ -481,7 +481,8 @@ def glyph(g, px, ctx, rgb=WHITE):
     (pull-down ring, no-cover tile); 'solid' filled shapes, 1.5 px absolute at <= 16 px, 2 px above; 'small' 1.5 px
     absolute at <= 16 px, 2 px above."""
     n = gname(g)
-    if ctx == 'solid': im = render(n, px, 'outline', 1.5 * 24 / px if px <= 16 else 2, True)
+    if is_custom(g) and is_filled(g): im = render(n, px, 'filled')      # a filled mark (the Last.fm logo): no stroke in any context
+    elif ctx == 'solid': im = render(n, px, 'outline', 1.5 * 24 / px if px <= 16 else 2, True)
     elif ctx == 'small': im = render(n, px, 'outline', 1.5 * 24 / px if px <= 16 else 2)
     elif ctx == 'disc': im = render(n, px, 'outline', DISC_SW)
     elif ctx == 'bare': im = render(n, px, 'outline', BARE_SW * 24 / px)
@@ -853,6 +854,8 @@ SONGS_IMAGES = {'sg_play': ('play:filled', WHITE, 14, 16), 'sg_shuffle': ('shuff
                 'pod_ic_vsartist': ('mic-vocal', WHITE, None, 20), 'pod_ic_vsalbumartist': ('user-star', WHITE, None, 20),
                 'pod_ic_vsrefresh': ('refresh-cw', WHITE, None, 20), 'pod_ic_vsserver': ('server', WHITE, None, 20),   # the Subsonic root's "..." card (patch/ndroot.c): Sync Now, Server Settings
                 'pod_ic_vsdownload': ('download', WHITE, None, 20),   # the Subsonic album page's "..." card (patch/albumpage.c): Download Album
+                'pod_ic_vsclean': ('list-x', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Clean Up Playlist
+                'pod_ic_vsphoto': ('user-round-search', WHITE, None, 20),   # an artist's page "..." card (patch/albums.c): Find Artist Photo
                 'nd_st_ok': ('circle-check', WIFI_GREY, 14, 14), 'nd_st_off': ('unplug', WIFI_GREY, 14, 14)}   # the Subsonic root's status line: connected, and not connected / offline (14 px, the spinner's size, the line's grey)   # the "..." cards' row glyphs (bare, as the Playlists menu's rows); ink None: drawn on the icon set's own 24 grid at VS_GRID_PX, not fitted to the box, so a round or square shape keeps the set's optical balance and the rows' glyphs look one size
 VS_GRID_PX = 21   # the "..." card glyphs' grid: 24 units = 21 px (1.5 px stroke), so a full-grid shape (layout-grid, circle-check) has about 17 px of ink in its 20 px box
 ALBUM += sorted(SONGS_IMAGES)
@@ -929,7 +932,7 @@ PA_PLAYB_X, PA_PLAYB_Y, PA_PLAYB_PX, PA_PLAYB_RIM_A, PA_PLAYB_GLYPH = 48, 112, 2
 PC_ATLAS = 'pc_atlas'
 PC_SHEET_ICONS = (('pc_ic_import', 'file-input', WHITE), ('pc_ic_speed', 'gauge', WHITE), ('pc_ic_refresh', 'refresh-cw', WHITE), ('pc_ic_select', 'list-checks', WHITE), ('pc_ic_check', '+check', WHITE),
                   ('pc_ic_unsub', 'x', PA_RED), ('pc_ic_down', 'arrow-down', WHITE), ('pc_ic_trash', 'trash', WHITE), ('pc_ic_undo', 'rotate-ccw', WHITE),
-                  ('pod_ic_export', 'file-output', WHITE), ('pod_ic_save', 'bookmark', WHITE), ('pod_ic_order', 'arrow-down-wide-narrow', WHITE), ('pod_ic_filter', 'list-filter', WHITE),
+                  ('pod_ic_export', 'file-output', WHITE), ('pod_ic_save', 'bookmark', WHITE), ('pod_ic_order', 'arrow-down-wide-narrow', WHITE), ('pod_ic_filter', 'list-filter', WHITE), ('pod_ic_pause', 'pause', WHITE), ('pod_ic_play', 'play', WHITE), ('pod_ic_cancel', 'x', WHITE),
                   ('pod_ic_rd_add', 'plus', WHITE), ('pod_ic_rd_remove', 'minus', WHITE), ('pod_ic_rd_import', 'import', WHITE))   # the Radio sheets: Add to / Remove from Stations and Station Info (Now Playing), Import from Card (Stations; its Recently Played sheet's Clear row uses pc_ic_trash)   # (pod_ic_ names: the images the stock pages' digest test ignores, test/pod/navbars.py NEW_IMAGES; a new pc_ image would change test/navbars-stock.sha256 in every branch)
 PC_SHEET_PX = BARE_PX   # the sheets' glyphs: the size of the track rows' menu's and of Now Playing's More sheet's own rows (24 px)
 PC_SHEETS = (('pc_sheet1', 50), ('pc_sheet2', 100), ('pc_sheet3', 150), ('pc_sheet4', 200), ('pc_sheet5', 250), ('pc_sheet6', 300), ('pc_sheet7', 350))   # the sheets' glass for 1..7 rows (one family for every bottom sheet: the Podcasts and Radio sheets, the track rows' menu's pc_sheet5, Now Playing's More sheet's pc_sheet6)

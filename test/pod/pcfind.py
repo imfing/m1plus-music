@@ -235,7 +235,7 @@ MORE_IDLE, MORE_RETRY = 'Search All Episodes', "Can't connect \u00b7 Tap to Retr
 
 def more_tests(ctx):
     """The Search All Episodes row: when it is there, the tap that starts the Show page's job, Loading… and the count, the end picked up by the page's own timer (the list read again, the query run anew), a failure and its retry,
-    a download paused and resumed, leaving the page and the episode page while the job runs, Chinese titles in the archive, the Filter."""
+    a download that goes on beside the job, leaving the page and the episode page while the job runs, Chinese titles in the archive, the Filter."""
     expect = ctx.expect
     tick = lambda m: m.call(PSYMS['pf_tick'], a0=0, count=400000000)
     atick = lambda m: m.call(PSYMS['pg_awake_tick'], a0=0, count=40000000)
@@ -322,23 +322,23 @@ def more_tests(ctx):
     tick(m)
     expect(ARC.state(m)[0] == ARC.AR['IDLE'] and last(m)[0] in (MORE_IDLE, 'Loading…') and MORE_RETRY not in str(rows(m, more=True)), 'a cancelled job shows no failure')
 
-    # 4. A running download is paused first; the job starts when it has, the download goes on after it
+    # 4. A running download goes on beside the job: the job starts at the tap, nothing is paused or started again
     m = opened()
     typed(m, 'alpha')
     m.curl_site = lambda u, o: dict({'body': feed_xml, 'chunk': 200}, xfer=lambda url, sent, total: None)
     r, dth = ARC.DL.add(m, 'e5.mp3', PSH.DEEP)
     m.thread = None
     tap_row(m, 5)
-    expect(m.thread is None and last(m)[0] == 'Loading…' and ARC.state(m)[0] == ARC.AR['IDLE'], 'with a download running the row reads Loading… and the job waits')
-    m.call(dth[0], a0=dth[1], count=1 << 40)
-    m.thread = None
-    atick(m)
-    expect(m.thread and m.thread[0] == PSYMS['pn_armain'] and ARC.state(m)[0] == ARC.AR['RUNNING'], 'the downloads\' timer starts the job once the download has paused')
+    ath = m.thread
+    expect(ath and ath[0] == PSYMS['pn_armain'] and last(m)[0] == 'Loading…' and ARC.state(m)[0] == ARC.AR['RUNNING'] and ARC.DL.fn(m, 'pn_dl_running') == 1 and ARC.DL.fn(m, 'pn_dl_waiting') == 1,
+           'with a download running the job starts at the tap (Loading…); the download thread and its queue are left alone')
     m.curl_site = lambda u, o: {'body': feed_xml}
-    ARC.PCN.work(m, m.thread)
+    ARC.PCN.work(m, ath)
     m.thread = None
     atick(m)
-    expect(m.thread and m.thread[0] == PSYMS['pn_dmain'], 'at the job\'s end the paused download goes on')
+    expect(m.thread is None and ARC.DL.fn(m, 'pn_dl_running') == 1, 'at the job\'s end no thread is started: the download thread is still the one that runs')
+    m.call(dth[0], a0=dth[1], count=1 << 40)
+    expect(ARC.DL.fn(m, 'pn_dl_running') == 0 and ARC.DL.fn(m, 'pn_dl_count') == 0, 'the download thread then drains its queue and ends')
     tick(m)
     expect(len(rows(m, 60, more=True)) == 45, 'and the search has the archive')
 

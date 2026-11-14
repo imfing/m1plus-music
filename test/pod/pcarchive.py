@@ -107,7 +107,7 @@ def job_tests(ctx):
     expect(state(m)[0] == AR['FAILED'] and f'{RD}/A/.archive' not in m.fs, 'the card removed before the end: failed, nothing renamed into place')
     m = PCN.machine(); PCN.sub(m, 'A', '')
     r = m.call(PSYMS['pn_arch_start'], a0=m.cstr(RD), a1=show_addr(m, 'A'), count=1 << 40)
-    expect(r == 17, 'a show with no feed address does not start')
+    expect(r == 16, 'a show with no feed address does not start')
     m = PCN.machine(ca=False); PCN.sub(m, 'A', F)
     r = m.call(PSYMS['pn_arch_start'], a0=m.cstr(RD), a1=show_addr(m, 'A'), count=1 << 40)
     expect(r == PN['NOCERT'], 'the guards apply (no certificate bundle)')
@@ -530,7 +530,7 @@ def retry_tests(ctx):
     m = PCN.machine(); PCN.sub(m, 'A', F); log = []
     m.curl_site = attempts([good], log)
     r, th = start(m)
-    m.call(PSYMS['pn_cancel'], count=2000)
+    m.call(PSYMS['pn_cancel'], a0=1 << 10, count=2000)   # (PN_KIND_ARCH, one of PN_K_PODCASTS)
     PCN.work(m, th)
     expect(state(m) == (AR['FAILED'], PN['CANCELLED']) and not log and f'{RD}/A/.archive' not in m.fs, 'cancelled before the worker ran: no request, no file')
     m = PCN.machine(); PCN.sub(m, 'A', F); log = []
@@ -599,19 +599,22 @@ def page_tests(ctx):
     PCP.click(m, 'btn_return'); PSH.open_show(m); m.setword(count_addr(m), 12); tick(m)
     expect(state(m)[0] == AR['RUNNING'] and tx(m, 'label_ps_cdim') == ['Loading… 12'], 'leaving the show while the job runs and coming back: the job went on, the row shows the count')
 
-    # 4. Another job takes the worker (the page's way: a job that runs is cancelled): the archive job stops, leaves nothing, shows no toast; the downloads that paused go on
+    # 4. Another job takes the worker (the page's way: a job that runs is cancelled): the archive job stops, leaves nothing, shows no toast; the downloads that ran beside it go on
     m = shown(lambda u, o: {'body': feed_xml})
     th = m.thread
     r, dth = DL.add(m, 'e5.mp3', PSH.DEEP)
-    expect(r == 0 and dth is None and m.call(PSYMS['pn_dl_waiting'], count=2000) == 1, 'a download queued while the job runs waits')
+    expect(r == 0 and dth and dth[0] == PSYMS['pn_dmain'] and m.call(PSYMS['pn_dl_running'], count=2000) == 1 and m.call(PSYMS['pn_job_busy'], count=2000) == 1, 'a download queued while the job runs starts its own thread at once')
     m.call(PSYMS['pg_srch_leave'], count=2000000)
     m.curl_site = lambda u, o: dict({'body': feed_xml, 'chunk': 200}, xfer=lambda url, sent, total: None)
     PCN.work(m, th)
     m.calls = []; m.thread = None
     tick(m)
     expect(state(m)[0] == AR['IDLE'] and not toasted(m, 'connect') and f'{PSH.RP}/{PSH.DEEP}/.archive' not in m.fs and f'{PSH.RP}/{PSH.DEEP}/.archive.tmp' not in m.fs
-           and m.thread and m.thread[0] == PSYMS['pn_dmain'] and tx(m) == ['See All'],
-           'cancelled by another job: no archive, no temp file, no toast, the row as before and the paused download goes on')
+           and m.thread is None and m.call(PSYMS['pn_dl_running'], count=2000) == 1 and tx(m) == ['See All'],
+           'cancelled by another job: no archive, no temp file, no toast, the row as before; the tick starts no second download thread, the first one still runs')
+    m.curl_site = DL.server(DL.DATA)
+    DL.work(m, dth)
+    expect(m.call(PSYMS['pn_dl_running'], count=2000) == 0 and m.call(PSYMS['pn_dl_count'], count=2000) == 0 and m.fs.get(f'{PSH.RP}/{PSH.DEEP}/e5.mp3') == DL.DATA, 'and the download then finishes: the episode is a file')
 
     # 5. The device is kept awake while the job runs; the end is seen by that timer when the page's own is stopped (another page in front)
     m = shown(lambda u, o: {'body': feed_xml})
@@ -625,12 +628,12 @@ def page_tests(ctx):
     PCN.work(m, th)
     m.thread = None
     tick(m, 'pg_awake_tick')
-    expect(state(m)[0] == AR['IDLE'] and m.thread and m.thread[0] == PSYMS['pn_dmain'], 'the page in the background: the downloads\' timer forgets the finished job and starts the paused downloads')
+    expect(state(m)[0] == AR['IDLE'] and m.thread is None and m.call(PSYMS['pn_dl_running'], count=2000) == 1, 'the page in the background: the downloads\' timer forgets the finished job; the download thread that ran beside it still runs, none is started')
 
-    # 6. The page is closed while the job runs: the job is cancelled, a timer with no page starts the downloads that paused once the worker is free
+    # 6. The page is closed while the job runs: the job is cancelled, a timer with no page forgets it once the worker is free; the downloads run beside it
     m = shown(lambda u, o: {'body': feed_xml})
     th = m.thread
-    DL.add(m, 'e5.mp3', PSH.DEEP)
+    r, dth = DL.add(m, 'e5.mp3', PSH.DEEP)
     fn, c = m.bound[(m.window, O['EVT_DESTROY'])]
     m.call(fn, a0=c, a1=0, count=20000000)
     expect(any(c[0] == 'timer_add' and c[1] == PSYMS['pg_resume_tick'] for c in m.calls), 'closing the page: a resume timer is armed')
@@ -639,8 +642,8 @@ def page_tests(ctx):
     expect(r == O['RET_REPEAT'] and m.thread is None, 'the worker is still busy: the resume timer waits')
     PCN.work(m, th)
     r = tick(m, 'pg_resume_tick')
-    expect(r == 0 and state(m)[0] == AR['IDLE'] and f'{PSH.RP}/{PSH.DEEP}/.archive' not in m.fs and m.thread and m.thread[0] == PSYMS['pn_dmain'],
-           'the job ended cancelled: the timer starts the downloads and ends, no archive')
+    expect(r == 0 and state(m)[0] == AR['IDLE'] and f'{PSH.RP}/{PSH.DEEP}/.archive' not in m.fs and m.thread is None and m.call(PSYMS['pn_dl_running'], count=2000) == 1 and dth and dth[0] == PSYMS['pn_dmain'],
+           'the job ended cancelled: the timer ends, no archive, no download thread started (the one beside the job still runs)')
 
 
 def spin_tests(ctx):
