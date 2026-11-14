@@ -97,7 +97,7 @@ enum {
     ACT_LIGHTSET = 98, /* the Screen Timeout picker's rows (arg = stock's backlight time index, 0 .. 4) */
     ACT_LED = 99, /* Settings > System > Display: LED Light, a value row opening its picker */
     ACT_LEDSET = 100, /* the LED Light picker's rows (arg = stock's lamp mode: 0 off, 1 green, 2 blue) */
-    ACT_LEDFOLLOW = 101, /* Settings > System > Display: Follow Screen, a switch row, stock's own switch */
+    ACT_LEDFOLLOW = 101, /* Settings > System > Display > LED Light: Follow Screen, a switch row, stock's own switch */
     ACT_KEYLOCK = 102, /* Settings > System > Buttons & Power: Button Lock, a value row opening its picker */
     ACT_KEYLOCKSET =
         103, /* the Button Lock picker's rows (arg = 0 off, else stock's mode: 1 volume keys, 2 the other keys, 3 both) */
@@ -758,8 +758,7 @@ static void value_text(void *label, int kind) {
     } else if (kind == VK_LED) {
         key = tl_led() == 3 ? "Dynamic" : disp_led() == 1 ? "Green" : disp_led() == 2 ? "Blue" : "Off";
     } else if (kind == VK_RGBTHEME) {
-        static const char *const theme[] = {"Reference",  "Gentle Breathe", "Heartbeat",
-                                            "Lighthouse", "Candle",         "Ocean Wave"};
+        static const char *const theme[] = {"Reference", "Gentle Breathe", "Heartbeat", "Lighthouse", "Candle", "Wave"};
         key = theme[tl_theme()];
     } else if (kind == VK_KEYLOCK) {
         static const char *const lock[] = {"Off", "Volume", "Buttons", "Both"};

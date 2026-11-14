@@ -1882,7 +1882,7 @@ def cards_row(i, row, piece, last, icon=True):
     from mod_icons import CARD_GLYPHS, card_name, CARD_CHEVRON, CARD_CHECK
     kind = pod_pages.row_kind(row)
     swatch = row.action == pod_pages.ACT_ACCENTSET   # the Accent picker's rows show the accent's round swatch where a glyph goes (never tinted: docs/modules/accent.md)
-    has_icon = swatch or (icon and kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PCDIR, pod_pages.ACT_RGBROW, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row, LED Light's Theme row and the Presets count have no glyph, like the rows around them)
+    has_icon = swatch or (icon and kind not in ('check', 'info', 'preset', 'preamp', 'band', 'lib', 'delete', 'plain', 'wvalue') and row.action not in (pod_pages.ACT_CCLIST, pod_pages.ACT_SFOLD, pod_pages.ACT_UPDATE, pod_pages.ACT_REGION, pod_pages.ACT_PCDIR, pod_pages.ACT_RGBROW, pod_pages.ACT_LEDFOLLOW, pod_pages.ACT_PEQ_PRESETS, pod_pages.ACT_PEQ_TENBAND))   # (the Cache counts, Unsupported Files, About's Software Update link, the Podcast Region row, LED Light's Theme and Follow Screen rows and the Presets count have no glyph, like the rows around them)
     h = ST.row_h(row)
     item = Widget('list_item', 0, 0, ST.LIST_W, h, [('name', f'pod_row{i}'), ('style', 'list_item_style')] + ([('sensitive', 'false')] if kind in ('info', 'preamp') and row.action != pod_pages.ACT_SFDEL else []))
     normal, down = ST.piece_images(piece, h != ST.ROW_H)

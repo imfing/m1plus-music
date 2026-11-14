@@ -116,8 +116,8 @@ The retired Settings > Library > Album Order file `album-order` (`0` Title, else
 | Display > brightness slider | `[SYSSET] LIGHTNESS` (the word `lightness`) | 0 .. 100, written by stock's own slider handlers ([display](display.md)) |
 | Display > Screen Timeout | `[SYSSET] LIGHTTIME` (the word `backlighttime_mode`) | 0 never, 1 15 s, 2 30 s, 3 1 min, 4 5 min ([display](display.md)) |
 | Display > LED Light | `[SYSSET] ATMOSPHERELEDMODE` (the byte `atmosphereled_mode`) | 0 off, 1 green, 2 blue ([display](display.md)) |
-| Display > LED Light > Dynamic, and its theme | `/mnt/data/m1plus/led-dynamic` | `0` or missing: off; `1` .. `6`: on (stock's lamp mode is then 0) with the theme Reference, Gentle Breathe, Heartbeat, Lighthouse, Candle or Ocean Wave ([display](display.md) "Sample Rate") |
-| Display > Follow Screen | `[SYSSET] LEDFOLLOWSCREEN` (the byte `ledfollowscreen_flag`) | 1 on, 0 off ([display](display.md)) |
+| Display > LED Light > Dynamic, and its theme | `/mnt/data/m1plus/led-dynamic` | `0` or missing: off; `1` .. `6`: on (stock's lamp mode is then 0) with the theme Reference, Gentle Breathe, Heartbeat, Lighthouse, Candle or Wave ([display](display.md) "Sample Rate") |
+| Display > LED Light > Follow Screen | `[SYSSET] LEDFOLLOWSCREEN` (the byte `ledfollowscreen_flag`) | 1 on, 0 off ([display](display.md)) |
 
 ## Files on the card
 
@@ -160,7 +160,7 @@ Settings > Developer > Tools > **Cache** (a link row, glyph `hard-drive`) opens 
 
 ## Display
 
-Settings > System > Display (`m1plus_display`, `DISPLAY_PAGE`, `patch/display.c`) is one cards page of three cards: the brightness slider, Screen Timeout and Lock Screen, LED Light and Follow Screen. No row opens a stock page, every state is stock's own, and nothing of ours is saved; see [display](display.md).
+Settings > System > Display (`m1plus_display`, `DISPLAY_PAGE`, `patch/display.c`) is one cards page of three cards: the brightness slider, Screen Timeout and Lock Screen, LED Light. No row opens a stock page, every state is stock's own, and nothing of ours is saved; see [display](display.md).
 
 **Library > Scrobbling**: the second row of the last card, under **Podcasts**, **Scrobbling** (a value row, Lucide `list-music`, `ACT_SCROBPAGE` 139, `VK_SCROB`: On or Off from `scrobble_setting`, the value read again when the Library page is back in front; it opens the Scrobbling page). The Library page keeps none of the scrobbling rows or notes.
 

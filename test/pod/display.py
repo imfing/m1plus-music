@@ -183,14 +183,16 @@ def settings_tests(ctx):
     expect(lay[-4:] == ['About', P.GAP, 'All System Settings', 'Developer'], f'the last card: All System Settings, then Developer ({lay[-4:]})')
     expect(P.PAGES[P.DISPLAY_PAGE_INDEX] is D and P.PAGES[P.LIGHTTIME_PAGE_INDEX] is L and P.PAGES[P.LED_PAGE_INDEX] is E and (P.LIGHTTIME_PAGE_INDEX, P.LED_PAGE_INDEX) == (71, 72)
            and (D.key, D.title, L.key, L.title, E.key, E.title) == ('m1plus_display', 'Display', 'm1plus_lighttime', 'Screen Timeout', 'm1plus_ledlight', 'LED Light'), 'the three pages')
-    expect([(r.label, r.action, r.arg) for r in D.rows] == [('Screen Timeout', P.ACT_LIGHT, P.LIGHTTIME_PAGE_INDEX), ('Lock Screen', P.ACT_PAGE, P.LOCK_PAGE_INDEX), ('LED Light', P.ACT_LED, P.LED_PAGE_INDEX), ('Follow Screen', P.ACT_LEDFOLLOW, 0)]
-           and [P.row_kind(r) for r in D.rows] == ['value', 'link', 'value', 'switch'], 'the Display page\'s rows: Screen Timeout, Lock Screen, LED Light, Follow Screen')
+    expect([(r.label, r.action, r.arg) for r in D.rows] == [('Screen Timeout', P.ACT_LIGHT, P.LIGHTTIME_PAGE_INDEX), ('Lock Screen', P.ACT_PAGE, P.LOCK_PAGE_INDEX), ('LED Light', P.ACT_LED, P.LED_PAGE_INDEX)]
+           and [P.row_kind(r) for r in D.rows] == ['value', 'link', 'value'], 'the Display page\'s rows: Screen Timeout, Lock Screen, LED Light')
     dl = [x.label if isinstance(x, P.Row) else 'brightness' if isinstance(x, P.Brightness) else x for x in D.layout]
-    expect(dl == ['brightness', P.GAP, 'Screen Timeout', 'Lock Screen', P.GAP, 'LED Light', 'Follow Screen'], f'three cards: the brightness slider; Screen Timeout + Lock Screen; LED Light + Follow Screen ({dl})')
+    expect(dl == ['brightness', P.GAP, 'Screen Timeout', 'Lock Screen', P.GAP, 'LED Light'], f'three cards: the brightness slider; Screen Timeout + Lock Screen; LED Light alone ({dl})')
     expect([(r.label, r.action, r.arg) for r in L.rows] == [(t, P.ACT_LIGHTSET, i) for i, t in enumerate(TEXTS)] and all(P.row_kind(r) == 'check' for r in L.rows) and P.LIGHTTIME_VALUES == TEXTS,
            'the Screen Timeout picker: stock\'s five choices in stock\'s order, the argument is stock\'s index')
-    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2), ('Dynamic', P.ACT_LEDSET, 3), ('Theme', P.ACT_RGBROW, P.RGB_THEME_PAGE_INDEX)] and all(P.row_kind(r) == 'check' for r in E.rows[:4]) and P.row_kind(E.rows[4]) == 'value',
-           'the LED Light picker: stock Off, Green and Blue plus Dynamic, then the Theme row')
+    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2), ('Dynamic', P.ACT_LEDSET, 3), ('Follow Screen', P.ACT_LEDFOLLOW, 0), ('Theme', P.ACT_RGBROW, P.RGB_THEME_PAGE_INDEX)] and all(P.row_kind(r) == 'check' for r in E.rows[:4]) and [P.row_kind(r) for r in E.rows[4:]] == ['switch', 'value'],
+           'the LED Light picker: stock Off, Green and Blue plus Dynamic, then the Follow Screen switch and the Theme row')
+    el = [x.label if isinstance(x, P.Row) else x for x in E.layout]
+    expect(el == ['Off', 'Green', 'Blue', 'Dynamic', P.GAP, 'Follow Screen', P.GAP, 'Theme'], f'LED Light: the choices; Follow Screen in a card of its own; Theme in one (hidden Theme leaves a gap, so it comes last: nothing moves) ({el})')
     expect((P.ACT_LIGHT, P.ACT_LIGHTSET, P.ACT_LED, P.ACT_LEDSET, P.ACT_LEDFOLLOW) == (97, 98, 99, 100, 101) and {P.ACT_LIGHT, P.ACT_LED} <= set(P.VALUE_ACTIONS) and {P.ACT_LIGHTSET, P.ACT_LEDSET} <= set(P.CHECK_ACTIONS)
            and P.ACT_LEDFOLLOW in P.SWITCH_ACTIONS, 'the actions')
     expect(len(P.STOCK_PAGES) == 2 and not any(n.split('/')[-1] in ('display_page', 'brightness_page', 'lighttime_page', 'atmosphereled_page', 'screensaver_page') for n, *_ in P.STOCK_PAGES)
@@ -204,7 +206,7 @@ def settings_tests(ctx):
     for loc in pod_i18n.LOCALES:
         expect(all(pod_i18n.TEXT[k][loc] for k in ('Display', 'Screen Timeout', 'Lock Screen', 'LED Light', 'Follow Screen', 'Never', 'Off', 'Green', 'Blue')), f'the page texts have a translation in {loc}')
     expect(all(pod_i18n.key_for(t) is None for t in TEXTS[1:]) and pod_i18n.key_for('Never') == 'Never', '15s .. 5min are plain texts, Never is a key')
-    expect([mod_icons.CARD_GLYPHS[k] for k in ('Screen Timeout', 'Lock Screen', 'LED Light', 'Follow Screen')] == ['timer', 'lock', 'lightbulb', 'smartphone'], 'the glyphs')
+    expect([mod_icons.CARD_GLYPHS[k] for k in ('Screen Timeout', 'Lock Screen', 'LED Light')] == ['timer', 'lock', 'lightbulb'] and 'Follow Screen' not in mod_icons.CARD_GLYPHS, 'the glyphs (Follow Screen has none on the LED Light page)')
 
     def page(index, nrows, kinds=('pod_check', 'pod_label'), **state):
         m = machine(**state)
@@ -253,14 +255,14 @@ def settings_tests(ctx):
         got, tr = value(page(P.DISPLAY_PAGE_INDEX, 4, DK, led=led), 2)
         expect(tr == [want], f'the byte {led}: the LED Light row shows {tr}')
 
-    def sw_images(m): return [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] == m.widgets['pod_switch3']]
+    def sw_images(m): return [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] == m.widgets['pod_switch4']]
     for st, img in ((0, 'sset_off'), (1, 'sset_on')):
-        m = page(P.DISPLAY_PAGE_INDEX, 4, DK, follow=st)
+        m = page(P.LED_PAGE_INDEX, 6, DK, follow=st)
         expect(sw_images(m) == [img] and not saves(m), f'Follow Screen opens {img} with the byte {st}, nothing written')
-    m = page(P.DISPLAY_PAGE_INDEX, 4, DK, follow=0)
-    m.click('pod_row3')
+    m = page(P.LED_PAGE_INDEX, 6, DK, follow=0)
+    m.click('pod_row4')
     expect(m.byte(FOLLOW) == 1 and saves(m) == [('write_int_config', 1, 'SYSSET', 'LEDFOLLOWSCREEN')] and sw_images(m) == ['sset_on'], 'a tap turns Follow Screen on: the byte, the save, the switch')
-    m.click('pod_row3')
+    m.click('pod_row4')
     expect(m.byte(FOLLOW) == 0 and saves(m) == [('write_int_config', 0, 'SYSSET', 'LEDFOLLOWSCREEN')] and sw_images(m) == ['sset_off'], 'and off again')
     m = page(P.DISPLAY_PAGE_INDEX, 4, DK); m.calls = []
     m.click('pod_row1')
@@ -277,8 +279,11 @@ def settings_tests(ctx):
     et = awtk_ui.parse(open(os.path.join(raw, 'm1plus_ledlight.bin'), 'rb').read())
     st = awtk_ui.parse(open(os.path.join(raw, 'm1plus_settings.bin'), 'rb').read())
     pd = awtk_ui.parse(open(os.path.join(raw, 'dialog/dropdown_dialog.bin'), 'rb').read())
-    expect([dt.find(f'pod_row{i}').find('pod_icon').get('image') for i in range(4)] == ['pod_ci_timer', 'pod_ci_lock', 'pod_ci_lightbulb', 'pod_ci_smartphone'] and dt.find('label_title').get('tr_text') == 'Display'
-           and st.find(f'pod_row{di}').find('pod_icon').get('image') == 'pod_ci_sun', 'the page asset: the four glyphs and the title')
+    expect([dt.find(f'pod_row{i}').find('pod_icon').get('image') for i in range(3)] == ['pod_ci_timer', 'pod_ci_lock', 'pod_ci_lightbulb'] and dt.find('label_title').get('tr_text') == 'Display'
+           and st.find(f'pod_row{di}').find('pod_icon').get('image') == 'pod_ci_sun', 'the page asset: the three glyphs and the title')
+    fr = et.find('pod_row4')
+    expect(fr is not None and fr.find('pod_icon') is None and fr.find('pod_switch4') is not None and fr.find('pod_label4').x == et.find('pod_label5').x == et.find('pod_label0').x,
+           'the LED Light asset: Follow Screen is a glyph-less switch row, its label where the Theme row\'s and the choices\' are')
     sl, lab, ps = dt.find('slider_brightness'), dt.find('label_brightness'), pd.find('slider_backlight')
     look = lambda w: {k: v for k, v in w.props if (k.startswith('style:') and not k.endswith(':icon')) or k in ('slide_with_bar', 'dragger_size', 'dragger_adapt_to_icon')}
     expect(sl is not None and sl.type == 'slider' and sl.get('max') == '100' and sl.get('step') == '1' and (sl.w, sl.h) == (ps.w, ps.h) and look(sl) == look(ps),

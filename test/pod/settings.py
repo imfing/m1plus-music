@@ -99,7 +99,7 @@ def layout_tests(ctx):
             r, kind = rows[n], P.row_kind(it)
             last = kinds[n] in ('single', 'bot')
             swatch = it.action == P.ACT_ACCENTSET   # the Accent picker's rows: a round swatch where a glyph goes (pod_swatch)
-            has_icon = swatch or (kind not in ('check', 'info', 'preset', 'delete') and it.action not in (P.ACT_CCLIST, P.ACT_SFOLD, P.ACT_UPDATE, P.ACT_REGION, P.ACT_PCDIR, P.ACT_RGBROW, P.ACT_PEQ_PRESETS, P.ACT_PEQ_TENBAND))   # (the ListenBrainz page's rows have no glyph: Token, Account, the red Sign Out and the Auto Upload switch)
+            has_icon = swatch or (kind not in ('check', 'info', 'preset', 'delete') and it.action not in (P.ACT_CCLIST, P.ACT_SFOLD, P.ACT_UPDATE, P.ACT_REGION, P.ACT_PCDIR, P.ACT_RGBROW, P.ACT_LEDFOLLOW, P.ACT_PEQ_PRESETS, P.ACT_PEQ_TENBAND))   # (the ListenBrainz page's rows have no glyph: Token, Account, the red Sign Out and the Auto Upload switch)
             lab = next(c for c in r.children if c.name == f'pod_label{n}')
             lx, lw = ST.label_box(kind, has_icon)
             if it.action == P.ACT_PEQ_PICK and it.label: lw = ST.curve_box()[0] - ST.VALUE_LABEL_GAP - lx   # the 10-Band EQ row's grey curve name

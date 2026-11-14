@@ -131,7 +131,7 @@ ACT_LIGHT = 97      # value row (Settings > System > Display): Screen Timeout, s
 ACT_LIGHTSET = 98   # picker row (Screen Timeout): choose the time (arg = stock's index, 0 Never .. 4 5min); a check shows on the chosen row (patch/display.c disp_light_set)
 ACT_LED = 99        # value row (Settings > System > Display): LED Light, stock's lamp mode (Off, Green, Blue: the byte atmosphereled_mode saved as [SYSSET] ATMOSPHERELEDMODE); opens its picker page (arg = the page index; patch/display.c disp_led)
 ACT_LEDSET = 100    # picker row (LED Light): choose the mode (arg = stock's value, 0 off, 1 green, 2 blue); a check shows on the chosen row (patch/display.c disp_led_set)
-ACT_LEDFOLLOW = 101 # switch row (Settings > System > Display): Follow Screen, stock's switch of the same name (the byte ledfollowscreen_flag saved as [SYSSET] LEDFOLLOWSCREEN; patch/display.c disp_follow_toggle)
+ACT_LEDFOLLOW = 101 # switch row (Settings > System > Display > LED Light): Follow Screen, stock's switch of the same name (the byte ledfollowscreen_flag saved as [SYSSET] LEDFOLLOWSCREEN; patch/display.c disp_follow_toggle)
 ACT_KEYLOCK = 102     # value row (Settings > System > Buttons & Power): Button Lock, stock's key lock (Off, Volume, Buttons, Both: the byte keylock_flag saved as [SYSSET] LOCKFLAG and the word keylock_mode as LOCKMODE); opens its picker page (arg = the page index; patch/keyspower.c kp_lock)
 ACT_KEYLOCKSET = 103  # picker row (Button Lock): choose Off (arg 0) or stock's mode (1 volume keys, 2 the other keys, 3 both); a check shows on the chosen row (patch/keyspower.c kp_lock_set)
 ACT_TAPWAKE = 104     # switch row (Buttons & Power): Tap to Wake, stock's switch (the byte doublewake_flag saved as [SYSSET] DOUBLEWAKE; patch/keyspower.c kp_tap_toggle)
@@ -972,7 +972,7 @@ CHGLIMIT_PAGE = Page('m1plus_chargelimit', 'm1plus_chargelimit_page', 'Charge Li
 # Settings > Playback > Continue Playing (patch/nextalbum.c, docs/modules/nextalbum.md): Off or Next Albums, a check on the chosen one; Auto Mix is planned as a third (file value '2').
 # Settings > System > Display (patch/display.c, docs/modules/display.md): our page in place of stock's systemset/display_page list and its four pages. A brightness card (a slider, stock's own handlers);
 # Screen Timeout, stock's backlight time (a value row and its picker: stock's five choices in stock's order, the index is stock's), and Lock Screen (LOCK_PAGE) in a card; LED Light (a value row and its picker: stock's lamp mode,
-# off, a stock colour, or the Dynamic lamp. Every remaining setting keeps its
+# off, a stock colour, or the Dynamic lamp; Follow Screen is on the LED Light page, in a card of its own above Theme, so a hidden Theme row leaves no double gap). Every remaining setting keeps its
 # stock state.
 LIGHTTIME_VALUES = ('Never', '15s', '30s', '1min', '5min')   # stock's systemset/lighttime_page rows: its first is the key powerm_lighton, the others are these plain texts in every language
 DISPLAY_PAGE = Page('m1plus_display', 'm1plus_display_page', 'Display', layout=[
@@ -982,17 +982,16 @@ DISPLAY_PAGE = Page('m1plus_display', 'm1plus_display_page', 'Display', layout=[
     Row('Lock Screen', ACT_PAGE, LOCK_PAGE_INDEX),
     GAP,
     Row('LED Light', ACT_LED, LED_PAGE_INDEX),
-    Row('Follow Screen', ACT_LEDFOLLOW),
 ])
 LED_VALUES = ('Off', 'Green', 'Blue', 'Dynamic')
-LED_PAGE = Page('m1plus_ledlight', 'm1plus_ledlight_page', 'LED Light', layout=[Row(v, ACT_LEDSET, i) for i, v in enumerate(LED_VALUES)] + [GAP, Row('Theme', ACT_RGBROW, RGB_THEME_PAGE_INDEX)])
+LED_PAGE = Page('m1plus_ledlight', 'm1plus_ledlight_page', 'LED Light', layout=[Row(v, ACT_LEDSET, i) for i, v in enumerate(LED_VALUES)] + [GAP, Row('Follow Screen', ACT_LEDFOLLOW), GAP, Row('Theme', ACT_RGBROW, RGB_THEME_PAGE_INDEX)])
 # LED Light > Dynamic (patch/tracklamp.c, docs/modules/display.md "Sample Rate"): the theme, a check on the chosen one, in two cards headed Sample Rate and Ambient. The first card's four show the playing track's sample rate as a colour
-# (steady, or moving in brightness; the header says so, there is no note, so that the six rows fit one screen); the second card's two are colours of their own. The row order is patch/tracklamp.h's TL_REFERENCE .. TL_OCEAN.
-RGB_THEMES = ('Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', 'Candle', 'Ocean Wave')
+# (steady, or moving in brightness; a note under the card says the colour follows the file's sample rate; the page may be a little taller than one screen); the second card's two are colours of their own. The row order is patch/tracklamp.h's TL_REFERENCE .. TL_OCEAN.
+RGB_THEMES = ('Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', 'Candle', 'Wave')
 RGB_RATE_THEMES = 4
 RGB_THEME_PAGE = Page('m1plus_rgbtheme', 'm1plus_rgbtheme_page', 'Theme', layout=
     [Hdr('Sample Rate')] + [Row(name, ACT_RGBTHEME, i) for i, name in enumerate(RGB_THEMES[:RGB_RATE_THEMES])]
-    + [Hdr('Ambient')]
+    + [Note("The color changes with the file's sample rate"), Hdr('Ambient')]
     + [Row(name, ACT_RGBTHEME, RGB_RATE_THEMES + i) for i, name in enumerate(RGB_THEMES[RGB_RATE_THEMES:])])
 LIGHTTIME_PAGE = Page('m1plus_lighttime', 'm1plus_lighttime_page', 'Screen Timeout', layout=[Row(v, ACT_LIGHTSET, i) for i, v in enumerate(LIGHTTIME_VALUES)])
 # Settings > System > Buttons & Power (patch/keyspower.c, docs/modules/keyspower.md): Button Lock (a value row and its picker, stock's switch and three choices merged: Off, or one of the three modes) with its note,

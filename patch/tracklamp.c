@@ -65,8 +65,7 @@ static const unsigned char tl_palettes[3][10][3] = {/* Reference, Lighthouse */
                                                      {30, 50, 20},
                                                      {35, 45, 20},
                                                      {40, 40, 20}}};
-static const unsigned char tl_palette_of[TL_THEMES] = {0, 1, 2,
-                                                       0, 0, 0}; /* (Candle and Ocean Wave have their own colours) */
+static const unsigned char tl_palette_of[TL_THEMES] = {0, 1, 2, 0, 0, 0}; /* (Candle and Wave have their own colours) */
 
 /* ---- the setting ---- */
 

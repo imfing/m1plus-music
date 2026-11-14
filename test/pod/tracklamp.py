@@ -196,7 +196,7 @@ def theme_tests(ctx):
     m2, w2 = play(CANDLE, 6000, rate=44100)
     expect(w2 == w, 'its colours are its own: the rate does not change them')
     m, w = play(OCEAN, 12500)
-    expect(m.periods == [POLL, FAST] and smooth(w) and {(17, 0, 0), (0, 17, 0), (0, 0, 17)} <= set(w) and all(sum(p) in (16, 17, 18) for p in w), f'Ocean Wave: 12 s around the wheel through red, green and blue at full brightness, a level at a time ({len(w)} writes)')
+    expect(m.periods == [POLL, FAST] and smooth(w) and {(17, 0, 0), (0, 17, 0), (0, 0, 17)} <= set(w) and all(sum(p) in (16, 17, 18) for p in w), f'Wave: 12 s around the wheel through red, green and blue at full brightness, a level at a time ({len(w)} writes)')
     # the screen goes dark without Follow Screen: the theme goes on (the lamp is what is left to see)
     m, w = play(BREATHE, 1000)
     m.u.mem_write(LIT, b'\0')
@@ -204,7 +204,7 @@ def theme_tests(ctx):
     # a new theme from the page: the next frame is the new theme's
     m, w = play(REFERENCE, 1000)
     expect(w == [(11, 2, 4)] and m.periods == [POLL], f'Reference: steady, at the poll\'s pace ({m.periods})')
-    expect(m.call(PSYMS['tl_theme_set'], a0=OCEAN, count=4000000) == 0 and m.fs[FILE] == b'6\n', 'Ocean Wave is chosen')
+    expect(m.call(PSYMS['tl_theme_set'], a0=OCEAN, count=4000000) == 0 and m.fs[FILE] == b'6\n', 'Wave is chosen')
     w = run(m, 1000)
     expect(m.periods == [FAST] and w[0][0] >= 15 and w[0][2] == 0 and smooth(w), f'the next tick draws it from its start and the timer turns fast ({w[:2]}, {m.periods})')
     m.call(PSYMS['tl_theme_set'], a0=REFERENCE, count=4000000)
@@ -232,7 +232,7 @@ def pause_tests(ctx):
     # a moving theme stands still while paused
     m = machine(saved=b'6\n'); run(m, 3000)
     m.status = 3; run(m, POLL + FADE + 100)
-    expect(not run(m, 1000), 'Ocean Wave paused: the wheel stands still')
+    expect(not run(m, 1000), 'Wave paused: the wheel stands still')
     # stop: the gap between two tracks does not blink
     m = machine(); run(m, 1000)
     m.status = 1
@@ -275,18 +275,20 @@ def setting_tests(ctx):
     display = sibling('display')
     P = pod_pages
     T = P.RGB_THEME_PAGE
-    expect(DEFS['TL_THEMES'] == len(P.RGB_THEMES) == 6 and P.RGB_THEMES == ('Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', 'Candle', 'Ocean Wave')
+    expect(DEFS['TL_THEMES'] == len(P.RGB_THEMES) == 6 and P.RGB_THEMES == ('Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', 'Candle', 'Wave')
            and [DEFS[k] for k in ('TL_REFERENCE', 'TL_BREATHE', 'TL_HEARTBEAT', 'TL_LIGHTHOUSE', 'TL_CANDLE', 'TL_OCEAN')] == list(range(6)), 'six themes, the page\'s order is the header\'s')
     expect([(r.label, r.action, r.arg) for r in T.rows] == [(n, P.ACT_RGBTHEME, i) for i, n in enumerate(P.RGB_THEMES)] and all(P.row_kind(r) == 'check' for r in T.rows) and P.ACT_RGBTHEME == 140
            and (T.key, T.title) == ('m1plus_rgbtheme', 'Theme') and P.PAGES[P.RGB_THEME_PAGE_INDEX] is T, 'the Theme picker: a check row a theme, the argument is the theme')
     lay = [x.label if isinstance(x, P.Row) else (type(x).__name__, x.text) for x in T.layout]
-    expect(lay == [('Hdr', 'Sample Rate'), 'Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', ('Hdr', 'Ambient'), 'Candle', 'Ocean Wave'],
-           f'two headed cards: Sample Rate, the four that show the rate; Ambient, the two with colours of their own ({lay})')
+    expect(lay == [('Hdr', 'Sample Rate'), 'Reference', 'Gentle Breathe', 'Heartbeat', 'Lighthouse', ('Note', "The color changes with the file's sample rate"), ('Hdr', 'Ambient'), 'Candle', 'Wave'],
+           f'two headed cards: Sample Rate, the four that show the rate, with a note on the colour; Ambient, the two with colours of their own ({lay})')
+    led = [x.label if isinstance(x, P.Row) else x for x in P.LED_PAGE.layout]
+    expect(led == ['Off', 'Green', 'Blue', 'Dynamic', P.GAP, 'Follow Screen', P.GAP, 'Theme'] and P.row_kind(P.LED_PAGE.rows[4]) == 'switch', f'LED Light: the choices, the Follow Screen switch, then the Theme row, each card of its own ({led})')
     expect(not any(hasattr(P, a) for a in ('ACT_RGBWARNING', 'ACT_RGBVOLUME')) and not any(isinstance(x, P.Row) and P.row_kind(x) == 'switch' for x in T.layout), 'no switch on the page')
     expect(FILE == '/mnt/data/m1plus/led-dynamic' and 'led-dynamic' in P.SETTING_FILES and 'led-dynamic-options' not in P.SETTING_FILES, 'one setting file, listed on Settings Files')
     import pod_i18n
     for loc in pod_i18n.LOCALES:
-        expect(all(pod_i18n.TEXT[k][loc] for k in P.RGB_THEMES + ('Dynamic', 'Theme', 'Sample Rate', 'Ambient')), f'the page texts have a translation in {loc}')
+        expect(all(pod_i18n.TEXT[k][loc] for k in P.RGB_THEMES + ('Dynamic', 'Theme', 'Sample Rate', 'Ambient', "The color changes with the file's sample rate")), f'the page texts have a translation in {loc}')
     # the saved character
     for saved, led, theme in ((None, 0, 0), (b'0\n', 0, 0), (b'1\n', 3, 0), (b'1', 3, 0), (b'4\n', 3, 3), (b'6\n', 3, 5), (b'7\n', 0, 0), (b'11\n', 0, 0), (b'x\n', 0, 0)):
         m = machine(saved=saved)
@@ -358,23 +360,23 @@ def setting_tests(ctx):
         return (vis[-1] if vis else None, sens[-1] if sens else None)
 
     def theme_value(m):
-        t = [c[2] for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets['pod_value4']]
+        t = [c[2] for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets['pod_value5']]
         return t[-1] if t else None
 
-    m = page(P.LED_PAGE_INDEX, 5, b'0\n')
+    m = page(P.LED_PAGE_INDEX, 6, b'0\n')
     expect(checks(m, 4) == [1, 0, 0, 0], 'the LED Light picker with the setting off: the check is on Off')
-    expect(row_state(m, 4) == (0, 0), 'the Theme row is hidden and insensitive while Dynamic is not chosen')
+    expect(row_state(m, 5) == (0, 0), 'the Theme row is hidden and insensitive while Dynamic is not chosen')
     m.click('pod_row3')
     expect(m.fs[FILE] == b'1\n' and checks(m, 4) == [0, 0, 0, 1] and ('window_open', T.key) not in m.calls, 'a tap on Dynamic: saved, checked, and no page opens')
-    expect(row_state(m, 4) == (1, 1) and theme_value(m) == 'Reference', 'the Theme row appears at once, with the theme\'s name')
+    expect(row_state(m, 5) == (1, 1) and theme_value(m) == 'Reference', 'the Theme row appears at once, with the theme\'s name')
     m.click('pod_row0')
-    expect(m.fs[FILE] == b'0\n' and row_state(m, 4) == (0, 0), 'a tap on Off: the Theme row goes away at once')
+    expect(m.fs[FILE] == b'0\n' and row_state(m, 5) == (0, 0), 'a tap on Off: the Theme row goes away at once')
     m.click('pod_row3')
-    m.click('pod_row4')
+    m.click('pod_row5')
     expect(('window_open', T.key) in m.calls, 'a tap on the Theme row opens the Theme page')
-    m = page(P.LED_PAGE_INDEX, 5, b'5\n')
-    expect(row_state(m, 4) == (1, 1) and theme_value(m) == 'Candle', 'opening with Dynamic on and Candle: the Theme row shows Candle')
-    m = page(P.LED_PAGE_INDEX, 5, b'2\n')
+    m = page(P.LED_PAGE_INDEX, 6, b'5\n')
+    expect(row_state(m, 5) == (1, 1) and theme_value(m) == 'Candle', 'opening with Dynamic on and Candle: the Theme row shows Candle')
+    m = page(P.LED_PAGE_INDEX, 6, b'2\n')
     expect(checks(m, 4) == [0, 0, 0, 1], 'with the setting on: the check is on Dynamic')
     for saved, at in ((b'1\n', 0), (b'5\n', 4)):
         m = page(P.RGB_THEME_PAGE_INDEX, 6, saved)
