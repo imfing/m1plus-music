@@ -88,7 +88,7 @@ int ap_lead(const char *name, char *out, unsigned n) {
     len = (unsigned)strlen(name);
     while (name[a] == ' ' || name[a] == '\t') ++a;
     for (b = len; b > a && (name[b - 1] == ' ' || name[b - 1] == '\t'); --b);
-    if (sp.p == name + a && sp.n == b - a) return 0; /* one name: nothing to lead */
+    if (sp.p != name + a || sp.n == b - a) return 0; /* one name, or the field starts with a separator: no lead */
     memcpy(out, sp.p, sp.n);
     out[sp.n] = 0;
     return 1;

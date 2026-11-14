@@ -406,9 +406,21 @@ def lead_tests(ctx):
     for name, want in (('Adele feat. Someone', 'Adele'), ('Adele FEAT. Someone', 'Adele'), ('Adele ft. Someone', 'Adele'), ('Adele Ft. Someone', 'Adele'), ('Adele featuring Someone', 'Adele'),
                        ('Adele FeaturingSomeone', None), ('Simon & Garfunkel', 'Simon'), ('Mark X Mark', 'Mark'), ('Mark x Mark', 'Mark'), ('Tyler, The Creator', 'Tyler'),
                        ('Tom; Jerry', 'Tom'), ('Tom;Jerry', None), ('Beyoncé feat. Jay-Z & Kanye', 'Beyoncé'.encode().decode('latin-1')), ('A & B feat. C', 'A'), ('A feat. B & C', 'A'), ('Abba', None),
-                       ('Maxx', None), ('Fox', None), ('Adele ft.', None), ('feat. X', None), ('Prince and the Revolution', None), ('Earth, Wind & Fire', 'Earth'), (' Abba', None), ('Abba ', None), (' Abba & B', 'Abba'), ('A & ', 'A')):
+                       ('Maxx', None), ('Fox', None), ('Adele ft.', None), ('feat. X', None), ('Prince and the Revolution', None), ('Earth, Wind & Fire', 'Earth'), (' Abba', None), ('Abba ', None), (' Abba & B', 'Abba'), ('A & ', 'A'), (' & B', None), (' feat. B & C', None)):
         expect(lead(name) == want, f'lead of {name!r}: {want!r} (got {lead(name)!r})')
     expect(lead('x' * 300 + ' & B') is None and lead('Longer than the buffer & B', 6) is None, 'a lead that does not fit gives none')
+    spans = m.alloc(8 * 8)
+    def split(field, mx=8):
+        f = m.cstr(field)
+        c = m.call(PSYMS['m1_artist_split'], a0=f, a1=spans, a2=mx, count=1 << 40)
+        raw = field.encode('latin-1')
+        return [raw[m.word(spans + 8 * i) - f:][:m.word(spans + 8 * i + 4)].decode('latin-1') for i in range(c)]
+    for field, want in (('Anna Jones feat. Ben Ito & Cy', ['Anna Jones', 'Ben Ito', 'Cy']), ('AC/DC', ['AC/DC']), ('Simon & Garfunkel', ['Simon', 'Garfunkel']), ('Tom;Jerry', ['Tom;Jerry']),
+                        ('A, B; C x D FT. E Featuring F', ['A', 'B', 'C', 'D', 'E', 'F']), ('  A  &  B  ', ['A', 'B']), ('A & , B', ['A', 'B']), (' & B', ['B']), ('A & ', ['A']), ('', []), ('   ', []),
+                        ('Earth, Wind & Fire', ['Earth', 'Wind', 'Fire'])):
+        expect(split(field) == want, f'names of {field!r}: {want!r} (got {split(field)!r})')
+    expect(split('A & B & C & D', 2) == ['A', 'B'] and split('A & B', 0) == [], 'at most max names; none for max 0')
+    expect(m.call(PSYMS['m1_artist_split'], a0=0, a1=spans, a2=8, count=1 << 40) == 0, 'no field: no names')
     expect(key(m, 'Adele feat. Someone') != key(m, 'Adele') and key(m, 'The Weeknd & Drake') != key(m, 'Weeknd'), 'ap_key itself never splits')
 
 
