@@ -322,8 +322,9 @@ static int tl_tick(const void *timer) {
     (void)timer;
     if (!tl_setting()) { /* turned off: tl_led_set gave the lamp back, or this timer does (it lives until the lamp is back) */
         tl_release();
-        if (tl.active) return RET_REPEAT;
-        tl.timer = 0;
+        if (tl.active && tl.period == TL_POLL_MS) return RET_REPEAT;
+        tl.period = TL_POLL_MS; /* (a release still owed is tried at the slow pace, whatever the theme's was) */
+        tl.timer = tl.active ? timer_add(tl_tick, (void *)0, TL_POLL_MS) : 0;
         return RET_OK;
     }
     if (now - tl.poll_at >= TL_POLL_MS) {
@@ -343,7 +344,7 @@ static int tl_tick(const void *timer) {
  * Stock's answer is returned unchanged. */
 int tl_play_status(void) {
     int status = mclGetPlayStatus();
-    if (tl_setting() && !tl.timer) {
+    if ((tl_setting() || tl.active) && !tl.timer) { /* (tl.active with the setting off: a release is still owed) */
         tl.last = (unsigned)time_now_ms();
         tl.poll_at = tl.last - TL_POLL_MS; /* the first tick asks the player */
         tl.period = TL_POLL_MS;
