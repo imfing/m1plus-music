@@ -189,8 +189,8 @@ def settings_tests(ctx):
     expect(dl == ['brightness', P.GAP, 'Screen Timeout', 'Lock Screen', P.GAP, 'LED Light', 'Follow Screen'], f'three cards: the brightness slider; Screen Timeout + Lock Screen; LED Light + Follow Screen ({dl})')
     expect([(r.label, r.action, r.arg) for r in L.rows] == [(t, P.ACT_LIGHTSET, i) for i, t in enumerate(TEXTS)] and all(P.row_kind(r) == 'check' for r in L.rows) and P.LIGHTTIME_VALUES == TEXTS,
            'the Screen Timeout picker: stock\'s five choices in stock\'s order, the argument is stock\'s index')
-    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2)] and all(P.row_kind(r) == 'check' for r in E.rows),
-           'the LED Light picker: Off, Green, Blue, the argument is stock\'s lamp mode')
+    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2), ('Sample Rate', P.ACT_LEDSET, 3)] and all(P.row_kind(r) == 'check' for r in E.rows),
+           'the LED Light picker: stock Off, Green and Blue plus Sample Rate')
     expect((P.ACT_LIGHT, P.ACT_LIGHTSET, P.ACT_LED, P.ACT_LEDSET, P.ACT_LEDFOLLOW) == (97, 98, 99, 100, 101) and {P.ACT_LIGHT, P.ACT_LED} <= set(P.VALUE_ACTIONS) and {P.ACT_LIGHTSET, P.ACT_LEDSET} <= set(P.CHECK_ACTIONS)
            and P.ACT_LEDFOLLOW in P.SWITCH_ACTIONS, 'the actions')
     expect(len(P.STOCK_PAGES) == 2 and not any(n.split('/')[-1] in ('display_page', 'brightness_page', 'lighttime_page', 'atmosphereled_page', 'screensaver_page') for n, *_ in P.STOCK_PAGES)
@@ -233,13 +233,13 @@ def settings_tests(ctx):
     expect(m.word(MODE) == 0 and saves(m)[-2:] == [('write_int_config', 0, 'SYSSET', 'LIGHTTIME'), ('reset_poweroptions_timer', 0, 0, 1)] and checks(m, 5) == [1, 0, 0, 0, 0], 'Never: index 0')
     # the LED Light picker
     for led in range(3):
-        m = page(P.LED_PAGE_INDEX, 3, led=led)
-        expect(('window_open', E.key) in m.calls and checks(m, 3) == [int(i == led) for i in range(3)] and not saves(m), f'the byte {led}: the LED picker\'s check {checks(m, 3)}, nothing written')
-    m = page(P.LED_PAGE_INDEX, 3, led=0)
+        m = page(P.LED_PAGE_INDEX, 4, led=led)
+        expect(('window_open', E.key) in m.calls and checks(m, 4) == [int(i == led) for i in range(4)] and not saves(m), f'the byte {led}: the LED picker\'s check {checks(m, 4)}, nothing written')
+    m = page(P.LED_PAGE_INDEX, 4, led=0)
     m.click('pod_row2')
-    expect(m.byte(LED) == 2 and saves(m) == [('write_int_config', 2, 'SYSSET', 'ATMOSPHERELEDMODE'), ('reset_atmosphereled_rgb', 2)] and checks(m, 3) == [0, 0, 1], 'a tap on Blue: stock\'s byte, save and lamp call, the check follows')
+    expect(m.byte(LED) == 2 and saves(m) == [('write_int_config', 2, 'SYSSET', 'ATMOSPHERELEDMODE'), ('reset_atmosphereled_rgb', 2)] and checks(m, 4) == [0, 0, 1, 0], 'a tap on Blue: stock\'s byte, save and lamp call, the check follows')
     m.click('pod_row0')
-    expect(m.byte(LED) == 0 and saves(m) == [('write_int_config', 0, 'SYSSET', 'ATMOSPHERELEDMODE'), ('reset_atmosphereled_rgb', 0)] and checks(m, 3) == [1, 0, 0], 'Off: the lamp call with the byte 0')
+    expect(m.byte(LED) == 0 and saves(m) == [('write_int_config', 0, 'SYSSET', 'ATMOSPHERELEDMODE'), ('reset_atmosphereled_rgb', 0)] and checks(m, 4) == [1, 0, 0, 0], 'Off: the lamp call with the byte 0')
     # the Display page: the two values, the switch, the Lock Screen row, the brightness card
     DK = ('pod_value', 'pod_label', 'pod_switch')
 
@@ -295,10 +295,10 @@ def settings_tests(ctx):
     expect(card.h == dt.find('pod_row0').h and [card.find(n).get('image') for n in ('pod_bright_lo', 'pod_bright_hi')] == ['drop_lighticon0', 'drop_lighticon1']
            and card.find('pod_bright_lo').x == dt.find('pod_row0').find('pod_icon').x + 2 and sl.x == dt.find('pod_label0').x and card.find('pod_bright_hi').x + card.find('pod_bright_hi').w == 296,
            'the card: a row high, the small sun in the glyph column, the slider from the label column, the large sun at the card\'s right padding')
-    for tree, n, title, first in ((pt, 5, 'Screen Timeout', 'Never'), (et, 3, 'LED Light', 'Off')):
+    for tree, n, title, first in ((pt, 5, 'Screen Timeout', 'Never'), (et, 4, 'LED Light', 'Off')):
         expect(all(tree.find(f'pod_check{i}').get('visible') == 'false' and tree.find(f'pod_check{i}').get('sensitive') == 'false' for i in range(n)) and tree.find('label_title').get('tr_text') == title
                and tree.find('pod_label0').get('tr_text') == first, f'the {title} picker asset: {n} rows, a hidden insensitive check each')
-    expect([pt.find(f'pod_label{i}').get('text') for i in range(1, 5)] == list(TEXTS[1:]) and [et.find(f'pod_label{i}').get('tr_text') for i in range(3)] == ['Off', 'Green', 'Blue'],
+    expect([pt.find(f'pod_label{i}').get('text') for i in range(1, 5)] == list(TEXTS[1:]) and [et.find(f'pod_label{i}').get('tr_text') for i in range(4)] == ['Off', 'Green', 'Blue', 'Sample Rate'],
            'the times as stock writes them; the lamp modes translated')
 
 

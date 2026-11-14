@@ -103,6 +103,9 @@ enum {
     ACT_SHUTDOWN = 106, /* Buttons & Power: Auto-Shutdown, a value row opening its picker */
     ACT_SHUTDOWNSET =
         107, /* the Auto-Shutdown picker's rows (arg = stock's word: 0 off, 1 .. 4 = 1, 3, 5, 10 minutes) */
+    ACT_RGBTHEME = 108,
+    ACT_RGBWARNING = 109,
+    ACT_RGBVOLUME = 110,
     ACT_AREBUILD =
         92, /* Settings > Library: Rebuild Artist Photos, an action row (a confirm, then the request file Home's pass acts on) */
     ACT_SUBSONIC = 93 /* the Navidrome root page (tools/pod_pages.py); ids 93 .. 95 are the Navidrome rows */
@@ -206,6 +209,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "search.h"
 #include "shot.h"
 #include "tenband.h"
+#include "tracklamp.h"
 static int pod_off(void) { return home_off(); } /* the SD file and the flash one */
 
 static int home_open(int id) {
@@ -393,9 +397,10 @@ static const struct pick_def {
     {ACT_IDLE, VK_IDLE, ACT_IDLESET, idle_choice, idle_set},
     {ACT_NEXTALBUM, VK_NA, ACT_NASET, na_setting, na_set},
     {ACT_LIGHT, VK_LIGHT, ACT_LIGHTSET, disp_light, disp_light_set},
-    {ACT_LED, VK_LED, ACT_LEDSET, disp_led, disp_led_set},
+    {ACT_LED, VK_LED, ACT_LEDSET, formatlamp_led_mode, formatlamp_led_set},
     {ACT_KEYLOCK, VK_KEYLOCK, ACT_KEYLOCKSET, kp_lock, kp_lock_set},
     {ACT_SHUTDOWN, VK_SHUTDOWN, ACT_SHUTDOWNSET, kp_shutdown, kp_shutdown_set},
+    {ACT_RGBTHEME, VK_NONE, ACT_RGBTHEME, formatlamp_theme, formatlamp_select_theme},
 };
 
 static const struct pick_def *pick_value_of(int act) {
@@ -423,7 +428,8 @@ static int on_row(void *ctx, void *e) {
     if (!row) return RET_OK;
     if (row->action == ACT_HOME)
         home_open(row->arg);
-    else if (row->action == ACT_PAGE || pick_value_of(row->action)) /* the value rows open their picker page */
+    else if (row->action == ACT_PAGE ||
+             (pick_value_of(row->action) && !is_pick(row))) /* the value rows open their picker page */
         open_page(row->arg, 0);
     else if (row->action == ACT_PLAYER)
         m1_open_now_playing();
@@ -532,6 +538,8 @@ static void regen_show(void) {
 /* The switch rows, the one list of them (tools/pod_pages.py SWITCH_ACTIONS but the Equalizer's, which its own page binds): the action, its state (1 on) and its toggle (the new
  * state, -1: not saved, unchanged). A new switch is one line here. */
 static int sw_always(void) { return 1; } /* Keyboards > English: always on, and its row takes no tap */
+static int rgb_warning_toggle(void) { return formatlamp_set_warning(!formatlamp_warning()); }
+static int rgb_volume_toggle(void) { return formatlamp_set_volume_brightness(!formatlamp_volume_brightness()); }
 static const struct pod_switch {
     int action;
     int (*state)(void), (*toggle)(void);
@@ -552,6 +560,8 @@ static const struct pod_switch {
     {ACT_LEDFOLLOW, disp_follow, disp_follow_toggle},
     {ACT_TAPWAKE, kp_tap, kp_tap_toggle},
     {ACT_STANDBY, kp_standby, kp_standby_toggle},
+    {ACT_RGBWARNING, formatlamp_warning, rgb_warning_toggle},
+    {ACT_RGBVOLUME, formatlamp_volume_brightness, rgb_volume_toggle},
 };
 #define SW_N ((int)(sizeof sw_tab / sizeof *sw_tab))
 struct swctx {
@@ -648,7 +658,7 @@ static void value_text(void *label, int kind) {
         }
         key = light[0];
     } else if (kind == VK_LED) {
-        key = disp_led() == 1 ? "Green" : disp_led() == 2 ? "Blue" : "Off";
+        key = formatlamp_led_mode() == 3 ? "Sample Rate" : disp_led() == 1 ? "Green" : disp_led() == 2 ? "Blue" : "Off";
     } else if (kind == VK_KEYLOCK) {
         static const char *const lock[] = {"Off", "Volume", "Buttons", "Both"};
         key = lock[kp_lock()];
@@ -816,6 +826,7 @@ static void pick_choose(const struct pod_row *row) {
             if (d && d->set(row->arg) >= 0) {
                 win = pod_fg[i];
                 if (win) page_refresh(win, &POD_PAGES[i]);
+                if (row->action == ACT_LEDSET && row->arg == 3) open_page(POD_RGB_THEME_PAGE, 0);
             }
             return;
         }

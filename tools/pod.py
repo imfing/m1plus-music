@@ -44,7 +44,7 @@ OBJCOPY = os.path.join(LLVM, 'llvm-objcopy')
 LD = os.path.join(LLD, 'ld.lld')
 
 # compiled in this order, linked with --gc-sections (docs/architecture.md)
-SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'menu.c', 'covercache.c', 'artistphoto.c', 'durations.c', 'coverflow.c', 'albums.c', 'artists.c', 'shuffle.c', 'nowplaying.c', 'bigcover.c', 'lockscreen.c', 'display.c', 'keyspower.c', 'minibar.c', 'grid.c', 'recent.c', 'dailymix.c', 'homecover.c', 'covlist.c', 'setfiles.c', 'rows.c', 'shot.c', 'home.c', 'fontregion.c', 'textgamma.c',
+SOURCES = ['m1plus.c', 'common.c', 'filetime.c', 'menu.c', 'covercache.c', 'artistphoto.c', 'durations.c', 'coverflow.c', 'albums.c', 'artists.c', 'shuffle.c', 'nowplaying.c', 'bigcover.c', 'lockscreen.c', 'display.c', 'keyspower.c', 'minibar.c', 'grid.c', 'recent.c', 'dailymix.c', 'homecover.c', 'covlist.c', 'setfiles.c', 'rows.c', 'shot.c', 'home.c', 'fontregion.c', 'textgamma.c', 'tracklamp.c',
            'scroll.c', 'playmore.c', 'pulldown.c', 'playlists.c', 'azlist.c', 'songops.c', 'libsrc.c', 'rowmenu.c', 'songs.c', 'albumpage.c', 'queuepage.c', 'upnext.c', 'ipod.c', 'ipod_cf.c', 'ipod_theme.c', 'ipod_render.c', 'pcmodel.c', 'pcfeed.c', 'pcjson.c', 'pcopml.c', 'pcpng.c', 'pccover.c', 'pcwrap.c', 'pcnotes.c', 'pcdetail.c', 'upver.c', 'pcnet.c', 'podcasts.c', 'pcfind.c', 'radio.c', 'radiopage.c', 'radionp.c', 'radioinfo.c', 'songinfo.c', 'tape.c', 'palette.c', 'vinyl.c', 'onlineart.c', 'update.c', 'relnotes.c', 'keyboard.c', 'search.c', 'battery.c', 'charging.c', 'nextalbum.c', 'lineout.c', 'lyrics.c', 'picker.c', 'folders.c', 'timezones.c', 'pcregion.c', 'viewsort.c', 'wifictl.c', 'wifipage.c', 'sbnet.c', 'sbparse.c', 'sbdl.c', 'sbapi.c', 'sbsrc.c', 'ndserver.c', 'ndroot.c',
            'tidalkb.c', 'peq.c', 'peq_ui.c', 'peqpage.c', 'peqlib.c', 'autoeq.c', 'tenband.c', 'peqband.c', 'peqout.c']
 
@@ -289,11 +289,31 @@ FUNCTIONS.update({
     'playpause_quick_click':   ('int', 'void', 0x4cd150),
     'next_quick_click':        ('int', 'void *, int', 0x4ccf00),
     'mclGetPlayStatus':        ('int', 'void', 0x5d3640),
+    'reset_atmosphereled_rgb': ('void', 'void', 0x4e6b9c),
     # The playing stream as the player reports it (the mutex 0xa0ab20, then a copy of the 0x34 bytes at 0xa0ab50 into the caller's): bit rate in bit/s at 0, sample rate in Hz at 4, the codec's name at
     # 0x10 ('FLAC', 'ALAC', 'WAV', 'APE', 'AIFF', 'DSD', 'DSF', 'ISO' are the names get_hrflag @0x4dfbc4 looks for), bits a sample at 0x30 (1 for DSD). get_playinfo @0x4dfb14 (the idle tick) copies it to
     # playsong_info 0xa0e930, which show_player_face prints as '%s|%.1fkHz|%dbit|%dkbps'. Returns 1.
     'mclGetInfo':              ('int', 'void *', 0x5d3518),
 })
+
+# Sample Rate RGB replaces only the player status query in the existing idle callback.
+# The wrapper returns the stock status unchanged and never touches audio data or DAC settings.
+FORMAT_LAMP_SITE = 0x4ce968
+FORMAT_LAMP_PINS = (
+    (0x4cd7d0, 0x8f82a964, 'USB link state GOT slot'),
+    (0x545a24, 0x8f82a958, 'USB mode GOT slot'),
+    (0x4ce964, 0x8f99a9b8, 'idle status mclGetPlayStatus GOT slot'),
+    (FORMAT_LAMP_SITE, 0x0320f809, 'idle status mclGetPlayStatus call'),
+    (0x4ce96c, 0x00000000, 'idle status call delay slot'),
+    (0x4dfbe4, 0x8c620030, 'format bit-depth field'),
+    (0x4dfbf4, 0x8c640004, 'format sample-rate field'),
+    (0x4dfc60, 0x26040010, 'format codec field'),
+    (0x4cff84, 0x8f90b478, 'lamp RGB state'),
+    (0x4cff88, 0x92030003, 'lamp pending state'),
+    (0x4cff94, 0x92060001, 'lamp green state'),
+    (0x4cff98, 0x92050002, 'lamp blue state'),
+    (0x4cff9c, 0x04115c13, 'lamp apply branch'),
+)
 # The Playlists page (patch/playlists.c, docs/modules/playlists.md): the stock playlist creation, and the click handlers of the stock Playlists
 # page's Import and Export rows (static, unnamed; ret_t (ctx, event), neither reads its arguments: each asks with the stock confirm dialog,
 # runs importPlayList / exportPlayList and tells the result in the stock message box).
@@ -439,6 +459,8 @@ FUNCTIONS['batch_add_file'] = ('int', 'int, int, void *, void *, int', 0x4da7dc)
 # Stock data the payload reads or writes, by absolute address. Exported objects are checked
 # against .dynsym; the two unnamed ones carry the code that proves them.
 DATA = {
+    'TL_USB_LINK':        (0xa059f4, 'usblink_status'),
+    'TL_USB_MODE':        (0xa05aa8, 'usb_mode'),
     'ROTATEMODE':         (0xa05a9c, None),   # int, config.ini ROTATEMODE (0/1); 1 swaps the volume keys 0xdc <-> 0xdd (VOLKEYS_PINS)
     # the stock Tidal search page's result structs { total, limit, offset, deque_t * } (patch/tidalkb.c tk_reset_results; TIDALKB_PINS) and the scroll offset its timer restores
     'TIDAL_TRACKS':       (0xa10264, None), 'TIDAL_ARTISTS': (0xa10254, None), 'TIDAL_ALBUMS': (0xa10244, None), 'TIDAL_SCROLL': (0xa04150, None),
@@ -477,6 +499,7 @@ DATA = {
     # mclGetPlayPos: get_playtimeandlength `lw s1, 0xa0394c; deque_size(*s1)` then `deque_at(*s1, pos)` (@0x4e01cc..0x4e0268),
     # the lock screen refresh (@0x53f73c, "queued" = 0 <= pos < size), the queue drawer (@0x47a8f0)
     'PLAY_QUEUE':         (0xa0394c, None),
+    'ATMOSPHERE_RGB_STATE': (0xa038b8, None),
     # the player's gapless state word (1 = a preload is open; mclSetGaplessMode(0) @0x5d28ac closes it with "{mcl-closegapless}" and stores -1): patch/shuffle.c cancel_preload closes it after a reorder, an insert or Clear
     'MCL_PRELOAD':        (0xa0abd0, None),
     'DMR_SERVERFLAG':     (0xa06020, 'dmr_serverflag'),   # int: 1 while stock's DLNA renderer (UPnP) service runs (dlna_service_running 0x507bec reads it; Clear and the queue insert stay off then, docs/modules/queue.md)
@@ -933,6 +956,7 @@ def gen_stock_h(out, demo_path):
     h.append(f'#define POD_DEVELOPER_PAGE {pod_pages.DEVELOPER_PAGE_INDEX}')
     h.append(f'#define POD_CACHE_PAGE {pod_pages.CACHE_PAGE_INDEX}')
     h.append(f'#define POD_DISPLAY_PAGE {pod_pages.DISPLAY_PAGE_INDEX}')
+    h.append(f'#define POD_RGB_THEME_PAGE {pod_pages.RGB_THEME_PAGE_INDEX}')
     h.append(f'#define POD_KEYSPOWER_PAGE {pod_pages.KEYSPOWER_PAGE_INDEX}')
     h.append(f'#define POD_FILES_PAGE {pod_pages.FILES_PAGE_INDEX}')
     h.append(f'#define POD_PULLDOWN_PAGE {pod_pages.PULLDOWN_PAGE_INDEX}')
@@ -1048,6 +1072,7 @@ def compile_payload(out, demo_path, tag=TAG):
             '--undefined=m1plus_style_color', '--undefined=m1plus_style_gradient', '--undefined=m1plus_image_add', '--undefined=stock_style_color_trampoline', '--undefined=stock_image_add_trampoline', '--undefined=pal_map', '--undefined=pal_active', '--undefined=pal_background', '--undefined=pal_accent', '--undefined=pal_accent_saved', '--undefined=pal_accent_set', '--undefined=pal_accent_color', '--undefined=pal_fill',
             '--undefined=bc_timed_open', '--undefined=m1_scan_dir', '--undefined=sh_set_mode', '--undefined=sbs_play_record', '--undefined=sh_load_playlist', '--undefined=sh_display_mode', '--undefined=sh_clear_queue', '--undefined=pod_na_site', '--undefined=na_next_key', '--undefined=na_set_cur', '--undefined=na_cur', '--undefined=na_active', '--undefined=stock_setmode_trampoline', '--undefined=stock_loadplaylist_trampoline', '--undefined=ft_created', '--undefined=stock_file_created_trampoline', '--undefined=tz_select', '--undefined=tz_row', '--undefined=tz_label', '--undefined=stock_timezone_trampoline', '--undefined=bp_capacity', '--undefined=lo_set_text', '--undefined=wifi_hub_open', '--undefined=tidal_kb_focus', '--undefined=pod_eq_site', '--undefined=pod_lock_site', '--undefined=pf_items', '--undefined=pf_seen', '--undefined=so_play_src', '--undefined=lib_navidrome', '--undefined=sba_songs_window', '--undefined=sbs_playing', '--undefined=sbs_track']   # (pf_items, pf_seen: accessors of the parser the tests read; so_play_src, albums_open_src: the library seam, no caller yet)
     keep += ['--undefined=' + n for n in ND_KEEP]   # (the Navidrome data layer has no caller until the pages land: patch/sbapi.h; the tests call these)
+    keep.append('--undefined=tl_play_status')
     run(LD, '-m', 'elf32ltsmip', '--gc-sections', '-T', os.path.join(PATCH, 'link.ld'),
         '-e', 'm1plus_home_click', '--undefined=m1plus_home_click', '--undefined=stock_home_click_trampoline',
         # Navidrome downloads (patch/sbdl.c): kept until the pages that call them land (ND-10); the tests run them
@@ -1234,6 +1259,11 @@ def patch_demo(raw, payload, ps, demo_path):
     for a, _ in LINEOUT_SITES: struct.pack_into('<I', patched, fileoff(patched, a), jal(ps['lo_set_text'], a))   # (the pins checked each site's lw t9 GOT widget_set_text_utf8, a1, the jalr and the delay slot)
     check(BASE <= target8 < BASE + len(payload), 'battery hook symbol outside payload')
     struct.pack_into('<I', patched, fileoff(patched, BATTERY_SITE), jal(target8, BATTERY_SITE))   # (the pins above checked the site's word, its delay slot and its neighbours)
+    for at, old, what in FORMAT_LAMP_PINS:
+        got = struct.unpack_from('<I', patched, fileoff(patched, at))[0]
+        check(got == old, f'{at:#x} ({what}): {got:#010x} != pinned {old:#010x}')
+    check(BASE <= ps['tl_play_status'] < BASE + len(payload), 'format lamp hook symbol outside payload')
+    struct.pack_into('<I', patched, fileoff(patched, FORMAT_LAMP_SITE), jal(ps['tl_play_status'], FORMAT_LAMP_SITE))
     for nm, at, pro in (('sh_set_mode', SETMODE, SETMODE_PROLOGUE), ('sh_load_playlist', LOADPL, LOADPL_PROLOGUE), ('ft_created', FILETIME, FILETIME_PROLOGUE)):   # Apple-style Shuffle (patch/shuffle.c)
         check(BASE <= ps[nm] < BASE + len(payload), f'{nm} outside payload')
         hook(patched, at, pro, ps[nm], nm)
@@ -1314,6 +1344,7 @@ def main():
         'hook_query': {'addr': QUERY_DB, 'target': ps['pc_library_query']}, 'hook_sorted_query': {'addr': QUERY_SORT, 'target': ps['pc_sorted_query']},
         'hook_scan': {'addr': SCAN_SITE, 'target': ps['m1_scan_dir']},
         'hook_battery': {'addr': BATTERY_SITE, 'target': ps['bp_capacity']},
+        'hook_format_lamp': {'addr': FORMAT_LAMP_SITE, 'target': ps['tl_play_status']},
         'hook_wifihub': {'addr': WIFIHUB_SITE, 'target': ps['wifi_hub_open']},
         'hook_idle': {'addr': IDLE_SITE, 'target': ps['bc_timed_open']},
         'hook_tidalkb': {'addr': TIDALKB_SITE, 'target': ps['tidal_kb_focus']},
