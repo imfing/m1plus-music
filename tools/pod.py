@@ -307,8 +307,8 @@ FUNCTIONS.update({
     'mclGetInfo':              ('int', 'void *', 0x5d3518),
 })
 
-# Sample Rate RGB replaces only the player status query in the existing idle callback.
-# The wrapper returns the stock status unchanged and never touches audio data or DAC settings.
+# Sample Rate (patch/tracklamp.c, payload hook 30): the hook replaces only the player status query in the existing idle callback. It returns stock's status unchanged and, with the
+# setting on, keeps the lamp's timer alive; nothing else runs on that path.
 FORMAT_LAMP_SITE = 0x4ce968
 FORMAT_LAMP_PINS = (
     (0x4cd7d0, 0x8f82a964, 'USB link state GOT slot'),
@@ -321,9 +321,13 @@ FORMAT_LAMP_PINS = (
     (0x4dfc60, 0x26040010, 'format codec field'),
     (0x4cff84, 0x8f90b478, 'lamp RGB state'),
     (0x4cff88, 0x92030003, 'lamp pending state'),
-    (0x4cff94, 0x92060001, 'lamp green state'),
-    (0x4cff98, 0x92050002, 'lamp blue state'),
+    (0x4cff94, 0x92060001, 'lamp blue state'),
+    (0x4cff98, 0x92050002, 'lamp green state'),
     (0x4cff9c, 0x04115c13, 'lamp apply branch'),
+    # reset_atmosphereled_rgb's first rule, which tl_release copies: external power (the word at 0xa059f8 is 1) and pmucharge_status not 2 light the red at level 0x11
+    (0x4e6bac, 0x8f82a910, 'lamp reset: external power GOT slot'), (0x4e6bc4, 0x24020001, 'lamp reset: li 1'), (0x4e6bc8, 0x14620010, 'lamp reset: bne external power'),
+    (0x4e6bd0, 0x8f82a9e0, 'lamp reset: pmucharge_status GOT slot'), (0x4e6bd8, 0x24020002, 'lamp reset: li 2'), (0x4e6bdc, 0x1062000b, 'lamp reset: beq full'),
+    (0x4e6be0, 0x24020011, 'lamp reset: the red level 0x11'), (0x4e6bec, 0xa2020000, 'lamp reset: the red byte'),
 )
 # The Playlists page (patch/playlists.c, docs/modules/playlists.md): the stock playlist creation, and the click handlers of the stock Playlists
 # page's Import and Export rows (static, unnamed; ret_t (ctx, event), neither reads its arguments: each asks with the stock confirm dialog,
@@ -474,8 +478,6 @@ FUNCTIONS['batch_add_file'] = ('int', 'int, int, void *, void *, int', 0x4da7dc)
 # Stock data the payload reads or writes, by absolute address. Exported objects are checked
 # against .dynsym; the two unnamed ones carry the code that proves them.
 DATA = {
-    'TL_USB_LINK':        (0xa059f4, 'usblink_status'),
-    'TL_USB_MODE':        (0xa05aa8, 'usb_mode'),
     'ROTATEMODE':         (0xa05a9c, None),   # int, config.ini ROTATEMODE (0/1); 1 swaps the volume keys 0xdc <-> 0xdd (VOLKEYS_PINS)
     # the stock Tidal search page's result structs { total, limit, offset, deque_t * } (patch/tidalkb.c tk_reset_results; TIDALKB_PINS) and the scroll offset its timer restores
     'TIDAL_TRACKS':       (0xa10264, None), 'TIDAL_ARTISTS': (0xa10254, None), 'TIDAL_ALBUMS': (0xa10244, None), 'TIDAL_SCROLL': (0xa04150, None),
@@ -515,7 +517,8 @@ DATA = {
     # mclGetPlayPos: get_playtimeandlength `lw s1, 0xa0394c; deque_size(*s1)` then `deque_at(*s1, pos)` (@0x4e01cc..0x4e0268),
     # the lock screen refresh (@0x53f73c, "queued" = 0 <= pos < size), the queue drawer (@0x47a8f0)
     'PLAY_QUEUE':         (0xa0394c, None),
-    'ATMOSPHERE_RGB_STATE': (0xa038b8, None),
+    'ATMOSPHERE_RGB_STATE': (0xa038b8, None),   # stock's lamp state: red, blue, green, a pending byte its 100 ms timer 0x4cff40 acts on (patch/tracklamp.c tl_output)
+    'PMUCHARGE_STATUS':   (0xa059e8, 'pmucharge_status'),   # word: 1 charging, 2 full (get_battery_capacity stores toolsGetChargeStatus's answer); reset_atmosphereled_rgb 0x4e6bd0 lights its red unless it is 2 (patch/tracklamp.c tl_release)
     # the player's gapless state word (1 = a preload is open; mclSetGaplessMode(0) @0x5d28ac closes it with "{mcl-closegapless}" and stores -1): patch/shuffle.c cancel_preload closes it after a reorder, an insert or Clear
     'MCL_PRELOAD':        (0xa0abd0, None),
     'DMR_SERVERFLAG':     (0xa06020, 'dmr_serverflag'),   # int: 1 while stock's DLNA renderer (UPnP) service runs (dlna_service_running 0x507bec reads it; Clear and the queue insert stay off then, docs/modules/queue.md)

@@ -189,8 +189,8 @@ def settings_tests(ctx):
     expect(dl == ['brightness', P.GAP, 'Screen Timeout', 'Lock Screen', P.GAP, 'LED Light', 'Follow Screen'], f'three cards: the brightness slider; Screen Timeout + Lock Screen; LED Light + Follow Screen ({dl})')
     expect([(r.label, r.action, r.arg) for r in L.rows] == [(t, P.ACT_LIGHTSET, i) for i, t in enumerate(TEXTS)] and all(P.row_kind(r) == 'check' for r in L.rows) and P.LIGHTTIME_VALUES == TEXTS,
            'the Screen Timeout picker: stock\'s five choices in stock\'s order, the argument is stock\'s index')
-    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2), ('Sample Rate', P.ACT_LEDSET, 3)] and all(P.row_kind(r) == 'check' for r in E.rows),
-           'the LED Light picker: stock Off, Green and Blue plus Sample Rate')
+    expect([(r.label, r.action, r.arg) for r in E.rows] == [('Off', P.ACT_LEDSET, 0), ('Green', P.ACT_LEDSET, 1), ('Blue', P.ACT_LEDSET, 2), ('Dynamic', P.ACT_LEDSET, 3), ('Theme', P.ACT_RGBROW, P.RGB_THEME_PAGE_INDEX)] and all(P.row_kind(r) == 'check' for r in E.rows[:4]) and P.row_kind(E.rows[4]) == 'value',
+           'the LED Light picker: stock Off, Green and Blue plus Dynamic, then the Theme row')
     expect((P.ACT_LIGHT, P.ACT_LIGHTSET, P.ACT_LED, P.ACT_LEDSET, P.ACT_LEDFOLLOW) == (97, 98, 99, 100, 101) and {P.ACT_LIGHT, P.ACT_LED} <= set(P.VALUE_ACTIONS) and {P.ACT_LIGHTSET, P.ACT_LEDSET} <= set(P.CHECK_ACTIONS)
            and P.ACT_LEDFOLLOW in P.SWITCH_ACTIONS, 'the actions')
     expect(len(P.STOCK_PAGES) == 2 and not any(n.split('/')[-1] in ('display_page', 'brightness_page', 'lighttime_page', 'atmosphereled_page', 'screensaver_page') for n, *_ in P.STOCK_PAGES)
@@ -298,7 +298,7 @@ def settings_tests(ctx):
     for tree, n, title, first in ((pt, 5, 'Screen Timeout', 'Never'), (et, 4, 'LED Light', 'Off')):
         expect(all(tree.find(f'pod_check{i}').get('visible') == 'false' and tree.find(f'pod_check{i}').get('sensitive') == 'false' for i in range(n)) and tree.find('label_title').get('tr_text') == title
                and tree.find('pod_label0').get('tr_text') == first, f'the {title} picker asset: {n} rows, a hidden insensitive check each')
-    expect([pt.find(f'pod_label{i}').get('text') for i in range(1, 5)] == list(TEXTS[1:]) and [et.find(f'pod_label{i}').get('tr_text') for i in range(4)] == ['Off', 'Green', 'Blue', 'Sample Rate'],
+    expect([pt.find(f'pod_label{i}').get('text') for i in range(1, 5)] == list(TEXTS[1:]) and [et.find(f'pod_label{i}').get('tr_text') for i in range(4)] == ['Off', 'Green', 'Blue', 'Dynamic'],
            'the times as stock writes them; the lamp modes translated')
 
 

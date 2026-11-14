@@ -116,8 +116,7 @@ The retired Settings > Library > Album Order file `album-order` (`0` Title, else
 | Display > brightness slider | `[SYSSET] LIGHTNESS` (the word `lightness`) | 0 .. 100, written by stock's own slider handlers ([display](display.md)) |
 | Display > Screen Timeout | `[SYSSET] LIGHTTIME` (the word `backlighttime_mode`) | 0 never, 1 15 s, 2 30 s, 3 1 min, 4 5 min ([display](display.md)) |
 | Display > LED Light | `[SYSSET] ATMOSPHERELEDMODE` (the byte `atmosphereled_mode`) | 0 off, 1 green, 2 blue ([display](display.md)) |
-| Display > LED Light > Sample Rate | `/mnt/data/m1plus/sample-rate-rgb` | `1` on (stock's lamp mode is then 0), `0` or missing off ([display](display.md) "Sample Rate") |
-| Sample Rate Theme (theme, Lighting Reminders, Follow Volume) | `/mnt/data/m1plus/sample-rate-rgb-options` | four characters: effect (`0` .. `9`, `A` .. `E`), palette (`0` .. `9`), reminders (`0` / `1`), follow volume (`0` / `1`); missing: Reference, reminders off, follow volume on. Neither file is listed on Settings Files; Reset All Settings removes both |
+| Display > LED Light > Dynamic, and its theme | `/mnt/data/m1plus/led-dynamic` | `0` or missing: off; `1` .. `6`: on (stock's lamp mode is then 0) with the theme Reference, Gentle Breathe, Heartbeat, Lighthouse, Candle or Ocean Wave ([display](display.md) "Sample Rate") |
 | Display > Follow Screen | `[SYSSET] LEDFOLLOWSCREEN` (the byte `ledfollowscreen_flag`) | 1 on, 0 off ([display](display.md)) |
 
 ## Files on the card

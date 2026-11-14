@@ -23,6 +23,7 @@
 #include "pcregion.h"
 #include "peq.h"
 #include "nextalbum.h"
+#include "tracklamp.h"
 
 enum { K_CHAR, K_PRESENT, K_MENU, K_LINES, K_TEXT };
 
@@ -31,7 +32,7 @@ struct sf_file {
     char kind;
 };
 
-/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 44 setting files from SF_SETTING on. */
+/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 45 setting files from SF_SETTING on. */
 static const struct sf_file sf_files[] = {
     {START_FILE, K_CHAR},
     {MARKER, K_PRESENT},
@@ -82,6 +83,7 @@ static const struct sf_file sf_files[] = {
     {AREBUILD_FILE, K_PRESENT},
     {WIFINET_FILE, K_PRESENT},
     {PCDIR_FILE, K_CHAR},
+    {TL_FILE, K_CHAR},
 };
 #define SF_FILES (sizeof sf_files / sizeof sf_files[0])
 #define SF_SETTING 5 /* the first setting file's row: the rows before it (guard files, folder) are never deleted */

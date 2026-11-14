@@ -282,7 +282,7 @@ def row_tests(ctx):
     expect(P.PAGES[P.NEXTALBUM_PAGE_INDEX] is N and N.title == 'Continue Playing' and [(r.label, r.action, r.arg) for r in N.rows] == [('Off', 91, DEFS['NA_OFF']), ('Next Albums', 91, DEFS['NA_ALBUMS'])]
            and all(P.row_kind(r) == 'check' for r in N.rows) and 91 in P.CHECK_ACTIONS and N.layout[-1].text.startswith('Plays the next album'), 'the picker: Off, Next Albums, a check each, the hint under them')
     expect(P.SETTING_FILES.index('playback-next-album') == P.SETTING_FILES.index('playback-eq') + 1 and FILE == '/mnt/data/m1plus/playback-next-album', 'the setting file follows playback-eq in Settings Files')
-    expect(len(P.SETTING_FILES) == 44 and P.INFO_SFOLD - P.INFO_SF == 49 and P.INFO_DUR == P.INFO_SFOLD + 1 == 65, 'Settings Files: 44 setting files (artists-rebuild, scrobbling, scrobble-auto, the lyrics size and podcast-directory too), INFO_SFOLD = INFO_SF + 49, INFO_DUR 65')
+    expect(len(P.SETTING_FILES) == 45 and P.INFO_SFOLD - P.INFO_SF == 50 and P.INFO_DUR == P.INFO_SFOLD + 1 == 66, 'Settings Files: 45 setting files (artists-rebuild, scrobbling, scrobble-auto, the lyrics size, podcast-directory and sample-rate-rgb too), INFO_SFOLD = INFO_SF + 50, INFO_DUR 66')
     for loc in pod_i18n.LOCALES:
         expect(all(pod_i18n.TEXT[k][pod_i18n.table_for(loc)] for k in ('Continue Playing', 'Next Albums', 'Albums', 'Off', N.layout[-1].text)), f'the texts have a translation in {loc}')
 
