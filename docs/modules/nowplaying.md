@@ -47,13 +47,13 @@ Settings > Now Playing > Shrink on Pause (`nowplaying-shrink`, `0` off, default 
 starts and each time it returns to the front, the cover then put at its size at once). Off, the cover stays
 264 px in every status and nothing below runs.
 
-With it on, while paused or stopped (`mclGetPlayStatus()` 3 or 1; Wi-Fi Transfer stops the player) the cover is 194 px (0.73, Apple Music's ratio), centred on the
-full cover; `img_np_shadow` (drawn `scale`) and the corner radius (12 → 9 px) scale with it, and the
-shadow fades with the size to opacity 64. Playing
+With it on, while paused or stopped (`mclGetPlayStatus()` 3 or 1; Wi-Fi Transfer stops the player) the cover is 212 px (0.80), centred on the
+full cover; `img_np_shadow` (drawn `scale`) and the corner radius (12 → 10 px) scale with it, and the
+shadow fades with the size to opacity 128. Playing
 and every other status keep 264 px.
 
-- Motion: `np_art_size` steps a spring by elapsed time on a 16 ms frame timer: critically damped for 400 ms
-  to the small size, underdamped (zeta 0.75) for 640 ms back, 2 px past 264 before it lands. A change
+- Motion: `np_art_size` steps a spring by elapsed time on a 16 ms frame timer: critically damped for 280 ms
+  to the small size, underdamped (zeta 0.75) for 460 ms back, 2 px past 264 before it lands. A change
   mid-spring turns it round from the current size. Every size is an even number of px from the target,
   so the cover stays centred and the bounce shows 1 px on each side.
 - The cover springs only while the art page shows, lit and in front. Otherwise (opened while paused,

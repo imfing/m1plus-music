@@ -205,8 +205,8 @@ def loc_wrap(s, room, measure):
 M = 28                           # side margin: the cover, the text column and the bar share it
 ART, ART_R = 264, 12             # cover = what demo writes (mod_lockscreen.COVER_SIZE, 1:1), corner radius
 ART_X, ART_Y = M, 28
-ART_SMALL = 194                  # paused: the payload springs the cover (and its shadow) to this side, centred (patch/nowplaying.c np_art_place)
-SHADOW_DIM = 64                  # the shadow's opacity at ART_SMALL; full (255) from ART on, linear between
+ART_SMALL = 212                  # paused: the payload springs the cover (and its shadow) to this side, centred (patch/nowplaying.c np_art_place)
+SHADOW_DIM = 128                 # the shadow's opacity at ART_SMALL; full (255) from ART on, linear between
 
 
 def shadow_opacity(side):

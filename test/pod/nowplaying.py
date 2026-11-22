@@ -1148,7 +1148,7 @@ def run(ctx):
             if z >= 1: return (1 + w * t) * math.exp(-w * t)
             wd = w * math.sqrt(1 - z * z); return math.exp(-z * w * t) * (math.cos(wd * t) + z / math.sqrt(1 - z * z) * math.sin(wd * t))
         return [round(1024 * g(k / 100)) for k in range(ms // 10 + 1)]
-    SHRINK, GROW = spring(O['NP_SHRINK_MS'], 1.0, 16), spring(O['NP_GROW_MS'], 0.75, 13)
+    SHRINK, GROW = spring(O['NP_SHRINK_MS'], 1.0, 22), spring(O['NP_GROW_MS'], 0.75, 18)
     def size_model(a, b, el):
         tab, ms = (GROW, O['NP_GROW_MS']) if b > a else (SHRINK, O['NP_SHRINK_MS'])
         if el <= 0: return a
@@ -1156,14 +1156,14 @@ def run(ctx):
         i = el // 10; g = tab[i] + int((tab[i + 1] - tab[i]) * (el % 10) / 10)
         d = (a - b) * g; return b + 2 * int((d + (1024 if d >= 0 else -1024)) / 2048)   # an even number of px from the target: half on each side
     A, S_ = O['NP_ART'], O['NP_ART_SMALL']
-    expect((O['NP_ART_X'], O['NP_SHADOW_PAD']) == (mn.ART_X, mn.SHADOW_PAD) and S_ == mn.ART_SMALL == 194 and abs(S_ / A - 0.73) < 0.01, 'the paused cover is 194 px (0.73, Apple Music\'s ratio), the art and shadow constants are the asset\'s')
+    expect((O['NP_ART_X'], O['NP_SHADOW_PAD']) == (mn.ART_X, mn.SHADOW_PAD) and S_ == mn.ART_SMALL == 212 and abs(S_ / A - 0.80) < 0.01, 'the paused cover is 212 px (0.80), the art and shadow constants are the asset\'s')
     sm = NowMachine()
     csz = lambda a, b, el: struct.unpack('<i', struct.pack('<I', sm.call(PSYMS['np_art_size'], a0=a, a1=b, a2=el & 0xffffffff, count=20000)))[0]
-    pts = [(A, S_, t) for t in range(-10, 420, 7)] + [(S_, A, t) for t in range(-10, 660, 7)] + [(230, A, 55), (240, S_, 133), (A, S_, 400), (S_, A, 640)]
+    pts = [(A, S_, t) for t in range(-10, O['NP_SHRINK_MS'] + 20, 7)] + [(S_, A, t) for t in range(-10, O['NP_GROW_MS'] + 20, 7)] + [(230, A, 55), (240, S_, 133), (A, S_, O['NP_SHRINK_MS']), (S_, A, O['NP_GROW_MS'])]
     got = [csz(*p) for p in pts]
     expect(got == [size_model(*p) for p in pts], f'np_art_size equals the model (spring tables from the formula, linear between entries) ({[(p, g, size_model(*p)) for p, g in zip(pts, got) if g != size_model(*p)][:3]})')
-    down, up = [csz(A, S_, t) for t in range(0, 401, 5)], [csz(S_, A, t) for t in range(0, 641, 5)]
-    expect(all(x >= y for x, y in zip(down, down[1:])) and min(down) == S_ and down[-1] == S_, 'the shrink is critically damped: it never goes under 194 px and lands there')
+    down, up = [csz(A, S_, t) for t in range(0, O['NP_SHRINK_MS'] + 1, 5)], [csz(S_, A, t) for t in range(0, O['NP_GROW_MS'] + 1, 5)]
+    expect(all(x >= y for x, y in zip(down, down[1:])) and min(down) == S_ and down[-1] == S_, 'the shrink is critically damped: it never goes under 212 px and lands there')
     expect(max(up) == A + 2 and up[-1] == A, f'the grow bounces subtly: 2 px past 264 ({max(up)}), 1 px on each side, then lands there')
     odd = [s for s in down + up if (A - s) % 2]
     expect(not odd, f'every size of a spring is an even number of px from the full cover: it stays centred, no edge moves alone ({sorted(set(odd))[:8]})')
@@ -1206,7 +1206,7 @@ def run(ctx):
            f'opened while paused: the cover and its shadow start small, centred where the full cover is ({geo(m, "img_playcover")}, {geo(m, "img_np_shadow")})')
     expect(m.timers == [(PSYMS['np_tick'], O['NP_TICK_MS'])], 'and without a spring (no frame timer)')
     op = [c[2] for c in m.calls if c[0] == 'widget_set_opacity' and c[1] == m.widgets['img_np_shadow']]
-    expect(op[-1:] == [O['NP_SHADOW_DIM']] and O['NP_SHADOW_DIM'] < 100, f'and the shadow is much lighter ({op})')
+    expect(op[-1:] == [O['NP_SHADOW_DIM']] and O['NP_SHADOW_DIM'] < 160, f'and the shadow is lighter ({op})')
     m = paused_page(status=1)
     expect(geo(m, 'img_playcover') == (small, small, S_, S_), f'opened while stopped (Wi-Fi Transfer stops the player): the cover is small too ({geo(m, "img_playcover")})')
     m = paused_page(status=2); m.status = 1; m.calls = []; m.tick()
@@ -1220,7 +1220,7 @@ def run(ctx):
     m.clock = 1000; m.status = 3; m.calls = []; m.tick()
     expect(('timer_add', PSYMS['np_art_frame'], O['NP_FRAME_MS']) in m.calls, 'a pause starts the spring\'s 16 ms frame timer')
     seen = []
-    for t in (16, 48, 100, 200, 300, 399, 400):
+    for t in (16, 48, 100, 150, 200, O['NP_SHRINK_MS'] - 1, O['NP_SHRINK_MS']):
         m.clock = 1000 + t; r = m.call(PSYMS['np_art_frame'], count=400000); seen.append((t, geo(m, 'img_playcover')[2], r))
     expect([s for _, s, _ in seen] == [size_model(A, S_, t) for t, _, _ in seen] and [r for *_, r in seen] == [O['RET_REPEAT']] * 6 + [0],
            f'each frame sizes the cover by the time run, and the spring ends on its last ({seen})')
@@ -1234,9 +1234,9 @@ def run(ctx):
     m.status = 2; m.calls = []; m.tick()
     expect(not any(c[0] == 'timer_add' and c[1] == PSYMS['np_art_frame'] for c in m.calls), 'a turn mid-spring keeps the running frame timer')
     sizes = []
-    for t in range(16, 641, 16):
+    for t in range(16, O['NP_GROW_MS'] + 1, 16):
         m.clock = 5150 + t; m.call(PSYMS['np_art_frame'], count=400000); sizes.append(geo(m, 'img_playcover')[2])
-    m.clock = 5150 + 640; m.call(PSYMS['np_art_frame'], count=400000)
+    m.clock = 5150 + O['NP_GROW_MS']; m.call(PSYMS['np_art_frame'], count=400000)
     expect(S_ < mid < A and sizes[0] == size_model(mid, A, 16) and max(sizes) > A and geo(m, 'img_playcover') == (mn.ART_X, mn.ART_Y, A, A)
            and m.props.get((m.widgets['img_np_shadow'], 'opacity')) == 255,
            f'from {mid} px it grows past 264 ({max(sizes)}) and lands on the asset\'s rectangle')
@@ -1266,7 +1266,7 @@ def run(ctx):
                f'{how} mid-spring: the next frame lands it small and ends the timer, later frames do nothing ({before})')
     m, sv = mid_spring(); m.screen(False); m.calls = []; m.tick()
     expect(('timer_remove', 0x777) in m.calls and geo(m, 'img_playcover')[2] == S_, 'the tick with the screen off removes the frame timer and lands the cover')
-    expect([mn.shadow_opacity(s) for s in (S_ - 5, S_, 229, A, A + 2)] == [O['NP_SHADOW_DIM']] * 2 + [O['NP_SHADOW_DIM'] + (255 - O['NP_SHADOW_DIM']) * 35 // 70, 255, 255]
+    expect([mn.shadow_opacity(s) for s in (S_ - 5, S_, S_ + 17, A, A + 2)] == [O['NP_SHADOW_DIM']] * 2 + [O['NP_SHADOW_DIM'] + (255 - O['NP_SHADOW_DIM']) * 17 // (A - S_), 255, 255]
            and mn.SHADOW_DIM == O['NP_SHADOW_DIM'], 'the shadow opacity model (preview) is the payload\'s formula and constant')
 
     # the play button: stock's handler runs after ours, so the status is watched every 50 ms (at most 10 times) and the cover follows its change
@@ -1292,7 +1292,7 @@ def run(ctx):
             for x in range(R):
                 if cv[y * R + x]: want[(S_ - 1 - x if k & 1 else x, ly)] = shade | cv[y * R + x] << 24
     got = {(f[1], f[2]): f[0] for f in m.fills if (f[3], f[4]) == (1, 1)}
-    expect(R == 9 and got == want and len(m.fills) == len(want), f'the small cover\'s corners: radius {R}, at its own edges and rows ({len(m.fills)} pixels)')
+    expect(R == 10 and got == want and len(m.fills) == len(want), f'the small cover\'s corners: radius {R}, at its own edges and rows ({len(m.fills)} pixels)')
 
     # the page goes mid-spring: both timers go with it
     m = paused_page(status=2); m.status = 3; m.tick(); m.call(PSYMS['np_on_play'], a0=0, a1=0, count=100000); m.calls = []

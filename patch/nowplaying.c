@@ -179,14 +179,13 @@ __attribute__((noinline)) void np_corner_init(void) {
 }
 
 /* The pause spring: 1024 x g(t) every 10 ms, g = e^(-zeta wn t) (cos wd t + zeta / sqrt(1 - zeta^2) sin wd t), wd = wn sqrt(1 - zeta^2); critically damped (g = (1 + wn t) e^(-wn t))
- * for the shrink, zeta 1, wn 16 /s; zeta 0.75, wn 13 /s for the grow (-0.028 at 370 ms: a subtle bounce, 2 px). test/pod/nowplaying.py computes the same numbers. */
-static const short np_shrink_tab[NP_SHRINK_MS / 10 + 1] = {
-    1024, 1012, 982, 938, 886, 828, 768, 708, 649, 592, 538, 486, 438, 394, 353, 316, 282, 251, 223, 198, 175,
-    155,  137,  121, 107, 94,  82,  72,  64,  56,  49,  43,  37,  33,  29,  25,  22,  19,  17,  14,  13};
+ * for the shrink, zeta 1, wn 22 /s; zeta 0.75, wn 18 /s for the grow (-0.028 at 260 ms: a subtle bounce, 2 px). test/pod/nowplaying.py computes the same numbers. */
+static const short np_shrink_tab[NP_SHRINK_MS / 10 + 1] = {1024, 1003, 950, 879, 799, 716, 635, 558, 486, 421,
+                                                           363,  311,  266, 226, 192, 162, 137, 115, 97,  81,
+                                                           68,   57,   47,  39,  33,  27,  23,  19,  15};
 static const short np_grow_tab[NP_GROW_MS / 10 + 1] = {
-    1024, 1016, 994, 960, 918, 869, 815, 759, 701, 642, 584, 527, 472, 420, 371, 324, 281, 241, 205, 172, 142, 115,
-    91,   70,   52,  36,  22,  11,  1,   -7,  -13, -18, -22, -25, -27, -28, -29, -29, -29, -28, -27, -25, -24, -22,
-    -21,  -19,  -17, -16, -14, -13, -11, -10, -9,  -7,  -6,  -5,  -4,  -4,  -3,  -2,  -2,  -1,  -1,  0,   0};
+    1024, 1009, 969, 911, 841, 763, 683, 602, 523, 448, 378, 314, 256, 205, 160, 121, 88, 60, 37, 19, 4,  -7, -16, -22,
+    -26,  -28,  -29, -29, -28, -27, -25, -23, -20, -18, -16, -14, -11, -10, -8,  -6,  -5, -4, -3, -2, -1, -1, 0};
 
 /* The cover's side `el` ms into a spring from `from` to `to` px: the grow table when it gets bigger, else the shrink one; linear between entries, `to` from the table's end on. The side is an even number
  * of px from `to` (rounded to the nearest), so the cover stays centred: an odd step would move one edge alone, and the bounce would show on one side only. */

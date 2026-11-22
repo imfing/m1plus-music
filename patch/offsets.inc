@@ -514,16 +514,16 @@
 #define NP_ALPHA_TOP 38
 #define NP_ALPHA_BOTTOM 235
 #define NP_WIN_H 450
-/* Paused, the cover is NP_ART_SMALL px (0.73, as Apple Music's), centred on the full cover at window x NP_ART_X; its shadow (img_np_shadow, NP_SHADOW_PAD px round the art at full size)
+/* Paused, the cover is NP_ART_SMALL px (0.80), centred on the full cover at window x NP_ART_X; its shadow (img_np_shadow, NP_SHADOW_PAD px round the art at full size)
  * scales with it and fades with the size to NP_SHADOW_DIM opacity at the small one. np_art_size: a critically damped spring of NP_SHRINK_MS to the small size, an underdamped one of NP_GROW_MS
  * (about 3 % overshoot, 2 px) back, a frame every NP_FRAME_MS. A tap on
  * the play button checks the player's status every NP_PLAY_MS, at most NP_PLAY_CHECKS times, for the change (the page tick covers the other ways). NP_PAUSED: mclGetPlayStatus() while paused. */
 #define NP_ART_X 28
-#define NP_ART_SMALL 194
+#define NP_ART_SMALL 212
 #define NP_SHADOW_PAD 24
-#define NP_SHADOW_DIM 64
-#define NP_SHRINK_MS 400
-#define NP_GROW_MS 640
+#define NP_SHADOW_DIM 128
+#define NP_SHRINK_MS 280
+#define NP_GROW_MS 460
 #define NP_FRAME_MS 16
 #define NP_PLAY_MS 50
 #define NP_PLAY_CHECKS 10
