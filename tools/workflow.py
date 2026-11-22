@@ -2,7 +2,7 @@
 
 All mutable state stays in this checkout, except the machine's test slots. Nothing here changes firmware bytes.
 """
-import contextlib, fcntl, hashlib, importlib.metadata, json, os, signal, subprocess, sys, tempfile, time
+import contextlib, fcntl, hashlib, importlib.metadata, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 
 import paths
@@ -145,7 +145,21 @@ def new_dev_dir():
     parent = ROOT / 'out' / 'dev'; parent.mkdir(parents=True, exist_ok=True)
     directory = parent / dev_tag()
     directory.mkdir()  # Never overwrite an earlier artifact if counter state was lost.
+    prune_dev_dirs(parent)
     return directory
+
+
+DEV_KEEP = 10   # dev builds kept per checkout, newest first; latest is kept as well
+
+
+def prune_dev_dirs(parent, keep=DEV_KEEP):
+    """Delete this checkout's dev builds older than the newest `keep`, except the one latest names.
+    One checkout's tags share a namespace and a fixed-width counter, so name order is build order."""
+    latest = read(parent / 'latest.json').get('build')
+    latest = Path(latest).resolve() if latest else None
+    builds = sorted(p for p in parent.iterdir() if p.is_dir() and re.fullmatch(r'V2\.1z[A-Z]{8}', p.name))
+    for p in builds[:-keep]:
+        if p.resolve() != latest: shutil.rmtree(p, ignore_errors=True)
 
 
 def build_dir(value):

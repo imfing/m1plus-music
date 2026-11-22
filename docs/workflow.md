@@ -61,11 +61,10 @@ reach.
 | Branch done or squash merge | `make dev` once. An identical tree reuses the passing build in seconds. |
 | Payload instruction budgets or stress inputs touched | Add `PERF=1` to that one run. |
 
-- Don't run a full `make test` before `make dev`; `make dev` runs the full suite itself.
 - The user guides change only when the change is user-visible. Module docs change only when
   behaviour or interfaces change.
 
-Dev artifacts stay in `out/dev/<tag>/`: `tree/`, `update.bin`, logs and `results.json`.
+Dev artifacts stay in `out/dev/<tag>/` (newest 10 per checkout, `DEV_KEEP`, plus `latest`): `tree/`, `update.bin`, logs and `results.json`.
 `tree/build.json` records the tag, inputs, environment and artifact hashes. Tests and packaging
 use the same tree; About, the preview and the package use its tag.
 

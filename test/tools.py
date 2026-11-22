@@ -107,6 +107,14 @@ def workflow_tests():
         expect('dev counter persisted locally', workflow.read(Path(td) / '.dev-number.json')['number'] == 2)
         expect('dev counter exhaustion refused', refused(lambda: workflow.letters(26**4, 4)))
 
+    with tempfile.TemporaryDirectory() as td:   # old dev builds are pruned; the newest and latest stay
+        parent = Path(td); names = ['V2.1zTEST' + workflow.letters(n, 4) for n in range(1, 7)]
+        for n in names: (parent / n).mkdir()
+        (parent / 'notes').mkdir(); workflow.write(parent / 'latest.json', {'build': str(parent / names[1])})
+        workflow.prune_dev_dirs(parent, keep=3)
+        expect('dev prune keeps the newest builds, latest and other files',
+               sorted(p.name for p in parent.iterdir()) == sorted([names[1], *names[3:], 'notes', 'latest.json']))
+
     with tempfile.TemporaryDirectory() as td, patch.object(workflow, 'ROOT', Path(td)):
         for d in ('test', 'patch', 'tools'): (Path(td) / d).mkdir(); (Path(td) / d / 'f').write_text('a')
         subprocess.run(['git', '-C', td, 'init', '-q'], check=True)

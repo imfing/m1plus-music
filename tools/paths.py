@@ -54,7 +54,8 @@ def stock_matches(stock, zip_path):
 _stock_found = {}   # (zip, WORK) -> the tree found: the CRC-32 of the 61 MB update.bin is read once per process; a miss is never kept (build.py unpacks, then asks again)
 
 def find_stock(zip_path=ZIP):
-    """The local work/stock if it is unpacked, else the main checkout's if it matches the zip.
+    """WORK/stock if it is unpacked, else this checkout's work/stock, else the main checkout's, if
+    it matches the zip. Runs with another M1_WORK (make dev, the checks) thus share one tree.
     Callers must treat the result as read-only. None: unpack one locally."""
     key = (zip_path, WORK)
     if key not in _stock_found:
@@ -64,10 +65,12 @@ def find_stock(zip_path=ZIP):
     return _stock_found[key]
 
 def _find_stock(zip_path):
-    local = os.path.join(WORK, 'stock')
-    if os.path.exists(os.path.join(local, 'meta.json')) and stock_matches(local, zip_path): return local
-    shared = os.path.join(MAIN, 'work', 'stock')
-    if MAIN != ROOT and stock_matches(shared, zip_path): return shared
+    seen = set()
+    for base in (WORK, os.path.join(ROOT, 'work'), os.path.join(MAIN, 'work')):
+        stock = os.path.realpath(os.path.join(base, 'stock'))
+        if stock in seen: continue
+        seen.add(stock)
+        if stock_matches(stock, zip_path): return stock
     return None
 
 if __name__ == '__main__':
