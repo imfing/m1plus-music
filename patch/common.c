@@ -508,6 +508,119 @@ __attribute__((noinline)) int m1_is_top(void *win) {
     return win && wm && window_manager_get_top_main_window(wm) == win;
 }
 
+/* The status bar under a page's dim scrim. A sheet's or dialog's scrim is a widget of the page's window, which starts below the bar (a window of its own), so the bar stayed
+ * lit while the page went dark. The bar's own EVT_AFTER_PAINT (over its children, so the clock and the icons too) fills it with the scrim's colour once for every shown scrim of
+ * the top main window, so a confirm over a sheet darkens the bar twice as it does the page. Window and scrim pointers are only compared, never read. Each window with a scrim
+ * gets one EVT_DESTROY listener, and the window is in `wins` exactly while that listener stands: its destroy takes it and its scrims out, so a later window at the same address
+ * is never taken for it. `seen` holds the layer counts the bar's paints drew (bit n: n layers), like patch/palette.c pal_bar_follow: a page change that invalidates nothing of the
+ * bar is caught by the bar's next tick (m1_bar_scrim_tick). */
+#define BS_SCRIMS 4 /* shown scrims tracked at once (the oldest goes when a fifth shows) */
+#define BS_WINS 6 /* windows with a destroy listener (a scrim of a seventh window does not dim the bar) */
+static struct {
+    void *bar; /* the bar listened to */
+    void *win[BS_SCRIMS], *scrim[BS_SCRIMS]; /* the shown scrims and their windows, oldest first; the rest 0 */
+    void *wins[BS_WINS]; /* the windows listened to (their destroy not seen yet) */
+    unsigned seen;
+} bs __attribute__((section(".scratch")));
+
+/* The layers over the bar now: the shown scrims of the top main window. */
+static int bar_scrim_layers(void) {
+    void *wm = window_manager(), *top = wm ? window_manager_get_top_main_window(wm) : (void *)0;
+    int i, n = 0;
+    if (top)
+        for (i = 0; i < BS_SCRIMS; ++i) n += bs.win[i] == top;
+    return n;
+}
+
+static int bar_scrim_paint(void *ctx, void *e) {
+    void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
+    int n = bar_scrim_layers();
+    (void)ctx;
+    bs.seen |= 1u << n;
+    if (!canvas || !bs.bar) return RET_OK;
+    while (n-- > 0) {
+        ui_fill_color(canvas, M1_SCRIM_COLOR); /* through the palette as the scrim's style colour is */
+        canvas_fill_rect(canvas, 0, 0, *(int *)((char *)bs.bar + W_W), *(int *)((char *)bs.bar + W_H));
+    }
+    return RET_OK;
+}
+
+/* Listen to the bar's paints (once per bar) and repaint it whole. */
+static void bar_scrim_repaint(void) {
+    void *bar = bar_find();
+    if (!bar) return;
+    if (bar != bs.bar) {
+        if (!widget_on(bar, EVT_AFTER_PAINT, bar_scrim_paint, (void *)0)) return;
+        bs.bar = bar;
+    }
+    bs.seen = 0;
+    widget_invalidate_force(bar, (void *)0);
+}
+
+/* Remove scrim entry i, the later ones moved up. */
+static void bar_scrim_drop(int i) {
+    for (; i < BS_SCRIMS - 1; ++i) bs.win[i] = bs.win[i + 1], bs.scrim[i] = bs.scrim[i + 1];
+    bs.win[i] = bs.scrim[i] = (void *)0;
+}
+
+/* A listened window's destroy (ctx: the window): it and its scrims are forgotten before its address can be reused. */
+static int bar_scrim_on_destroy(void *ctx, void *e) {
+    int i, hit = 0;
+    (void)e;
+    for (i = 0; i < BS_WINS; ++i)
+        if (bs.wins[i] == ctx) bs.wins[i] = (void *)0;
+    for (i = BS_SCRIMS - 1; i >= 0; --i)
+        if (bs.win[i] == ctx) bar_scrim_drop(i), hit = 1;
+    if (hit) bar_scrim_repaint();
+    return RET_OK;
+}
+
+/* win listened to (its destroy listener added once); 0 when there is no room or the listener fails. */
+static int bar_scrim_listen(void *win) {
+    int i, free_ = -1;
+    for (i = 0; i < BS_WINS; ++i) {
+        if (bs.wins[i] == win) return 1;
+        if (!bs.wins[i] && free_ < 0) free_ = i;
+    }
+    if (free_ < 0 || !widget_on(win, EVT_DESTROY, bar_scrim_on_destroy, win)) return 0;
+    bs.wins[free_] = win;
+    return 1;
+}
+
+__attribute__((noinline)) void m1_bar_scrim(void *win, void *scrim, int on) {
+    int i;
+    if (!scrim) return;
+    for (i = 0; i < BS_SCRIMS && bs.scrim[i] != scrim; ++i) {
+    }
+    if (on) {
+        if (!win || (i < BS_SCRIMS && bs.win[i] == win) || !bar_scrim_listen(win))
+            return; /* (already shown: no change) */
+        if (i < BS_SCRIMS) bar_scrim_drop(i);
+        for (i = 0; i < BS_SCRIMS && bs.scrim[i]; ++i) {
+        }
+        if (i == BS_SCRIMS) bar_scrim_drop(0), i = BS_SCRIMS - 1;
+        bs.win[i] = win, bs.scrim[i] = scrim;
+    } else {
+        if (i == BS_SCRIMS) return; /* not shown: the bar's answer is unchanged */
+        bar_scrim_drop(i);
+    }
+    bar_scrim_repaint();
+}
+
+__attribute__((noinline)) void m1_scrim(void *scrim, int on) {
+    if (!scrim) return;
+    m1_show(scrim, on);
+    m1_bar_scrim(on ? widget_get_window(scrim) : (void *)0, scrim, on);
+}
+
+void m1_bar_scrim_tick(void *bar) {
+    if (!bar || bar != bs.bar) return; /* no scrim has been shown on this bar: nothing listens */
+    if (bs.seen & ~(1u << bar_scrim_layers())) {
+        bs.seen = 0;
+        widget_invalidate_force(bar, (void *)0);
+    }
+}
+
 /* The tone cache: album key (cc_album_key) -> m1_tone word, RAM only, fixed size, least recently used out. Both pages look
  * an album up before they decode a cover; a miss is decoded once and inserted. A key is never 0 (0 marks a free entry). */
 static struct {
@@ -707,7 +820,7 @@ void m1_sheet_rows(void *scrim, void *card, int w, void *const *rows, void *cons
     widget_move(card, 0, AH_WIN_H - h);
     widget_resize(card, w, h);
     widget_set_prop_str(card, "style:normal:bg_image", glass[n]);
-    m1_show(scrim, 1);
+    m1_scrim(scrim, 1);
     m1_show(card, 1);
 }
 

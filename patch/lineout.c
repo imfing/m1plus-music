@@ -139,9 +139,11 @@ int lo_set_text(void *label, const char *text) {
         lo_shot(bar); /* our marks by rank: the camera, the sync icon, then the moon, each counting the ones before */
     lo_sync(parent, kill);
     lo_sleep(bar, kill);
-    if (bar && m1_is_type(bar, "system_bar"))
+    if (bar && m1_is_type(bar, "system_bar")) {
         pal_bar_follow(
             bar); /* the real bar (not the pull-down's copy) repainted when the window in front is painted otherwise */
+        m1_bar_scrim_tick(bar); /* and when it was painted dimmed (or not) under another window than the one in front */
+    }
     if (!kill) peqout_sync(1); /* the per-output EQ follows Line Out and a USB DAC within a second (patch/peqout.c) */
     lo_eq(parent, kill); /* after the sync above, which can turn the switch for the new output */
     pill = widget_lookup(parent, LO_PILL, 0);

@@ -85,7 +85,7 @@ void rowmenu_close(rowmenu_t *rm) {
     rm->queue = (rowmenu_queue_fn)0;
     if (rm->rows) deque_destroy(rm->rows);
     rm->rows = (void *)0;
-    m1_show(rm->scrim, 0);
+    m1_scrim(rm->scrim, 0);
     m1_show(rm->card, 0);
     rm->src = (const lib_src_t *)0;
 }
@@ -278,7 +278,7 @@ static int rm_bind(rowmenu_t *rm, void *win, int rows) {
         rm->pin_label = widget_lookup(win, "rm_label5", 1);
         rm->pin_icon = widget_lookup(win, "rm_icon5", 1);
     }
-    m1_show(rm->scrim, 0);
+    m1_scrim(rm->scrim, 0);
     m1_show(rm->card, 0);
     if (!ok) return 0;
     rm->dots = rm_make_dots(win);
@@ -316,7 +316,7 @@ int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) 
     rowmenu_set_rows(rm, RM_ALBUM_ROWS);
     rm->alt = 1, rm->src = (const lib_src_t *)0;
     rm->row = row, rm->queue = fn, rm->open = 1;
-    m1_show(rm->scrim, 1);
+    m1_scrim(rm->scrim, 1);
     m1_show(rm->card, 1);
     return 1;
 }
@@ -338,7 +338,7 @@ int rowmenu_bind_album(rowmenu_t *rm, void *win) {
 int rowmenu_open_queue(rowmenu_t *rm, int row, rowmenu_queue_fn fn) {
     if (!rm->on || !rm->queued || rm->open || !fn) return 0;
     rm->row = row, rm->queue = fn, rm->open = 1;
-    m1_show(rm->scrim, 1);
+    m1_scrim(rm->scrim, 1);
     m1_show(rm->card, 1);
     return 1;
 }
@@ -422,7 +422,7 @@ int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, cons
     if (rm->fav_icon) widget_set_prop_str(rm->fav_icon, "image", rm->fav ? "rm_ic_unfav" : "rm_ic_fav");
     rm_tail_rows(rm, rec);
     rm->rows = d, rm->row = row, rm->add = add, rm->open = 1;
-    m1_show(rm->scrim, 1);
+    m1_scrim(rm->scrim, 1);
     m1_show(rm->card, 1);
     return 1;
 }

@@ -30,7 +30,7 @@ horizontal divider at y 130.
 - **Dimming.** Stock's confirm does not visibly dim the page below, although its highlighter is set
   to alpha 130 (`CONFIRM_DIM` = `PL_DIM`). `pod_confirm_dialog` puts a full-window `#00000082` view
   as the top main window's last child, insensitive, before opening the dialog, and destroys it when
-  the call returns. It uses only pinned stock functions. If the page closed meanwhile, or the view
+  the call returns. `m1_bar_scrim` dims the status bar with it. It uses only pinned stock functions. If the page closed meanwhile, or the view
   fails, the dialog opens without a scrim. Stock's own confirms (Bluetooth / Wi-Fi, stock delete
   questions) do not go through the wrapper.
 - **Other message-like dialogs.** `cardupdate_dialog`, `formatcard_dialog` and `dialog_autoshutdown`

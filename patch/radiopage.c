@@ -1079,7 +1079,7 @@ static void rp_sheet_close(void) {
     int i;
     if (!rp.sheet) return;
     rp.sheet = 0;
-    m1_show(rp.sh_scrim, 0);
+    m1_scrim(rp.sh_scrim, 0);
     m1_show(rp.sh_card, 0);
     for (i = 0; i < SH_N; ++i) m1_show(rp.sh[i], 0);
 }

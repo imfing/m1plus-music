@@ -225,7 +225,7 @@ static void up_popup(void) {
         widget_set_sensitive(up.pd_cancel, !up.cancelling);
     }
     if (on != up.pop) {
-        m1_show(up.pd_scrim, on);
+        m1_scrim(up.pd_scrim, on);
         m1_show(up.pd_card, on);
         if (on) widget_set_sensitive(up.pd_cancel, !up.cancelling);
         up.pop = on;

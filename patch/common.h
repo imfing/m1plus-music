@@ -150,6 +150,15 @@ unsigned m1_bar_color(unsigned color);
 int m1_bar_tint(void *win, unsigned color);
 void m1_bar_black(void *win);
 int m1_is_top(void *win);
+/* The dim behind sheets and dialogs (tools/pod_ui.py PL_DIM) as a color_t word: AWTK's colour, alpha in the top byte. */
+#define M1_SCRIM_COLOR 0x82000000u
+/* A sheet's or dialog's scrim shown or hidden; the status bar (a window of its own, above the page's) is dimmed with it while the scrim's window is in front. Use it for
+ * every page scrim instead of m1_show. m1_bar_scrim: the bar's part alone, for a scrim that is shown otherwise (patch/m1plus.c pod_confirm_dialog's view). */
+void m1_scrim(void *scrim, int on);
+void m1_bar_scrim(void *win, void *scrim, int on);
+/* The status bar's 1 s tick (patch/lineout.c, the real bar): repaints the bar once when its paints drew another number of scrim layers than the window in front has now.
+ * Nothing until a scrim has been shown. */
+void m1_bar_scrim_tick(void *bar);
 void *m1_bind(void *win, const char *name, int (*fn)(void *, void *), const void *ctx);
 /* The flat pill's glyph and label (a button whose style has the glyph as its icon) centred as a pair SG_PILL_GAP apart in a pill pw px wide (the Songs, Folders and artist pages' Play / Shuffle pills, the select bars' pills; AWTK puts the glyph in a square as high as the button at margin_left and the text at the square's end plus the spacer); a label too wide beside
  * the glyph steps down to SG_PILL_PX_SMALL. Needs the button's text (widget_get_text) to be set. */

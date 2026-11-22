@@ -169,8 +169,6 @@ static int on_menu_fg(void *ctx, void *e) {
     return RET_OK;
 }
 
-#define POD_SCRIM_COLOR 0x82000000u /* #00000082 (PL_DIM) as value_t's uint32: AWTK's colour, alpha in the top byte */
-
 /* Whether win is still a window of the window manager. Only pointers are compared: a window that closed is never read. */
 static int pod_window_open(void *wm, void *win) {
     unsigned i, n;
@@ -191,12 +189,14 @@ int pod_confirm_dialog(void *info) {
         scrim = view_create(win, 0, 0, *(int *)((char *)win + W_W), *(int *)((char *)win + W_H));
         if (scrim) {
             memset(v, 0, sizeof v);
-            value_set_uint32(v, POD_SCRIM_COLOR);
+            value_set_uint32(v, M1_SCRIM_COLOR);
             widget_set_style(scrim, "normal:bg_color", v);
             widget_set_sensitive(scrim, 0);
+            m1_bar_scrim(win, scrim, 1); /* the status bar dimmed with it */
         }
     }
     r = navigator_to_with_context("dialog/confirminfo_dialog", info);
+    m1_bar_scrim((void *)0, scrim, 0); /* (pointers compared only: safe after the window closed) */
     if (scrim && pod_window_open(wm, win))
         for (n = widget_count_children(win), i = 0; i < n; ++i)
             if (widget_get_child(win, i) == scrim) {

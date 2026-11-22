@@ -3888,7 +3888,7 @@ static int pg_on_back(void *ctx, void *e) {
 #define PG_DLG_MS 200
 
 static void pg_dlg_show(int on) {
-    m1_show(pg.dlg_scrim, on);
+    m1_scrim(pg.dlg_scrim, on);
     m1_show(pg.dlg_card, on);
     pg.dlg = on;
 }
@@ -4528,7 +4528,7 @@ static const char *const pg_row_id[PG_SHEET_ROWS] = {
 static void pg_sheet_close(void) {
     if (!pg.sheet) return;
     pg.sheet = SH_NONE;
-    m1_show(pg.sh_scrim, 0);
+    m1_scrim(pg.sh_scrim, 0);
     m1_show(pg.sh_card, 0);
 }
 

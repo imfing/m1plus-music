@@ -1345,6 +1345,71 @@ def more_tests(ctx):
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 
+def bar_scrim_tests(ctx):
+    """13. The status bar dims with a sheet's scrim (patch/common.c m1_scrim, m1_bar_scrim, m1_bar_scrim_tick): the reported split look, the album page's "..." card dimming the page
+    while the bar above it (a window of its own) stayed lit in the page's tone. The bar's EVT_AFTER_PAINT fills it with the scrim's colour while the scrim's window is in front."""
+    expect = ctx.expect
+    SCRIM = 0x82000000   # M1_SCRIM_COLOR: tools/pod_ui.py PL_DIM #00000082 as a color_t word
+    m = album_machine()
+    m.call(PSYMS['album_open_src'], a0=0, a1=ALBUMS, a2=m.row, count=900000000)
+    m.page_window = m.top_main = m.window
+    m.children[m.wm].append(m.window)
+    m.setword(m.bar + O['W_W'], 320); m.setword(m.bar + O['W_H'], SY0)
+
+    def bar_inval(calls): return sum(c[0] == 'widget_invalidate_force' and c[1] == m.bar for c in calls)
+
+    def bar_paint():   # a paint of the bar: its EVT_AFTER_PAINT; the scrim fills it drew
+        fn, c = m.bound[(m.bar, O['EVT_AFTER_PAINT'])]
+        m.fills.clear(); m.call(fn, a0=c, a1=m.paint_event(), count=200000)
+        return [f for f in m.fills if f[0] == SCRIM]
+
+    def tick():
+        m.call(PSYMS['m1_bar_scrim_tick'], a0=m.bar, count=200000)
+        return bar_inval(m.calls)
+
+    expect(tick() == 0 and (m.bar, O['EVT_AFTER_PAINT']) not in m.bound, 'before any scrim: the tick neither listens nor repaints')
+    calls = click(m, 'btn_more')
+    expect(vis(m, 'vs_scrim')[0] == 1 and (m.bar, O['EVT_AFTER_PAINT']) in m.bound and bar_inval(calls) == 1, 'the "..." shows the scrim: the bar is listened to and repainted at once')
+    expect(bar_paint() == [(SCRIM, 0, 0, 320, SY0)], 'the bar\'s paint ends with the scrim\'s colour over all of it (the clock and the icons under it too)')
+    expect(tick() == 0, 'steady: the tick repaints nothing')
+    calls = click(m, 'vs_scrim')
+    expect(vis(m, 'vs_scrim')[0] == 0 and bar_inval(calls) == 1 and bar_paint() == [], 'the scrim closes the card: the bar is repainted lit')
+    expect(tick() == 0, 'and the tick has nothing to do')
+    click(m, 'btn_more'); bar_paint()
+    other = m.alloc(0x80); m.children[m.wm].append(other); m.top_main = other
+    expect(tick() == 1 and bar_paint() == [] and tick() == 0, 'another page in front with the card still open: the next tick repaints the bar lit, once')
+    m.top_main = m.window
+    expect(tick() == 1 and len(bar_paint()) == 1, 'the album page in front again: dimmed by the next tick')
+    # a confirm over the sheet (pod_confirm_dialog's view): two scrims on the page darken the bar twice, as they do the page; closing it leaves the card's one layer
+    view = m.alloc(0x80)
+
+    def bar_scrim(win, scrim, on):
+        m.call(PSYMS['m1_bar_scrim'], a0=win, a1=scrim, a2=on, count=200000)
+        return bar_inval(m.calls)
+    expect(bar_scrim(m.window, view, 1) == 1 and bar_paint() == [(SCRIM, 0, 0, 320, SY0)] * 2, 'a confirm over the card: the bar gets two layers, as the page under both scrims')
+    expect(tick() == 0, 'steady with two layers: the tick repaints nothing')
+    expect(bar_scrim(0, view, 0) == 1 and len(bar_paint()) == 1, 'the confirm closes: the bar stays dimmed once for the card')
+    expect(bar_scrim(0, view, 0) == 0 and bar_scrim(m.window, m.widgets['vs_scrim'], 1) == 0, 'hiding a scrim that is not shown, or showing one again, repaints nothing')
+    # two windows with a scrim shown: whichever is in front dims the bar (the older one restacked too)
+    other_scrim = m.alloc(0x80)
+    expect(bar_scrim(other, other_scrim, 1) == 1 and len(bar_paint()) == 1, 'a scrim shown on another window (behind): the bar keeps the album page\'s one layer')
+    m.top_main = other
+    expect(tick() == 0 and len(bar_paint()) == 1, 'that window in front: dimmed by its own scrim (one layer as before: nothing to repaint)')
+    m.top_main = m.window
+    expect(tick() == 0 and len(bar_paint()) == 1, 'the album page restacked in front with its card still open: still dimmed, by its own scrim')
+    bar_scrim(0, other_scrim, 0); bar_paint()
+    # the page is destroyed with its card open, and a new window gets its address: the destroy forgot it
+    m.top_main = other
+    expect(tick() == 1 and bar_paint() == [], 'the page closed with its card open: the bar is repainted lit')
+    fn, c = m.bound[(m.window, O['EVT_DESTROY'])]
+    m.call(fn, a0=c, a1=0, count=200000)
+    m.top_main = m.window   # a new window at the destroyed page's address
+    expect(tick() == 0 and bar_paint() == [], 'the destroyed page\'s scrim is forgotten: a new window at the same address is not dimmed')
+    expect(bar_scrim(m.window, view, 1) == 1 and any(c[:3] == ('widget_on', m.window, O['EVT_DESTROY']) for c in m.calls) and len(bar_paint()) == 1, 'and that new window\'s own scrim listens again and dims')
+    m.call(PSYMS['m1_scrim'], a0=0, a1=1, count=200000)
+    expect(not m.calls, 'no scrim: nothing')
+
+
 def pin_tests(ctx):
     """13. The "..." card's pin row on the library's page (docs/modules/pins.md): Select, then Pin Album (Unpin Album with the pin-off glyph when pinned) for an album with a title (else Select alone); Pin Album writes the album's line;
     Unpin Album removes it; select mode hides the "..."; the track sheet is untouched."""
@@ -1420,4 +1485,4 @@ def title_tests(ctx):
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 
-SECTIONS = [asset_tests, open_tests, header_tests, title_tests, cover_tests, rows_tests, disc_tests, play_tests, select_tests, source_tests, loading_tests, marks_tests, dsd_tests, nextalbum_tests, more_tests, pin_tests]   # tools/check.py runs each as its own task
+SECTIONS = [asset_tests, open_tests, header_tests, title_tests, cover_tests, rows_tests, disc_tests, play_tests, select_tests, source_tests, loading_tests, marks_tests, dsd_tests, nextalbum_tests, more_tests, bar_scrim_tests, pin_tests]   # tools/check.py runs each as its own task

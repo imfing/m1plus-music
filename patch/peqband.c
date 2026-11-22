@@ -391,7 +391,7 @@ static void bk_show_text(void) {
 
 static void bk_close(void) {
     bd.kopen = 0;
-    m1_show(bd.kscrim, 0);
+    m1_scrim(bd.kscrim, 0);
     m1_show(bd.kcard, 0);
 }
 
@@ -499,7 +499,7 @@ static void bd_type(int r) {
     widget_set_text_utf8(bd.ksign, MINUS);
     bk_show_text();
     bd.kopen = 1;
-    m1_show(bd.kscrim, 1);
+    m1_scrim(bd.kscrim, 1);
     m1_show(bd.kcard, 1);
 }
 
@@ -560,7 +560,7 @@ static int bd_on_next(void *ctx, void *e) {
  */
 static void bd_dialog(int on) {
     bd.dlg = on;
-    m1_show(bd.dscrim, on);
+    m1_scrim(bd.dscrim, on);
     m1_show(bd.dcard, on);
 }
 

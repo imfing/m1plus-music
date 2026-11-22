@@ -1331,7 +1331,7 @@ static void bk_nav(void) {
 static void bk_sheet_close(void) {
     if (!bk.sheet) return;
     bk.sheet = 0;
-    m1_show(bk.sh_scrim, 0);
+    m1_scrim(bk.sh_scrim, 0);
     m1_show(bk.sh_card, 0);
 }
 

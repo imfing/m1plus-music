@@ -191,6 +191,15 @@ lyrics, the Wi-Fi bars and spinner, the stock pages' 40 px icons, the EQ cards' 
   repaints the whole bar once when it holds a paint made under another answer than the window in
   front gets. So the bar can lag the page by up to a second. Black + Neutral and the kill switch add
   no listener.
+- **The status bar dims with a page's scrim.** A sheet's or dialog's scrim is a widget of the page's
+  window, below the bar. `m1_scrim` shows or hides it and repaints the bar; the bar's own
+  `EVT_AFTER_PAINT` fills it with `M1_SCRIM_COLOR` (through `ui_ink`, as the scrim's style colour)
+  over the clock and icons once per shown scrim of the top main window, so a confirm over a sheet
+  darkens the bar twice, as the page. Up to four shown scrims (`BS_SCRIMS`) of up to six windows
+  (`BS_WINS`). Window and scrim pointers are only compared: each window gets one `EVT_DESTROY`
+  listener, and its destroy forgets it and its scrims before the address can be reused.
+  `m1_bar_scrim_tick` (the same 1 s tick) repaints the bar once when its paints drew another number
+  of layers than the window in front has. Nothing listens until a scrim is shown.
 - Limits: the global `nb_fade` is a tinted black over the cover tone on a cover page; slider and
   progress tracks (`#333`) stay neutral.
 

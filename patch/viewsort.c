@@ -90,7 +90,7 @@ int vs_bind(vs_t *v, void *win, int (*item)(void *, void *), int (*scrim)(void *
     for (i = 0; i < VS_ROWS; ++i) m1_bind(win, ITEMS[i], item, (void *)(long)i);
     m1_bind(win, "vs_scrim", scrim, (void *)0);
     vs_offer(v, sorts);
-    m1_show(v->scrim, 0);
+    m1_scrim(v->scrim, 0);
     m1_show(v->card, 0);
     return 0;
 }
@@ -184,6 +184,6 @@ void vs_menu(vs_t *v, int on, int sort, int rev, int list) {
         vs_fit(v);
     }
     v->on = on;
-    m1_show(v->scrim, on);
+    m1_scrim(v->scrim, on);
     m1_show(v->card, on);
 }

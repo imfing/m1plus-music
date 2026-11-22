@@ -244,7 +244,7 @@ static int rn_on_next(void *ctx, void *e) {
  */
 static void rn_sheet_close(void) {
     rn.sheet = 0;
-    m1_show(rn.sh_scrim, 0);
+    m1_scrim(rn.sh_scrim, 0);
     m1_show(rn.sh_card, 0);
     m1_show(rn.sh_row, 0);
     m1_show(rn.sh_info, 0);

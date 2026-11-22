@@ -110,6 +110,9 @@ Connecting line).
 - **Bottom sheets** (track rows' menu, Podcasts and Radio sheets, Now Playing's More sheet): 50 px
   rows, 24 px glyph at x 14, 18 px label from x 48, scrim `PL_DIM`. The Albums "..." sort card
   (50 px rows) and Playlists menu (20 px glyphs) are floating cards, not sheets.
+- **Scrims** (`modal_scrim`, any page-window dim) are shown and hidden with `m1_scrim`, never
+  `m1_show`: the status bar is a window of its own above the page and dims with it
+  ([accent](accent.md) "Background").
 
 ## Segmented control
 
