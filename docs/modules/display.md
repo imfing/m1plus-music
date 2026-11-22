@@ -60,7 +60,7 @@ our short key `Screen Rotation` (stock's Spanish text does not fit the switch ro
 ## Sample Rate
 
 A fourth LED Light choice, shown as **Dynamic** (two of its themes do not show the rate). The lamp
-shows the playing track's sample rate as a colour.
+shows the playing track's sample rate as a colour. It began as a pull request by Gaurav Mishra (PR #5).
 - Choosing it saves the setting and sets stock's lamp mode to 0, so stock lights nothing of its
   own. It opens no page. Choosing Off, Green or Blue saves `0`, lets the lamp go and then does what
   the stock choice does.

@@ -61,7 +61,7 @@ Everything else is in the [documentation index](docs/README.md).
 ## Rules
 
 - Never execute extracted firmware or code from a reference clone. Clone references outside the
-  repo, and keep borrowed-code attribution, including the README acknowledgements.
+  repo, and keep borrowed-code attribution in file headers and module docs, and q2-pod in the README acknowledgements.
 - Pin every binary edit and fail on a mismatch. Hooks fall back to stock. A pinned
   boot-reachable hook that does bounded work and falls back is an approved path.
 - Never widen the global paint scope (only the palette's three hooks,

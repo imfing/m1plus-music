@@ -8,7 +8,7 @@ Subsonic (Navidrome, Gonic, Airsonic and any Subsonic-compatible server) is a **
 source**: the root page is a menu, and the library pages are our own Albums, album, Artists,
 Playlists, Songs and search pages, showing the server's music beside the card's. Strings say
 "Subsonic"; card folders and files keep the Navidrome names. Downloads go to the card
-(`/mnt/mmc/Subsonic`) and play offline. Credits are in the README.
+(`/mnt/mmc/Subsonic`) and play offline. Navidrome support began as a pull request by Gaurav Mishra, with work by shivaluma (MIT); the code was rebuilt since.
 
 Playback streams the server's original file (`format=raw` only: no transcoding, no quality
 setting), so sample rate and bit depth are the file's. DSD tracks never stream: they play only

@@ -55,8 +55,6 @@ Stock settings and Tidal remain accessible. See the [user guide](docs/guide.md) 
 
 ## Install and update
 
-Still early in development and tested only on my own M1 Plus.
-
 Download `update.bin` and `SHA256SUMS` from the [latest release](https://github.com/imfing/m1plus-music/releases/latest).
 Verify the checksum, then install `update.bin` from the TF card using the player's System Update menu.
 Once installed, later releases can be installed over Wi-Fi from **Settings → General → Software Update**.
@@ -78,12 +76,6 @@ If M1+ Music is useful to you, you can support its development on [Ko-fi](https:
 
 ## Acknowledgements
 
-- Inspired by Diamond Bond's [q2-pod](https://github.com/DiamondBond/q2-pod) for the Shanling Q2.
-  It also supplied the parametric EQ design, the UTC RTC fix and the charge-limit idea; borrowed
-  files carry their own notices. The Q2 and M1 Plus differ, so no address or patch word is reused
-  unchecked.
-- Subsonic is based on a pull request by Gaurav Mishra and the work of shivaluma. The Dynamic LED
-  is based on a pull request by Gaurav Mishra. Split Genres is based on a contribution by powkakashi.
-- Crossfeed uses the algorithm and settings of Boris Mikhaylov's [bs2b](https://bs2b.sourceforge.net) (libbs2b, MIT).
-- The radio placeholder glyph derives from [IconPark](https://github.com/bytedance/IconPark) `radio` (Apache-2.0).
-- The Last.fm and DLNA marks are from [Simple Icons](https://simpleicons.org) (CC0-1.0), the MusicBrainz mark from Wikimedia Commons (public domain); all are trademarks of their owners.
+Inspired by Diamond Bond's [q2-pod](https://github.com/DiamondBond/q2-pod) for the Shanling Q2, which
+also supplied the parametric EQ design, the UTC RTC fix and the charge-limit idea. Other borrowed
+code and artwork is credited in its source file and module doc.

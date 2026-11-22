@@ -7,7 +7,7 @@
 
 Two optional stages in the hciplayer float path, set from Settings > Playback Settings. The
 crossfeed is Boris Mikhaylov's bs2b (libbs2b 3.1.0, MIT): the one-pole designs, level arithmetic and
-three settings are his, rewritten for float blocks (acknowledged in the README and file headers).
+three settings are his, rewritten for float blocks (acknowledged in the file headers).
 
 ## Behaviour
 
