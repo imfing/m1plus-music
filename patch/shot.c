@@ -30,6 +30,7 @@
 #include "common.h"
 #include "i18n.h"
 #include "shot.h"
+#include "lineout.h"
 
 #define BMP_HEADER 54
 
@@ -50,10 +51,11 @@ static struct {
 } sh __attribute__((section(".scratch")));
 
 /* The status bar camera, found by name from the window manager (it is a child of the system bar's right group, hidden
- * in the asset). Missing, or no window manager: no indicator, the capture goes on. */
+ * in the asset). Missing, or no window manager: no indicator, the capture goes on. Shown only with room beside stock's marks, left of the centred clock (patch/lineout.c lo_shot_fits; its
+ * 1 s bar tick hides it if the room goes while it counts). */
 static void indicator(int on) {
     void *wm = window_manager(), *w = wm ? widget_lookup(wm, SHOT_IND, 1) : (void *)0;
-    if (w) widget_set_visible(w, on, 0);
+    if (w) widget_set_visible(w, on && lo_shot_fits(w), 0);
 }
 
 static void finish(void) {

@@ -65,6 +65,8 @@ that artifact's `device/` directory; otherwise `out/shots/`).
 `tools/pod_ui.py` appends to `view_bar_right` in `ui/system_bar.bin`. While hidden the bar lays
 out as stock. Shown, it sits against the battery and the icons to its left move 20 px. The payload
 looks it up each time; a missing widget only means no camera. The pull-down's own bar gets none.
+It shows only with room beside stock's marks left of the clock (`lo_shot_fits`, and the bar's 1 s
+tick hides it if the room goes; [lineout](lineout.md) "Room"); the countdown and capture run either way.
 
 **No "saved" glyph:** the toast already says it, and a second state would need a second timer and
 image for no new information.

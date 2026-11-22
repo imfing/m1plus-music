@@ -69,7 +69,7 @@ def status_bar(s, im, y0=0, bg=(0, 0, 0), vol='50', pct='86%'):
     x = 10
     for n in ('bar_play', 'bar_vol3'):
         ic = s.img(n); im.alpha_composite(ic, (x, y0 + (BAR - ic.height) // 2)); x += ic.width + 4
-    s.text(im, x, y0 + BAR / 2, vol, 16); s.text(im, 149, y0 + BAR / 2, '12:59 PM', 18, anchor='m')
+    s.text(im, x, y0 + BAR / 2, vol, 16); s.text(im, 160, y0 + BAR / 2, '12:59 PM', 18, anchor='m')
     im.alpha_composite(s.img('bar_btcon'), (173, y0 + 5)); im.alpha_composite(s.img('bar_wifi3'), (224, y0 + 7))
     s.text(im, 292, y0 + BAR / 2, pct, 16, anchor='r'); im.alpha_composite(s.img('bar_power'), (296, y0 + 8))
 

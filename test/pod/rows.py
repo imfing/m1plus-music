@@ -251,6 +251,7 @@ def rows_tests(expect):
     for a, old, *_ in pod.autotime.EDITS: allowed |= {pod.fileoff(built, a) + k for k in range(0, len(old), 4)}   # the clock sync's string literals (tools/autotime.py)
     allowed |= {pod.fileoff(built, a) for a, *_ in pod.coex.EDITS}                                      # Wi-Fi and Bluetooth together: four beqz -> b (tools/coex.py)
     allowed |= {pod.fileoff(built, a) for a, *_ in pod.themeoff.EDITS}                                   # stock theme1 off: the clamp, the System page's row table and count (tools/themeoff.py)
+    allowed.update(pod.fileoff(built, a) for a in pod.SYNCLINK_SITES)                                    # the jalr widget_set_visible(img_synclink, 1) in both face ticks (patch/lineout.c lo_link_show)
     allowed.update(pod.fileoff(built, a) for a, _ in pod.LINEOUT_SITES)                                  # the jalr widget_set_text_utf8 of label_volume in show_sysbar_face and dropdown_showface (patch/lineout.c)
     allowed.add(pod.fileoff(built, pod.IDLE_SITE))                                                       # the timed open's navigator_to call (patch/bigcover.c bc_timed_open)
     allowed.add(pod.fileoff(built, pod.WIFIHUB_SITE))                                                  # the All System Settings Wi-Fi row's navigator_to call (patch/wifipage.c wifi_hub_open)

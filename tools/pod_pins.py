@@ -773,6 +773,14 @@ LINEOUT_PINS = (   # (address, stock word, what it proves)
     (0x4758d8, 0x0320f809, 'dropdown_showface: jalr widget_set_visible (a1 = 1)'), (0x4758dc, 0x02e02025, 'dropdown_showface: move a0, s7 (label_volume)'), (0x4758cc, 0x24050001, 'dropdown_showface: a1 = 1'),
     (0x66f720, 0x3c1c0039, 'widget_set_text_utf8 prologue'),
 )
+# SyncLink's room (patch/lineout.c lo_link_show, docs/modules/payload.md hook 40, docs/modules/lineout.md "Room"): both face ticks show img_synclink with `jalr widget_set_visible(img_synclink, 1)` after
+# they set the Bluetooth image and after hook 20; the jalr becomes `jal lo_link_show` (a1 = 1 and the delay slot `move a0, s5` stay stock's), which hides SyncLink when stock's marks would run into the clock.
+SYNCLINK_SITES = (0x545068, 0x475bb0)   # show_sysbar_face, dropdown_showface
+SYNCLINK_PINS = tuple(p for s, f in zip(SYNCLINK_SITES, ('show_sysbar_face', 'dropdown_showface')) for p in (
+    (s - 8, 0x8f99a8b8, f'{f}: lw t9, GOT widget_set_visible'), (s - 4, 0x24050001, f'{f}: a1 = 1 (SyncLink connected)'),
+    (s, 0x0320f809, f'{f}: jalr widget_set_visible (the hook replaces it)'), (s + 4, 0x02a02025, f'{f}: move a0, s5 (img_synclink; the delay slot)'))) + (
+    (0x66c394, 0x3c1c0039, 'widget_set_visible prologue'), (0x66c398, 0x279c7b3c, 'widget_set_visible prologue'),
+)
 # Apple-style Shuffle (patch/shuffle.c, docs/modules/shuffle.md, docs/modules/payload.md hooks 13-14). Stock never plays in mode 2: mclSetPlayMode (0x5d278c, the one function that stores the mode word
 # 0xa0abe0 after boot, where initMclModule @0x5d1a6c stores 3) is hooked at its PIC prologue and maps a request for 2 to the payload's own shuffle flag with the stock mode 0; mclLoadPlayList
 # (0x5d1f28, called by start_player @0x4e46e0, refresh_playqueue @0x4df59c and the boot resume in networkinit_thread @0x506374 / @0x506474) is hooked at its prologue and shuffles a queue just loaded

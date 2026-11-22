@@ -54,7 +54,7 @@ def run(ctx):
     lab, pill = m.label, m.pill
     expect(m.names()[0] == 'widget_set_text_utf8' and log(m, 'widget_set_text_utf8') == [(lab, 'LO')], 'stock\'s widget_set_text_utf8 runs first, with the text unchanged')
     expect(log(m, 'widget_set_visible') == [(lab, 0), (pill, 1)] and log(m, 'widget_set_sensitive') == [(lab, 0), (pill, 1)], 'LO: label_volume hidden and insensitive, the pill visible and sensitive')
-    expect(sorted(c[1] for c in m.calls if c[0] == 'widget_lookup') == sorted([PILL, DEFS['SYNC_IND'], DEFS['SLEEP_IND'], DEFS['EQ_IND']]), 'the pill, the sync icon, the sleep icon and the EQ mark are looked up by name (once each)')
+    expect(sorted(c[1] for c in m.calls if c[0] == 'widget_lookup') == sorted([PILL, DEFS['SLEEP_SHOT'], DEFS['SYNC_IND'], DEFS['SLEEP_IND'], DEFS['EQ_IND']]), 'the pill, the camera, the sync icon, the sleep icon and the EQ mark are looked up by name (once each)')
     expect(m.icount < 1000, f'cost: {m.icount} instructions')
 
     # 3. A number, or anything else: stock's label, the pill hidden.
@@ -279,42 +279,97 @@ def run(ctx):
     # room: the moon shows only if the right group's visible ink, the moon included, stays 3 px clear of the 12 h clock; it yields to every other mark (the review case: the AAC badge, Wi-Fi and the screenshot camera)
     xx = os.path.join(rootfs, 'release/assets/default/raw/images/xx')
     bbox = lambda f: Image.open(os.path.join(xx, f + '.png')).convert('RGBA').getchannel('A').getbbox()
-    bt_ink = {DEFS[f'SLEEP_BT_{k}']: DEFS[f'SLEEP_INK_{v}'] for k, v in (('GLYPH', 'GLYPH'), ('CON', 'GLYPH'), ('AAC', 'AAC'), ('SBC', 'SBC'), ('LDAC', 'LDAC'))}
+    bt_ink = {DEFS[f'SLEEP_BT_{k}']: DEFS[f'SLEEP_INK_{v}'] for k, v in (('GLYPH', 'GLYPH'), ('CON', 'GLYPH'), ('AAC', 'AAC'), ('SBC', 'SBC'), ('LDAC', 'LDAC'), ('APTX', 'APTX'), ('APTXHD', 'APTXHD'))}
     expect(all(47 - bbox(f)[0] == ink and bbox(f)[2] == 47 for f, ink in bt_ink.items()), f'the Bluetooth ink widths match the images, each ending at the 47 px box\'s right edge ({bt_ink})')
     peers = {DEFS[k] for k in ('SYNC_IND', 'SLEEP_SYNCLINK', 'SLEEP_WIFI', 'SLEEP_SHOT')}
+    ends = lambda c, texts: max(c.x + (c.w + StbText(font, int(c.get('style:normal:font_size'))).layout(t)[1]) // 2 for t in texts)
+    H12, H24 = ('12:59 PM', '10:59 AM', '12:59 AM'), ('12:59', '23:59', '00:00')
     for what, bar in bars:
         g, c = bar.find('view_bar_right'), bar.find('bar_dclock')
-        c_end = max(c.x + (c.w + StbText(font, int(c.get('style:normal:font_size'))).layout(t)[1]) // 2 for t in ('12:59', '12:59 PM', '10:59 AM', '12:59 AM'))
         kids = [k.name for k in g.children]
-        expect(g.x + g.w - c_end - 3 == DEFS['SLEEP_ROOM'] and DEFS['SLEEP_GAP'] == statusbar.RGAP and f's={statusbar.RGAP}' in g.get('children_layout') and kids[0] == DEFS['SLEEP_BT']
-               and set(kids) - {DEFS['SLEEP_BT'], SLEEP} <= peers, f'{what}: SLEEP_ROOM is the group\'s end less the clock\'s ink end and 3 px, and every other child of the group is a counted peer ({kids})')
+        expect(c.x + c.w // 2 == 160 and c.get('style:normal:text_align_h') == 'center', f'{what}: the clock box is centred on the 320 px bar and its text centred in it, so the 12 h and the 24 h clock are both centred ({c.x}, {c.w})')
+        expect(g.x + g.w - ends(c, H12) - 3 == DEFS['BAR_ROOM_12H'] and g.x + g.w - ends(c, H24) - 3 == DEFS['BAR_ROOM_24H'] and DEFS['SLEEP_GAP'] == statusbar.RGAP and f's={statusbar.RGAP}' in g.get('children_layout')
+               and kids[0] == DEFS['SLEEP_BT'] and set(kids) - {DEFS['SLEEP_BT'], SLEEP} <= peers,
+               f'{what}: BAR_ROOM_12H / _24H are the group\'s end less the 12 h / 24 h clock\'s ink end and 3 px, and every other child of the group is a counted peer ({kids})')
     expect('SLEEP_PCT' not in DEFS and 'SLEEP_PCT_DD' not in DEFS and DEFS['SLEEP_SHOT'] == 'pod_shot', 'the battery percentage is no peer (it sits inside the battery); the screenshot mark is')
+    expect(bt_ink[DEFS['SLEEP_BT_APTXHD']] == 44 and max(v for k, v in bt_ink.items() if k != DEFS['SLEEP_BT_APTXHD']) == 38, 'the widest tags: aptX HD 44 px, then LDAC 38 px')
     w_box = {k.name: k.w for k in group.children}
     import itertools
-    wrong, shown_cases = [], 0
-    for bt, sync, wifi, shot in itertools.product((None, 'bar_bt', 'bar_aac', 'bar_sbc', 'bar_ldac'), (0, 1), (0, 1), (0, 1)):
-        m = sleep_machine(1, 900)
+
+    def ink_start(names, bt):
+        """The leftmost ink of `names` laid out right-aligned from the group's end, RGAP px apart, in the group's order (Bluetooth: its image's ink); the group's end when none."""
+        order = [n for n in [c.name for c in group.children] if n in names]
+        if not order: return group.x + group.w
+        start = group.x + group.w - sum(w_box[n] for n in order) - statusbar.RGAP * (len(order) - 1)
+        return start + (47 - bt_ink[bt] if order[0] == DEFS['SLEEP_BT'] else 0)
+
+    wrong, shown_cases, sync_hidden, shot_hidden, over = [], 0, 0, 0, set()
+    BTS = (None, 'bar_bt', 'bar_aac', 'bar_sbc', 'bar_ldac', 'bar_aptx', 'bar_aptxhd')
+    for h24, bt, link, sync, wifi, shot in itertools.product((0, 1), BTS, (0, 1), (0, 1), (0, 1), (0, 1)):
+        m = sleep_machine(1, 900); m.u.mem_write(pod.DATA['TIME_24H'][0], bytes([h24]))
         m.setword(m.sleep + 8, statusbar.SLEEP_W)
-        for name, on, width in ((DEFS['SLEEP_BT'], bt is not None, 47), (SYNC, sync, statusbar.SYNC_W), (DEFS['SLEEP_WIFI'], wifi, statusbar.WIFI_W), (DEFS['SLEEP_SHOT'], shot, 16)):
+        for name, on, width in ((DEFS['SLEEP_BT'], bt is not None, 47), (DEFS['SLEEP_SYNCLINK'], link, 16), (SYNC, sync, statusbar.SYNC_W), (DEFS['SLEEP_WIFI'], wifi, statusbar.WIFI_W), (DEFS['SLEEP_SHOT'], shot, 16)):
             wd = m.widget(name); m.setword(wd + 8, width); m.props[(wd, 'visible')] = int(bool(on))
+        sw, pw = m.widget(SYNC), m.widget(DEFS['SLEEP_SHOT'])
         if bt: m.props[(m.widget(DEFS['SLEEP_BT']), 'image')] = m.cstr(bt)
         if sync: build(m)
         tick(m, '50'); shown = sleep_log(m) == [('widget_set_visible', 1), ('widget_set_sensitive', 1)]
-        # the geometry: right-aligned from the group's end, RGAP px apart, in the group's order; the leftmost box's ink (Bluetooth: its image's) must start 3 px clear of the clock
-        order = [n for n in [c.name for c in group.children] if n == SLEEP or (n == DEFS['SLEEP_BT'] and bt) or (n == SYNC and sync) or (n == DEFS['SLEEP_WIFI'] and wifi) or (n == DEFS['SLEEP_SHOT'] and shot)]
-        start = group.x + group.w - sum(w_box[n] for n in order) - statusbar.RGAP * (len(order) - 1)
-        ink = start + (47 - bt_ink[bt] if order[0] == DEFS['SLEEP_BT'] else 0)
-        if shown != (ink >= clock_end + 3): wrong.append((bt, sync, wifi, shot, shown, ink))
-        shown_cases += shown
-    expect(not wrong, f'every combination of Bluetooth image, sync, Wi-Fi and screenshot mark: the moon shows exactly when the row\'s ink stays 3 px clear of the clock (wrong: {wrong[:4]})')
-    expect(0 < shown_cases < 40, f'the moon shows in some combinations and yields in others ({shown_cases} of 40 shown)')
-    # yielding: the screenshot mark appearing beside AAC and Wi-Fi (31 + 3 + 16 + 3 + 17 = 70 with the moon fits 88; the camera too is 89) hides the moon on the next tick; its going away brings it back
+        sync_shown, shot_shown = bool(m.props[(sw, 'visible')]), bool(m.props[(pw, 'visible')])
+        # by rank: the camera fits beside stock's marks, the sync icon beside those and the camera as shown, the moon beside all of them: each 3 px clear of the clock of this mode
+        lim = ends(clock, H24 if h24 else H12) + 3
+        stock = {n for n, on in ((DEFS['SLEEP_BT'], bt), (DEFS['SLEEP_SYNCLINK'], link), (DEFS['SLEEP_WIFI'], wifi)) if on}
+        want_shot = bool(shot) and ink_start(stock | {DEFS['SLEEP_SHOT']}, bt) >= lim
+        base = stock | ({DEFS['SLEEP_SHOT']} if want_shot else set())
+        want_sync = bool(sync) and ink_start(base | {SYNC}, bt) >= lim
+        want_moon = ink_start(base | ({SYNC} if want_sync else set()) | {SLEEP}, bt) >= lim
+        if (shot_shown, sync_shown, shown) != (want_shot, want_sync, want_moon): wrong.append((h24, bt, link, sync, wifi, shot, shot_shown, sync_shown, shown))
+        if ink_start(stock, bt) < lim: over.add((h24, bt, link, wifi))
+        shown_cases += shown; sync_hidden += bool(sync) and not sync_shown; shot_hidden += bool(shot) and not shot_shown
+    expect(not wrong, f'every combination of clock mode, Bluetooth image, SyncLink, sync, Wi-Fi and screenshot mark: the camera, then the sync icon, then the moon, show exactly when the row\'s ink stays 3 px clear of the clock (wrong: {wrong[:4]})')
+    expect(0 < shown_cases < 224 and 0 < sync_hidden < 112 and 0 < shot_hidden < 112, f'each of our marks shows in some combinations and yields in others (moon {shown_cases} of 224 shown, sync {sync_hidden} of 112 hidden, camera {shot_hidden} of 112 hidden)')
+    expect(over == {(0, 'bar_aptxhd', 1, 1)}, f'stock\'s own marks fit left of the clock except aptX HD + SyncLink + Wi-Fi under the 12 h clock (82 px of 77; hook 40 hides SyncLink there): {sorted(over, key=str)}')
+    # the camera's start check (patch/shot.c indicator): lo_shot_fits on the camera, its group holding the peers
+    def shot_room(bt, h24=0, parent=True):
+        m = machine(); m.u.mem_write(pod.DATA['TIME_24H'][0], bytes([h24])); grp = m.alloc(0x80); cam = m.widget(DEFS['SLEEP_SHOT']); m.setword(cam + 8, 16)
+        if parent: m.setword(cam + DEFS['LO_W_PARENT'], grp)
+        for name, width in ((DEFS['SLEEP_BT'], 47), (DEFS['SLEEP_WIFI'], statusbar.WIFI_W)): m.setword(m.widget(name) + 8, width); m.props[(m.widget(name), 'visible')] = 1
+        m.props[(m.widget(DEFS['SLEEP_BT']), 'image')] = m.cstr(bt)
+        return m.call(PSYMS['lo_shot_fits'], a0=cam, count=20000)
+    expect((shot_room('bar_ldac'), shot_room('bar_aptxhd'), shot_room('bar_aptxhd', h24=1), shot_room('bar_btcondown'), shot_room('bar_btcondown', h24=1), shot_room('bar_aptxhd', parent=False)) == (1, 0, 1, 0, 1, 1),
+           'the camera has room beside LDAC and Wi-Fi (76 px of 77); beside aptX HD (82) or an unlisted image (its whole 47 px box: 85) not under a 12 h clock, but under a 24 h one (92); no group: room')
+    # hook 40 (lo_link_show): stock's widget_set_visible(img_synclink, 1); SyncLink shows exactly when Bluetooth, Wi-Fi and SyncLink stay 3 px clear of the clock, so stock's marks never reach it
+    def link_show(bt, wifi, h24, on=1, kill=False, parent=True):
+        m = machine(); m.u.mem_write(pod.DATA['TIME_24H'][0], bytes([h24])); grp = m.alloc(0x80); lw = m.widget(DEFS['SLEEP_SYNCLINK']); m.setword(lw + 8, 16); m.props[(lw, 'visible')] = 0
+        if parent: m.setword(lw + DEFS['LO_W_PARENT'], grp)
+        if kill: m.present.add(KILL)
+        for name, vis, width in ((DEFS['SLEEP_BT'], bt is not None, 47), (DEFS['SLEEP_WIFI'], wifi, statusbar.WIFI_W)): m.setword(m.widget(name) + 8, width); m.props[(m.widget(name), 'visible')] = int(bool(vis))
+        if bt: m.props[(m.widget(DEFS['SLEEP_BT']), 'image')] = m.cstr(bt)
+        m.call(PSYMS['lo_link_show'], a0=lw, a1=on, a2=0, count=20000)
+        return [(c[0], c[2]) for c in m.calls if c[0] in ('widget_set_visible', 'widget_set_sensitive') and c[1] == lw]
+    wrong = []
+    for h24, bt, wifi in itertools.product((0, 1), BTS, (0, 1)):
+        lim = ends(clock, H24 if h24 else H12) + 3
+        fits = ink_start({n for n, on in ((DEFS['SLEEP_BT'], bt), (DEFS['SLEEP_SYNCLINK'], 1), (DEFS['SLEEP_WIFI'], wifi)) if on}, bt) >= lim
+        got = link_show(bt, wifi, h24)
+        if got != [('widget_set_visible', int(fits)), ('widget_set_sensitive', int(fits))]: wrong.append((h24, bt, wifi, got))
+    expect(not wrong, f'SyncLink shown (visible and sensitive) exactly when it fits beside the Bluetooth image and Wi-Fi, hidden and insensitive otherwise (wrong: {wrong[:3]})')
+    expect(link_show('bar_aptxhd', 1, 0) == [('widget_set_visible', 0), ('widget_set_sensitive', 0)] and link_show('bar_aptxhd', 1, 1)[0] == ('widget_set_visible', 1),
+           'the review case: aptX HD + Wi-Fi + SyncLink hides SyncLink under the 12 h clock, not under the 24 h one')
+    expect(all(link_show('bar_aptxhd', 1, 0, **kw) == [('widget_set_visible', v)] for kw, v in (({'on': 0}, 0), ({'kill': True}, 1), ({'parent': False}, 1))),
+           'stock\'s call unchanged when it hides SyncLink, with the kill switch, and without a group')
+    # yielding: the screenshot mark appearing beside AAC and Wi-Fi (31 + 3 + 16 + 3 + 17 = 70 with the moon fits 77; the camera too is 89) hides the moon on the next tick; its going away brings it back
     m = sleep_machine(1, 900); m.setword(m.sleep + 8, statusbar.SLEEP_W)
     for name, width in ((DEFS['SLEEP_BT'], 47), (DEFS['SLEEP_WIFI'], statusbar.WIFI_W)): m.setword(m.widget(name) + 8, width)
     m.props[(m.widget(DEFS['SLEEP_BT']), 'image')] = m.cstr('bar_aac'); pw = m.widget(DEFS['SLEEP_SHOT']); m.setword(pw + 8, 16); m.props[(pw, 'visible')] = 0
     tick(m, '50'); first = sleep_log(m); m.props[(pw, 'visible')] = 1; m.calls = []; tick(m, '50'); second = sleep_log(m); m.props[(pw, 'visible')] = 0; m.calls = []; tick(m, '50')
     expect(first == [('widget_set_visible', 1), ('widget_set_sensitive', 1)] and second == [('widget_set_visible', 0), ('widget_set_sensitive', 0)] and sleep_log(m) == first,
            'AAC + Wi-Fi: the moon shows; the screenshot camera appears: it hides; the camera goes: it shows again')
+    # the sync icon yields too: AAC, Wi-Fi and the camera with it are 31 + 3 * 19 = 88, over the 12 h room (77) and within the 24 h one (92)
+    for h24 in (0, 1):
+        m = machine(sync=True); m.u.mem_write(pod.DATA['TIME_24H'][0], bytes([h24])); m.setword(m.sync + 8, statusbar.SYNC_W)
+        for name, width in ((DEFS['SLEEP_BT'], 47), (DEFS['SLEEP_WIFI'], statusbar.WIFI_W), (DEFS['SLEEP_SHOT'], 16)): m.setword(m.widget(name) + 8, width)
+        m.props[(m.widget(DEFS['SLEEP_BT']), 'image')] = m.cstr('bar_aac'); build(m); tick(m, '50')
+        expect(sync_log(m) == ([('widget_set_visible', 1), ('widget_set_sensitive', 1)] if h24 else []), f'AAC + Wi-Fi + camera, {"24" if h24 else "12"} h clock: a cover build {"shows" if h24 else "does not show"} the sync icon ({sync_log(m)})')
     m = sleep_machine(1, 900); m.setword(m.sleep + 8, statusbar.SLEEP_W); m.calls = []; tick(m, '50')
     expect(m.icount < 3000, f'cost with the timer running: {m.icount} instructions')
 

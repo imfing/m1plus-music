@@ -17,10 +17,12 @@
     "pod_sync" /* the hidden sync icon tools/statusbar.py puts in view_bar_right (both bar copies); shown while a cover or duration build runs */
 #define SLEEP_IND \
     "pod_sleep" /* the hidden moon icon tools/statusbar.py puts in view_bar_right (both bar copies); shown while a Sleep Timer is running */
-/* The moon's room test (patch/lineout.c lo_sleep_fits): it shows only if the right group's visible ink, the moon included, spans at most SLEEP_ROOM px, so it never pushes the Bluetooth box into the clock.
- * The group lays out right-aligned with SLEEP_GAP spacing; each visible peer counts its box, the Bluetooth box only its ink (the glyph or codec badge at the box's right edge; an image not listed counts the whole box). */
-#define SLEEP_ROOM \
-    88 /* the group's right end (x 277) less the 12 h clock's widest ink end (x 186, "10:59 AM") and 3 px clearance */
+/* The room test for the right group's marks that yield (patch/lineout.c lo_fits): stock's SyncLink (hook 40), the screenshot camera, the sync icon, then the moon show only if the group's visible ink, the mark included, spans at most
+ * the room left of the centred clock, so they never push the Bluetooth box into it. The group lays out right-aligned with SLEEP_GAP spacing; each visible peer counts its box, the Bluetooth box only its ink
+ * (the glyph or codec badge at the box's right edge; an image not listed counts the whole box). */
+#define BAR_ROOM_12H \
+    77 /* the group's right end (x 277) less the 12 h clock's widest ink end (x 197, "10:59 AM") and 3 px clearance */
+#define BAR_ROOM_24H 92 /* the same with the 24 h clock (ink end x 182, "23:59"); stock's time24hflag picks */
 #define SLEEP_GAP 3 /* tools/statusbar.py RGAP */
 #define SLEEP_BT "img_btclass" /* stock's Bluetooth box, the group's first child */
 #define SLEEP_SYNCLINK "img_synclink" /* stock's SyncLink glyph */
@@ -35,6 +37,14 @@
 #define SLEEP_INK_SBC 28
 #define SLEEP_BT_LDAC "bar_ldac" /* the LDAC tag: ink 38 px */
 #define SLEEP_INK_LDAC 38
+#define SLEEP_BT_APTX "bar_aptx" /* the aptX tag: ink 32 px */
+#define SLEEP_INK_APTX 32
+#define SLEEP_BT_APTXHD "bar_aptxhd" /* the aptX HD tag: ink 44 px */
+#define SLEEP_INK_APTXHD 44
+
+int lo_shot_fits(
+    void *
+        ind); /* the screenshot camera `ind` has room in its group beside stock's marks (patch/shot.c, as the countdown starts) */
 
 void lo_bar_refresh(
     void *

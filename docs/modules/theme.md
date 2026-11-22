@@ -69,8 +69,9 @@ dark text; the grey part stays.
 the pull-down's own copy of the bar (`view_sysbar`): same widgets, positions, images, fonts and
 colours, at y 0 of the dialog on the real bar's black. `test/pod/assets.py` compares the two files.
 
-- `view_bar_left` x 10; `label_volume` 16 px; `bar_dclock` 104,0, 90 px wide, 18 px (a 12 h
-  `12:59 PM` is 66-72 px, clear of the Bluetooth rune); `view_bar_right` (3 px spacing) ends 5 px before the
+- `view_bar_left` x 10; `label_volume` 16 px; `bar_dclock` 115,0, 90 px wide, 18 px, centred on
+  the bar with its text centred (`10:59 AM` 74 px, `23:59` 45 px; the sync icon and the moon yield to keep the right group
+  clear of it, [lineout](lineout.md)); `view_bar_right` (3 px spacing) ends 5 px before the
   battery outline.
 - **Home** (`home_page.bin`): the strip is black with a 1 px `#222222` top border, the artist line
   `#AAAAAA`, dots `#EEEEEE` / `#555555`. The icon grid is built in code.

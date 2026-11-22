@@ -324,9 +324,9 @@ def run(ctx):
            'the bar is 320x30 at the dialog\'s top edge, black as the real bar')
     vol, clk, lv, rv = (pb.find(n) for n in ('label_volume', 'bar_dclock', 'view_bar_left', 'view_bar_right'))
     expect(all(vol.get(f'style:{st}:font_size') == '16' and vol.get(f'style:{st}:text_align_v') == 'middle' for st in ('normal', 'disable', 'focused'))
-           and clk.get('style:normal:font_size') == '18' and (clk.x, clk.w) == (104, 90) and lv.get('children_layout') == 'default(r=1,c=0,x=10,s=4)'
+           and clk.get('style:normal:font_size') == '18' and (clk.x, clk.w) == (115, 90) and lv.get('children_layout') == 'default(r=1,c=0,x=10,s=4)'
            and rv.get('children_layout') == 'default(r=1,c=0,a=right,s=3)' and pb.find('img_battery').x + pb.find('img_battery').w == 310,
-           'volume 16 px middle, clock 18 px at x 104 (90 wide), left group from x 10, right group 3 px apart, battery outline ends 10 px from the edge')
+           'volume 16 px middle, clock 18 px at x 115 (90 wide, centred on 160), left group from x 10, right group 3 px apart, battery outline ends 10 px from the edge')
     expect(StbText(font, 16).layout('100')[1] <= vol.w and StbText(font, 18).layout('12:59 PM')[1] <= clk.w,
            '"100" fits the volume label and "12:59 PM" (12 h mode) the clock box in the shipped font')
     expect(ref and all(real.find(n) is not None for n in statusbar.NAMES), 'the real bar still has every widget the stock code looks up')

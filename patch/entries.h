@@ -222,6 +222,11 @@ void volpage_go(
     int k); /* the Volume page's second card: row k (0 Max Volume, 1 Equalizer, 2 Volume & Sound) opens its page without a second window */
 int vol_tap_open(const char *name, int ctx); /* payload hook 33: the status bar tap's open of the volume dialog */
 
+/* patch/lineout.c */
+int lo_link_show(
+    void *w, int on,
+    int recursive); /* payload hook 40: both face ticks' widget_set_visible(img_synclink, 1): SyncLink yields when stock's marks would reach the clock */
+
 /* patch/pulldown.c */
 int pd_usb_poll(
     void); /* payload hook 38: the idle pass's check_usb_status call (a stale USB state 2 after the unplug) */

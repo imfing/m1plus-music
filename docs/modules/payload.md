@@ -96,6 +96,7 @@ stock's own behaviour.
 | 37 | home timer's checks of hciplayer's failure markers, call sites `0x4cf5b0` (`/tmp/notfile`), `0x4cf8d0` (`/tmp/notsupport`) (`on_wm_timer_dialogresponse`) | [radio](radio.md) | stock `access` |
 | 38 | `on_wm_idle_status` USB poll call, call site `0x4cef08` | [pulldown](pulldown.md) | stock `check_usb_status` |
 | 39 | `on_wm_timer_dialogresponse` read of the USB page request, `0x4cf254` (two words, asm stub `pod_usb_site`) | [pulldown](pulldown.md) | stock's read; drops the request when the cable is gone |
+| 40 | SyncLink shown, call sites `0x545068` / `0x475bb0` | [lineout](lineout.md) | stock `widget_set_visible`; hides SyncLink only when stock's marks would reach the clock |
 
 Sites without a number:
 

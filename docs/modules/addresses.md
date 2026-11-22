@@ -46,6 +46,7 @@ Other hook sites (call-site words and two-word stubs):
 | Site | Address | Note |
 |---|---|---|
 | 20 Line Out text | `0x544f90` (`show_sysbar_face`), `0x475ad8` (`dropdown_showface`) | `jalr widget_set_text_utf8(label_volume)` |
+| 40 SyncLink shown | `0x545068` (`show_sysbar_face`), `0x475bb0` (`dropdown_showface`) | `jalr widget_set_visible(img_synclink, 1)`, after the Bluetooth image is set |
 | 22 pull-down page opens | `0x4cd894`, `0x4cd8bc`; pull-down open `0x4cd864` | `bal navigator_to` in `on_wm_tsmove_fun` |
 | 26 `mclNextSong` end branch | `0x5d5988` | resumes `0x5d5990` or re-enters `0x5d5950` |
 | 27 Tidal search focus | `0x4c2088` (callback `0x4c1f3c`) | `jalr edit_set_focus` |

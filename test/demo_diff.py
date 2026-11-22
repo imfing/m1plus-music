@@ -127,6 +127,7 @@ def main():
     allow(va_to_off(s, pod.PLAYREC_SITE), 4, 'play history hook')
     allow(va_to_off(s, pod.FORMAT_LAMP_SITE), 4, 'sample rate lamp hook')
     for q in LINEOUT_SITES: allow(va_to_off(s, q), 4, 'Line Out pill hook')
+    for q in pod.SYNCLINK_SITES: allow(va_to_off(s, q), 4, 'SyncLink room hook')
     allow(va_to_off(s, UPDATE_SITE[0]), UPDATE_SITE[1], 'updater version compare')
     allow(va_to_off(s, timezones.SELECT), 8, 'select_timezone hook')   # time zones (tools/timezones.py): the hook, the clamp, the row count and limit, the two call sites
     for a, *_ in timezones.edits(0, 0): allow(va_to_off(s, a), 4, 'time zone words')
@@ -284,6 +285,11 @@ def main():
         o = va_to_off(s, q); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
         good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
         print(f'Line Out pill hook {q:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
+        ok = ok and good
+    for q in pod.SYNCLINK_SITES:   # both face ticks' jalr widget_set_visible(img_synclink, 1), now jal lo_link_show (patch/lineout.c, payload hook 40)
+        o = va_to_off(s, q); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
+        good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
+        print(f'SyncLink room hook {q:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
         ok = ok and good
     o = va_to_off(s, pod.LOCKROW); mw = struct.unpack_from('<I', m, o)[0]
     good = (struct.unpack_from('<II', s, o) == (0x8f84a708, 0x1000fff6) and mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12]

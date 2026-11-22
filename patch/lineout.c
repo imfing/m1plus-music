@@ -8,8 +8,8 @@
  * lo_set_text runs stock's function first; then, if the text is exactly "LO" and the kill switch /mnt/mmc/m1plus-off is absent, it hides label_volume (visible and sensitive off) and shows the sibling pill
  * `pod_lo` (an image in the same group, hidden and insensitive in the UI files); otherwise it restores the label and hides the pill. It runs in both timers right where stock sets the text, so
  * nothing lags and nothing flickers (the label is shown and hidden inside one timer call, before any paint). The group's layouter skips an invisible child, so the pill takes the label's place.
- * The same call also toggles the status bar's sync icon pod_sync (lo_sync) from one volatile flag of patch/covercache.c, and the Sleep Timer moon pod_sleep (lo_sleep). Cost: one access and a few lookups by name per second per bar
- * (seven more while a Sleep Timer runs, for the moon's room test); no allocation, no state. Not on the boot path. On the real bar it also lets the palette repaint the bar when the window in front
+ * The same call also hides the screenshot camera pod_shot when the row loses its room (lo_shot), toggles the status bar's sync icon pod_sync (lo_sync) from one volatile flag of patch/covercache.c, and the Sleep Timer moon pod_sleep (lo_sleep). Cost: one access and a few lookups by name per second per bar
+ * (six or seven more while the camera, a build or a Sleep Timer shows, for the room test); no allocation, no state. Not on the boot path. On the real bar it also lets the palette repaint the bar when the window in front
  * is painted otherwise (pal_bar_follow, patch/palette.c: one top-window lookup per second).
  */
 #include "offsets.inc"
@@ -21,17 +21,7 @@
 #include "peqout.h"
 #include "palette.h"
 
-/* The sync icon (docs/modules/lineout.md "Sync icon"): pod_sync in the bar's right group, shown while the cover worker has a cover or duration set with work left (cc_build_active: volatile reads, no lock, no file) and the
- * kill switch is absent. `parent` is label_volume's parent (view_bar_left); the bar is its parent. Set only when it changes, so a steady state costs no relayout. A bar without the widget is left alone. */
-static void lo_sync(void *parent, int kill) {
-    void *bar = (void *)((int *)parent)[LO_W_PARENT / 4], *ind;
-    int on = !kill && cc_build_active();
-    if (!bar) return;
-    ind = widget_lookup(bar, SYNC_IND, 1);
-    if (ind && !widget_get_visible(ind) != !on) m1_show(ind, on);
-}
-
-/* A visible peer of the moon in the bar's right group: its box and the gap before it; 0 when absent or hidden. */
+/* A visible peer in the bar's right group: its box and the gap before it; 0 when absent or hidden. */
 static int lo_peer(void *bar, const char *name) {
     void *w = widget_lookup(bar, name, 1);
     return w && widget_get_visible(w) ? ((int *)w)[W_W / 4] + SLEEP_GAP : 0;
@@ -44,20 +34,66 @@ static int lo_bt_ink(void *bt) {
     if (!strcmp(n, SLEEP_BT_AAC)) return SLEEP_INK_AAC;
     if (!strcmp(n, SLEEP_BT_SBC)) return SLEEP_INK_SBC;
     if (!strcmp(n, SLEEP_BT_LDAC)) return SLEEP_INK_LDAC;
+    if (!strcmp(n, SLEEP_BT_APTX)) return SLEEP_INK_APTX;
+    if (!strcmp(n, SLEEP_BT_APTXHD)) return SLEEP_INK_APTXHD;
     return ((int *)bt)[W_W / 4];
 }
 
-/* Room for the moon (lineout.h SLEEP_ROOM): the moon's box, every visible peer, and the Bluetooth box's ink stay within the room left of the clock. The moon yields to everything else. */
-static int lo_sleep_fits(void *bar, void *ind) {
+/* Room for a mark of the right group (lineout.h BAR_ROOM_12H / BAR_ROOM_24H, by stock's 24-Hour Time byte): the mark's box, every visible peer above it, the Wi-Fi glyph and the Bluetooth box's ink stay within
+ * the room left of the clock. `rank` orders the marks that yield: stock's SyncLink (LO_RANK_LINK) counts Bluetooth and Wi-Fi only, the camera (LO_RANK_SHOT) SyncLink too, the sync icon (LO_RANK_SYNC) the
+ * camera too, the moon (LO_RANK_MOON) the sync icon too; so the moon yields first and SyncLink last. */
+#define LO_RANK_LINK 0
+#define LO_RANK_SHOT 1
+#define LO_RANK_SYNC 2
+#define LO_RANK_MOON 3
+static int lo_fits(void *bar, void *ind, int rank) {
     void *bt = widget_lookup(bar, SLEEP_BT, 1);
     int used = ((int *)ind)[W_W / 4];
-    used += lo_peer(bar, SYNC_IND) + lo_peer(bar, SLEEP_SYNCLINK) + lo_peer(bar, SLEEP_WIFI) + lo_peer(bar, SLEEP_SHOT);
+    used += lo_peer(bar, SLEEP_WIFI);
+    if (rank > LO_RANK_LINK) used += lo_peer(bar, SLEEP_SYNCLINK);
+    if (rank > LO_RANK_SHOT) used += lo_peer(bar, SLEEP_SHOT);
+    if (rank > LO_RANK_SYNC) used += lo_peer(bar, SYNC_IND);
     if (bt && widget_get_visible(bt)) used += SLEEP_GAP + lo_bt_ink(bt);
-    return used <= SLEEP_ROOM;
+    return used <= (*(volatile unsigned char *)TIME_24H ? BAR_ROOM_24H : BAR_ROOM_12H);
+}
+
+/* Hook 40 (tools/pod_pins.py SYNCLINK_SITES): stock's widget_set_visible(img_synclink, 1) in both bars' face ticks, which run it after setting the Bluetooth image. SyncLink yields when stock's own marks would run
+ * into the centred clock (only aptX HD + SyncLink + Wi-Fi under a 12 h clock: 82 px of 77): hidden and insensitive, else shown and sensitive. Hiding, or no group, or the kill switch: stock's call. Wi-Fi's
+ * visibility is the previous tick's (stock sets it next), so a change there reaches SyncLink one tick late. */
+int lo_link_show(void *w, int on, int recursive) {
+    void *group = w ? (void *)((int *)w)[LO_W_PARENT / 4] : (void *)0;
+    if (!on || !group || access(KILL_SD, F_OK) == 0) return widget_set_visible(w, on, recursive);
+    m1_show(w, lo_fits(group, w, LO_RANK_LINK));
+    return RET_OK;
+}
+
+/* patch/shot.c, as the countdown shows the camera: room beside stock's marks in its group (view_bar_right holds every peer); no group, room. */
+int lo_shot_fits(void *ind) {
+    void *group = (void *)((int *)ind)[LO_W_PARENT / 4];
+    return !group || lo_fits(group, ind, LO_RANK_SHOT);
+}
+
+/* The screenshot camera while it counts: hidden if the row loses its room (a Bluetooth badge appears). Only ever hides; patch/shot.c shows it and hides it before the grab. */
+static void lo_shot(void *bar) {
+    void *ind = widget_lookup(bar, SLEEP_SHOT, 1);
+    if (ind && widget_get_visible(ind) && !lo_fits(bar, ind, LO_RANK_SHOT)) widget_set_visible(ind, 0, 0);
+}
+
+/* The sync icon (docs/modules/lineout.md "Sync icon"): pod_sync in the bar's right group, shown while the cover worker has a cover or duration set with work left (cc_build_active: volatile reads, no lock, no file),
+ * the kill switch is absent and the row has room for it (lo_fits). `parent` is label_volume's parent (view_bar_left); the bar is its parent. Set only when it changes, so a steady state costs no relayout.
+ * A bar without the widget is left alone. Runs before lo_sleep, which counts it. */
+static void lo_sync(void *parent, int kill) {
+    void *bar = (void *)((int *)parent)[LO_W_PARENT / 4], *ind;
+    int on = !kill && cc_build_active();
+    if (!bar) return;
+    ind = widget_lookup(bar, SYNC_IND, 1);
+    if (!ind) return;
+    if (on) on = lo_fits(bar, ind, LO_RANK_SYNC);
+    if (!widget_get_visible(ind) != !on) m1_show(ind, on);
 }
 
 /* The sleep timer icon (docs/modules/lineout.md "Sleep Timer icon"): pod_sleep in the bar's right group, shown while stock's sleep timer is running (sleepflag != 0 and sleep_time > 0, the same test
- * patch/sleeptimer.c uses), the kill switch is absent and the row has room for it (lo_sleep_fits). Stock sets the Bluetooth image on the same tick, possibly after this
+ * patch/sleeptimer.c uses), the kill switch is absent and the row has room for it (lo_fits). Stock sets the Bluetooth image on the same tick, possibly after this
  * call, so a change there reaches the moon one tick late. Set only when it changes, so a steady state costs no relayout. A bar without the widget is left alone. */
 static void lo_sleep(void *bar, int kill) {
     void *ind;
@@ -65,7 +101,7 @@ static void lo_sleep(void *bar, int kill) {
     if (!bar) return;
     ind = widget_lookup(bar, SLEEP_IND, 1);
     if (!ind) return;
-    if (on) on = lo_sleep_fits(bar, ind);
+    if (on) on = lo_fits(bar, ind, LO_RANK_MOON);
     if (!widget_get_visible(ind) != !on) m1_show(ind, on);
 }
 
@@ -98,8 +134,10 @@ int lo_set_text(void *label, const char *text) {
     parent = (void *)((int *)label)[LO_W_PARENT / 4];
     if (!parent) return r;
     kill = access(KILL_SD, F_OK) == 0;
-    lo_sync(parent, kill);
     bar = (void *)((int *)parent)[LO_W_PARENT / 4];
+    if (bar)
+        lo_shot(bar); /* our marks by rank: the camera, the sync icon, then the moon, each counting the ones before */
+    lo_sync(parent, kill);
     lo_sleep(bar, kill);
     if (bar && m1_is_type(bar, "system_bar"))
         pal_bar_follow(
