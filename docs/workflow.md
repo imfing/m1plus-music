@@ -80,8 +80,10 @@ use the same tree; About, the preview and the package use its tag.
 - Release tags are `V2.1-<VERSION>`.
 - `make test` and `make dev` skip the instruction budgets and stress-scale inputs unless `PERF=1`;
   `make check` always runs them.
-- `JOBS=4` limits workers (default one per CPU, at most 16). Runs in several worktrees share one
+- `JOBS=4` limits workers (default one per CPU). Runs in several worktrees share one
   set of machine-wide test slots, so they queue for the CPUs.
+- `make dev` reuses another worktree's passing tests when the inputs are identical (a squash
+  of a rebased, tested branch): it only builds and packs. `FRESH=1` reruns them.
 - `make clean` removes `work/check` only.
 
 ```sh

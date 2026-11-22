@@ -106,6 +106,7 @@ class FM(SG.SongsMachine):
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
+        if name not in ('folder_enter', 'folder_back', 'folder_reload', 'is_folderplaying', 'is_playing'): return super()._hook(u, address, size, _)
         a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))
         ret = None
         if name == 'folder_enter':

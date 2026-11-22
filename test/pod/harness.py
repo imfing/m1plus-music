@@ -6,8 +6,9 @@ Modelled on q2-pod's test/patch.py.
 Requires unicorn (venv) and a workdir patched by tools/pod.py (its podbuild/manifest.json).
 test/patch.py calls init(WORKDIR) first, then loads the feature modules, which star-import this one.
 """
-import functools, hashlib, importlib.util, json, math, os, re, struct, sys, unicodedata
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
+import ctypes, functools, hashlib, importlib.util, json, math, os, re, struct, sys, unicodedata
+from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
+from unicorn.unicorn_py3.unicorn import uclib as _UCLIB
 from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3,
                                 UC_MIPS_REG_V0, UC_MIPS_REG_SP, UC_MIPS_REG_RA, UC_MIPS_REG_T9, UC_MIPS_REG_PC, UC_MIPS_REG_GP, UC_MIPS_REG_F0, UC_MIPS_REG_F12, UC_MIPS_REG_F14,
                                 UC_MIPS_REG_CP0_STATUS as _STATUS, UC_MIPS_REG_0 as UC_MIPS_REG_0)
@@ -178,9 +179,28 @@ REC_SIZE = 0x58
 
 
 _ARG_REGS = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3, UC_MIPS_REG_SP)
-HOT_MOCKS = frozenset(('memcpy', 'memset', 'pow', 'sqrt', 'cos', 'sin'))
+HOT_MOCKS = frozenset(('memcpy', 'memset', 'strlen', 'strcmp', 'pow', 'sqrt', 'cos', 'sin'))
 _COPY_REGS = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_RA)
 _MATH_REGS = (UC_MIPS_REG_F12, UC_MIPS_REG_F14, UC_MIPS_REG_RA)
+
+
+def fast_regs(u):
+    """Register access for the mocks, which run by the million: the binding's reg_read / reg_write / reg_read_batch
+    build ctypes objects and pick a register class on every call (most of a long test's time). These call the library
+    with one reused 64-bit cell and return the same values (a MIPS register is the binding's default 64-bit type)."""
+    h, cell = u._uch, ctypes.c_uint64(); ref = ctypes.byref(cell); rd, wr = _UCLIB.uc_reg_read, _UCLIB.uc_reg_write
+
+    def reg_read(reg, aux=None):
+        cell.value = 0
+        if (e := rd(h, reg, ref)): raise UcError(e, reg)
+        return cell.value
+
+    def reg_write(reg, value):
+        cell.value = value
+        if (e := wr(h, reg, ref)): raise UcError(e, reg)
+
+    u.reg_read, u.reg_write, u.reg_read_batch = reg_read, reg_write, lambda regs: tuple(map(reg_read, regs))
+    return u
 
 
 class Traps(dict):
@@ -214,7 +234,7 @@ class Machine:
     """demo's LOAD segments and the payload, with every stock call and libc call trapped."""
 
     def __init__(self):
-        self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
+        self.u = fast_regs(Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN))
         self.data, loads = _demo_image()
         for v, o, f, m in loads:
             start = v & ~0xfff
@@ -474,6 +494,10 @@ class Machine:
                 a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); u.mem_write(a0, bytes(u.mem_read(a1, a2)))
             elif name == 'memset':
                 a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); u.mem_write(a0, bytes([a1 & 0xff]) * a2)
+            elif name == 'strlen':
+                a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); a0 = len(self.read_cstr(a0))
+            elif name == 'strcmp':   # (a sort of a few thousand names calls it a million times)
+                a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); x, y = self.read_cstr(a0), self.read_cstr(a1); a0 = ((x > y) - (x < y)) & 0xffffffff
             else:   # pow, sqrt, cos, sin: doubles in f12 / f14, the result in f0 (v0 is 0, as the chain leaves it)
                 x, y, ra = u.reg_read_batch(_MATH_REGS); a0 = 0
                 x, y = struct.unpack('<dd', struct.pack('<QQ', x & (2 ** 64 - 1), y & (2 ** 64 - 1)))
@@ -1117,14 +1141,10 @@ class Machine:
             if self.extern_cover: self.files[self.read_cstr(a1)] = 4096
             ret = self.extern_cover
         # ---- libc
-        elif name == 'strcmp':
-            x, y = self.read_cstr(a0), self.read_cstr(a1); ret = (x > y) - (x < y)
-        elif name in ('strlen', 'strchr', 'strrchr'):   # (the Navidrome source's row data: sbsrc.c reads its fields with these)
+        elif name in ('strchr', 'strrchr'):   # (the Navidrome source's row data: sbsrc.c reads its fields with these; strlen and strcmp are HOT_MOCKS)
             text = self.read_cstr(a0).encode('latin-1')
-            if name == 'strlen': ret = len(text)
-            else:
-                i = (text + b'\0').find(a1 & 0xff) if name == 'strchr' else (text + b'\0').rfind(a1 & 0xff)
-                ret = a0 + i if i >= 0 else 0
+            i = (text + b'\0').find(a1 & 0xff) if name == 'strchr' else (text + b'\0').rfind(a1 & 0xff)
+            ret = a0 + i if i >= 0 else 0
         elif name == 'utf8_to_pinyin':   # stock's own algorithm (0x73a5f0), its table read from the mapped image: appends to the buffer at out
             src, o = bytes(self.read_cstr(a0).encode('latin-1')), bytes(self.read_cstr(a1).encode('latin-1')); i = 0
             self.calls.append(('utf8_to_pinyin', src))

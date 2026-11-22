@@ -22,5 +22,7 @@ venv
 __pycache__/
 *.pyc
 .DS_Store
+# Local secrets; never a build input.
+.env
 fonts/*
 !fonts/README.md

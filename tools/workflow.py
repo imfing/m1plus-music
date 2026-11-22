@@ -50,7 +50,7 @@ def lock(name):
         finally: fcntl.flock(f, fcntl.LOCK_UN)
 
 
-SLOTS = min(16, os.cpu_count() or 4)
+SLOTS = os.cpu_count() or 4
 
 
 @contextlib.contextmanager
@@ -177,11 +177,18 @@ def tested_package(directory):
     return package, m
 
 
-def reusable_dev_build(key, perf=False):
-    """Newest out/dev build whose passing full receipt has these inputs and whose package still verifies, else None."""
+def other_checkouts():
+    """The repository's other worktrees (the main checkout included), for a receipt of the same inputs tested there."""
+    r = subprocess.run(['git', '-C', str(ROOT), 'worktree', 'list', '--porcelain'], capture_output=True, text=True, check=True)
+    here = os.path.realpath(ROOT)
+    return [Path(p) for p in (line[9:] for line in r.stdout.splitlines() if line.startswith('worktree ')) if os.path.realpath(p) != here]
+
+
+def reusable_dev_build(key, perf=False, roots=None):
+    """Newest out/dev build (here, or in the given checkouts) whose passing full receipt has these inputs and whose package still verifies, else None."""
     from check import ALL_TESTS
     found = []
-    for f in (ROOT / 'out' / 'dev').glob('*/results.json'):
+    for f in (f for root in roots or [ROOT] for f in (Path(root) / 'out' / 'dev').glob('*/results.json')):
         r = read(f)
         if r.get('passed') is True and r.get('scope') == 'full' and r.get('inputs') == key \
                 and set(r.get('expected', [])) == set(ALL_TESTS) and (r.get('perf') or not perf):

@@ -165,7 +165,7 @@ def main():
     ap.add_argument('--no-cache', action='store_true')
     ap.add_argument('--perf', action='store_true', help='also run the cost and stress-scale checks (always on for integration and --update)')
     ap.add_argument('--verbose', action='store_true', help='print every passing test, not only failures')
-    ap.add_argument('--jobs', type=int, default=min(16, os.cpu_count() or 4))
+    ap.add_argument('--jobs', type=int, default=workflow.SLOTS)
     ap.add_argument('--timeout', type=int, default=300, help='seconds per test (default 300)')
     a = ap.parse_args()
     if a.list:
@@ -186,11 +186,12 @@ def main():
             with workflow.lock('build'): shutil.rmtree(Path(ROOT) / 'work/check', ignore_errors=True)
             print('removed work/check; dev artifacts, version counter and caches kept')
             return 0
-        start = time.monotonic()
+        start = time.monotonic(); peer = None
         if a.dev and not a.fresh:
             hit = workflow.reusable_dev_build(workflow.input_key(), a.perf)
             if hit:
                 return reuse_dev(a, *hit)
+            peer = workflow.reusable_dev_build(workflow.input_key(), a.perf, workflow.other_checkouts())   # a squash merge of a branch that passed in its worktree: the same inputs
         key = workflow.build_key() if a.tests_only else workflow.input_key()   # tests-only runs certify nothing: only an edit to what the tree is built from invalidates them
         sel = [] if a.tests_only or a.dev else a.only or list(TARGETS)
         golden = read_golden(); builds = {}; tests = []
@@ -234,9 +235,13 @@ def main():
         times = workflow.read(times_path)
         test_start = progress = time.monotonic()
         timings = {'setup': test_start - start}
+        todo = names
+        if peer:   # its tests ran on these inputs (its tree differs in the dev tag only); docs are not an input, so their test runs here
+            tests = [t for t in workflow.read(peer[0] / 'results.json')['tests'] if t['test'] != 'docs']; todo = ['docs']
+            print(f'tests reused from {peer[0]} (same inputs, passed there)', flush=True)
         with cf.ThreadPoolExecutor(max_workers=a.jobs) as ex:
             pending = {ex.submit(run_test, n, test_cmd(n, stock, tree), logs, a.timeout): n
-                       for n in sorted(names, key=lambda n: times.get(n, 0), reverse=True)}
+                       for n in sorted(todo, key=lambda n: times.get(n, 0), reverse=True)}
             for f in cf.as_completed(pending):
                 r = f.result(); tests.append(r)
                 if a.verbose or not test_ok(r):   # passes only with --verbose; the summary line counts them
@@ -268,7 +273,7 @@ def main():
             passed = tests_passed and bool(m.get('package_sha256')) and workflow.input_key() == key
             workflow.write(base / 'results.json', {'passed': passed, 'scope': 'full', 'inputs': key, 'tree': m['tree'],
                                                   'package_sha256': m.get('package_sha256'), 'expected': names, 'perf': a.perf, 'tests': tests,
-                                                  'timings': timings})
+                                                  'timings': timings, **({'tested_in': str(peer[0])} if peer else {})})
             if passed:
                 workflow.tested_package(base)
                 workflow.write(Path(ROOT) / 'out/dev/latest.json', {'build': str(base)})

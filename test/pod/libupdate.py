@@ -304,6 +304,7 @@ class PM(FO.FM):
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address, '')
+        if name not in ('_deque_push_back', 'readdir', 'navigator_to_with_context', 'navigator_back', 'toolsCheckMount', 'stop_player'): return super()._hook(u, address, size, _)
         a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
         if name == '_deque_push_back': self.pushed.append(self.read_cstr(a1))
         if name == 'readdir':   # one dirent buffer, reused (the picker copies a name at once; a 4000-entry folder would use the heap up)

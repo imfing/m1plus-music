@@ -153,6 +153,10 @@ def workflow_tests():
                    and workflow.read(Path(td) / 'out/dev/latest.json')['build'] == str(d))
         with patch.object(check, 'run_test', return_value={'test': 'docs', 'rc': 1, 'counts': None, 'log': 'x', 'logfile': 'l'}), patch.object(check, 'ROOT', td):
             expect('docs failure refuses reuse', check.reuse_dev(ns(timeout=5), d, {'tag': 'T'}) == 1)
+        with tempfile.TemporaryDirectory() as other, patch.object(workflow, 'ROOT', Path(other)):   # another checkout sees it only when asked to look there
+            expect('a peer checkout is not searched by default', workflow.reusable_dev_build('in') is None)
+            expect('a peer checkout\'s matching receipt is found', (workflow.reusable_dev_build('in', roots=[Path(td)]) or [None])[0] == d)
+            expect('a peer receipt of other inputs is not reused', workflow.reusable_dev_build('other', roots=[Path(td)]) is None)
         expect('different input key not reused', workflow.reusable_dev_build('other') is None)
         expect('perf receipt required when perf asked', workflow.reusable_dev_build('in', True) is None)
         workflow.write(d / 'results.json', rr | {'passed': False})
