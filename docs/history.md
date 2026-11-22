@@ -28,6 +28,7 @@ and [UI reference](ui.md).
   French keyboard.
 - **1.8.0:** bug fixes and polish, Crossfade, a redrawn status bar and battery, a smoother Now
   Playing and podcast skip controls.
+- **1.8.1:** fixes and polish for the status bar, Now Playing, Radio and the Recently Added grid.
 
 ## Device findings
 
