@@ -1168,11 +1168,39 @@ def run(ctx):
     odd = [s for s in down + up if (A - s) % 2]
     expect(not odd, f'every size of a spring is an even number of px from the full cover: it stays centred, no edge moves alone ({sorted(set(odd))[:8]})')
 
-    def paused_page(status=3, lit=True):
-        m = NowMachine(); m.page(); m.widget('img_np_shadow'); m.widget('btn_play'); m.src(0); m.status = status; m.screen(lit); m.init()
-        return m
+    NPSHRINK = '/mnt/data/m1plus/nowplaying-shrink'
+    def paused_page(status=3, lit=True, on=None):   # Shrink on Pause on (the default, no file) for the springs below
+        m = NowMachine(); m.page(); m.widget('img_np_shadow'); m.widget('btn_play'); m.src(0); m.status = status; m.screen(lit)
+        if on is not None: m.fs[NPSHRINK] = on
+        m.init(); return m
     def geo(m, n): w = m.widgets[n]; return tuple(m.props.get((w, k)) for k in ('x', 'y', 'w', 'h'))
     pad = mn.SHADOW_PAD * S_ // A; small = mn.ART_X + (A - S_) // 2
+    moved = lambda m: [c for c in m.calls if c[0] in ('widget_move', 'widget_resize') and c[1] in (m.widgets['img_playcover'], m.widgets['img_np_shadow'])]
+
+    # Shrink on Pause off (0; on is the default, as is any other text): the cover stays full size, paused, stopped or playing, and no spring runs
+    m = paused_page(on=b'1\n'); expect(moved(m) and geo(m, 'img_playcover') == (small, small, S_, S_), 'a file with 1: on, as without one')
+    for f in (b'0\n',):
+        for st in (3, 1):
+            m = paused_page(status=st, on=f)
+            expect(not moved(m) and m.timers == [(PSYMS['np_tick'], O['NP_TICK_MS'])], f'off ({f}): opened with status {st}, the asset\'s cover is left as it is')
+        m = paused_page(status=2, on=f); m.status = 3; m.calls = []; m.tick()
+        expect(not moved(m) and not any(c[0] == 'timer_add' and c[1] == PSYMS['np_art_frame'] for c in m.calls), f'off ({f}): a pause seen by the tick starts no spring')
+        m.call(PSYMS['np_on_play'], a0=0, a1=0, count=100000); m.status = 2; m.calls = []; m.call(PSYMS['np_play_check'], count=400000)
+        expect(not moved(m) and not any(c[0] == 'timer_add' and c[1] == PSYMS['np_art_frame'] for c in m.calls), f'off ({f}): play after the tap starts no spring either')
+    # switched while the page is behind Settings: read again when it comes back, the cover put at its size at once
+    m = paused_page(on=b'0\n'); m.fire(O['EVT_WINDOW_TO_BG']); m.fs[NPSHRINK] = b'1\n'; m.calls = []
+    m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0, count=6000000)
+    expect(geo(m, 'img_playcover') == (small, small, S_, S_) and not any(c[0] == 'timer_add' and c[1] == PSYMS['np_art_frame'] for c in m.calls), 'switched on while paused: back in front the cover is small at once, no spring')
+    m.fire(O['EVT_WINDOW_TO_BG']); m.fs[NPSHRINK] = b'0\n'; m.calls = []
+    m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0, count=6000000)
+    expect(geo(m, 'img_playcover') == (mn.ART_X, mn.ART_Y, A, A) and not any(c[0] == 'timer_add' and c[1] == PSYMS['np_art_frame'] for c in m.calls), 'switched off: back in front it is full size at once')
+    N = pod_pages.NPSET_PAGE
+    expect(('Shrink on Pause', pod_pages.ACT_NPSHRINK) in [(r.label, r.action) for r in N.rows] and pod_pages.ACT_NPSHRINK in pod_pages.SWITCH_ACTIONS and 'nowplaying-shrink' in pod_pages.SETTING_FILES,
+           'Settings > Now Playing has the Shrink on Pause switch, saved in nowplaying-shrink and listed on Settings Files')
+    m = NowMachine(); m.page()
+    expect(m.call(PSYMS['np_shrink_setting']) == 1 and m.call(PSYMS['np_shrink_toggle'], count=4000000) == 0 and m.fs[NPSHRINK] == b'0\n' and m.call(PSYMS['np_shrink_setting']) == 0
+           and m.call(PSYMS['np_shrink_toggle'], count=4000000) == 1 and m.fs[NPSHRINK] == b'1\n', 'the switch: on by default; a toggle saves 0 atomically, then 1')
+
     m = paused_page()
     expect(geo(m, 'img_playcover') == (small, small, S_, S_) and geo(m, 'img_np_shadow') == (small - pad, small - pad, S_ + 2 * pad, S_ + 2 * pad),
            f'opened while paused: the cover and its shadow start small, centred where the full cover is ({geo(m, "img_playcover")}, {geo(m, "img_np_shadow")})')
@@ -1184,7 +1212,7 @@ def run(ctx):
     m = paused_page(status=2); m.status = 1; m.calls = []; m.tick()
     expect(('timer_add', PSYMS['np_art_frame'], O['NP_FRAME_MS']) in m.calls, 'a stop seen by the tick shrinks the cover like a pause')
     m = paused_page(status=2)
-    expect(not any(c[0] in ('widget_move', 'widget_resize') and c[1] in (m.widgets['img_playcover'], m.widgets['img_np_shadow']) for c in m.calls), 'opened while playing: the asset\'s cover is left as it is')
+    expect(not moved(m), 'opened while playing: the asset\'s cover is left as it is')
     clicks = [c for c in m.calls if c[0] == 'widget_on' and c[1] == m.widgets['btn_play'] and c[2] == O['EVT_CLICK']]
     expect(len(clicks) == 1 and clicks[0][3] == PSYMS['np_on_play'], 'the play button gets one click handler (the status check)')
 

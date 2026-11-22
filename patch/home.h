@@ -47,6 +47,8 @@
     "/mnt/data/m1plus/nowplaying-lyrics-size" /* the lyrics page's text size: "0" Small (22 px), "1" Medium (26), "2" Large (30; also a missing or invalid file); docs/modules/lyrics.md "Text size" */
 #define NPPOS_FILE \
     "/mnt/data/m1plus/nowplaying-position" /* "1" = Now Playing shows the queue position (5/10) between the times, anything else or missing off (the default); docs/modules/nowplaying.md */
+#define NPSHRINK_FILE \
+    "/mnt/data/m1plus/nowplaying-shrink" /* "0" = the Now Playing cover stays full size while paused, anything else or missing: it shrinks (a spring; the default); docs/modules/nowplaying.md */
 #define SWAPKEYS_FILE \
     "/mnt/data/m1plus/buttons-swap" /* "1" = the previous and next buttons are swapped, anything else or missing off (the default); docs/modules/keyspower.md */
 #define VINYLREC_FILE \
@@ -290,6 +292,9 @@ extern int kb_zh_setting(
 extern int
 np_pos_setting(void); /* Settings > Now Playing > Track Position: 1 on, 0 off (the default) (patch/nowplaying.c) */
 extern int np_pos_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
+extern int
+np_shrink_setting(void); /* Settings > Now Playing > Shrink on Pause: 1 on (the default), 0 off (patch/nowplaying.c) */
+extern int np_shrink_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
 extern int kb_fr_setting(void); /* ... > French (AZERTY): 1 on, 0 off (the default) */
 extern int kb_fr_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
 extern int kb_zh_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */

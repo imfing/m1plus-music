@@ -43,7 +43,11 @@ has 12 px corners. Existing widget names are kept.
 
 ## Paused cover
 
-While paused or stopped (`mclGetPlayStatus()` 3 or 1; Wi-Fi Transfer stops the player) the cover is 194 px (0.73, Apple Music's ratio), centred on the
+Settings > Now Playing > Shrink on Pause (`nowplaying-shrink`, `0` off, default on; read when the page
+starts and each time it returns to the front, the cover then put at its size at once). Off, the cover stays
+264 px in every status and nothing below runs.
+
+With it on, while paused or stopped (`mclGetPlayStatus()` 3 or 1; Wi-Fi Transfer stops the player) the cover is 194 px (0.73, Apple Music's ratio), centred on the
 full cover; `img_np_shadow` (drawn `scale`) and the corner radius (12 → 9 px) scale with it, and the
 shadow fades with the size to opacity 64. Playing
 and every other status keep 264 px.

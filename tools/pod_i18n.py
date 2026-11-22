@@ -222,6 +222,14 @@ TEXT = dict([
        'Affiche la position dans la file, par exemple 5/10, entre les temps.', 'Zeigt die Position in der Warteschlange, z. B. 5/10, zwischen den Zeiten.',
        'Muestra la posición en la cola, como 5/10, entre los tiempos.', 'Mostra la posizione in coda, ad esempio 5/10, tra i tempi.',
        'แสดงลำดับในคิว เช่น 5/10 ระหว่างเวลา', 'Pokazuje pozycję w kolejce, np. 5/10, między czasami.', 'Показывает место в очереди, например 5/10, между временем.', 'Показує місце в черзі, наприклад 5/10, між часом.'),
+    # Settings > Now Playing > Shrink on Pause (patch/nowplaying.c, docs/modules/nowplaying.md "Paused cover"); machine translations, unreviewed
+    _t('Shrink on Pause', '暂停时缩小', '暫停時縮小', '一時停止で縮小', '일시정지 시 축소', 'Réduire en pause', 'Bei Pause kleiner',
+       'Reducir en pausa', 'Riduci in pausa', 'ย่อเมื่อหยุดชั่วคราว', 'Pauza: zmniejsz', 'Сжимать на паузе', 'Стискати на паузі'),
+    _t('The cover shrinks while paused and grows back when playing.', '暂停时封面缩小，播放时恢复。', '暫停時封面縮小，播放時恢復。',
+       '一時停止中はジャケットが小さくなり、再生で元に戻ります。', '일시정지 중에는 커버가 작아지고 재생하면 다시 커집니다.',
+       'La pochette rétrécit en pause et reprend sa taille à la lecture.', 'Das Cover wird bei Pause kleiner und beim Abspielen wieder groß.',
+       'La portada se reduce en pausa y vuelve a crecer al reproducir.', 'La copertina si riduce in pausa e torna grande in riproduzione.',
+       'ปกจะเล็กลงเมื่อหยุดชั่วคราว และกลับขนาดเดิมเมื่อเล่น', 'Okładka zmniejsza się w pauzie i wraca przy odtwarzaniu.', 'Обложка уменьшается на паузе и возвращается при воспроизведении.', 'Обкладинка зменшується на паузі й повертається під час відтворення.'),
     # Settings > Now Playing > Lyrics Text Size (patch/lyrics.c, docs/modules/lyrics.md "Text size"); machine translations, unreviewed
     _t('Lyrics Text Size', '歌词字号', '歌詞字級', '歌詞の文字サイズ', '가사 글자 크기', 'Taille du texte', 'Songtext-Größe',
        'Tamaño texto', 'Dimensione testo', 'ขนาดเนื้อเพลง', 'Rozmiar tekstu', 'Текст песен', 'Текст пісень'),

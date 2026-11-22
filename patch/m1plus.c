@@ -594,6 +594,7 @@ static const struct pod_switch {
     {ACT_BATTPCT, battpct_setting, battpct_toggle},
     {ACT_BATTHIST, bh_setting, bh_toggle},
     {ACT_NPPOS, np_pos_setting, np_pos_toggle},
+    {ACT_NPSHRINK, np_shrink_setting, np_shrink_toggle},
     {ACT_AZRAIL, azrail_setting, azrail_toggle},
     {ACT_AZHEAD, azhead_setting, azhead_toggle},
     {ACT_LOCKON, lk_enabled, lk_enabled_toggle},

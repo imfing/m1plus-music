@@ -18,7 +18,7 @@ settings-file table and the stock pages we open; a page with its own doc is a po
 | | Network Services | AirPlay and DLNA switches, SyncLink, Wi-Fi Transfer; stock's page stays under All System Settings | [wifi-transfer](wifi-transfer.md) |
 | | Home Screen | Recent Albums, Daily Mix, Main Menu / Extras, Regenerate Daily Mix | [dailymix](dailymix.md), [menu](menu.md) |
 | | Library | [Update Library](libupdate.md), Rebuild rows, Split Artists, Split Genres, List Navigation, Folders, Cover Flow, Podcasts, Scrobbling | [albums](albums.md), [podcasts](podcasts.md), [scrobble](scrobble.md) |
-| | Now Playing | Cassette Theme, Lyrics Text Size, Idle Display, Track Position | [tape](tape.md), [bigcover](bigcover.md) |
+| | Now Playing | Cassette Theme, Lyrics Text Size, Idle Display, Track Position, Shrink on Pause | [tape](tape.md), [bigcover](bigcover.md) |
 | **Playback** | EQ | our Equalizer page | [peq](peq.md) |
 | | Playback Settings | our hub `m1plus_playset` (modes) with sub-pages `m1plus_psvolume` (Volume & Sound) and `m1plus_psoutput` (Output) | [playset](playset.md), [crossfade](crossfade.md), [nextalbum](nextalbum.md) |
 | (card) | General | About, Software Update; Date & Time, Keyboards, Language | [General](#general) |
@@ -132,7 +132,7 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
   the note "Applies the next time Cassette Mode opens"; [tape](tape.md)). Then **Lyrics Text Size**
   (Small / Medium / Large; [lyrics](lyrics.md)) and last **Idle Display** (Off, Album Cover, Cassette,
   Vinyl or Lyrics; note "Shown after 10 seconds on Now Playing."; [bigcover](bigcover.md)). The last
-  card is the **Track Position** switch (note "Shows the queue position, such as 5/10, between the times."; [nowplaying](nowplaying.md)).
+  card is the **Track Position** switch (note "Shows the queue position, such as 5/10, between the times."; [nowplaying](nowplaying.md)), then the **Shrink on Pause** switch (on by default; note "The cover shrinks while paused and grows back when playing.").
 - **Display, Buttons & Power, Sleep Timer, Language, Equalizer.** Own docs: [display](display.md),
   [keyspower](keyspower.md), [sleeptimer](sleeptimer.md), [language](language.md), [peq](peq.md). Each reads
   stock's state when it opens and each time it is back in front; nothing of ours is saved. The Sleep Timer
@@ -182,6 +182,7 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `lockscreen-layout` | Lock Screen > Player Style | `1` Mini Player; missing/other Large Cover (the default); applies the next time the lock screen opens ([lockscreen](lockscreen.md)) |
 | `nowplaying-idle` | Idle Display | `1` Cassette, `2` Vinyl, `3` Lyrics; missing/other Album Cover (Off is stock's Cover mode byte) ([bigcover](bigcover.md) "Idle view") |
 | `nowplaying-position` | Track Position | `1` on; missing/other off (the default) ([nowplaying](nowplaying.md) "Track position") |
+| `nowplaying-shrink` | Shrink on Pause | `0` off (the cover stays full size); missing/other on (the default) ([nowplaying](nowplaying.md) "Paused cover") |
 | `nowplaying-lyrics-size` | Lyrics Text Size | `0` Small (22 px), `1` Medium (26), `2` Large (30); missing/other Large (the default) ([lyrics](lyrics.md) "Text size") |
 | `playback-eq` | Equalizer curve | the `M1PEQ02` record ([peq](peq.md)); missing/invalid: 10-Band EQ, Flat, Auto. The switch is stock's `[PLAYSET] EQFLAG`. Per output ([peq](peq.md#per-output-eq-patchpeqoutc)): `playback-eq-headphones`, `-lineout`, `-usb` (the same record) and `playback-eq-output` (the owner and each output's switch) |
 | `playback-mono` | Playback Settings > Mono Audio | `1` on; missing/other off ([stereo](stereo.md)) |

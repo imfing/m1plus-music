@@ -102,6 +102,7 @@ stops the work until the next restart. **Rebuild Covers** asks first and rebuild
 | Lyrics Text Size | Small, Medium or Large (default); an open Now Playing updates when you return to it. |
 | Idle Display | Off, Album Cover, Cassette, Vinyl, Lyrics or VU Meter after 10 seconds. Off is the same switch as Playback Settings → Cover mode. |
 | Track Position | Off (default) or On. On shows the queue position, such as 5/10, between the elapsed and remaining times; it is hidden when the queue holds one track. An open Now Playing updates when you return to it. |
+| Shrink on Pause | On (default) or Off. On, the cover shrinks while paused and springs back when the music resumes; off, it stays full size. |
 
 ### Playback
 

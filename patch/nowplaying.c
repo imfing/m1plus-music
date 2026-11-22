@@ -100,6 +100,7 @@ static struct {
     int own; /* 1: our times are the visible labels, 0: stock's are */
     void *idx; /* label_index, the track position between the times (hidden in the asset) */
     int idxon; /* the Track Position setting as read when the page started or came back */
+    int shrinkon; /* the Shrink on Pause setting, read alike */
     int idxpos; /* what idx shows: the position (0-based), 0 while hidden */
     unsigned idxn; /* and the queue size, 0 hidden */
     int fg; /* 1 from the page's start and EVT_WINDOW_TO_FOREGROUND, 0 after EVT_WINDOW_TO_BACKGROUND */
@@ -249,13 +250,17 @@ static int np_art_live(void) {
     return np.fg && m1_screen_lit() && (!np.sv || widget_get_prop_int(np.sv, "value", NP_ART_PAGE) == NP_ART_PAGE);
 }
 
-/* The cover's size follows the player: small while paused or stopped (Wi-Fi Transfer stops the player under the page), full otherwise. A new target springs from the size the cover has (a change mid-spring turns it round), or is set at once when
- * `animate` is 0 or no frame timer is had. */
+/* Settings > Now Playing > Shrink on Pause (NPSHRINK_FILE): on by default; "0" keeps the cover full size. */
+int np_shrink_setting(void) { return set_read(NPSHRINK_FILE, '1') != '0'; }
+int np_shrink_toggle(void) { return home_set_digit(NPSHRINK_FILE, !np_shrink_setting(), 1); }
+
+/* The cover's size follows the player, with Shrink on Pause on: small while paused or stopped (Wi-Fi Transfer stops the player under the page), full otherwise; with it off, always full. A new target
+ * springs from the size the cover has (a change mid-spring turns it round), or is set at once when `animate` is 0 or no frame timer is had. */
 static void np_art_sync(int animate) {
     int want, st;
     if (!np.art) return;
     st = mclGetPlayStatus();
-    want = st == NP_PAUSED || st == NP_STOPPED ? NP_ART_SMALL : NP_ART;
+    want = np.shrinkon && (st == NP_PAUSED || st == NP_STOPPED) ? NP_ART_SMALL : NP_ART;
     if (want == np.ato) {
         if (!animate && np.anim) { /* the spring is no longer seen: it lands now */
             m1_timer_stop(&np.anim);
@@ -1457,6 +1462,7 @@ static int np_on_foreground(void *ctx, void *e) {
     np_info_scroll(0); /* and starts at the top */
     ly_refresh(); /* a lyrics text size changed in Settings is laid out now */
     np.idxon = np_pos_setting(); /* so is the Track Position switch */
+    np.shrinkon = np_shrink_setting(); /* and Shrink on Pause (np_work puts the cover at its size: fg is still 0) */
     np_work(); /* the page is current when it reappears (fg still 0: a new colour tints the bar once, below) */
     /* the mode button's picture follows the play mode: stock sets it only in its own click handler, so a mode set on the Queue page (or elsewhere) is shown now */
     stock_np_mode_button(ctx);
@@ -1490,6 +1496,7 @@ static void np_start(void *win) {
     np.shown = np.eshown = -1;
     np.idx = widget_lookup(win, "label_index", 1);
     np.idxon = np_pos_setting();
+    np.shrinkon = np_shrink_setting();
     for (n = 0; n < NP_INFO_N; ++n) np.info[n] = widget_lookup(win, np_info_names[n], 1);
     for (n = 0; n < NI_N; ++n) np.iw[n] = widget_lookup(win, np_iw_names[n], 1);
     np.ihead = np.iw[NI_ART] && np.iw[NI_TITLE] && np.iw[NI_TITLE2] && np.iw[NI_ARTIST] && np.iw[NI_ALBUM];
