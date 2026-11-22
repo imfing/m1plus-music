@@ -1425,6 +1425,31 @@ static void sg_on_hold(int row) {
     if (sg.view && !sg.select && !sg.rv && (unsigned)row < sg.count) sg_open_menu(row);
 }
 
+/* The album grid's long press sheet (the Albums page's, docs/modules/pins.md) on the track sheet's widgets (rowmenu_open_album): a row of it (the sheet has closed) for album a. */
+static void rv_sheet(int a, int act) {
+    void *rec = sg.rv && (unsigned)a < sg.rn ? rv_rec(a) : (void *)0;
+    const char *name, *path;
+    unsigned ckey;
+    if (!rec) return;
+    name = cc_str(rec, REC_ALBUM), path = cc_str(rec, REC_PATH), ckey = cc_album_key(rec);
+    if (act == RMA_PIN) {
+        if (pins_has_album(name))
+            pins_unpin_album(name);
+        else
+            pins_pin_album(name, ckey, path);
+    } else if (act == RMA_NEXT || act == RMA_AFTER)
+        pins_queue_album(name, ckey, path, act == RMA_AFTER);
+    else if (pins_play_album(name, ckey, path, act == RMA_SHUFFLE) < 0)
+        pod_toast(TR("Can't play"));
+}
+
+/* A press held RM_LONG_MS on an album of the grid: the sheet opens while the finger is down; the press is forgotten, so the release opens nothing. */
+static void rv_on_hold(int a) {
+    sg.down = 0;
+    if (!sg.view || !sg.rv || (unsigned)a >= sg.rn) return;
+    rowmenu_open_album(&sg.rm, a, pins_has_album(cc_str(rv_rec(a), REC_ALBUM)), rv_sheet);
+}
+
 static int sg_on_move(void *ctx, void *e) {
     (void)ctx;
     if (sg.down && e) rowmenu_hold_move(&sg.tap, e);
@@ -1440,6 +1465,8 @@ static int sg_on_down(void *ctx, void *e) {
         if (!e || !sg.view) return RET_OK;
         grid_ev_local(sg.view, e, pt);
         sg.down = rv_cell_at(pt[0], pt[1]) + 1, m1_tap_at(&sg.tap, e);
+        if (sg.down > 0 && (unsigned)(sg.down - 1) < sg.rn && rowmenu_on(&sg.rm))
+            rowmenu_hold_start(sg.down - 1, rv_on_hold);
         return RET_OK;
     }
     if (!e || !sg.view || !sg.count || !sg_valid()) return RET_OK;

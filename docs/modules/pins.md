@@ -158,6 +158,8 @@ A missing widget, refused registration, no timer or no memory leaves the plain m
   `row_menu(album=True)`): **Play**, **Shuffle** (`pins_play_album`), **Play Next**, **Play After** (`pins_queue_album`),
   **Pin Album** / **Unpin Album** by `pins_has_album`.
   The hold clears the press, so the release opens nothing; a drift of `SC_DRAG_PX`, an abort or an early release cancels it.
+- **Recently Added album grid** (`patch/songs.c`, `rv_on_hold` / `rv_sheet`): the same hold and the same five rows on the
+  Songs page's track sheet widgets (`rowmenu_open_album`), for the tile's library album row ([recent-albums](recent-albums.md)).
 - **Song pins**, kind `s`: key = FNV-1a of the file path (case as written, `pn_song_id`), first cover key = the album's cover
   key (`cc_album_rep_key`, else the record's own key), name = title (the file's name without one), path = the file (never
   empty, under `PIN_PATH`). A track of a CUE image shares its file with the others, so a song is its path **and

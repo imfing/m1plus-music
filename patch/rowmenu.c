@@ -304,14 +304,16 @@ static void rm_words(rowmenu_t *rm, const char *label, const char *icon, const c
     if (g) widget_set_prop_str(g, "image", glyph);
 }
 
-int rowmenu_open_pins(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) {
+int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) {
     int i;
     if (!rm->on || rm->queued || rm->open || !fn) return 0;
     rm_words(rm, "rm_label0", "rm_icon0", "Play", "rm_ic_pplay");
     rm_words(rm, "rm_label1", "rm_icon1", "Shuffle", "rm_ic_pshuffle");
-    rm_words(rm, "rm_label2", "rm_icon2", pinned ? "Unpin Album" : "Pin Album", pinned ? "rm_ic_unpin" : "rm_ic_pin");
-    for (i = 3; i < RM_ROWS; ++i) m1_show(rm->item[i], 0);
-    rowmenu_set_rows(rm, RM_QUEUE_ROWS);
+    rm_words(rm, "rm_label2", "rm_icon2", "Play Next", "rm_ic_next");
+    rm_words(rm, "rm_label3", "rm_icon3", "Play After", "rm_ic_after");
+    rm_words(rm, "rm_label4", "rm_icon4", pinned ? "Unpin Album" : "Pin Album", pinned ? "rm_ic_unpin" : "rm_ic_pin");
+    for (i = 0; i < RM_ROWS; ++i) m1_show(rm->item[i], i < RM_ALBUM_ROWS);
+    rowmenu_set_rows(rm, RM_ALBUM_ROWS);
     rm->alt = 1, rm->src = (const lib_src_t *)0;
     rm->row = row, rm->queue = fn, rm->open = 1;
     m1_show(rm->scrim, 1);
@@ -399,11 +401,10 @@ int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, cons
     ls_row_t x;
     if (src == &lib_stock) src = (const lib_src_t *)0;
     if (!rm->on || rm->open || !rec) return 0;
-    if (rm->alt) { /* the pins' sheet was the last: the track sheet's words and rows again */
+    if (rm->alt) { /* the album sheet was the last: the track sheet's words again (rows 2 and 3, 5 and 6 are set below at every open) */
         rm_words(rm, "rm_label0", "rm_icon0", "Play Next", "rm_ic_next");
         rm_words(rm, "rm_label1", "rm_icon1", "Play After", "rm_ic_after");
-        m1_show(rm->item[3], 1);
-        m1_show(rm->item[4], 1);
+        rm_words(rm, "rm_label4", "rm_icon4", "Get Info", "rm_ic_info");
         rm->alt = 0;
     }
     d = so_row_deque(rec); /* a copy (the page's list may be replaced while the menu is open) */

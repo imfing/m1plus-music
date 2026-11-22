@@ -1448,7 +1448,7 @@ def build_album_page(page):
     root.children.append(select_bar('sg_bar', [('sg_add', 'add'), ('sg_del', 'del')]))   # the select mode's capsule over the rows
     root.children.extend(album_navbar(page))   # the glass controls paint and take touches over the list
     root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=('Download Album', 'Select', 'Pin Album'), act_glyphs=('pod_ic_vsdownload', 'pod_ic_vsselect', 'pod_ic_vspin')))   # the "..." card (patch/albumpage.c: a source's page offers the first row, Download Album; the library's Select and, for a titled album, Pin / Unpin Album, slot 8)
-    root.children.extend(row_menu())   # last: the track rows' "..." menu (patch/rowmenu.c) covers the navbar too; the "..." of the capsule opens the pins' three rows on the same card (rowmenu_open_pins)
+    root.children.extend(row_menu())   # last: the track rows' "..." menu (patch/rowmenu.c) covers the navbar too
     return root
 
 

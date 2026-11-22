@@ -54,7 +54,7 @@ struct rowmenu {
     int row; /* the page's index of the row */
     rowmenu_add_fn add;
     rowmenu_queue_fn queue; /* the Queue page's sheet is open (three rows: RMQ_*), this is what its rows call */
-    int alt; /* the six-row menu is showing the pins' three-row sheet (rowmenu_open_pins): its words are put back at the next rowmenu_open_src */
+    int alt; /* the track sheet is showing the album sheet's five rows (rowmenu_open_album): its words are put back at the next rowmenu_open_src */
     int queued; /* bound by rowmenu_bind_queue (three rows, the Queue page's) or rowmenu_bind_album (five rows) */
     struct rowmenu_slot slot[RM_ROWS];
     /* A source's row (rowmenu_open_src): the third row is Download / Cancel Download / Remove Download in place of Add to Playlist, Favorite and its toast go through the source. */
@@ -84,9 +84,9 @@ int rowmenu_open_queue(rowmenu_t *rm, int row, rowmenu_queue_fn fn);
 /* The toast of upnext_add's return status (`r`, with `after` 0 Play Next / 1 Play After): UPNEXT_ADDED -> "Playing Next" / "Added to Queue", refusal -> translated reason, UPNEXT_STARTED -> none. */
 void rowmenu_upnext_toast(int r, int after);
 
-/* The three-row pins sheet (Play, Shuffle, Pin Album / Unpin Album: `pinned` picks the last) on a menu bound by rowmenu_bind (the album page's: its track sheet's rows are reworded and the rows past the third hidden;
- * rowmenu_open_src puts them back). `fn(row, act)` with act RMP_PLAY / RMP_SHUFFLE / RMP_UNPIN runs after the sheet has closed. 1 when open. */
-int rowmenu_open_pins(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn);
+/* The five-row album sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album: `pinned` picks the last) on a menu bound by rowmenu_bind (a page whose asset has the track sheet: its rows
+ * are reworded and the rows past the fifth hidden; rowmenu_open_src puts them back). `fn(row, act)` with act RMA_* runs after the sheet has closed. 1 when open. */
+int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn);
 
 /* The sheet `n` rows high (1..RM_ROWS) at the window's foot, in the glass of that height (pc_sheet<n>; a crop of a taller one is never used): the rows past the n-th are the caller's to hide
  * (m1_show(rm->item[i], 0)). Call before an open when the sheet's rows vary (the Home pins' sheet, the track rows' sheet: rowmenu_open_src does it). */

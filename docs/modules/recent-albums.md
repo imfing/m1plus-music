@@ -1,6 +1,6 @@
 # Recently Added albums
 
-**Sources:** `patch/songs.c` (`rv_*`, `sg_set_view`), `patch/grid.c`, `patch/covercache.c`,
+**Sources:** `patch/songs.c` (`rv_*`, `sg_set_view`), `patch/grid.c`, `patch/covercache.c`, `patch/rowmenu.c`,
 `tools/pod_ui.py` (`build_songs_page`), `patch/home.h` (`RECENTADD_VIEW_FILE`),
 `patch/setfiles.c`.
 The Recently Added list (stock class `0xf009`, shown on our Songs page, see [songs](songs.md) "The
@@ -42,6 +42,10 @@ newest-first Albums grid (the ticked row does nothing). Only this list has the g
   16 ms tick, none while the scroll view moves.
 - **Tap:** `cc_open_album(NULL, 0, row)` with the library album row. A drag, the title block, gaps
   and margins open nothing.
+- **Long press:** an album held `RM_LONG_MS` opens the Albums page's sheet (Play, Shuffle, Play Next,
+  Play After, Pin Album / Unpin Album; [pins](pins.md) "Album long press and song pins"). The page's asset
+  has only the track sheet, so `rowmenu_open_album` rewords its first five rows and hides the rest;
+  `rowmenu_open_src` restores them.
 
 `time_create` comes from the scan; Update Library rebuilds `songtable`, so a rescan rewrites every
 `time_create`. The creation time on FAT32 and exFAT: [songs](songs.md) "Recently Added dates".

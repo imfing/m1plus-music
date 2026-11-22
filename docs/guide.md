@@ -95,7 +95,7 @@ the bar, shortcuts open **Max Volume**, **Equalizer** and **Volume & Sound**.
 
 ### Choose what plays next
 
-1. On an album or Songs list, tap a song's **…**, or touch and hold its row. To queue a whole album, touch and hold it on **Albums**, **Recently Played** or your Home pins.
+1. On an album or Songs list, tap a song's **…**, or touch and hold its row. To queue a whole album, touch and hold it on **Albums**, **Recently Played**, the **Recently Added** album grid or your Home pins.
 2. Choose **Play Next** to hear it after the current song, or **Play After** to add it to the end.
 
 To see the order, tap the queue button at the bottom right of Now Playing. In **Up Next**, tap a
