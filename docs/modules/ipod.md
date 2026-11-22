@@ -224,7 +224,7 @@ one the stock queries last made (`ip_valid`).
   stock message box.
 - **Shuffle Songs** loads the Songs query, picks a random first song, then plays as a tapped track
   with `pod_set_mode(MODE_SHUFFLE)` first ([shuffle](shuffle.md)). An empty library: stock's
-  `Update Local Music first`; a missing first file: `Storage unavailable`, and the mode is left
+  `Update Library first`; a missing first file: `Storage unavailable`, and the mode is left
   untouched.
 - **Podcasts** (`K_PODCASTS`, `K_PC_EPS`) over the podcast model (`patch/pcmodel.c`): shows with at
   least one episode file, then local episodes in the show's Episode Order ([podcasts](podcasts.md)).

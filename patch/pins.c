@@ -508,8 +508,6 @@ int pins_has_song(const char *path, int cue) {
     return pn_at('s', pn_song_id(path, pn_start(cue))) >= 0;
 }
 
-const char *pins_label_song(const char *path, int cue) { return pins_has_song(path, cue) ? "Unpin Song" : "Pin Song"; }
-
 int pins_unpin_song(const char *path, int cue) {
     return pins_song_ok(path, cue) && pn_unpin('s', pn_song_id(path, pn_start(cue)), (const char *)0, 1);
 }
@@ -542,8 +540,6 @@ int pins_has_artist(const char *name) {
     pn_load();
     return pn_at('r', pn_artist_id(name)) >= 0;
 }
-
-const char *pins_label_artist(const char *name) { return pins_has_artist(name) ? "Unpin Artist" : "Pin Artist"; }
 
 int pins_unpin_artist(const char *name) {
     return pn_artist_id(name) && pn_unpin('r', pn_artist_id(name), (const char *)0, 1);

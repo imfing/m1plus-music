@@ -747,7 +747,7 @@ int shuffle_play(int kind) {
     list = loadLocalClassList(CLASS_ALL_SONGS) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0;
     n = list ? deque_size(list) : 0;
     if (!n) {
-        toast(TR("Update Local Music first"));
+        toast(TR("Update Library first"));
         return -1;
     }
     if (kind != SHUFFLE_SONGS && n > SHUFFLE_MAX) {
@@ -783,7 +783,7 @@ int shuffle_play(int kind) {
         idx = (unsigned)at_i;
         n = queue ? deque_size(queue) : 0;
         if (!queue) {
-            toast(TR("Update Local Music first"));
+            toast(TR("Update Library first"));
             return -1;
         }
     }
@@ -798,7 +798,7 @@ int shuffle_play(int kind) {
         if (n)
             toast(so_missing());
         else
-            toast(TR("Update Local Music first"));
+            toast(TR("Update Library first"));
         return -1;
     }
     /* Shuffle Songs: shuffle on over the whole library (stock mode List play), the queue shuffled

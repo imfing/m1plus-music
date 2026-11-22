@@ -40,7 +40,6 @@ int pins_queue_album(const char *album, unsigned ckey, const char *path, int aft
 int pins_pin_song(void *rec);
 /* A song is its file's path and, for a track of a CUE image (the tracks share the file), its REC_CUE_START (`cue`: the record's value, 0 or below for none). */
 int pins_song_ok(const char *path, int cue); /* 1 when that song can be pinned (a local file path that fits the file) */
-const char *pins_label_song(const char *path, int cue); /* "Unpin Song" / "Pin Song" */
 int pins_has_song(const char *path, int cue);
 int pins_unpin_song(const char *path, int cue);
 
@@ -49,7 +48,6 @@ int pins_unpin_song(const char *path, int cue);
 int pins_pin_artist(const char *name);
 int pins_has_artist(const char *name);
 int pins_unpin_artist(const char *name);
-const char *pins_label_artist(const char *name); /* "Unpin Artist" / "Pin Artist" */
 
 /* The Home menu's long press sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album) for an album that is not a pin: the Recently Played shelf's tile (patch/recent.c). `ckey` is its cover key, `path` a track of it (""
  * for none). 1 when the sheet opened; 0 when there is none (the pins are not up on the window, the menu is not in front, a sheet is open or the strings do not fit the file). */

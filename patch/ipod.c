@@ -2797,7 +2797,7 @@ static void ip_shuffle_all(void) {
     void *list = loadLocalClassList(CLASS_ALL_SONGS) > 0 ? *(void **)PDEQ_SHOWLIST : (void *)0;
     unsigned n = list ? deque_size(list) : 0;
     if (!n) {
-        pod_toast(TR("Update Local Music first"));
+        pod_toast(TR("Update Library first"));
         return;
     }
     ip.list = list, ip.count = n, ip.first = deque_at(list, 0), ip.cls = CLASS_ALL_SONGS;

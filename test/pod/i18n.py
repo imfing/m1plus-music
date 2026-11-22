@@ -209,7 +209,7 @@ def run(ctx):
         m = artists_machine(artists=()); m.set_language(loc)
         m.call(open_artists, count=2000000)
         st = m.widgets['label_status']
-        expect(tr_keys(m, st) == ['Update Local Music first'] and text_of(m, st) == [T('Update Local Music first')], f'{loc}: the empty Artists message')
+        expect(tr_keys(m, st) == ['Update Library first'] and text_of(m, st) == [T('Update Library first')], f'{loc}: the empty Artists message')
         # an artist without albums, and the All albums card
         m = artists_machine(); m.set_language(loc); m.call(open_artists, count=5000000)
         artists_tap(m, 2)
@@ -221,7 +221,7 @@ def run(ctx):
         expect(text_of(m, m.widgets['label_album']) == [T('All albums')], f'{loc}: the All albums card')
         # Cover Flow: empty library, too large, first-run status and progress
         m = cover_machine(albums=0); m.set_language(loc); m.call(cover_open, count=2000000)
-        expect(text_of(m, m.widgets['label_status']) == [T('Update Local Music first')], f'{loc}: Cover Flow with no library')
+        expect(text_of(m, m.widgets['label_status']) == [T('Update Library first')], f'{loc}: Cover Flow with no library')
         m = cover_machine(albums=4001, cached=False); m.set_language(loc); m.call(cover_open, count=50000000)
         expect(text_of(m, m.widgets['label_status']) == [T('Library too large')], f'{loc}: Cover Flow with a library over the limit')
         m = cover_machine(albums=3, cached=False); m.set_language(loc); m.call(cover_open, count=5000000)
@@ -233,12 +233,12 @@ def run(ctx):
         m = Machine(); m.set_language(loc)
         for w in (*VS_WIDGETS, 'btn_return', 'btn_backtoplayer', 'view_grid', 'albums_scrollview', 'label_status', 'label_row_title', 'label_row_sub', 'label_grid_title', 'label_grid_sub'): m.widget(w)
         m.call(PSYMS['albums_open'], count=2000000)
-        expect(text_of(m, m.widgets['label_status']) == [T('Update Local Music first')], f'{loc}: the empty Albums page')
+        expect(text_of(m, m.widgets['label_status']) == [T('Update Library first')], f'{loc}: the empty Albums page')
         # Shuffle: the message boxes
         def toast_of(m): return [c[1] for c in m.calls if c[0] == 'toast']
         m = shuffle.shuffle_machine([]); m.set_language(loc)
         m.call(play, a0=0, count=50000000)
-        expect(toast_of(m) == [T('Update Local Music first')], f'{loc}: Shuffle with no library')
+        expect(toast_of(m) == [T('Update Library first')], f'{loc}: Shuffle with no library')
         m = shuffle.shuffle_machine([('/mnt/mmc/a/1.flac', 'A', 1)], present=False); m.set_language(loc)
         m.call(play, a0=0, count=50000000)
         expect(toast_of(m) == [T('Storage unavailable')], f'{loc}: Shuffle with the card out')
@@ -307,11 +307,11 @@ def run(ctx):
     expect(not over, f'the Cover Flow title ends before the artist page\'s Songs button (x {A["NAV_VIEW_X"]}) in all languages ({over})')
     over = []
     for loc in LOC:
-        for key in ('Update Local Music first', 'Not enough memory', 'Storage unavailable', 'Too many songs to shuffle',
+        for key in ('Update Library first', 'Not enough memory', 'Storage unavailable', 'Too many songs to shuffle',
                     'Screenshot saved', 'Screenshot failed', 'No music in this folder', 'New mix when Home opens', 'Covers will rebuild on Home',
                     'Cover cache cleared', 'Covers are being made, try later', 'Track durations cleared'):
             if width(tr_text(loc, key), msg_px) > 260: over.append((loc, key))          # the message box's line is 260 px (@0x4788a0)
-        for key in ('Update Local Music first', 'Library too large', 'No albums', 'Not enough memory'):
+        for key in ('Update Library first', 'Library too large', 'No albums', 'Not enough memory'):
             if width(tr_text(loc, key), 20) > cover.find('label_status').w: over.append((loc, key, 'status'))
         if width(tr_text(loc, 'Preparing covers...') + ' 4000/4000', 20) > cover.find('label_status').w: over.append((loc, 'progress'))
         for key in ('Preparing covers', 'Rebuilding covers', 'Measuring tracks', 'Preparing artist photos', 'Rebuilding artist photos'):

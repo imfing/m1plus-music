@@ -39,7 +39,7 @@ and mode on that artist's or composer's albums.
   Cover Flow on the artist.
 - The cache scan uses the scoped keys and skips the All songs row. The deque, list and keys are
   freed on destroy. The large title is the name (296 px, ellipsis; the small title is fitted to 110
-  px); an empty list keeps the large title with "No albums" (or "Update Local Music first") under it; an artist's header page without a source shows the navbar title instead.
+  px); an empty list keeps the large title with "No albums" (or "Update Library first") under it; an artist's header page without a source shows the navbar title instead.
 
 ### Artist header
 

@@ -1493,6 +1493,9 @@ class Machine:
              'dns': 1000, 'conn': 2000, 'tls': 3000, 'first': 4000, 'total': 5000, **(self.curl_site(o[10002], o) if self.curl_site else {'rc': 6})}
         for typ, text in r['dbg']:
             buf = self.cstr(text); self.nested(o[20094], h, typ, buf, len(text.encode()), o[10095])
+        if 'head' in r and o.get(20079):   # 'head': header lines after the status line, handed to the header callback before the body
+            for text in [f'HTTP/1.1 {r["code"]} X', *r['head'], '']:
+                buf = self.cstr(text + '\r\n'); self.nested(o[20079], buf, 1, len(text) + 2, o[10029])
         body, rc, sent = r['body'], r['rc'], 0
         sizes = r['chunk'] if isinstance(r['chunk'], (list, tuple)) else [r['chunk']]   # 'chunk': an int, or a list of sizes in order (the last repeats)
         need = max(sizes) + 1   # (one buffer for the machine's requests: a phase-2 fill makes hundreds)

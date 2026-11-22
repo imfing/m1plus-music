@@ -175,7 +175,7 @@ A missing widget, refused registration, no timer or no memory leaves the plain m
 - **Entry:** the track row sheet (row "..." and row long press) has a sixth row **Pin Song** / **Unpin Song**
   (`RM_ROWS` 6, `rm_item5`, glyph `rm_ic_pin` / `rm_ic_unpin`) for a song of the card; a source's row (Navidrome) keeps the
   five rows and the five-row glass (`rowmenu_set_rows`: card moved and resized, `style:normal:bg_image` set, as
-  `m1_sheet_rows` does). API: `pins_pin_song(rec)` (the start from the record), `pins_has_song(path, cue)`, `pins_unpin_song(path, cue)`, `pins_label_song(path, cue)`,
+  `m1_sheet_rows` does). API: `pins_pin_song(rec)` (the start from the record), `pins_has_song(path, cue)`, `pins_unpin_song(path, cue)`,
   `pins_song_ok(path, cue)`; callers pass `REC_CUE_START`.
 
 ## More entry points
@@ -199,5 +199,5 @@ photo's cache key (`patch/artistphoto.c`), name = the artist, path = the **scope
 - **Tap:** `pn_open_artist`: `artists_find(name)`, `albums_open_artist(row, 0, CLASS_ARTISTS)` (Cover Flow when that window will not open), as an Artists row. The albums page reads its albums by `artist_type` each time it loads, so a pin from the other list leaves the setting at the pin's scope, saved (`write_int_config`) as the Show group does; Play / Shuffle (`pn_play_artist`) put it back after the call. **Sheet** (hold): Play, Shuffle (`songs_play_artist`, all the artist's songs; the toast
   "Can't play" when there are none), **Unpin Artist**.
 - **Missing:** with no row of the artist the tile names in the pin's list (gone, the library mid-scan or unreadable, or a joined name "Lead; Guest" that Split Artists turned on since answers with its first name's row, which `pn_artist_row` refuses), a tap says "Not found" and Play / Shuffle "Can't play"; the pin stays.
-- **Entries:** the Artists page row long press (`ar_on_hold`: Play, Shuffle, Pin Artist / Unpin Artist; [artists](artists.md)) and the artist's Albums page "..." card, Select's slot 7 (`al_pin_row`; [albums](albums.md)). API: `pins_pin_artist(name)`, `pins_has_artist`, `pins_unpin_artist`,
-  `pins_label_artist`. Strings "Pin Artist", "Unpin Artist".
+- **Entries:** the Artists page row long press (`ar_on_hold`: Play, Shuffle, Pin Artist / Unpin Artist; [artists](artists.md)) and the artist's Albums page "..." card, Select's slot 7 (`al_pin_row`; [albums](albums.md)). API: `pins_pin_artist(name)`, `pins_has_artist`, `pins_unpin_artist`.
+  Strings "Pin Artist", "Unpin Artist".

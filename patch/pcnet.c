@@ -622,8 +622,9 @@ static void pn_refresh_one(const struct pn_job *j, const char *dir) {
             first = s.checked == 0;
             pn_notes(path, p);
             pn_join(tmp, sizeof tmp, path, ".episodes.tmp", (const char *)0);
-            if (!m1_save(file, tmp, 0644, eps, n))
-                code = PN_STORAGE;
+            if (!m1_save(file, tmp, 0644, eps, n) || !m1_sync_dir(path))
+                code =
+                    PN_STORAGE; /* (the new .episodes is on the card before .show takes the answer's Last-Modified: a power cut never pairs old episodes with a new stamp, which would 304 for good) */
             else {
                 pn_arch_merge(
                     path, eps,
@@ -816,8 +817,9 @@ static unsigned pn_dwrite(char *data, unsigned size, unsigned nmemb, void *user)
         long code = net_status(d->req);
         d->seen = 1;
         if (net_text_type(net_type(d->req))) return d->bad = PN_NOTAUDIO, 0; /* a page, an error document */
-        if (d->base && code == 206 && d->head.range_seen && d->head.range_start != (long long)d->base)
-            return d->misfit = 1, 0; /* another part of the file than the one asked for: nothing is appended */
+        if (d->base && code == 206 && !net_head_resumes(&d->head, (long long)d->base))
+            return d->misfit = 1,
+                   0; /* no Content-Range, or another part of the file than the rest: nothing is appended */
         memcpy(d->etag, d->head.etag, sizeof d->etag);
         if (d->base && code != 206) { /* the server ignored the Range: the file starts again */
             int fd = open(d->part, O_WRONLY | O_CREAT | O_TRUNC, 0644);

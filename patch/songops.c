@@ -353,7 +353,7 @@ int so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev,
         idx = (unsigned)at_i;
         n = queue ? deque_size(queue) : 0;
         if (!queue) {
-            pod_toast(TR("Update Local Music first"));
+            pod_toast(TR("Update Library first"));
             return -1;
         }
     }
@@ -363,7 +363,7 @@ int so_play_with(int cls, void *list, int at, int how, so_open_fn open, int rev,
         if (n)
             pod_toast(so_missing());
         else
-            pod_toast(TR("Update Local Music first"));
+            pod_toast(TR("Update Library first"));
         return -1;
     }
     if (how == SO_IN_ORDER || how == SO_ROW_ORDER)

@@ -710,7 +710,7 @@ static void ar_load(int keep) {
     ls_room(ar.status, ar.spin,
             LS_ROOM_NAV + (ar.src ? SG_TITLE_H : 0)); /* (under the title the source's page keeps) */
     m1_show(ar.status, ar.count == 0 && !(st == LS_ST_LOADING && ar.spin));
-    if (!ar.count) widget_set_tr_text(ar.status, ar.src ? ls_empty_key(st, "No artists") : "Update Local Music first");
+    if (!ar.count) widget_set_tr_text(ar.status, ar.src ? ls_empty_key(st, "No artists") : "Update Library first");
     ls_spin(ar.spin, st == LS_ST_LOADING && ar.count == 0 && ar.spin != (void *)0);
     if (!ar.count) widget_set_prop_int(ar.sv, "yoffset", 0);
     az_rail_fit(&ar.al, GRID_VIEW_H);

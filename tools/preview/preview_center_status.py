@@ -35,7 +35,7 @@ def main():
     a = ap.parse_args()
     R.FONT, R.IMGS = pod_show.Font(pod_show.font_path(a.workdir)), M.podcast_images()
     s = PI.Side(a.workdir, True)
-    pages = [('Library Artists, empty', '', 'Update Local Music first', 20),
+    pages = [('Library Artists, empty', '', 'Update Library first', 20),
              ('Radio: Loading...', '', 'Loading…', 18),
              ('Folders: Empty folder', '', 'Empty folder', 20),
              ('Navidrome Artists, loading', 'Artists', None, 20),

@@ -353,7 +353,7 @@ def run(ctx):
            f'Albums (grid): the same order, two to a row ({[c[2] for c in cells][:4]})')
     # an empty library, and the page's memory
     m = albums.albums_machine(0, sort='artist'); albums.open_grid(m)
-    expect(('window_open', 'm1plus_albums') in m.calls and ('widget_set_tr_text', m.widgets['label_status'], 'Update Local Music first') in m.calls,
+    expect(('window_open', 'm1plus_albums') in m.calls and ('widget_set_tr_text', m.widgets['label_status'], 'Update Library first') in m.calls,
            'no albums: no order, the message')
     m = albums_page(LIB); m.call(PSYMS['al_on_destroy'], count=2000000)
     expect(any(c[0] == 'free' for c in m.calls), 'closing the Albums page frees the order')

@@ -576,7 +576,7 @@ def page_tests(expect, cover_asset):
     expect('deque_destroy' in m.names() and sum(1 for c in m.calls if c[0] == 'bitmap_destroy') == 3, 'closing the Artists page frees its list and its bitmaps (the rail disc, the chevron, the circle placeholder)')
     m = artists_machine(artists=())
     m.call(open_, count=2000000)
-    expect(any(c[0] == 'widget_set_text_utf8' and 'Update Local Music' in c[2] for c in m.calls), 'no artists says so')
+    expect(any(c[0] == 'widget_set_text_utf8' and 'Update Library first' in c[2] for c in m.calls), 'no artists says so')
     expect(m.props.get((m.lv, 'sensitive')) == 0 and m.props.get((m.widgets['label_status'], 'visible')) == 1 and vis(m, 'sg_rail')[0] == 0, 'the empty list is hidden, the message shown, no rail')
     expect(('widget_move', m.widgets['label_status'], 10, 235) in m.calls, 'the title is hidden with the list: the message is centred in the 400 px under the navbar (y 235, 30 px high)')
     for gone in ('artists_scrollview', 'view_grid', 'sg_rail', 'label_hdr', 'label_row_title', 'sg_bubble_letter', 'artists_listview'):
@@ -869,7 +869,7 @@ def genre_composer_tests(ctx):
         expect('navigator_back' in m.names() and ('stock_resume', str(home)) in m.calls, f'{label}: an asset that is not ours is left for the tile\'s stock page')
         m = artists_machine(genres=(), composers=()); m.class_lists[cls] = []
         m.call(on_row, a0=rows0 + 12 * row[label], count=2000000)
-        expect('list_item_create' not in m.names() and any(c[0] == 'widget_set_text_utf8' and 'Update Local Music' in c[2] for c in m.calls),
+        expect('list_item_create' not in m.names() and any(c[0] == 'widget_set_text_utf8' and 'Update Library first' in c[2] for c in m.calls),
                f'{label}: an empty library says so, no rows')
 
     # Artists itself: sorted, the "..." card with Search Artists, the Show group and Name, and the title Artists

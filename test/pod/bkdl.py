@@ -115,7 +115,8 @@ class World:
             if r is not None: return r
         data = self.data[name]
         base = dict(chunk=65536, ctype='audio/mpeg')
-        if start: return dict(base, code=206, body=data[start:], length=len(data) - start)
+        if start:
+            return dict(base, code=206, body=data[start:], length=len(data) - start, head=[f'Content-Range: bytes {start}-{len(data) - 1}/{len(data)}'])
         return dict(base, code=200, body=data, length=len(data))
 
     @staticmethod

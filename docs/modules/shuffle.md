@@ -155,7 +155,7 @@ and the flag separately.
   already right. `pod_set_in_order` (Play buttons and album track taps; Songs, Podcasts, Daily Mix Play)
   turns the flag off and maps Repeat one to List play. `pod_set_mode(MODE_SHUFFLE)` (Shuffle buttons)
   turns the flag on over List play. The mode stays afterwards.
-- **Errors** (stock message box, nothing played, mode untouched): "Update Local Music first" (empty),
+- **Errors** (stock message box, nothing played, mode untouched): "Update Library first" (empty),
   "File not found" / "Storage unavailable" (`so_missing`, first file missing), "Too many songs to
   shuffle" (over `SHUFFLE_MAX`), "Not enough memory to shuffle".
 

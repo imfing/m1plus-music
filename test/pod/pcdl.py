@@ -92,13 +92,14 @@ def lanes():
 
 
 def server(data, log=None, ctype='audio/mpeg', chunk=65536, honour=True):
-    """A server for one file: Range answered with 206 (honour) or ignored with 200; log gets (url, start, options)."""
+    """A server for one file: Range answered with 206 and its Content-Range (honour) or ignored with 200; log gets (url, start, options)."""
     def site(url, o):
         rng = o.get(10007)
         start = int(rng.rstrip('-')) if rng else 0
         if log is not None: log.append((url, start, dict(o)))
         r = dict(chunk=chunk, ctype=ctype)
-        if start and honour: return dict(r, code=206, body=data[start:], length=len(data) - start)
+        if start and honour:
+            return dict(r, code=206, body=data[start:], length=len(data) - start, head=[f'Content-Range: bytes {start}-{len(data) - 1}/{len(data)}'])
         return dict(r, code=200, body=data, length=len(data))
     return site
 
@@ -360,8 +361,9 @@ def resume_tests(ctx):
         reqs.append(start)
         n[0] += 1
         code = 206 if start else 200
-        if n[0] <= 6: return dict(rc=56, code=code, partial=True, body=DATA[start:start + 1000], ctype='audio/mpeg', length=len(DATA) - start)
-        return dict(code=code, body=DATA[start:], ctype='audio/mpeg', length=len(DATA) - start)
+        head = [f'Content-Range: bytes {start}-{len(DATA) - 1}/{len(DATA)}'] if start else []
+        if n[0] <= 6: return dict(rc=56, code=code, partial=True, body=DATA[start:start + 1000], ctype='audio/mpeg', length=len(DATA) - start, head=head)
+        return dict(code=code, body=DATA[start:], ctype='audio/mpeg', length=len(DATA) - start, head=head)
     m = machine(site=flaky)
     r, th = add(m); calls = work(m, th)
     expect(reqs == [0, 1000, 2000, 3000, 4000, 5000, 6000] and m.fs.get(f'{SHOW}/a.mp3') == DATA and set(sleeps(calls)) == {1} and len(sleeps(calls)) == 6 * 10,
@@ -432,6 +434,16 @@ def resume_tests(ctx):
     m = machine(site=right_part); m.put(f'{SHOW}/a.mp3.part', DATA[:4000])
     r, th = add(m); work(m, th)
     expect(log == [4000] and m.fs.get(f'{SHOW}/a.mp3') == DATA, 'a 206 whose Content-Range starts where the Range asked is appended')
+    log.clear()
+
+    def no_range(url, o):
+        start = int(o[10007].rstrip('-')) if o.get(10007) else 0
+        log.append(start)
+        return dict(code=206 if start else 200, body=DATA, ctype='audio/mpeg', length=len(DATA), head=[])
+    m = machine(site=no_range); m.put(f'{SHOW}/a.mp3.part', b'z' * 4000)
+    r, th = add(m); work(m, th)
+    expect(log == [4000, 0] and m.fs.get(f'{SHOW}/a.mp3') == DATA,
+           f'a 206 without a Content-Range is not appended: the file starts again, once ({log})')
     # If-Range: an attempt of this run got its bytes with a strong ETag, so the retry asks for the rest of that same file
     for etag, want in (('"v1"', 'If-Range: "v1"'), ('W/"v1"', None), (None, None)):
         log = []

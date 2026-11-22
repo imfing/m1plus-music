@@ -288,7 +288,9 @@ def run(ctx):
     wr = [c for c in calls3 if c[0] == 'rename']
     expect([c[2].rsplit('/', 1)[1] for c in wr] == ['.notes', '.episodes', '.show', 'WSJ Minute Briefing'], 'both files are written to a temp file and renamed into place, the folder renamed last')
     fsyncs = [c for c in calls3 if c[0] == 'fsync']
-    expect(len(fsyncs) == 3, 'each file (.notes, .episodes, .show) is fsynced before its rename')
+    expect(len(fsyncs) == 4, 'each file (.notes, .episodes, .show) is fsynced before its rename, and the folder once')
+    seq = [c[0] if c[0] == 'fsync' and not c[1].endswith('.tmp') else c[2].rsplit('/', 1)[1] for c in calls3 if c[0] == 'rename' or (c[0] == 'fsync' and not c[1].endswith('.tmp'))]
+    expect('.episodes' in seq and seq[seq.index('.episodes'):][:3] == ['.episodes', 'fsync', '.show'], f'the folder is fsynced after .episodes is renamed and before .show takes the new Last-Modified ({seq})')
 
     # 4. A second refresh: nothing new, nothing renamed, the title kept, the time moved
     before = dict(m.fs)

@@ -228,7 +228,7 @@ What a list is:
 - **A list read again keeps its tiles** when it is the same rows (`sg_load`: count, cover key,
   section and a 24 bit hash of both text lines in `song_t.sig`). A play does not flash covers to
   placeholders.
-- **Empty**: a list without a header keeps its large title with the grey line centred under it (`ls_room`): "No songs", the library's "Update Local Music first".
+- **Empty**: a list without a header keeps its large title with the grey line centred under it (`ls_room`): "No songs", the library's "Update Library first".
 
 ### A genre's songs
 
@@ -391,7 +391,7 @@ day.
 - Stock's function runs (through `stock_file_created_trampoline`) for a null path, with
   `/mnt/mmc/m1plus-off`, when the call fails, when the mask lacks `STATX_BTIME`, or when the stamp is
   0. FAT32 is unchanged in effect. Cost: one `access` and one `statx` per file, 256 bytes of stack.
-- Existing dates change only after a rescan: Update Local Music rebuilds the table, so the first full
+- Existing dates change only after a rescan: Update Library rebuilds the table, so the first full
   update re-dates the library by creation stamp.
 
 ## A library source (`songs_open_src`)

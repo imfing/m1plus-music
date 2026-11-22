@@ -112,7 +112,7 @@ int books_open(void); /* patch/bkpage.c: the books in Audiobooks on the card and
 unsigned ip_fit(void *canvas, unsigned *s, int maxw); /* the wide string cut with an ellipsis to maxw px */
 
 /* patch/ipod_cf.c */
-int ipcf_open(void *win), ipcf_up(void), ipcf_busy(void), ipcf_tick(void *list, unsigned count);
+int ipcf_open(void *win), ipcf_busy(void), ipcf_tick(void *list, unsigned count);
 int ipcf_start(void *list, unsigned count);
 int ipcf_flipping(void), ipcf_flip_tick(void), ipcf_going(void), ipcf_gone(void), ipcf_go_tick(void);
 void ipcf_go_open(void *list, unsigned count, int sel), ipcf_go_close(int quiet), ipcf_rush(void),

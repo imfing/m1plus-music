@@ -100,7 +100,6 @@ int ipcf_open(void *win) {
     return 1;
 }
 
-int ipcf_up(void) { return ipcf.frame != (void *)0; }
 int ipcf_flipping(void) { return ipcf.frame && ipcf.flip != ipcf.flip_to; }
 int ipcf_going(void) { return ipcf.frame && (ipcf.go != ipcf.go_to || ipcf.go_hold); }
 int ipcf_gone(void) { return ipcf.frame && ipcf.go_to == 256; }

@@ -840,7 +840,7 @@ def taps_list_tests(ctx):
     # 12. Empty library: the status line, no view.
     m = albums_machine(0)
     open_grid(m)
-    expect(('widget_set_text_utf8', m.widgets['label_status'], 'Update Local Music first') in m.calls, 'an empty library says so')
+    expect(('widget_set_text_utf8', m.widgets['label_status'], 'Update Library first') in m.calls, 'an empty library says so')
     expect(('widget_set_visible', m.widgets['view_grid'], 0) not in m.calls and ('widget_move', m.widgets['label_status'], 10, 50 + O['SG_TITLE_H'] + (450 - 50 - O['SG_TITLE_H'] - 30) // 2) in m.calls,
            'and keeps the large title with the line under it')
     m = albums_machine(3); del m.widgets['view_grid']

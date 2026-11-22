@@ -243,9 +243,9 @@ def shuffle_tests(ctx):
     for kind in K:
         m = shuffle_machine([])
         v = m.call(play, a0=kind, count=COUNT)
-        expect(v == 0xffffffff and ('toast', 'Update Local Music first', O['MSGINFO_KIND'], O['MSGINFO_MS']) in m.calls
+        expect(v == 0xffffffff and ('toast', 'Update Library first', O['MSGINFO_KIND'], O['MSGINFO_MS']) in m.calls
                and not m.played and '_create_deque' not in m.names() and 'mclSetPlayMode' not in m.names(),
-               f'an empty library: Shuffle {K[kind]} says "Update Local Music first" and plays nothing')
+               f'an empty library: Shuffle {K[kind]} says "Update Library first" and plays nothing')
 
     # 33. The first song is not on the card (card out, stale library): a message, no play, no mode
     #     change, the queue freed.

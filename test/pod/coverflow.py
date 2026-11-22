@@ -204,7 +204,7 @@ def page_tests(ctx):
     m = cover_machine(albums=0)
     v = m.call(cover_open, count=2000000)
     expect(v == 0 and 'view' not in [c[0] for c in m.calls], 'an empty library draws no covers')
-    expect(any(c[0] == 'widget_set_text_utf8' and 'Update Local Music' in str(c[2]) for c in m.calls),
+    expect(any(c[0] == 'widget_set_text_utf8' and 'Update Library first' in str(c[2]) for c in m.calls),
            'an empty library says to update the library')
     expect('pthread_create' not in m.names(), 'an empty library starts no thread')
 

@@ -268,22 +268,26 @@ int m1_save(const char *path, const char *tmp, unsigned mode, const void *data, 
     return fd >= 0 && m1_commit(fd, m1_write_all(fd, data, n), tmp, path);
 }
 
+int m1_sync_dir(const char *dir) {
+    int d = open(dir, O_RDONLY, 0), ok;
+    if (d < 0) return 0;
+    ok = fsync(d) == 0;
+    return close(d) == 0 && ok;
+}
+
 /* The one writer of the payload's card files: CARD_DIR then dir made (EEXIST is fine; a failure shows in the open), a then b (either may
  * be empty) into tmp, fsync, rename onto path, fsync of dir. 0 on success; 1 when path was replaced but the directory's fsync failed (the
  * new bytes are there, a power cut may lose the rename); -1, path untouched, on any earlier failure or while the card is not mounted. */
 int m1_card_write(const char *dir, const char *path, const char *tmp, const void *a, unsigned na, const void *b,
                   unsigned nb) {
-    int fd, ok, d;
+    int fd;
     if (!m1_card_mounted()) return -1; /* never write to the internal flash under the mount point */
     mkdir(CARD_DIR, 0755);
     if (strcmp(dir, CARD_DIR)) mkdir(dir, 0755);
     fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return -1;
     if (!m1_commit(fd, m1_write_all(fd, a, na) && m1_write_all(fd, b, nb), tmp, path)) return -1;
-    d = open(dir, O_RDONLY, 0);
-    if (d < 0) return 1;
-    ok = fsync(d) == 0;
-    return (close(d) == 0 && ok) ? 0 : 1;
+    return m1_sync_dir(dir) ? 0 : 1;
 }
 
 unsigned m1_urlenc(char *out, unsigned cap, unsigned used, const char *s) {

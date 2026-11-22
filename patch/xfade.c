@@ -463,8 +463,6 @@ void xfade_carry_in(xfade_dsp *x, const xfade_carry *c) {
     x->state = XF_TAIL_IN;
 }
 
-int xfade_active(const xfade_dsp *x) { return x->state != XF_IDLE; }
-
 /* Update state before processing a block of frames; returns 0 if no samples need touching. */
 static int prepare(xfade_dsp *x, unsigned frames) {
     if (x->fmt == FK_NONE || x->channels < 1 || x->channels > 2 || x->rate < 8000 || !frames) return 0;

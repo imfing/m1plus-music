@@ -1017,7 +1017,7 @@ static void sg_load(int keep) {
                            0); /* (no count while a paged list is still growing) */
     if (!sg.count)
         widget_set_tr_text(sg.status, list       ? "Not enough memory"
-                                      : sg_lib() ? "Update Local Music first"
+                                      : sg_lib() ? "Update Library first"
                                                  : ls_empty_key(st, "No songs"));
     sg_spinner(sg.wait && sg.spin);
     sg_size();

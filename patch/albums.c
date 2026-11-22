@@ -1280,7 +1280,7 @@ static void al_empty(void) {
     if (al.az_ok) m1_show(al.az.rail, 0), m1_show(al.az.bubble, 0); /* (nothing to index) */
     widget_set_tr_text(al.status, al.count                  ? "Not enough memory"
                                   : al.artist_row || al.src ? ls_empty_key(st, "No albums")
-                                                            : "Update Local Music first");
+                                                            : "Update Library first");
     al_fade(); /* (al_open returns after al_empty: the navbar title is set here) */
 }
 

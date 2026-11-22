@@ -336,7 +336,7 @@ TEXT = dict([
        'Artistas del álbum', "Artisti dell'album", 'ศิลปินอัลบั้ม', 'Wykonawcy albumu', 'Исполнители альбома', 'Виконавці альбому'),
     _t('Cancel', '取消', '取消', 'キャンセル', '취소', 'Annuler', 'Abbrechen',
        'Cancelar', 'Annulla', 'ยกเลิก', 'Anuluj', 'Отмена', 'Скасувати'),
-    _t('Update Local Music first', '请先更新曲库', '請先更新曲庫', '先にライブラリを更新', '먼저 라이브러리를 업데이트하세요',
+    _t('Update Library first', '请先更新曲库', '請先更新曲庫', '先にライブラリを更新', '먼저 라이브러리를 업데이트하세요',
        'Mettez la bibliothèque à jour', 'Datenbank zuerst aktualisieren', 'Actualiza primero la librería',
        'Aggiorna prima la libreria', 'อัพเดทรายการเพลงก่อน', 'Najpierw zaktualizuj bibliotekę', 'Сначала обновите библиотеку', 'Спочатку оновіть медіатеку'),
     _t('Not enough memory', '内存不足', '記憶體不足', 'メモリ不足', '메모리 부족', 'Mémoire insuffisante', 'Nicht genug Speicher',
@@ -617,7 +617,7 @@ TEXT = dict([
        '%d reproducción', '%d riproduzione', 'เล่น %d ครั้ง', 'Odtworzenia: %d', 'Прослушано: %d', 'Прослухано: %d'),
     _t('%d plays', '播放 %d 次', '播放 %d 次', '%d 回再生', '%d회 재생', '%d lectures', '%d Wiedergaben',
        '%d reproducciones', '%d riproduzioni', 'เล่น %d ครั้ง', 'Odtworzenia: %d', 'Прослушано: %d', 'Прослухано: %d'),
-    # the Songs page's line for an empty list (Favourites, a playlist ...; the library's empty line is "Update Local Music first")
+    # the Songs page's line for an empty list (Favourites, a playlist ...; the library's empty line is "Update Library first")
     _t('No songs', '没有歌曲', '沒有歌曲', '曲がありません', '노래 없음', 'Aucun titre', 'Keine Titel',
        'Sin canciones', 'Nessun brano', 'ไม่มีเพลง', 'Brak utworów', 'Нет песен', 'Немає пісень'),
     # the Folders page's line for a folder with nothing to show (patch/folders.c)

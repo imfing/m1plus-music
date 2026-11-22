@@ -4,7 +4,7 @@
  *
  * Stock's toolsGetFileCreateTime (0x5e4ac8; the library scan's date for every song, stored as songtable.time_create, the order of Recently Added) returns
  * st_ctime from stat(), the directory entry's creation time on FAT, but st_atime when the format byte at 0xa0ac7c says exFAT or NTFS (1 or 2), where stat has no
- * creation time. Every read moves the access time, and a full Update Local Music reads every file, so the whole library was dated to its own day.
+ * creation time. Every read moves the access time, and a full Update Library reads every file, so the whole library was dated to its own day.
  * ft_created replaces the prologue (`j ft_created`): statx(AT_FDCWD, path, 0, STATX_BTIME) reports the stamp exFAT keeps, which reads never move. A failed call, a
  * filesystem that reports no stamp, a zero stamp, a null path or the kill switch /mnt/mmc/m1plus-off runs stock's function through the trampoline.
  * demo imports no statx, so the o32 syscall (4366) is made directly. Cost per call: one access (the kill switch) and one syscall; no allocation, no file I/O of our own.

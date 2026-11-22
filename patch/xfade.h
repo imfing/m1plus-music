@@ -93,7 +93,6 @@ void xfade_release(xfade_dsp *x); /* frees what the instance still owns */
 /* Runs at the top of play(): returns 1 if samples were modified in-place, 0 if left bit-exact untouched. */
 int xfade_process_float(xfade_dsp *x, float *audio, unsigned frames);
 int xfade_process_native(xfade_dsp *x, void *audio, unsigned frames);
-int xfade_active(const xfade_dsp *x); /* non-zero while crossfade or tail-in/abort is modifying audio */
 
 #else
 /* demo's side (patch/xfadeset.c): persistent settings and preload/smart-album coordination. */

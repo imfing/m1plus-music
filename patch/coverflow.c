@@ -1681,7 +1681,7 @@ int coverflow_open(void) {
     if (cf.win) return -1;
     memset(&cf, 0, sizeof cf);
     if (open_page()) return -1;
-    return open_covers(load_albums(), "Update Local Music first");
+    return open_covers(load_albums(), "Update Library first");
 }
 
 /* The Artists list's row `index` of `artists` (patch/artists.c; the caller keeps its list): the

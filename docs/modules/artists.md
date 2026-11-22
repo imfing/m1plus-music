@@ -13,7 +13,7 @@ the Home dispatcher opens the tile's stock `localclass_page`.
 `HOME_COMPOSER` 8. `ar.cls` is the stock class listed: `0xf004`, `0xf006` `getAllGenre`, `0xf005`
 `getAllComposer`.
 
-- Rows, copy and the empty line ("Update Local Music first") are shared. The title is the menu row's
+- Rows, copy and the empty line ("Update Library first") are shared. The title is the menu row's
   text.
 - The "..." card has Name alone: no Search row (`search_open_in` has no genre or composer scope) and
   no Show group.

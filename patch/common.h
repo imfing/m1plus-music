@@ -24,6 +24,8 @@ int m1_commit(int fd, int ok, const char *tmp, const char *path);
 /* data (n bytes) into path atomically: written to tmp (created with mode), then m1_commit. 1 on success; a failure leaves no temp file (the directory is not fsynced:
  * m1_card_write does that for the card's own files). */
 int m1_save(const char *path, const char *tmp, unsigned mode, const void *data, unsigned n);
+/* fsync of a directory, so the renames in it survive a power cut. 1 on success. */
+int m1_sync_dir(const char *dir);
 int m1_screen_lit(void); /* stock backlight state */
 
 int m1_on_back(void *ctx, void *e); /* click handler: navigator_back() */
