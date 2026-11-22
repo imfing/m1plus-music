@@ -71,7 +71,7 @@ DLNA, Wi-Fi Transfer and Screenshot are available but hidden until enabled here.
 More page. **Screenshot** works like Developer → Screenshot: it asks first, then counts down 5 or 10
 seconds. **Power Off** asks for confirmation. AirPlay and DLNA require Wi-Fi; the pull-down
 stays open after a tap, and those tiles cannot be used during an AirPlay session. The Playback
-Settings tile opens its hub and is dimmed on the hub and its Volume & Sound and Output pages.
+Settings tile opens its hub and is dimmed on the hub and its Volume & Sound and Output pages. Hold the Wi-Fi or Bluetooth tile to open its Settings page.
 
 ### Library
 
