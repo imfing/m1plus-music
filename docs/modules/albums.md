@@ -68,7 +68,7 @@ large title.
 
 ## Long press
 
-On the library page (grid and list) an album held `RM_LONG_MS` opens a Play / Shuffle / Play Next / Play After / Pin Album sheet (`al_on_hold`, `al_sheet`); see `docs/modules/pins.md`.
+On the library page (grid and list) an album held `RM_LONG_MS` opens the album sheet, Play, Shuffle | Pin Album, Add to Playlist | Play Next, Play After (`al_on_hold`, `al_sheet`); see `docs/modules/pins.md`.
 
 ## Layout and state
 

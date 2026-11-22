@@ -72,19 +72,19 @@ def main():
     os.makedirs(out, exist_ok=True)
     s = PD.side(work)
     daily = PD.section_image(s, PD.PALETTES[0][1])
-    sheet_rows = [('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'), ('Unpin Album', 'rm_ic_unpin')]
+    sheet_rows = [('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Unpin Album', 'rm_ic_unpin'), ('Add to Playlist', 'rm_ic_add'), ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after')]   # the album sheet (patch/rowmenu.c rowmenu_open_album)
     lp = home(s, PINNED[:4], daily)
     PSG.row_menu(s, lp, keys=tuple(k for k, _ in sheet_rows), glyphs=tuple(g for _, g in sheet_rows))
     two = home(s, [('Blue in Green', (70, 110, 190))] + PINNED[:3], daily)   # a song's tile: its album's cover, the title
     PSG.row_menu(s, two, keys=('Play', 'Unpin Song'), glyphs=('rm_ic_pplay', 'rm_ic_unpin'))
     al = PI.albums_grid(s).convert('RGBA')   # the Albums page: a long press on an album
-    PSG.row_menu(s, al, keys=('Play', 'Shuffle', 'Play Next', 'Play After', 'Pin Album'), glyphs=('rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_next', 'rm_ic_after', 'rm_ic_pin'))
+    PRM.sheet(s, al, [('Pin Album', 'rm_ic_pin') if k == 'Unpin Album' else (k, g) for k, g in sheet_rows])
     ap = PRM.album(s).convert('RGBA')   # the album page: Select | "..." | Now Playing, and the "..." sheet
     aps = PRM.album(s, pins=True).convert('RGBA')
     rp = home(s, PINNED[:2], daily, scroll=640)   # Home scrolled to the Recently Played shelf: a tile held
-    PSG.row_menu(s, rp, keys=('Play', 'Shuffle', 'Play Next', 'Play After', 'Pin Album'), glyphs=('rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_next', 'rm_ic_after', 'rm_ic_pin'))
+    PRM.sheet(s, rp, [('Pin Album', 'rm_ic_pin') if k == 'Unpin Album' else (k, g) for k, g in sheet_rows])
     tr_ = PSG.page(s).convert('RGBA')   # a track row's sheet: the sixth row, Pin Song
-    PSG.row_menu(s, tr_, keys=U.RM_KEYS[:6], glyphs=tuple(n for n, _ in __import__('mod_icons').RM_MENU_ICONS))
+    PSG.row_menu(s, tr_)   # (its default rows: Pin Song, Add to Playlist, Favorite, Get Info | Play Next, Play After)
     mixed = home(s, ARTIST_PINS, daily)   # artists (round photos) among albums and playlists (an item with a third field is an artist)
     ar_sheet = home(s, ARTIST_PINS[:4], daily)
     PSG.row_menu(s, ar_sheet, keys=('Play', 'Shuffle', 'Unpin Artist'), glyphs=('rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_unpin'))

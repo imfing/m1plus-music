@@ -204,17 +204,16 @@ def album_view_tests(ctx):
 
 
 def long_press_tests(ctx):
-    """6. The long press: an album of the grid held RM_LONG_MS opens the Albums page's five-row sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album) on the track sheet's widgets,
+    """6. The long press: an album of the grid held RM_LONG_MS opens the Albums page's six-row sheet (Play, Shuffle | Pin Album / Unpin Album, Add to Playlist | Play Next, Play After) on the track sheet's widgets,
     and the release opens no album; Pin Album / Unpin Album write the pins file; Play starts the album; the songs view's "..." gets the track sheet's words back."""
     expect = ctx.expect
     import pod_pins_home as H
     RM = sibling('rowmenu')
     PINS = '/mnt/mmc/.m1plus/home-pins'
     hold = lambda m: m.call(PSYMS['rm_on_hold'], count=900000000)
-    labels = lambda m: [m.wtext.get(m.widgets[f'rm_label{i}']) for i in range(5)]
+    labels = lambda m: [m.wtext.get(m.widgets[f'rm_label{i}']) for i in range(6)]
     m = recent_machine(extra=True)
     RM.with_menu(m, 0)
-    for i in range(5): Machine.widget(m, f'rm_icon{i}')
     open_recent(m); to_albums(m); SG.settle(m)
     x, y = MARGIN + COVER + GAP + 20, TOP + 20   # cell 1: Mix
     m.calls.clear()
@@ -222,19 +221,19 @@ def long_press_tests(ctx):
     armed = [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['rm_on_hold']]
     expect(len(armed) == 1 and armed[0][2] == O['RM_LONG_MS'] and vis(m, 'rm_card') != (1, 1), f'a press on an album arms the {O["RM_LONG_MS"]} ms hold timer, nothing open yet')
     hold(m)
-    expect(vis(m, 'rm_card') == (1, 1) and labels(m) == ['Play', 'Shuffle', 'Play Next', 'Play After', 'Pin Album'] and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_pin'
-           and vis(m, 'rm_item5') == (0, 0) and vis(m, 'rm_item6') == (0, 0) and m.props.get((m.widgets['rm_card'], 'style:normal:bg_image')) == 'pc_sheet5',
-           f'held: the five-row album sheet on the five-row glass, the rows past it hidden and insensitive ({labels(m)})')
+    expect(vis(m, 'rm_card') == (1, 1) and labels(m) == ['Play', 'Shuffle', 'Pin Album', 'Add to Playlist', 'Play Next', 'Play After'] and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_pin'
+           and vis(m, 'rm_item6')[0] == 0 and m.props.get((m.widgets['rm_card'], 'style:normal:bg_image')) == 'pc_sheet6',
+           f'held: the six-row album sheet on the six-row glass, the seventh row hidden ({labels(m)})')
     m.calls.clear()
     SG.touch(m, 'up', x, SG.SCREEN_Y0 + y, 'sg_on_up', 1600)
     expect(not [c for c in m.calls if c[0] in ('loadAlbumList', 'album_open')] and vis(m, 'rm_card') == (1, 1), 'the release afterwards opens no album and leaves the sheet open')
-    m.click('rm_item4', count=900000000)
+    m.click('rm_item2', count=900000000)
     got = H.parse(m.fs.get(PINS, b''))
     expect(len(got) == 1 and got[0][0] == 'a' and got[0][3] == 'Mix' and got[0][1] == H.identity('Mix') and vis(m, 'rm_card') == (0, 0), f'Pin Album writes the album\'s line and closes the sheet ({got})')
     SG.touch(m, 'down', x, SG.SCREEN_Y0 + y, 'sg_on_down', 2000); hold(m)
-    expect(labels(m)[4] == 'Unpin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_unpin', 'a pinned album reads Unpin Album')
+    expect(labels(m)[2] == 'Unpin Album' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin', 'a pinned album reads Unpin Album')
     SG.touch(m, 'up', x, SG.SCREEN_Y0 + y, 'sg_on_up', 2600)
-    m.click('rm_item4', count=900000000)
+    m.click('rm_item2', count=900000000)
     expect(H.parse(m.fs.get(PINS, b'')) == [], 'Unpin Album removes the line')
     SG.touch(m, 'down', x, SG.SCREEN_Y0 + y, 'sg_on_down', 3000); hold(m); SG.touch(m, 'up', x, SG.SCREEN_Y0 + y, 'sg_on_up', 3600)
     m.calls.clear()
@@ -248,13 +247,12 @@ def long_press_tests(ctx):
     # the songs view: the row's "..." shows the track sheet again
     m = recent_machine(extra=True)
     RM.with_menu(m, 0)
-    for i in range(5): Machine.widget(m, f'rm_icon{i}')
     open_recent(m); to_albums(m); SG.settle(m)
     SG.touch(m, 'down', x, SG.SCREEN_Y0 + y, 'sg_on_down'); hold(m); SG.touch(m, 'up', x, SG.SCREEN_Y0 + y, 'sg_on_up', 1600)
     m.click('rm_scrim', count=900000000)
     to_songs(m); SG.settle(m)
     m.call(PSYMS['sg_open_menu'], a0=0, count=900000000)
-    expect(vis(m, 'rm_card') == (1, 1) and labels(m) == ['Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info'] and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_info'
+    expect(vis(m, 'rm_card') == (1, 1) and labels(m)[:5] == ['Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info'] and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_info'
            and vis(m, 'rm_item3') == (1, 1) and vis(m, 'rm_item4') == (1, 1),
            f'after the album sheet, a song row\'s "..." has the track sheet\'s words and glyphs ({labels(m)})')
 

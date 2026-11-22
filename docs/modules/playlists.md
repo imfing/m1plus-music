@@ -249,8 +249,8 @@ playlist). Both take this playlist's rows out by their own row ids through `so_r
 (`toolsDeleteItemById("playlist", db, id)`, ids over 100 only, then stock's `delete_flag`), as the
 clean-up does. No file is ever deleted and no other playlist's copy of the song goes.
 
-- **Row sheet**: the seventh row **Remove from Playlist** (`rm_ic_remove`, Lucide `list-x`), last,
-  under Pin Song; with Pin Song hidden it moves up into its place ([rowmenu](rowmenu.md)). The page
+- **Row sheet**: **Remove from Playlist** (the red `pod_ic_remove_red`, Lucide `list-x`, red label),
+  last and in a group of its own ([rowmenu](rowmenu.md)). The page
   registers it with `rowmenu_set_remove`; a tap removes the row the menu's record copy is of (its
   `REC_ID`, refused when its `REC_DISC` is not this playlist), without a dialog, toasts "Removed
   from Playlist" and reads the list again with its scroll offset kept. A list read again under the

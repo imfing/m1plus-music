@@ -135,8 +135,7 @@ static struct {
     int sort,
         rev; /* the order shown (cc_sort_mode: CC_SORT_*) and its direction (cc_sort_rev: 1 = Z-A, Oldest First) */
     vs_t vs; /* the "..." card */
-    rowmenu_t rm; /* the long press sheet (Play, Shuffle, Pin Album / Unpin Album; the library's page only: rm.on) */
-    void *rm_label, *rm_icon; /* its third row's label and glyph */
+    rowmenu_t rm; /* the long press sheet (the album sheet, rowmenu_open_album; the library's page only: rm.on) */
     /* an artist's or composer's page under the name: the Play and Shuffle pills (pills: both widgets exist) and each album's year
      * (cc_album_years of the artist's songs, one entry per stock row, 0 = none; NULL: no years); the library's page has neither */
     void *btn_play, *btn_shuffle;
@@ -768,36 +767,24 @@ static void *al_pin_rec(int a, unsigned *ckey) {
 
 static int al_pinnable(int a) { return al_pin_rec(a, (unsigned *)0) != (void *)0; }
 
-/* A row of the sheet (it has closed): Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album for the album it was opened on. */
+/* A row of the album sheet (it has closed) for the album it was opened on (pins_album_act). */
 static void al_sheet(int a, int act) {
     unsigned ckey = 0;
     void *rec = al_pin_rec(a, &ckey);
     const char *name, *path;
     if (!rec) return;
     name = cc_str(rec, REC_ALBUM), path = cc_str(rec, REC_PATH);
-    if (act == RMA_PIN) {
-        if (pins_has_album(name))
-            pins_unpin_album(name);
-        else
-            pins_pin_album(name, ckey, path);
-    } else if (act == RMA_NEXT || act == RMA_AFTER)
-        pins_queue_album(name, ckey, path, act == RMA_AFTER);
-    else if (pins_play_album(name, ckey, path, act == RMA_SHUFFLE) < 0)
-        pod_toast(TR("Can't play"));
+    pins_album_act(name, ckey, path, act);
 }
 
 /* A press held RM_LONG_MS on an album: the sheet opens while the finger is down; the press is forgotten, so the release opens nothing. */
 static void al_on_hold(int a) {
     unsigned ckey = 0;
     void *rec = al_pin_rec(a, &ckey);
-    int has;
     al.down = 0;
     if (al.list) grid_set_press(&al.press, 0, al.sv);
     if (!rec || !al.fg || al.vs.on) return;
-    has = pins_has_album(cc_str(rec, REC_ALBUM));
-    if (al.rm_label) widget_set_tr_text(al.rm_label, has ? "Unpin Album" : "Pin Album");
-    if (al.rm_icon) widget_set_prop_str(al.rm_icon, "image", has ? "rm_ic_unpin" : "rm_ic_pin");
-    rowmenu_open_queue(&al.rm, a, al_sheet);
+    rowmenu_open_album(&al.rm, a, pins_has_album(cc_str(rec, REC_ALBUM)), al_sheet);
 }
 
 static int al_on_down(void *ctx, void *e) {
@@ -1441,11 +1428,9 @@ static int al_open(int list, void *artist_row, unsigned scope, const lib_src_t *
     al.sort = artist_row ? cc_scoped_sort() : cc_sort_mode();
     al.rev = cc_sort_rev();
     vs_view(&al.vs, list);
-    if (!al.src) { /* the long press sheet of the library's page (an asset without it: no long press) */
-        rowmenu_bind_album(&al.rm, al.win);
-        al.rm_label = widget_lookup(al.win, "rm_label4", 1);
-        al.rm_icon = widget_lookup(al.win, "rm_icon4", 1);
-    }
+    if (!al.src)
+        rowmenu_bind_album(
+            &al.rm, al.win); /* the long press sheet of the library's page (an asset without it: no long press) */
     al.az.win = al.win, al.az.sv = al.sv, al.az.top = al_top(), al.az.row = LIST_ROW_H;
     az_prefs(&al.az);
     al.az_ok = az_bind(&al.az, al.win);

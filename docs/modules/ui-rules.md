@@ -113,6 +113,14 @@ Connecting line).
 - **Scrims** (`modal_scrim`, any page-window dim) are shown and hidden with `m1_scrim`, never
   `m1_show`: the status bar is a window of its own above the page and dims with it
   ([accent](accent.md) "Background").
+- **Item sheets** (an item's actions: the row menu's forms, [rowmenu](rowmenu.md)) are in groups, top to
+  bottom, each only when the item has it: Play, Shuffle | Pin, Add to Playlist (or Download), Favorite,
+  Get Info | Play Next, Play After | Select | the destructive row. One `#FFFFFF22` hairline between two
+  groups, none inside a group. A destructive row (Remove from Playlist / Queue, Delete Book, Remove
+  from My Stations) has the red label `RED_RGB` and a red glyph (`pod_ic_*_red`, in `ACCENT_GLYPH_NOT`).
+  A long press or a row's "..." opens a bottom sheet; a navbar "..." opens a floating card under the
+  button (the view-sort card's look, the popup form; Select first, as on the view-sort cards) unless its rows
+  do not fit there.
 
 ## Segmented control
 

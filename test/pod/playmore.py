@@ -404,7 +404,7 @@ def glass_checks(expect, built_ui, stock_ui, lum):
     for base, _, files in os.walk(ui_root):
         for f in files:
             if f.endswith('.bin') and 'pc_sheet5' in open(os.path.join(base, f), 'rb').read().decode('latin-1'): users.append(os.path.relpath(os.path.join(base, f), ui_root))
-    expect(sorted(users) == ['ui/dialog/playmore_dialog.bin', 'ui/m1plus_albums.bin', 'ui/m1plus_menu.bin'], f'pc_sheet5 (the five-row sheet glass) is the asset image of playmore_dialog.bin and of the album long press sheet (Albums, Home: row_menu(album=True)) ({users})')
+    expect(sorted(users) == ['ui/dialog/playmore_dialog.bin'], f'pc_sheet5 (the five-row sheet glass) is the asset image of playmore_dialog.bin alone: the album long press sheet (Albums, Home: row_menu(album=True)) is six rows on pc_sheet6, and the payload sets any other row count\'s glass ({users})')
     ths = awtk_style.parse(open(os.path.join(ui_root, 'styles', 'default.bin'), 'rb').read())
     its = ths.find('list_item', 'list_item_style')
     expect(its and all((it.get('bg_color') >> 24) == 255 or it.state in ('pressed', 'over', 'disable', 'focused', 'selected') for it in its)

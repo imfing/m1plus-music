@@ -203,7 +203,7 @@ of the album in order to `upnext_add`. Continue with Next Album also uses `upnex
 - **When they show** (`qp.edit_on`): Clear's condition and the play type is not folder playback.
   Otherwise the rows have no dots and the text ends at x 298.
 - **The sheet** is the row menu's queue form ([rowmenu](rowmenu.md)): **Play Next**, **Play After**,
-  then **Remove from Queue**. No Add to Playlist, Favorite or Get Info. A scrim tap closes it and
+  then, under the hairline, **Remove from Queue** (red). No Add to Playlist, Favorite or Get Info. A scrim tap closes it and
   changes nothing; so do a queue reload, the page going behind another and the edit condition
   turning off.
 - **The action** (`qp_on_menu`): `pod_queue_move(at, pos + 1)`, `pod_queue_move(at, size - 1)` or

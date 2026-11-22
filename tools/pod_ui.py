@@ -909,8 +909,9 @@ RM_KEYS = ('Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info',
 RM_QUEUE_KEYS = ('Play Next', 'Play After', 'Remove from Queue')   # the Queue page's sheet: three rows (the same code path, patch/rowmenu.c rowmenu_bind_queue), the glass of three rows
 RM_QUEUE_GLASS = 'pc_sheet3'
 PIN_KEYS = ('Play', 'Shuffle', 'Unpin Album')   # the Artists page's long press sheet (patch/artists.c): three rows on the same sheet, the glyphs of tools/mod_icons.py RM_PIN_ICONS
-ALBUM_SHEET_KEYS = ('Play', 'Shuffle', 'Play Next', 'Play After', 'Unpin Album')   # the album long press sheet (Albums, Home pins, Recently Played; patch/albums.c, patch/pins.c): five rows on pc_sheet5
-ALBUM_SHEET_GLASS = 'pc_sheet5'
+ALBUM_SHEET_KEYS = ('Play', 'Shuffle', 'Unpin Album', 'Add to Playlist', 'Play Next', 'Play After')   # the album long press sheet (Albums, Home pins, Recently Played; patch/albums.c, patch/pins.c): six rows in three groups on pc_sheet6 (the payload words them: rowmenu_open_rows)
+ALBUM_SHEET_GLASS = 'pc_sheet6'
+RM_RED_KEYS = ('Remove from Playlist', 'Remove from Queue')   # a sheet's destructive rows: the label RED_RGB, the glyph the red pod_ic_remove_red (as the other sheets' Delete rows: PS_SHEET_RED, pod_ic_trash_red)
 RM_GLASS = 'pc_sheet7'                                       # the sheet's glass: Now Playing's More sheet's pane, seven rows high (the payload makes it as high as the rows a row has, five to seven: patch/rowmenu.c rowmenu_set_rows), top corners only
 RM_ICON_X, RM_TEXT_X, RM_TEXT_R = 14, 48, 22                  # Now Playing's More sheet's rows (pod_tape: the 24 px glyph at x 14, the label from x 48, ending at 298)
 RM_LABEL_PX = 18
@@ -926,7 +927,7 @@ def row_menu(queue=False, pins=False, album=False):
     album: the album long press sheet (Home pins, Recently Played, Albums page), five rows: Play, Shuffle, Play Next, Play After, Unpin Album on pc_sheet5 (Home shrinks it to three rows for a pinned playlist or artist, and two for a pinned song)."""
     from mod_icons import RM_MENU_ICONS, RM_REMOVE, RM_PIN_ICONS, BARE_PX
     if album:
-        keys, icons, glass, rows = ALBUM_SHEET_KEYS, RM_PIN_ICONS[:2] + RM_MENU_ICONS[:2] + (RM_PIN_ICONS[2],), ALBUM_SHEET_GLASS, OFFSETS['RM_ALBUM_ROWS']
+        keys, icons, glass, rows = ALBUM_SHEET_KEYS, RM_PIN_ICONS + (RM_MENU_ICONS[2],) + RM_MENU_ICONS[:2], ALBUM_SHEET_GLASS, OFFSETS['RM_ALBUM_ROWS']
     elif pins:
         keys, icons, glass, rows = PIN_KEYS, RM_PIN_ICONS, RM_QUEUE_GLASS, OFFSETS['RM_QUEUE_ROWS']
     elif queue:
@@ -947,20 +948,61 @@ def row_menu(queue=False, pins=False, album=False):
         for st in STATES:
             styled(item, (st,), 'bg_color', PL_PRESSED if st == 'pressed' else '#00000000')
             styled(item, (st,), 'text_color', INK_RGB)
-            styled(item, (st,), 'border', 'top' if i else 'none')
-            styled(item, (st,), 'border_width', '1' if i else '0')
-            styled(item, (st,), 'border_color', PL_HAIR if i else '#00000000')
+            styled(item, (st,), 'border', 'none')
+            styled(item, (st,), 'border_width', '0')
         item.children.append(Widget('image', RM_ICON_X, (rh - BARE_PX) // 2, BARE_PX, BARE_PX, [
             ('name', f'rm_icon{i}'), ('draw_type', 'default'), ('image', icon), ('sensitive', 'false')]))
         lab = Widget('hscroll_label', RM_TEXT_X, 0, SCREEN_W - RM_TEXT_X - RM_TEXT_R, rh, [
             ('name', f'rm_label{i}'), pod_i18n.text_prop(text), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
         for st in ('normal', 'disable', 'focused'):
             styled(lab, (st,), 'font_size', str(RM_LABEL_PX))
+            styled(lab, (st,), 'text_color', RED_RGB if text in RM_RED_KEYS else INK_RGB)
+            styled(lab, (st,), 'text_align_h', 'left')
+            styled(lab, (st,), 'text_align_v', 'middle')
+        item.children.append(lab)
+        card.children.append(item)
+    for k in range(OFFSETS['RM_HAIRS']):   # the hairlines between the groups, placed by the payload (patch/rowmenu.c rm_layout); none inside a group
+        hair = hidden(Widget('view', 0, 0, SCREEN_W, 1, [('name', f'rm_hair{k}')]))
+        for st in STATES: styled(hair, (st,), 'bg_color', PL_HAIR)
+        card.children.append(hair)
+    return scrim, card
+
+
+def popup_menu():
+    """(scrim, card): an item's actions as a floating card under a navbar "..." (patch/rowmenu.c rowmenu_bind_popup; the library album page's "..."): the view-sort card's look (its glass vs_glass<n>
+    patch3_x, PL_CARD_RIGHT / PL_CARD_Y, 50 px rows, a 20 px glyph at the tick column's x and the 18 px label after it, as that card's action-only form) with the row menu's groups (rp_hair0..1, one
+    hairline between two groups). RM_POPUP_ROWS rows; the payload words them, packs them, fits the width to the language and sizes the glass. Hidden AND insensitive until shown."""
+    rows, rh = OFFSETS['RM_POPUP_ROWS'], VS_ROW_H
+    gx, lx = VS_TICK_X, VS_TICK_X + VS_LABEL_X_GLYPH - VS_GLYPH_X
+    scrim = modal_scrim('rp_scrim')
+    card = hidden(Widget('view', PL_CARD_RIGHT - PL_CARD_MAX, PL_CARD_Y, PL_CARD_MAX, rows * rh, [('name', 'rp_card')]))
+    for st in STATES:
+        styled(card, (st,), 'bg_color', '#00000000')
+        styled(card, (st,), 'bg_image', f'vs_glass{rows}')
+        styled(card, (st,), 'bg_image_draw_type', 'patch3_x')
+        styled(card, (st,), 'border_width', '0')
+    for i in range(rows):
+        item = Widget('button', 0, i * rh, PL_CARD_MAX, rh, [('name', f'rp_item{i}'), ('enable', 'true')])
+        for st in STATES:
+            styled(item, (st,), 'bg_color', PL_PRESSED if st == 'pressed' else '#00000000')
+            styled(item, (st,), 'text_color', INK_RGB)
+            styled(item, (st,), 'border', 'none')
+            styled(item, (st,), 'border_width', '0')
+        item.children.append(Widget('image', gx, (rh - VS_GLYPH) // 2, VS_GLYPH, VS_GLYPH, [
+            ('name', f'rp_icon{i}'), ('draw_type', 'default'), ('image', 'pod_ic_vsselect'), ('sensitive', 'false')]))
+        lab = Widget('hscroll_label', lx, 0, PL_CARD_MAX - lx - 16, rh, [
+            ('name', f'rp_label{i}'), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
+        for st in ('normal', 'disable', 'focused'):
+            styled(lab, (st,), 'font_size', str(PL_LABEL_PX))
             styled(lab, (st,), 'text_color', INK_RGB)
             styled(lab, (st,), 'text_align_h', 'left')
             styled(lab, (st,), 'text_align_v', 'middle')
         item.children.append(lab)
         card.children.append(item)
+    for k in range(OFFSETS['RM_HAIRS']):
+        hair = hidden(Widget('view', 0, 0, PL_CARD_MAX, 1, [('name', f'rp_hair{k}')]))
+        for st in STATES: styled(hair, (st,), 'bg_color', PL_HAIR)
+        card.children.append(hair)
     return scrim, card
 
 
@@ -1399,7 +1441,7 @@ def album_navbar(page):
     title = hidden(Widget('label', NAV_TITLE_X, 14, NAV_VIEW_X - NAV_TITLE_X, 22, [('name', 'label_title'), ('style', 'navbar_label_white'), pod_i18n.text_prop(page.title)]))   # shown only in select mode (patch/selmode.c)
     return [title,
             ab_nav_button('btn_return', NAV_BACK_X, NAV_BACK_W, 'ah_nav_back', 'ah_nav_back_down'),
-            ab_nav_button('btn_more', NAV_VIEW_X, NAV_VIEW_W, 'pod_nav_more', 'pod_nav_more_down', hide=True),   # the capsule's left cap on the 214 slot: the "..." card below (a source's page: Download Album; the library's: Select, Pin / Unpin Album; patch/albumpage.c shows it)
+            ab_nav_button('btn_more', NAV_VIEW_X, NAV_VIEW_W, 'pod_nav_more', 'pod_nav_more_down', hide=True),   # the capsule's left cap on the 214 slot: a source's page: the "..." card below (Download Album); the library's: the popup below (Pin Album, Add to Playlist, Play Next, Play After, Select; patch/albumpage.c ab_on_more)
             ab_nav_button('btn_backtoplayer', NAV_PLAY_X, NAV_PLAY_W, 'ah_nav_play', 'ah_nav_play_down'),
             selall_button()]
 
@@ -1448,7 +1490,8 @@ def build_album_page(page):
     root.children += style_labels(AB_STYLES)
     root.children.append(select_bar('sg_bar', [('sg_add', 'add'), ('sg_del', 'del')]))   # the select mode's capsule over the rows
     root.children.extend(album_navbar(page))   # the glass controls paint and take touches over the list
-    root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=('Download Album', 'Select', 'Pin Album'), act_glyphs=('pod_ic_vsdownload', 'pod_ic_vsselect', 'pod_ic_vspin')))   # the "..." card (patch/albumpage.c: a source's page offers the first row, Download Album; the library's Select and, for a titled album, Pin / Unpin Album, slot 8)
+    root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=('Download Album', 'Select'), act_glyphs=('pod_ic_vsdownload', 'pod_ic_vsselect')))   # a source's "..." card (patch/albumpage.c: Download Album, the first row)
+    root.children.extend(popup_menu())   # the library's "...": Pin Album, Add to Playlist, Play Next, Play After, Select (patch/albumpage.c ab_on_more)
     root.children.extend(row_menu())   # last: the track rows' "..." menu (patch/rowmenu.c) covers the navbar too
     return root
 

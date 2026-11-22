@@ -1432,15 +1432,7 @@ static void rv_sheet(int a, int act) {
     unsigned ckey;
     if (!rec) return;
     name = cc_str(rec, REC_ALBUM), path = cc_str(rec, REC_PATH), ckey = cc_album_key(rec);
-    if (act == RMA_PIN) {
-        if (pins_has_album(name))
-            pins_unpin_album(name);
-        else
-            pins_pin_album(name, ckey, path);
-    } else if (act == RMA_NEXT || act == RMA_AFTER)
-        pins_queue_album(name, ckey, path, act == RMA_AFTER);
-    else if (pins_play_album(name, ckey, path, act == RMA_SHUFFLE) < 0)
-        pod_toast(TR("Can't play"));
+    pins_album_act(name, ckey, path, act);
 }
 
 /* A press held RM_LONG_MS on an album of the grid: the sheet opens while the finger is down; the press is forgotten, so the release opens nothing. */

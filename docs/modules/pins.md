@@ -50,8 +50,8 @@ event and the scroll view takes every drag.
   (`cc_open_album`, as Recently Played); a playlist opens our Songs page (`songs_open_playlist`, the
   Playlists page's tap, the stock page if ours will not open). An item the library does not list now (or an empty or failed list)
   says "Not found"; the pin stays.
-- **Long press** (`RM_LONG_MS`, `rowmenu_hold_start`) lifts the tile (see Reorder) and opens at once the bottom sheet (a drag of `SC_DRAG_PX` closes it again; a release where it was leaves it open) bound with `rowmenu_bind_album` (`rm_scrim` and `rm_card` are the window's last two children, over the bar, `row_menu(album=True)`). For an album tile the sheet has five rows on `pc_sheet5`:
-  **Play**, **Shuffle**, **Play Next**, **Play After**, **Unpin Album** (`RMA_*`; glyphs `play`, `shuffle`, `list-start`, `list-end`, `pin-off`). For a playlist or artist tile it shrinks to three rows on `pc_sheet3`: **Play**, **Shuffle**, **Unpin Playlist** / **Unpin Artist** (`RMP_*`). For a song tile it shrinks to two rows on `pc_sheet2`: **Play**, **Unpin Song**.
+- **Long press** (`RM_LONG_MS`, `rowmenu_hold_start`) lifts the tile (see Reorder) and opens at once the bottom sheet (a drag of `SC_DRAG_PX` closes it again; a release where it was leaves it open) bound with `rowmenu_bind_album` (`rm_scrim` and `rm_card` are the window's last two children, over the bar, `row_menu(album=True)`). The rows follow the tile (`pn_open_sheet`, tables through `rowmenu_open_rows`, [rowmenu](rowmenu.md) "Sheets from a table"; acts `RMA_*`, Unpin is `RMA_PIN` for every kind): an album has the album sheet,
+  **Play**, **Shuffle** | **Unpin Album**, **Add to Playlist** | **Play Next**, **Play After** (glyphs `play`, `shuffle`, `pin-off`, `list-plus`, `list-start`, `list-end`; `pc_sheet6`); a playlist or artist **Play**, **Shuffle** | **Unpin Playlist** / **Unpin Artist**; a song **Play** | **Unpin Song**.
   Play and Shuffle start the whole album or playlist as the album page's Play pill and Shuffle disc do
   (`so_play`, Now Playing opens): album via `loadAlbumList`, `loadAlbumdetailList`, `loadLocalClassList`;
   playlist via classinfo[1] and `loadLocalClassList(CLASS_PLAYLIST_SONGS)`.
@@ -156,11 +156,13 @@ A missing widget, refused registration, no timer or no memory leaves the plain m
 ## Album long press and song pins
 
 - **Albums long press** (`patch/albums.c`, `al_on_hold`, library page only, grid and list): a press held `RM_LONG_MS` on an
-  album (not the All Songs tile, not "Unknown Album") opens the five-row sheet (`rowmenu_bind_album` in the page's asset,
-  `row_menu(album=True)`): **Play**, **Shuffle** (`pins_play_album`), **Play Next**, **Play After** (`pins_queue_album`),
-  **Pin Album** / **Unpin Album** by `pins_has_album`.
+  album (not the All Songs tile, not "Unknown Album") opens the album sheet (`rowmenu_open_album` on `rowmenu_bind_album`'s
+  widgets, `row_menu(album=True)`): **Play**, **Shuffle** | **Pin Album** / **Unpin Album** (by `pins_has_album`), **Add to Playlist** |
+  **Play Next**, **Play After**. A row goes to `pins_album_act(album, ckey, path, act)`: `pins_play_album`, the pin, `pins_queue_album`,
+  or for Add to Playlist `pn_add_album`: the album's tracks (`pn_album_tracks`, into `*pdeq_showlist`), every one marked, `picker_open`
+  (our picker over the page; "Not found" without the album, "Adding Failed" when the picker cannot open).
   The hold clears the press, so the release opens nothing; a drift of `SC_DRAG_PX`, an abort or an early release cancels it.
-- **Recently Added album grid** (`patch/songs.c`, `rv_on_hold` / `rv_sheet`): the same hold and the same five rows on the
+- **Recently Added album grid** (`patch/songs.c`, `rv_on_hold` / `rv_sheet`): the same hold and the same sheet on the
   Songs page's track sheet widgets (`rowmenu_open_album`), for the tile's library album row ([recent-albums](recent-albums.md)).
 - **Song pins**, kind `s`: key = FNV-1a of the file path (case as written, `pn_song_id`), first cover key = the album's cover
   key (`cc_album_rep_key`, else the record's own key), name = title (the file's name without one), path = the file (never
@@ -174,22 +176,20 @@ A missing widget, refused registration, no timer or no memory leaves the plain m
   list before the saved cover key, the title and the representative path (the whole tag is compared, up to
   `PN_TAG` 512 bytes; a record with no album tag is the stock **Unknown Album** row, `REC_ID` -1), so a changed representative track or cover
   key of the album does not break the pin. A file that is gone says "File not found" (card in, `ENOENT` only); one that
-  fails to open otherwise, or an album the library cannot find, says "Can't play". The pin stays. The sheet has two rows, **Play** and **Unpin Song** (the Shuffle slot reused, third row
-  hidden, `rowmenu_set_rows(2)`).
-- **Entry:** the track row sheet (row "..." and row long press) has a sixth row **Pin Song** / **Unpin Song**
-  (`RM_ROWS` 6, `rm_item5`, glyph `rm_ic_pin` / `rm_ic_unpin`) for a song of the card; a source's row (Navidrome) keeps the
-  five rows and the five-row glass (`rowmenu_set_rows`: card moved and resized, `style:normal:bg_image` set, as
-  `m1_sheet_rows` does). API: `pins_pin_song(rec)` (the start from the record), `pins_has_song(path, cue)`, `pins_unpin_song(path, cue)`,
+  fails to open otherwise, or an album the library cannot find, says "Can't play". The pin stays. The sheet is **Play** | **Unpin Song**.
+- **Entry:** the track row sheet (row "..." and row long press) has **Pin Song** / **Unpin Song** first
+  (`rm_item5`, glyph `rm_ic_pin` / `rm_ic_unpin`) for a song of the card; a source's row (Navidrome) has none
+  ([rowmenu](rowmenu.md)). API: `pins_pin_song(rec)` (the start from the record), `pins_has_song(path, cue)`, `pins_unpin_song(path, cue)`,
   `pins_song_ok(path, cue)`; callers pass `REC_CUE_START`.
 
 ## More entry points
 
-- **Album page "...":** the library's album page "..." (`btn_more`, 214) opens the shared view-sort card (`vs_card`): **Select**, then
-  **Pin Album** / **Unpin Album** (slot `VS_ACT2`, `ab_on_card`; title and a track path copied at open, cover key `cover_key`).
+- **Album page "...":** the library's album page "..." (`btn_more`, 214) opens the row menu's popup (`ab_on_more`, `ab_sheet`, under the button as the other "..." cards): **Pin Album** /
+  **Unpin Album** (title and a track path copied at open, cover key `cover_key`), **Add to Playlist** | **Play Next**, **Play After** | **Select**.
   Play / Shuffle are the page's pill and disc. Select mode hides the "..."; an album with no title has no pin row; a source's page
-  has Download Album only.
+  keeps the view-sort card with Download Album only.
 - **Recently Played tile on Home:** a press held `RM_LONG_MS` opens the Home sheet (`pins_album_sheet`, reusing `pn.rm`) for the
-  tile's album: Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album. See [recent](recent.md).
+  tile's album: the album sheet (Play, Shuffle | Pin Album / Unpin Album, Add to Playlist | Play Next, Play After). See [recent](recent.md).
 
 ## Artist pins
 

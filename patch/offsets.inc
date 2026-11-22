@@ -946,7 +946,9 @@
 #define RM_PIN_ROW 5 /* the Pin Song row's slot */
 #define RM_REMOVE_ROW 6 /* the Remove from Playlist row's slot */
 #define RM_QUEUE_ROWS 3 /* the Queue page's sheet: Play Next, Play After, Remove from Queue (docs/modules/queue.md) */
-#define RM_ALBUM_ROWS 5 /* the album long-press sheet (Albums, Home pins, Recently Played): Play, Shuffle, Play Next, Play After, Pin / Unpin Album */
+#define RM_ALBUM_ROWS 6 /* the album long-press sheet (Albums, Home pins, Recently Played): Play, Shuffle | Pin / Unpin Album, Add to Playlist | Play Next, Play After */
+#define RM_HAIRS 2 /* the sheet's hairlines between groups (rm_hair0..1): a sheet has at most three groups, no line inside a group */
+#define RM_POPUP_ROWS 5 /* the floating form under a navbar "..." (rp_*, tools/pod_ui.py popup_menu; the library album page's): Pin Album, Add to Playlist | Play Next, Play After | Select */
 #define RM_MORE_W 44
 #define RM_MORE_RIGHT 310
 #define RM_MORE_RIGHT_RAIL 284

@@ -50,7 +50,7 @@ artists or genres can be listed under each name with **Settings → Library → 
 Pin up to six albums, playlists, songs or artists to the top of Home, above Cover Flow. Tap **…**
 (or hold the item) and choose **Pin Album**, **Pin Playlist**, **Pin Song** or **Pin Artist**;
 **Unpin** takes it away. Tap a tile to open or play it, or hold it for **Play**, **Shuffle**, **Unpin**
-(and **Play Next** / **Play After** on an album). To reorder, hold a tile until it lifts and drag it to another place. A pinned artist
+(and **Add to Playlist**, **Play Next** and **Play After** on an album). To reorder, hold a tile until it lifts and drag it to another place. A pinned artist
 stays in the list it came from (**Artists** or **Album Artists**); with Split Artists off, a pinned
 guest artist says "Can't play" until the setting is on again. If the card cannot be read or
 written, pinning says "Can't update pins" and the list is left alone (delete `.m1plus/home-pins`
@@ -95,7 +95,7 @@ the bar, shortcuts open **Max Volume**, **Equalizer** and **Volume & Sound**.
 
 ### Choose what plays next
 
-1. On an album or Songs list, tap a song's **…**, or touch and hold its row. To queue a whole album, touch and hold it on **Albums**, **Recently Played**, the **Recently Added** album grid or your Home pins.
+1. On an album or Songs list, tap a song's **…**, or touch and hold its row. To queue a whole album, tap **…** on the album, or touch and hold it on **Albums**, **Recently Played**, the **Recently Added** album grid or your Home pins.
 2. Choose **Play Next** to hear it after the current song, or **Play After** to add it to the end.
 
 To see the order, tap the queue button at the bottom right of Now Playing. In **Up Next**, tap a

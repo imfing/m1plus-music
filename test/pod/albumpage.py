@@ -25,7 +25,7 @@ RED = (190, 50, 55)
 NAMES = ['So What', 'Freddie Freeloader', 'Blue in Green', 'All Blues', 'Flamenco Sketches', 'Flamenco Sketches (Alt)', 'So What (Alt)', 'Blue in Green (Alt)']
 WIDGETS = ('view_grid', 'btn_return', 'btn_backtoplayer', 'btn_selall', 'sg_bar', 'sg_add', 'sg_del', 'btn_play', 'btn_shuffle', 'label_status', 'label_row_num', 'label_row_title', 'label_row_dim', 'label_row_disc', 'label_row_val',
            'ab_title', 'ab_title2', 'ab_artist', 'ab_meta', 'ab_foot', 'ab_spin', 'ab_glyph', 'ab_play_text', 'label_title', 'img_ah_tint',
-           'btn_more', 'vs_scrim', 'vs_card', 'vs_hair') + tuple(f'vs_item{i}' for i in range(9)) + tuple(f'vs_label{i}' for i in range(9)) + tuple(f'vs_tick{i}' for i in range(6)) + tuple(f'vs_sub{i}' for i in range(4)) + tuple(f'vs_glyph{i}' for i in range(4, 9))
+           'btn_more', 'vs_scrim', 'vs_card', 'vs_hair') + tuple(f'vs_item{i}' for i in range(9)) + tuple(f'vs_label{i}' for i in range(9)) + tuple(f'vs_tick{i}' for i in range(6)) + tuple(f'vs_sub{i}' for i in range(4)) + tuple(f'vs_glyph{i}' for i in range(4, 9)) + ('rp_scrim', 'rp_card', 'rp_hair0', 'rp_hair1') + tuple(f'rp_{k}{i}' for k in ('item', 'icon', 'label') for i in range(5))
 NAV_BTNS = ('btn_return', 'btn_backtoplayer', 'btn_more', 'btn_selall', 'sg_add', 'sg_del')
 BAR_BLACK = O['NP_BAR_STOCK']
 
@@ -143,8 +143,9 @@ def open_album(m, index=0):
     return r, list(m.calls)
 
 
-def opened(**kw):
+def opened(menu=False, **kw):
     m = album_machine(**kw)
+    if menu: sibling('rowmenu').with_menu(m, 0)   # (the "..." sheet and the track sheet are the row menu's widgets: bound as the page opens, and the rows paint the "...")
     r, calls = open_album(m)
     assert r == 0 and ('window_open', 'm1plus_album') in calls, f'the page did not open ({r}, {calls[:12]})'
     return m
@@ -191,7 +192,7 @@ def asset_tests(ctx):
     kids = [c.name for c in root.children]
     expect(root.name == 'm1plus_album_page' == pod_pages.ALBUM_PAGE.name and pod_pages.ALBUM_PAGE in pod_pages.PAGES and pod_pages.ALBUM_PAGE.key == 'm1plus_album' == O.get('AB_ASSET', 'm1plus_album'),
            'the page is m1plus_album (window m1plus_album_page)')
-    expect(kids[0] == 'img_ah_tint' and kids[-5] == 'btn_selall' and kids[-9] == 'label_title' and kids[-10] == 'sg_bar' and kids[-4:] == ['vs_scrim', 'vs_card', 'rm_scrim', 'rm_card'] and 'songs_listview' in kids, f'the gradient is the window\'s first child, the glass controls and the rows menu its last: {kids}')
+    expect(kids[0] == 'img_ah_tint' and kids[-7] == 'btn_selall' and kids[-11] == 'label_title' and kids[-12] == 'sg_bar' and kids[-6:] == ['vs_scrim', 'vs_card', 'rp_scrim', 'rp_card', 'rm_scrim', 'rm_card'] and 'songs_listview' in kids, f'the gradient is the window\'s first child, the glass controls and the rows menu its last: {kids}')
     tint = f('img_ah_tint')
     expect((tint.x, tint.y, tint.w, tint.h) == (0, 0, 320, 450) and tint.get('image') == 'ah_tint' and tint.get('clickable') == 'false' and tint.get('sensitive') == 'false'
            and tint.get('visible') != 'false', 'img_ah_tint: ah_tint over the whole 320 x 450 window, insensitive (over a black page it changes nothing)')
@@ -701,8 +702,10 @@ def play_tests(ctx):
 
 
 def enter_select(m):
-    """The "..." card's Select row (the library's page)."""
-    click(m, 'btn_more'); return click(m, 'vs_item7')
+    """The "..." popup's Select row (the library's page: the first row of the popup)."""
+    click(m, 'btn_more')
+    k = next(i for i in range(5) if m.wtext.get(m.widgets[f'rp_label{i}']) == 'Select')
+    return click(m, f'rp_item{k}')
 
 
 def select_tests(ctx):
@@ -710,7 +713,7 @@ def select_tests(ctx):
     expect = ctx.expect
     OFF = 200   # the list scrolled: the first five rows are in view
     ty = lambda i: row_y(i) - OFF + 20   # the tap point on row i
-    m = opened()
+    m = opened(menu=True)
     enter_select(m)
     expect(all(vis(m, n) == (0, 0) for n in ('btn_more', 'btn_backtoplayer')) and vis(m, 'btn_return') == (1, 1) and all(vis(m, n) == (1, 1) for n in ('btn_selall', 'sg_bar', 'label_title')),
            'Select hides the capsule and shows the title, Select All and the bar; Back stays (as the close x)')
@@ -773,7 +776,7 @@ def select_tests(ctx):
     # Add
     enter_select(m)
     calls = click(m, 'sg_add')
-    expect(any(c[0] == 'toast' and c[1] == 'msg_addfailed' for c in calls) and not any(c[0] == 'navigator_to_with_context' and c[1] == 'playlist_page' for c in calls), 'Add with nothing marked: the stock message')
+    expect(any(c[0] == 'toast' and c[1] in ('msg_addfailed', 'Adding Failed') for c in calls) and not any(c[0] == 'navigator_to_with_context' and c[1] == 'playlist_page' for c in calls), 'Add with nothing marked: the stock message')   # (the row menu's trap words it)
     tap(m, 150, row_y(0) + 20)
     m.windows['m1plus_playlists'] = 0   # our picker's page does not open: the stock picker (test/pod/picker.py is ours)
     m.u.mem_write(NAV_TITLE, b'Album title\0'); m.setword(G_CLASS, 0xf00b); m.setword(pod.DATA['NAVIGATION_STATUS'][0], 1)
@@ -1311,13 +1314,14 @@ def more_tests(ctx):
     f = ui().find
     expect(f('btn_more') is not None and f('btn_more').get('visible') == 'false' and (f('btn_more').x, f('btn_more').w) == (214, 46)
            and f('btn_more').get('style:normal:icon') == 'pod_nav_more' and f('btn_more').get('style:pressed:icon') == 'pod_nav_more_down', 'the asset has a hidden "..." on the capsule\'s left cap (214)')
-    expect(f('vs_card').get('visible') == 'false' and f('vs_label6').get('tr_text') == 'Download Album' and f('vs_glyph6').get('image') == 'pod_ic_vsdownload' and f('vs_label7').get('tr_text') == 'Select' and f('vs_label8').get('tr_text') == 'Pin Album' and f('vs_glyph8').get('image') == 'pod_ic_vspin',
-           'the card is hidden: Download Album (download glyph), Select, Pin Album (pin glyph) as its action rows')
-    m = album_machine()   # the stock page: the "..." card offers Select and Pin Album, not Download Album
+    expect(f('vs_card').get('visible') == 'false' and f('vs_label6').get('tr_text') == 'Download Album' and f('vs_glyph6').get('image') == 'pod_ic_vsdownload' and f('vs_label7').get('tr_text') == 'Select' and f('vs_label8') is None and f('vs_item8') is None,
+           'the card is hidden: Download Album (download glyph) and Select as its action rows, no Pin Album slot')
+    m = album_machine()   # the library's page: the "..." opens the row menu's sheet, never the view card
+    RM = sibling('rowmenu'); RM.with_menu(m, 0)
     m.call(PSYMS['album_open_src'], a0=0, a1=ALBUMS, a2=m.row, count=900000000)
     click(m, 'btn_more')
-    expect(vis(m, 'btn_more') == (1, 1) and vis(m, 'vs_card')[0] == 1 and vis(m, 'vs_item6')[0] == 0 and vis(m, 'vs_item7')[0] == 1 and vis(m, 'vs_item8')[0] == 1 and vis(m, 'vs_item0')[0] == 0,
-           'the stock page: the "..." opens the card with Select and Pin Album, no Download Album')
+    expect(vis(m, 'btn_more') == (1, 1) and vis(m, 'vs_card')[0] == 0 and vis(m, 'rp_card') == (1, 1) and vis(m, 'rp_scrim') == (1, 1) and vis(m, 'rm_card')[0] == 0,
+           'the library\'s page: the "..." opens its own popup, not the view card nor the track sheet')
     m.call(PSYMS['ab_on_destroy'], count=4000000)
     m = fake_machine(n=4)
     m.call(PSYMS['album_open_src'], a0=m.src, a1=ALBUMS, a2=m.fake_row, count=900000000)
@@ -1369,11 +1373,11 @@ def bar_scrim_tests(ctx):
 
     expect(tick() == 0 and (m.bar, O['EVT_AFTER_PAINT']) not in m.bound, 'before any scrim: the tick neither listens nor repaints')
     calls = click(m, 'btn_more')
-    expect(vis(m, 'vs_scrim')[0] == 1 and (m.bar, O['EVT_AFTER_PAINT']) in m.bound and bar_inval(calls) == 1, 'the "..." shows the scrim: the bar is listened to and repainted at once')
+    expect(vis(m, 'rp_scrim')[0] == 1 and (m.bar, O['EVT_AFTER_PAINT']) in m.bound and bar_inval(calls) == 1, 'the "..." shows the scrim: the bar is listened to and repainted at once')
     expect(bar_paint() == [(SCRIM, 0, 0, 320, SY0)], 'the bar\'s paint ends with the scrim\'s colour over all of it (the clock and the icons under it too)')
     expect(tick() == 0, 'steady: the tick repaints nothing')
-    calls = click(m, 'vs_scrim')
-    expect(vis(m, 'vs_scrim')[0] == 0 and bar_inval(calls) == 1 and bar_paint() == [], 'the scrim closes the card: the bar is repainted lit')
+    calls = click(m, 'rp_scrim')
+    expect(vis(m, 'rp_scrim')[0] == 0 and bar_inval(calls) == 1 and bar_paint() == [], 'the scrim closes the sheet: the bar is repainted lit')
     expect(tick() == 0, 'and the tick has nothing to do')
     click(m, 'btn_more'); bar_paint()
     other = m.alloc(0x80); m.children[m.wm].append(other); m.top_main = other
@@ -1389,7 +1393,7 @@ def bar_scrim_tests(ctx):
     expect(bar_scrim(m.window, view, 1) == 1 and bar_paint() == [(SCRIM, 0, 0, 320, SY0)] * 2, 'a confirm over the card: the bar gets two layers, as the page under both scrims')
     expect(tick() == 0, 'steady with two layers: the tick repaints nothing')
     expect(bar_scrim(0, view, 0) == 1 and len(bar_paint()) == 1, 'the confirm closes: the bar stays dimmed once for the card')
-    expect(bar_scrim(0, view, 0) == 0 and bar_scrim(m.window, m.widgets['vs_scrim'], 1) == 0, 'hiding a scrim that is not shown, or showing one again, repaints nothing')
+    expect(bar_scrim(0, view, 0) == 0 and bar_scrim(m.window, m.widgets['rp_scrim'], 1) == 0, 'hiding a scrim that is not shown, or showing one again, repaints nothing')
     # two windows with a scrim shown: whichever is in front dims the bar (the older one restacked too)
     other_scrim = m.alloc(0x80)
     expect(bar_scrim(other, other_scrim, 1) == 1 and len(bar_paint()) == 1, 'a scrim shown on another window (behind): the bar keeps the album page\'s one layer')
@@ -1411,41 +1415,69 @@ def bar_scrim_tests(ctx):
 
 
 def pin_tests(ctx):
-    """13. The "..." card's pin row on the library's page (docs/modules/pins.md): Select, then Pin Album (Unpin Album with the pin-off glyph when pinned) for an album with a title (else Select alone); Pin Album writes the album's line;
-    Unpin Album removes it; select mode hides the "..."; the track sheet is untouched."""
+    """13. The library page's "..." sheet (docs/modules/pins.md): Select | Pin Album (Unpin Album with the pin-off glyph when pinned; an album with a title only), Add to Playlist | Play Next, Play After; Pin Album writes the
+    album's line, Unpin removes it, Next / After queue the tracks, Add marks every track for the picker, Select enters select mode, which hides the "..."; the track sheet is untouched."""
     expect = ctx.expect
     import pod_pins_home as H
     RM = sibling('rowmenu')
     PINS = '/mnt/mmc/.m1plus/home-pins'
     m = album_machine()
-    RM.with_menu(m, 0)
+    RM.with_menu(m, 0)   # (its queue and picker fakes: upnext_add, the playlist picker)
     r, calls = open_album(m)
     shown = lambda n: vis(m, n)
     expect(r == 0 and shown('btn_more') == (1, 1), 'an album with a title: the "..." (214) and Now Playing (260)')
+    lab = lambda i: m.wtext.get(m.widgets[f'rp_label{i}'])
+    glyph = lambda i: m.props.get((m.widgets[f'rp_icon{i}'], 'image'))
+    names = {v: k for k, v in m.widgets.items()}
+
+    def sheet_of():
+        mv = [c for c in m.calls if c[0] in ('widget_move', 'widget_resize')]
+        card = m.widgets['rp_card']
+        return {names[c[1]]: c[3] for c in mv if c[0] == 'widget_move' and c[1] != card and names[c[1]].startswith('rp_')}, [c[2:] for c in mv if c[1] == card]
+    m.calls = []
     click(m, 'btn_more')
-    expect(vis(m, 'vs_card')[0] == 1 and vis(m, 'vs_item6')[0] == 0 and vis(m, 'vs_item7')[0] == 1 and vis(m, 'vs_item8')[0] == 1 and m.wtext[m.widgets['vs_label8']] == 'Pin Album'
-           and m.props.get((m.widgets['vs_glyph8'], 'image')) == 'pod_ic_vspin', 'the "...": Select, Pin Album with the pin glyph')
-    click(m, 'vs_item8')
+    ys, cd = sheet_of()
+    expect(vis(m, 'vs_card')[0] == 0 and vis(m, 'rp_card') == (1, 1) and vis(m, 'rp_scrim') == (1, 1) and [lab(i) for i in range(5)] == ['Select', 'Pin Album', 'Add to Playlist', 'Play Next', 'Play After']
+           and [glyph(i) for i in range(5)] == ['pod_ic_vsselect', 'pod_ic_vspin', 'pod_ic_vsadd', 'pod_ic_vsnext', 'pod_ic_vsafter'] and all(vis(m, f'rp_item{i}')[0] == 1 for i in range(5)),
+           'the "...": the popup with Select | Pin Album, Add to Playlist | Play Next, Play After (the select glyph, the pin glyph)')
+    rs = [c for c in cd if len(c) == 2 and c[1] == 250]
+    expect(ys == {'rp_item0': 0, 'rp_hair0': 50, 'rp_item1': 50, 'rp_item2': 100, 'rp_hair1': 150, 'rp_item3': 150, 'rp_item4': 200} and vis(m, 'rp_hair0')[0] == 1 and vis(m, 'rp_hair1')[0] == 1
+           and rs and 206 <= rs[-1][0] <= 292 and (311 - rs[-1][0], 52) in cd,
+           f'five rows in three groups: hairlines at 50 and 150, the card 250 high at (311 - w, 52), w in 206..292 ({ys}, {cd})')
+    click(m, 'rp_item1')
     got = H.parse(m.fs.get(PINS, b''))
-    expect(vis(m, 'vs_card')[0] == 0 and len(got) == 1 and got[0][0] == 'a' and got[0][3] == ALBUM and got[0][1] == H.identity(ALBUM) and got[0][2][0] == m.key and got[0][4] == '/mnt/mmc/m/0.flac',
-           f'Pin Album writes the album\'s line (title, cover key, a track) and closes the card ({got})')
+    expect(vis(m, 'rp_card') == (0, 0) and len(got) == 1 and got[0][0] == 'a' and got[0][3] == ALBUM and got[0][1] == H.identity(ALBUM) and got[0][2][0] == m.key and got[0][4] == '/mnt/mmc/m/0.flac',
+           f'Pin Album writes the album\'s line (title, cover key, a track) and closes the sheet ({got})')
     click(m, 'btn_more')
-    expect(m.wtext[m.widgets['vs_label8']] == 'Unpin Album' and m.props.get((m.widgets['vs_glyph8'], 'image')) == 'pod_ic_vsunpin', 'a pinned album reads Unpin Album with the pin-off glyph')
-    click(m, 'vs_item8')
+    expect(lab(1) == 'Unpin Album' and glyph(1) == 'pod_ic_vsunpin', 'a pinned album reads Unpin Album with the pin-off glyph')
+    click(m, 'rp_item1')
     expect(H.parse(m.fs.get(PINS, b'')) == [], 'Unpin Album removes the line')
+    # Play Next and Play After: the page's tracks, in order, through upnext_add
+    for item, after, toast in ((3, 0, 'Playing Next'), (4, 1, 'Added to Queue')):
+        m.up_calls.clear(); m.calls = []
+        click(m, 'btn_more'); click(m, f'rp_item{item}')
+        expect(len(m.up_calls) == 1 and m.up_calls[0][1] == after and len(m.up_calls[0][0]) == 8 and RM.toasts_in(m.calls) == [toast] and vis(m, 'rp_card') == (0, 0),
+               f'{lab(item)} closes the sheet and queues the album\'s eight tracks ({m.up_calls and m.up_calls[0][1]}, {RM.toasts_in(m.calls)})')
+    # Add to Playlist: every track marked, the picker opens for the album's class
+    m.pk_calls.clear()
+    click(m, 'btn_more'); click(m, 'rp_item2')
+    expect(len(m.pk_calls) == 1 and m.pk_calls[0][1] == 8 and m.pk_calls[0][2] == b'\xff' and vis(m, 'rp_card') == (0, 0),
+           f'Add to Playlist opens the picker with all eight tracks marked ({m.pk_calls})')
     enter_select(m)
-    expect(shown('btn_more') == (0, 0), 'select mode hides the "..."')
+    expect(shown('btn_more') == (0, 0), 'Select (the sheet\'s first row) hides the "..."')
     click(m, 'btn_return')
     expect(shown('btn_more') == (1, 1), 'and brings it back')
     # the track sheet is the track menu's
     tap(m, 288, row_y(1) + 20)
-    expect(vis(m, 'rm_card') == (1, 1) and m.wtext[m.widgets['rm_label0']] == 'Play Next' and m.wtext[m.widgets['rm_label1']] == 'Play After' and vis(m, 'rm_item3')[0] == 1 and vis(m, 'rm_item4')[0] == 1, 'a track\'s "...": Play Next, Play After and the other rows')
+    expect(vis(m, 'rm_card') == (1, 1) and [m.wtext.get(m.widgets[f'rm_label{i}']) for i in range(2)] == ['Play Next', 'Play After'] and vis(m, 'rm_item3')[0] == 1 and vis(m, 'rm_item4')[0] == 1, 'a track\'s "...": Play Next, Play After and the other rows (the words are put back)')
     m.call(PSYMS['ab_on_destroy'], count=4000000)
-    # no title: Select alone
+    # no title: no pin row
     m = album_machine(album='')
+    RM.with_menu(m, 0)
     r, calls = open_album(m)
     click(m, 'btn_more')
-    expect(r == 0 and vis(m, 'btn_more') == (1, 1) and vis(m, 'vs_item7')[0] == 1 and vis(m, 'vs_item8')[0] == 0, 'an album without a title: the card has Select alone')
+    expect(r == 0 and vis(m, 'btn_more') == (1, 1) and [m.wtext.get(m.widgets[f'rp_label{i}']) for i in range(4)] == ['Select', 'Add to Playlist', 'Play Next', 'Play After'] and vis(m, 'rp_item4')[0] == 0,
+           'an album without a title: Select | Add to Playlist | Play Next, Play After (no pin row)')
     m.call(PSYMS['ab_on_destroy'], count=4000000)
 
 

@@ -115,7 +115,7 @@ The shelf is one `view` with its own hit areas. A cell is its cover and two text
 - A press on a tile released closer than `RC_TAP_PX` (10) on both axes, on the same tile, opens
   that album. Ten pixels is the scroll view's own drag threshold, so a press taken as a drag
   never opens an album.
-- **Long press** (`RM_LONG_MS`, `rowmenu_hold_start` from `rc_on_down`; drift of `SC_DRAG_PX`, an abort or an early release cancels it): `pins_album_sheet` opens the Home pins' sheet (`rm_scrim` / `rm_card`, owned by `patch/pins.c`) for the tile's album: **Play**, **Shuffle**, **Play Next**, **Play After**, **Pin Album** / **Unpin Album** ([pins](pins.md)). The hold forgets the press, so the release opens no album. Without the pins' widgets (or the card's pins unavailable) nothing opens and a tap still opens the album.
+- **Long press** (`RM_LONG_MS`, `rowmenu_hold_start` from `rc_on_down`; drift of `SC_DRAG_PX`, an abort or an early release cancels it): `pins_album_sheet` opens the Home pins' sheet (`rm_scrim` / `rm_card`, owned by `patch/pins.c`) for the tile's album: the album sheet, **Play**, **Shuffle** | **Pin Album** / **Unpin Album**, **Add to Playlist** | **Play Next**, **Play After** ([pins](pins.md)). The hold forgets the press, so the release opens no album. Without the pins' widgets (or the card's pins unavailable) nothing opens and a tap still opens the album.
 - A touch that stops a coasting list presses nothing (`sc_down` in `patch/scroll.c` swallows it).
 - The menu going to the background forgets a press.
 

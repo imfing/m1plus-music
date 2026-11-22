@@ -16,8 +16,7 @@
 int pins_pin_album(const char *album, unsigned ckey, const char *path);
 /* A stock playlist: its id (REC_DISC, not 0), its name (the stock ids are reused after a delete: a pin is the id and the name; pinning a replacement replaces the stale pin of the same id), and the cover keys of up to `nk` distinct albums of its songs (grid_mosaic_keys; the mosaic of the Playlists page; nk may be 0). */
 int pins_pin_playlist(int id, const char *name, const unsigned *keys, unsigned nk);
-/* The words of the pin row of an item's "..." card or long press sheet by its state now: "Unpin Album" / "Pin Album", "Unpin Playlist" / "Pin Playlist" as translation keys for widget_set_tr_text (from the file). */
-const char *pins_label_album(const char *album);
+/* The words of the pin row of an item's "..." card or long press sheet by its state now: "Unpin Playlist" / "Pin Playlist" as translation keys for widget_set_tr_text (from the file). */
 const char *pins_label_playlist(int id, const char *name);
 /* 1 when the album / playlist is pinned (read from the file). */
 int pins_has_album(const char *album);
@@ -37,6 +36,9 @@ int pins_play_album(const char *album, unsigned ckey, const char *path, int shuf
 /* Adds every track of the album in order to the playing queue (after 0: Play Next; after != 0: Play After) via upnext_add and toasts the outcome. When the library has no such album (or no tracks), toasts
  * "Not found" and returns 0. Otherwise returns upnext_add's status (UPNEXT_*). */
 int pins_queue_album(const char *album, unsigned ckey, const char *path, int after);
+/* A row of the album sheet (rowmenu_open_album, act RMA_*; the sheet has closed) for an album of the library: Play / Shuffle (pins_play_album, "Can't play" when nothing plays), Pin / Unpin Album,
+ * Add to Playlist (every track marked, our picker over the page: picker_open; "Not found" without the album, "Adding Failed" when the picker cannot open), Play Next / Play After (pins_queue_album). */
+void pins_album_act(const char *album, unsigned ckey, const char *path, int act);
 
 /* A song (the track row sheet's Pin Song): the stock record of a local file, identified by its path. `rec` is an stSongInfo: its REC_PATH (a file of the card, under PIN_PATH bytes), REC_TITLE (else the file name)
  * and REC_ALBUM (its cover is the album's: cc_album_rep_key, else the record's own key). Pinning a pinned song changes nothing and answers PINS_OK; a seventh pin shows the toast and answers PINS_FULL. */

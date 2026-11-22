@@ -2777,9 +2777,9 @@ def edit_tests(ctx):
     # the row sheet: seven rows on a stock playlist, Remove from Playlist last with the list-x glyph, below Pin Song
     m = page()
     sheet(m, 1)
-    expect(vis(m, 'rm_card') == (1, 1) and vis(m, 'rm_item5') == (1, 1) and vis(m, 'rm_item6') == (1, 1) and ('widget_move', m.widgets['rm_item6'], 0, 6 * O['PM_ROW_H']) in m.calls
+    expect(vis(m, 'rm_card') == (1, 1) and vis(m, 'rm_item5') == (1, 1) and vis(m, 'rm_item6') == (1, 1) and ('widget_move', m.widgets['rm_item6'], 0, 300) in m.calls and ('widget_move', m.widgets['rm_hair0'], 0, 200) in m.calls and ('widget_move', m.widgets['rm_hair1'], 0, 300) in m.calls and vis(m, 'rm_hair0')[0] == 1 and vis(m, 'rm_hair1')[0] == 1
            and m.props.get((card(m), 'style:normal:bg_image')) == 'pc_sheet7' and ('widget_resize', card(m), 320, 350) in m.calls,
-           'a stock playlist\'s row: the sheet has seven rows, Remove from Playlist under Pin Song, on the seven-row glass')
+           'a stock playlist\'s row: the sheet has seven rows, Remove from Playlist last after its own hairline (hairlines at 200 and 300), on the seven-row glass')
     m.calls = []
     m.click('rm_item6', count=900000000)
     calls = list(m.calls)
@@ -2804,7 +2804,7 @@ def edit_tests(ctx):
     # a row whose path the pins cannot hold: no Pin Song, Remove from Playlist moves up into its place on the six-row glass
     m = page(paths={1: 'x.flac'})
     sheet(m, 1)
-    expect(vis(m, 'rm_item5') == (0, 0) and vis(m, 'rm_item6') == (1, 1) and ('widget_move', m.widgets['rm_item6'], 0, 5 * O['PM_ROW_H']) in m.calls
+    expect(vis(m, 'rm_item5') == (0, 0) and vis(m, 'rm_item6') == (1, 1) and ('widget_move', m.widgets['rm_item6'], 0, 250) in m.calls and ('widget_move', m.widgets['rm_hair1'], 0, 250) in m.calls
            and m.props.get((card(m), 'style:normal:bg_image')) == 'pc_sheet6', 'no Pin Song: Remove from Playlist is the sixth row, six rows of glass')
     # other lists: no such row
     m = list_machine(titles, O['CLASS_FAV']); RM.with_menu(m, 0)

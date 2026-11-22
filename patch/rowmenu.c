@@ -220,11 +220,11 @@ static int rm_on_item(void *ctx, void *e) {
     rowmenu_t *rm = s->rm;
     (void)e;
     if (!rm->open) return RET_OK;
-    if (rm->queued || rm->alt) { /* the Queue page's sheet: the page does the act once the sheet is gone */
+    if (rm->queued || rm->alt) { /* the Queue, pins or album sheet: the page does the act once the sheet is gone */
         rowmenu_queue_fn fn = rm->queue;
-        int row = rm->row;
+        int row = rm->row, act = rm->act[s->k];
         rowmenu_close(rm);
-        if (fn) fn(row, s->k);
+        if (fn) fn(row, act);
         return RET_OK;
     }
     if (s->k == RM_REMOVE_ROW) {
@@ -256,19 +256,38 @@ static int rm_on_item(void *ctx, void *e) {
     return RET_OK;
 }
 
-static int rm_bind(rowmenu_t *rm, void *win, int rows) {
-    static const char *const ITEMS[RM_ROWS] = {"rm_item0", "rm_item1", "rm_item2", "rm_item3",
-                                               "rm_item4", "rm_item5", "rm_item6"};
+/* A widget of the menu: "<prefix>_<what><k>" (k < 0: no index), rm_* for the sheet, rp_* for the popup. */
+static void *rm_widget(const rowmenu_t *rm, const char *what, int k) {
+    char name[24];
+    if (k < 0)
+        snprintf(name, sizeof name, "%s_%s", rm->popup ? "rp" : "rm", what);
+    else
+        snprintf(name, sizeof name, "%s_%s%d", rm->popup ? "rp" : "rm", what, k);
+    return widget_lookup(rm->win, name, 1);
+}
+
+static int rm_bind(rowmenu_t *rm, void *win, int rows, int popup) {
     int i, ok;
     memset(rm, 0, sizeof *rm);
-    rm->win = win;
-    rm->scrim = m1_bind(win, "rm_scrim", rm_on_scrim, rm);
-    rm->card = widget_lookup(win, "rm_card", 1);
+    rm->win = win, rm->popup = popup;
+    rm->scrim = rm_widget(rm, "scrim", -1);
+    if (rm->scrim) widget_on(rm->scrim, EVT_CLICK, rm_on_scrim, rm);
+    rm->card = rm_widget(rm, "card", -1);
     ok = rm->scrim && rm->card;
+    rm->nitems = rows;
     for (i = 0; i < rows; ++i) {
-        rm->slot[i].rm = rm, rm->slot[i].k = i;
-        rm->item[i] = m1_bind(win, ITEMS[i], rm_on_item, &rm->slot[i]);
+        rm->slot[i].rm = rm, rm->slot[i].k = i, rm->act[i] = (signed char)i;
+        rm->item[i] = rm_widget(rm, "item", i);
+        rm->label[i] = rm_widget(rm, "label", i);
+        if (rm->item[i]) widget_on(rm->item[i], EVT_CLICK, rm_on_item, &rm->slot[i]);
         ok = ok && rm->item[i];
+    }
+    for (i = 0; i < RM_HAIRS; ++i) rm->hair[i] = rm_widget(rm, "hair", i);
+    if (popup) { /* (no "..." of its own: the page's navbar button opens it) */
+        m1_scrim(rm->scrim, 0);
+        m1_show(rm->card, 0);
+        rm->on = ok, rm->queued = 1;
+        return ok;
     }
     if (rows == RM_ROWS) {
         rm->fav_label = widget_lookup(win, "rm_label3", 1);
@@ -286,60 +305,151 @@ static int rm_bind(rowmenu_t *rm, void *win, int rows) {
     return rm->on;
 }
 
-void rowmenu_set_rows(rowmenu_t *rm, int n) {
+/* Lays the sheet out from `seq`, top to bottom: the asset's row indices, RM_BREAK between two groups. The rows listed are shown PM_ROW_H apart, the others hidden; a hairline (rm_hair<k>) sits on the
+ * top edge of the first row of every group but the first (none inside a group, none above the first row); the card is as high as the rows, on the window's foot, in the glass of that many rows
+ * (pc_sheet<n>, 1..7). */
+#define RM_BREAK (-1)
+
+/* The popup's place and width (rowmenu_bind_popup): the view-sort card's (patch/viewsort.c vs_fit, its action-only form): under the navbar at PL_CARD_RIGHT / PL_CARD_Y, as wide as the widest label
+ * from its x plus the slack and the margin, VS_CARD_MIN..PL_CARD_MAX (a label that cannot be measured: PL_CARD_MAX), the rows, labels and hairlines that wide, the glass of n rows (vs_glass<n>). */
+static void rm_popup_fit(rowmenu_t *rm, const signed char *seq, int len, int h, int n) {
+    int i, w = 0, ok = 1, lx = VS_TICK_X + VS_LABEL_X_GLYPH - VS_GLYPH_X;
+    char glass[16];
+    for (i = 0; i < len && ok; ++i) {
+        const unsigned *t;
+        int k = seq[i], tw;
+        if (k < 0 || k >= rm->nitems || !rm->label[k]) continue;
+        t = widget_get_text(rm->label[k]);
+        tw = t && *t ? m1_text_w(rm->label[k], t) : 0;
+        if (tw <= 0)
+            ok = 0;
+        else if (lx + tw > w)
+            w = lx + tw;
+    }
+    if (ok) {
+        w += VS_TEXT_SLACK + VS_LABEL_R; /* (the slack: a label exactly as wide as its text gets an ellipsis) */
+        if (w < VS_CARD_MIN) w = VS_CARD_MIN;
+        if (w > PL_CARD_MAX) w = PL_CARD_MAX;
+    } else
+        w = PL_CARD_MAX;
+    for (i = 0; i < rm->nitems; ++i) {
+        if (rm->item[i]) widget_resize(rm->item[i], w, PM_ROW_H);
+        if (rm->label[i]) widget_resize(rm->label[i], w - lx - VS_LABEL_R, PM_ROW_H);
+    }
+    for (i = 0; i < RM_HAIRS; ++i)
+        if (rm->hair[i]) widget_resize(rm->hair[i], w, 1);
+    widget_move(rm->card, PL_CARD_RIGHT - w, PL_CARD_Y);
+    widget_resize(rm->card, w, h);
+    snprintf(glass, sizeof glass, VS_GLASS_FMT, n);
+    widget_set_prop_str(rm->card, "style:normal:bg_image", glass);
+}
+
+static void rm_layout(rowmenu_t *rm, const signed char *seq, int len) {
     static const char *const glass[] = {"",          "pc_sheet1", "pc_sheet2", "pc_sheet3",
                                         "pc_sheet4", "pc_sheet5", "pc_sheet6", "pc_sheet7"};
-    int h;
+    int i, y = 0, n = 0, h = 0, brk = 0;
+    for (i = 0; i < rm->nitems; ++i) m1_show(rm->item[i], 0);
+    for (i = 0; i < RM_HAIRS; ++i)
+        if (rm->hair[i]) widget_set_visible(rm->hair[i], 0, 0);
+    for (i = 0; i < len; ++i) {
+        int k = seq[i];
+        if (k == RM_BREAK) {
+            brk = n > 0;
+            continue;
+        }
+        if (k < 0 || k >= rm->nitems || !rm->item[k]) continue;
+        if (brk && h < RM_HAIRS) {
+            if (rm->hair[h]) {
+                widget_move(rm->hair[h], 0, y);
+                widget_set_visible(rm->hair[h], 1, 0); /* (insensitive: a touch on the line is the row's) */
+            }
+            ++h;
+        }
+        brk = 0;
+        widget_move(rm->item[k], 0, y);
+        m1_show(rm->item[k], 1);
+        y += PM_ROW_H, ++n;
+    }
     if (!rm->card || n < 1 || n >= (int)(sizeof glass / sizeof glass[0])) return;
-    h = n * PM_ROW_H;
-    widget_move(rm->card, 0, AH_WIN_H - h);
-    widget_resize(rm->card, PM_DIALOG_W, h);
+    if (rm->popup) {
+        rm_popup_fit(rm, seq, len, y, n);
+        return;
+    }
+    widget_move(rm->card, 0, AH_WIN_H - y);
+    widget_resize(rm->card, PM_DIALOG_W, y);
     widget_set_prop_str(rm->card, "style:normal:bg_image", glass[n]);
 }
 
-/* Row i's words and glyph (the widgets rm_label<i> / rm_icon<i>). */
-static void rm_words(rowmenu_t *rm, const char *label, const char *icon, const char *text, const char *glyph) {
-    void *l = widget_lookup(rm->win, label, 1), *g = widget_lookup(rm->win, icon, 1);
+/* Row k's words and glyph (the widgets <prefix>_label<k> / <prefix>_icon<k>). */
+static void rm_words(rowmenu_t *rm, int k, const char *text, const char *glyph) {
+    void *l = rm_widget(rm, "label", k), *g = rm_widget(rm, "icon", k);
     if (l) widget_set_tr_text(l, text);
     if (g) widget_set_prop_str(g, "image", glyph);
 }
 
-int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) {
-    int i;
-    if (!rm->on || rm->queued || rm->open || !fn) return 0;
-    rm_words(rm, "rm_label0", "rm_icon0", "Play", "rm_ic_pplay");
-    rm_words(rm, "rm_label1", "rm_icon1", "Shuffle", "rm_ic_pshuffle");
-    rm_words(rm, "rm_label2", "rm_icon2", "Play Next", "rm_ic_next");
-    rm_words(rm, "rm_label3", "rm_icon3", "Play After", "rm_ic_after");
-    rm_words(rm, "rm_label4", "rm_icon4", pinned ? "Unpin Album" : "Pin Album", pinned ? "rm_ic_unpin" : "rm_ic_pin");
-    for (i = 0; i < RM_ROWS; ++i) m1_show(rm->item[i], i < RM_ALBUM_ROWS);
-    rowmenu_set_rows(rm, RM_ALBUM_ROWS);
-    rm->alt = 1, rm->src = (const lib_src_t *)0;
+static void rm_show(rowmenu_t *rm, int row, rowmenu_queue_fn fn) {
     rm->row = row, rm->queue = fn, rm->open = 1;
     m1_scrim(rm->scrim, 1);
     m1_show(rm->card, 1);
+}
+
+int rowmenu_open_rows(rowmenu_t *rm, int row, const rowmenu_row_t *rows, int n, rowmenu_queue_fn fn) {
+    signed char seq[2 * RM_ROWS];
+    int i, k = 0, len = 0;
+    if (!rm->on || rm->open || !fn) return 0;
+    for (i = 0; i < n && len < (int)sizeof seq; ++i) {
+        if (!rows[i].text) {
+            seq[len++] = RM_BREAK;
+            continue;
+        }
+        if (k >= rm->nitems) break;
+        rm_words(rm, k, rows[i].text, rows[i].glyph);
+        rm->act[k] = (signed char)rows[i].act;
+        seq[len++] = (signed char)k++;
+    }
+    if (!k) return 0;
+    rm_layout(rm, seq, len);
+    rm->alt = 1, rm->src = (const lib_src_t *)0;
+    rm_show(rm, row, fn);
     return 1;
 }
 
-int rowmenu_bind(rowmenu_t *rm, void *win) { return rm_bind(rm, win, RM_ROWS); }
+int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) {
+    const rowmenu_row_t rows[] = {{"Play", "rm_ic_pplay", RMA_PLAY},
+                                  {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
+                                  RM_GROUP,
+                                  {pinned ? "Unpin Album" : "Pin Album", pinned ? "rm_ic_unpin" : "rm_ic_pin", RMA_PIN},
+                                  {"Add to Playlist", "rm_ic_add", RMA_ADD},
+                                  RM_GROUP,
+                                  {"Play Next", "rm_ic_next", RMA_NEXT},
+                                  {"Play After", "rm_ic_after", RMA_AFTER}};
+    return rowmenu_open_rows(rm, row, rows, (int)(sizeof rows / sizeof rows[0]), fn);
+}
+
+int rowmenu_bind(rowmenu_t *rm, void *win) { return rm_bind(rm, win, RM_ROWS, 0); }
+
+int rowmenu_bind_popup(rowmenu_t *rm, void *win) { return rm_bind(rm, win, RM_POPUP_ROWS, 1); }
 
 int rowmenu_bind_queue(rowmenu_t *rm, void *win) {
-    int on = rm_bind(rm, win, RM_QUEUE_ROWS);
+    int on = rm_bind(rm, win, RM_QUEUE_ROWS, 0);
     rm->queued = 1;
     return on;
 }
 
 int rowmenu_bind_album(rowmenu_t *rm, void *win) {
-    int on = rm_bind(rm, win, RM_ALBUM_ROWS);
+    int on = rm_bind(rm, win, RM_ALBUM_ROWS, 0);
     rm->queued = 1;
     return on;
 }
 
 int rowmenu_open_queue(rowmenu_t *rm, int row, rowmenu_queue_fn fn) {
+    static const signed char seq[] = {0, 1, RM_BREAK, 2};
+    int i;
     if (!rm->on || !rm->queued || rm->open || !fn) return 0;
-    rm->row = row, rm->queue = fn, rm->open = 1;
-    m1_scrim(rm->scrim, 1);
-    m1_show(rm->card, 1);
+    for (i = 0; i < rm->nitems; ++i) rm->act[i] = (signed char)i;
+    rm_layout(rm, seq, (int)sizeof seq);
+    rm->alt = 0;
+    rm_show(rm, row, fn);
     return 1;
 }
 
@@ -374,24 +484,25 @@ static void rm_third(rowmenu_t *rm, const ls_row_t *x) {
     if (rm->dl_icon) widget_set_prop_str(rm->dl_icon, "image", icon);
 }
 
-/* The rows after the five: Pin Song / Unpin Song for a song of the card (no source, a path the pins can hold), then Remove from Playlist on a page that has it (rowmenu_set_remove) for a playlist song
- * record (REC_ID over PL_MAX), moved up into the Pin row's place when that row is hidden. The glass is as many rows high as are shown (five for a row with neither, as before the rows existed). */
-static void rm_tail_rows(rowmenu_t *rm, void *rec) {
+/* The track sheet's rows in three groups: Pin Song / Unpin Song (a song of the card: no source, a path the pins can hold), Add to Playlist (a source's Download row), Favorite, Get Info | Play Next,
+ * Play After | Remove from Playlist (a page that has it, rowmenu_set_remove, for a playlist song record: REC_ID over PL_MAX). The glass is as many rows high as are shown. */
+static void rm_track_rows(rowmenu_t *rm, void *rec) {
     const char *path = cc_str(rec, REC_PATH);
+    signed char seq[2 * RM_ROWS];
+    int len = 0;
     rm->pin =
         !rm->src && rm->pin_label && rm->pin_icon && rm->item[RM_PIN_ROW] && pins_song_ok(path, I(rec, REC_CUE_START));
     if (rm->pin) {
         int has = pins_has_song(path, I(rec, REC_CUE_START));
         widget_set_tr_text(rm->pin_label, has ? "Unpin Song" : "Pin Song");
         widget_set_prop_str(rm->pin_icon, "image", has ? "rm_ic_unpin" : "rm_ic_pin");
+        seq[len++] = RM_PIN_ROW;
     }
-    m1_show(rm->item[RM_PIN_ROW], rm->pin);
     rm->rm_row = !rm->src && rm->remove && rm->item[RM_REMOVE_ROW] && I(rec, REC_ID) > PL_MAX;
-    if (rm->item[RM_REMOVE_ROW]) {
-        m1_show(rm->item[RM_REMOVE_ROW], rm->rm_row);
-        if (rm->rm_row) widget_move(rm->item[RM_REMOVE_ROW], 0, (RM_PIN_ROW + rm->pin) * PM_ROW_H);
-    }
-    rowmenu_set_rows(rm, RM_PIN_ROW + rm->pin + rm->rm_row);
+    seq[len++] = 2, seq[len++] = 3, seq[len++] = 4, seq[len++] = RM_BREAK;
+    seq[len++] = 0, seq[len++] = 1;
+    if (rm->rm_row) seq[len++] = RM_BREAK, seq[len++] = RM_REMOVE_ROW;
+    rm_layout(rm, seq, len);
 }
 
 void rowmenu_set_remove(rowmenu_t *rm, rowmenu_remove_fn fn) { rm->remove = fn; }
@@ -401,10 +512,10 @@ int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, cons
     ls_row_t x;
     if (src == &lib_stock) src = (const lib_src_t *)0;
     if (!rm->on || rm->open || !rec) return 0;
-    if (rm->alt) { /* the album sheet was the last: the track sheet's words again (rows 2 and 3, 5 and 6 are set below at every open) */
-        rm_words(rm, "rm_label0", "rm_icon0", "Play Next", "rm_ic_next");
-        rm_words(rm, "rm_label1", "rm_icon1", "Play After", "rm_ic_after");
-        rm_words(rm, "rm_label4", "rm_icon4", "Get Info", "rm_ic_info");
+    if (rm->alt) { /* rowmenu_open_rows was the last: the track sheet's words again (rows 2, 3 and 5 are set below at every open; row 6 is never reworded: no such sheet has seven rows) */
+        rm_words(rm, 0, "Play Next", "rm_ic_next");
+        rm_words(rm, 1, "Play After", "rm_ic_after");
+        rm_words(rm, 4, "Get Info", "rm_ic_info");
         rm->alt = 0;
     }
     d = so_row_deque(rec); /* a copy (the page's list may be replaced while the menu is open) */
@@ -420,7 +531,7 @@ int rowmenu_open_src(rowmenu_t *rm, int row, void *rec, rowmenu_add_fn add, cons
     rm_third(rm, &x);
     if (rm->fav_label) widget_set_tr_text(rm->fav_label, rm->fav ? "Undo Favorite" : "Favorite");
     if (rm->fav_icon) widget_set_prop_str(rm->fav_icon, "image", rm->fav ? "rm_ic_unfav" : "rm_ic_fav");
-    rm_tail_rows(rm, rec);
+    rm_track_rows(rm, rec);
     rm->rows = d, rm->row = row, rm->add = add, rm->open = 1;
     m1_scrim(rm->scrim, 1);
     m1_show(rm->card, 1);

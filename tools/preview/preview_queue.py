@@ -63,7 +63,7 @@ def page(s, scroll=0, sheet=False, **kw):
     scroll = max(0, min(scroll, tall.height - WIN))
     im.alpha_composite(tall.crop((0, scroll, W, scroll + WIN)), (0, 0))
     PS.glass(s, im, 'ah_nav_back', 7, 44)    # the glass Back floats over the rows
-    if sheet: PS.row_menu(s, im, keys=('Play Next', 'Play After', 'Remove from Queue'), glyphs=('rm_ic_next', 'rm_ic_after', 'rm_ic_remove'))    # the "..." sheet (three rows, the three-row glass)
+    if sheet: PS.row_menu(s, im, keys=('Play Next', 'Play After', 'Remove from Queue'), glyphs=('rm_ic_next', 'rm_ic_after', 'pod_ic_remove_red'))    # the "..." sheet (three rows, the three-row glass)
     return im
 
 

@@ -2889,7 +2889,7 @@ def loading_tests(ctx):
 
 
 def long_press_tests(ctx):
-    """The long press (docs/modules/pins.md): an album held RM_LONG_MS in the grid or the list opens the five-row sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album by the pins file) and its release opens no album; a drift
+    """The long press (docs/modules/pins.md): an album held RM_LONG_MS in the grid or the list opens the six-row sheet (Play, Shuffle | Pin Album / Unpin Album by the pins file, Add to Playlist | Play Next, Play After) and its release opens no album; a drift
     of SC_DRAG_PX or more, an abort or a release before the time cancels it; Pin Album writes the album's line, Unpin Album removes it; Play Next and Play After queue the album's tracks via upnext_add; Play and Shuffle start the album; the All Songs tile and a source's page have none."""
     expect = ctx.expect
     import pod_pins_home as H
@@ -2939,23 +2939,23 @@ def long_press_tests(ctx):
         expect(len(timers(m)) == 1 and [t for t in m.calls if t[0] == 'timer_add' and t[1] == PSYMS['rm_on_hold']][0][2] == O['RM_LONG_MS'] and vis(m, 'rm_card') != (1, 1),
                f'{mode}: a press on an album arms the one {O["RM_LONG_MS"]} ms timer, nothing is open yet')
         m.call(PSYMS['rm_on_hold'], count=900000000)
-        expect(vis(m, 'rm_card') == (1, 1) and vis(m, 'rm_scrim') == (1, 1) and m.wtext[m.widgets['rm_label4']] == 'Pin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_pin',
-               f'{mode}: held, the sheet opens with Pin Album and the pin glyph on slot 4')
+        expect(vis(m, 'rm_card') == (1, 1) and vis(m, 'rm_scrim') == (1, 1) and [m.wtext[m.widgets[f'rm_label{i}']] for i in range(6)] == ['Play', 'Shuffle', 'Pin Album', 'Add to Playlist', 'Play Next', 'Play After'] and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_pin',
+               f'{mode}: held, the six-row sheet opens: Play, Shuffle | Pin Album (pin glyph), Add to Playlist | Play Next, Play After')
         m.calls = []
         got = gesture(m, [('up', x, y, 1600)])
         expect(not opened(got) and vis(m, 'rm_card') == (1, 1), f'{mode}: the release afterwards opens no album and leaves the sheet open')
-        RM.SG.click(m, 'rm_item4')
+        RM.SG.click(m, 'rm_item2')
         want = H.parse(m.fs.get(PINS, b''))
         expect(len(want) == 1 and want[0][0] == 'a' and want[0][3] == f'Album {a}' and want[0][1] == H.identity(f'Album {a}') and want[0][4] == f'/mnt/mmc/m/{a}/1.flac' and vis(m, 'rm_card') == (0, 0),
                f'{mode}: Pin Album writes the album\'s line (title, its first track) and closes the sheet ({want})')
         gesture(m, [('down', x, y, 2000)])
         m.call(PSYMS['rm_on_hold'], count=900000000)
-        expect(m.wtext[m.widgets['rm_label4']] == 'Unpin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_unpin', f'{mode}: a pinned album reads Unpin Album with the pin-off glyph')
+        expect(m.wtext[m.widgets['rm_label2']] == 'Unpin Album' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin', f'{mode}: a pinned album reads Unpin Album with the pin-off glyph')
         gesture(m, [('up', x, y, 2600)])
-        RM.SG.click(m, 'rm_item4')
+        RM.SG.click(m, 'rm_item2')
         expect(H.parse(m.fs.get(PINS, b'')) == [], f'{mode}: Unpin Album removes the line')
         # Play Next and Play After queue the whole album in track order through upnext_add
-        for item, after, toast in (('rm_item2', 0, 'Playing Next'), ('rm_item3', 1, 'Added to Queue')):
+        for item, after, toast in (('rm_item4', 0, 'Playing Next'), ('rm_item5', 1, 'Added to Queue')):
             gesture(m, [('down', x, y, 2700)]); m.call(PSYMS['rm_on_hold'], count=900000000); gesture(m, [('up', x, y, 3300)])
             m.up_calls = []; m.up_ret = RM.ADDED; m.calls = []
             m.click(item, count=900000000)
@@ -2964,6 +2964,12 @@ def long_press_tests(ctx):
                    and got_paths == [[f'/mnt/mmc/m/{a}/1.flac', f'/mnt/mmc/m/{a}/2.flac']]
                    and RM.toasts_in(m.calls) == [toast],
                    f'{mode}: {toast} closes the sheet and queues the album\'s tracks in order ({got_paths}, {RM.toasts_in(m.calls)})')
+        # Add to Playlist marks every track and opens the picker for the album's class
+        gesture(m, [('down', x, y, 2900)]); m.call(PSYMS['rm_on_hold'], count=900000000); gesture(m, [('up', x, y, 3100)])
+        m.pk_calls = []; m.calls = []
+        m.click('rm_item3', count=900000000)
+        expect(vis(m, 'rm_card') == (0, 0) and len(m.pk_calls) == 1 and m.pk_calls[0][1] == 2 and m.pk_calls[0][2][0] & 3 == 3,
+               f'{mode}: Add to Playlist closes the sheet and opens the picker with both tracks marked ({m.pk_calls})')
         # Play and Shuffle start the album through the stock lists
         for item, name in (('rm_item0', 'Play'), ('rm_item1', 'Shuffle')):
             gesture(m, [('down', x, y, 3000)]); m.call(PSYMS['rm_on_hold'], count=900000000); gesture(m, [('up', x, y, 3600)])

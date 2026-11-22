@@ -96,23 +96,24 @@ def constants_and_asset_tests(ctx):
     tree = asset_tree(os.path.join(raw, 'ui', 'm1plus_menu.bin'))
     expect(node(tree, 'pod_pins').flags & (F_VISIBLE | F_SENSITIVE) == 0 and node(tree, 'pod_pins').flags & F_ENABLE, 'asset_tree reads the section hidden and insensitive')
 
-    # the long press sheet: five rows for albums (Play, Shuffle, Play Next, Play After, Unpin Album) on the five-row glass, the window's last two children
+    # the long press sheet: six rows for albums (Play, Shuffle, Unpin Album, Add to Playlist, Play Next, Play After) on the six-row glass, the window's last two children
     kids = [c.name for c in ui.children]
     expect(kids[-2:] == ['rm_scrim', 'rm_card'], f'the sheet is the window\'s last two children, over the bar ({kids})')
     card = ui.find('rm_card')
-    labs = [card.find(f'rm_label{i}').get('tr_text') for i in range(5)]
-    icons = [card.find(f'rm_icon{i}').get('image') for i in range(5)]
-    expect(labs == ['Play', 'Shuffle', 'Play Next', 'Play After', 'Unpin Album']
-           and icons == ['rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_next', 'rm_ic_after', 'rm_ic_unpin']
-           and (card.x, card.y, card.w, card.h) == (0, 450 - 250, 320, 250)
-           and card.get('style:normal:bg_image') == 'pc_sheet5' and card.get('visible') == 'false' and card.get('sensitive') == 'false' and ui.find('rm_scrim').get('visible') == 'false',
-           'the Home sheet: Play, Shuffle, Play Next, Play After, Unpin Album on the five-row glass, hidden')
+    labs = [card.find(f'rm_label{i}').get('tr_text') for i in range(6)]
+    icons = [card.find(f'rm_icon{i}').get('image') for i in range(6)]
+    expect(labs == ['Play', 'Shuffle', 'Unpin Album', 'Add to Playlist', 'Play Next', 'Play After']
+           and icons == ['rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_unpin', 'rm_ic_add', 'rm_ic_next', 'rm_ic_after']
+           and (card.x, card.y, card.w, card.h) == (0, 450 - 300, 320, 300)
+           and card.get('style:normal:bg_image') == 'pc_sheet6' and card.get('visible') == 'false' and card.get('sensitive') == 'false' and ui.find('rm_scrim').get('visible') == 'false',
+           'the Home sheet: Play, Shuffle, Unpin Album, Add to Playlist, Play Next, Play After on the six-row glass, hidden')
     al_ui = awtk_ui.parse(open(os.path.join(raw, 'ui', 'm1plus_albums.bin'), 'rb').read())
     al_card = al_ui.find('rm_card')
-    expect([al_card.find(f'rm_label{i}').get('tr_text') for i in range(5)] == labs
-           and [al_card.find(f'rm_icon{i}').get('image') for i in range(5)] == icons
-           and al_card.get('style:normal:bg_image') == 'pc_sheet5' and (al_card.x, al_card.y, al_card.w, al_card.h) == (0, 200, 320, 250),
-           'the Albums page sheet matches the five-row album sheet')
+    expect([al_card.find(f'rm_label{i}').get('tr_text') for i in range(6)] == labs
+           and [al_card.find(f'rm_icon{i}').get('image') for i in range(6)] == icons
+           and al_card.get('style:normal:bg_image') == 'pc_sheet6' and (al_card.x, al_card.y, al_card.w, al_card.h) == (0, 150, 320, 300)
+           and [c.name for c in al_card.children][-2:] == ['rm_hair0', 'rm_hair1'],
+           'the Albums page sheet matches the six-row album sheet, hairlines last')
     ar_ui = awtk_ui.parse(open(os.path.join(raw, 'ui', 'm1plus_artists.bin'), 'rb').read())
     ar_card = ar_ui.find('rm_card')
     expect([ar_card.find(f'rm_label{i}').get('tr_text') for i in range(3)] == ['Play', 'Shuffle', 'Unpin Album']
@@ -280,11 +281,18 @@ class PH(recent.ST):
     def trap_upnext(self, ret=1):
         self.up_calls, self.up_ret = [], ret
         self.handlers[PSYMS['upnext_add']] = 'upnext_add'
+        self.handlers[PSYMS['picker_open']] = 'picker_open'
+        self.pk_calls, self.pk_ret = [], 0   # picker_open (class, count, the marks) and what it answers
         self.strings['msg_addfailed'] = 'Adding Failed'
 
     def _hook(self, u, address, size, _):
         name = self.handlers.get(address)
         regs = [u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)]
+        if name == 'picker_open':
+            self.pk_calls.append((regs[0], regs[1], bytes(self.u.mem_read(regs[2], (regs[1] + 7) // 8))))
+            self.calls.append(('picker_open', regs[0], regs[1]))
+            u.reg_write(UC_MIPS_REG_V0, self.pk_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+            return
         if name == 'upnext_add':
             rows = [self.read_cstr(self.word(r + O['REC_PATH'])) for r in self.deques.get(regs[0], [])]
             self.up_calls.append((rows, regs[1]))
@@ -387,13 +395,11 @@ def tr(m, name):
     return ([c[2] for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets[name]] or [None])[-1]
 
 
-SHEET_WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_item3', 'rm_item4',
-                 'rm_label0', 'rm_label1', 'rm_label2', 'rm_label3', 'rm_label4',
-                 'rm_icon0', 'rm_icon1', 'rm_icon2', 'rm_icon3', 'rm_icon4')
+SHEET_WIDGETS = ('rm_scrim', 'rm_card') + tuple(f'rm_item{i}' for i in range(7)) + tuple(f'rm_label{i}' for i in range(7)) + tuple(f'rm_icon{i}' for i in range(7)) + ('rm_hair0', 'rm_hair1')
 
 
 def sheet_tests(ctx):
-    """Home grid long-press sheets: a song opens 2 rows (Play, Unpin Song), a playlist 3 (Play, Shuffle, Unpin Playlist), and an album 5 (Play, Shuffle, Play Next, Play After, Unpin Album); switching between them restores labels, icons and visibility; Play Next and Play After queue every track of the album in order via upnext_add."""
+    """Home grid long-press sheets: a song opens 2 rows (Play | Unpin Song), a playlist 3 (Play, Shuffle | Unpin Playlist), and an album 6 (Play, Shuffle | Unpin Album, Add to Playlist | Play Next, Play After), the groups apart by a hairline; switching between them restores labels, icons and visibility; Play Next and Play After queue every track of the album in order via upnext_add; Add to Playlist marks every track for the picker."""
     expect = ctx.expect
     RM = sibling('rowmenu')
     S = song('/mnt/mmc/Artist/Album/01 Track.flac', 'Track', 'Artist', 'Album')
@@ -409,8 +415,10 @@ def sheet_tests(ctx):
     m.begin()
     expect(m.is_shown(m.pins) and m.s32(m.pins + 0xc) == 130, 'three pins: one row of tiles')
     card = m.widgets['rm_card']
-    # 1. song (2 rows) -> 2. playlist (3 rows) -> 3. album (5 rows, restoring labels/icons/rows after song & playlist)
-    for tile, rows in ((0, 2), (1, 3), (2, 5)):
+    def moved(m):
+        return {n: m.s32(m.widgets[n] + 4) for n in [f'rm_item{i}' for i in range(7)] + ['rm_hair0', 'rm_hair1'] if (m.is_visible if 'hair' in n else m.is_shown)(m.widgets[n])}
+    # 1. song (2 rows) -> 2. playlist (3 rows) -> 3. album (6 rows, restoring labels/icons/rows after song & playlist)
+    for tile, rows in ((0, 2), (1, 3), (2, 6)):
         m.calls = []
         m.call(PSYMS['pn_open_sheet'], a0=tile, count=900000000)
         placed = [(m.s32(card + 4), m.s32(card + 8), m.s32(card + 0xc))]
@@ -419,25 +427,30 @@ def sheet_tests(ctx):
                f'tile {tile}: the sheet opens {rows} rows high on pc_sheet{rows} ({placed}, {glass})')
         if rows == 2:
             expect(not m.is_shown(m.widgets['rm_item2']) and not m.is_shown(m.widgets['rm_item3']) and not m.is_shown(m.widgets['rm_item4'])
-                   and tr(m, 'rm_label1') == 'Unpin Song' and m.props.get((m.widgets['rm_icon1'], 'image')) == 'rm_ic_unpin',
-                   'a song\'s sheet: Play, Unpin Song; rows 2..4 hidden')
+                   and tr(m, 'rm_label1') == 'Unpin Song' and m.props.get((m.widgets['rm_icon1'], 'image')) == 'rm_ic_unpin'
+                   and moved(m) == {'rm_item0': 0, 'rm_hair0': 50, 'rm_item1': 50} and not m.is_visible(m.widgets['rm_hair1']),
+                   f'a song\'s sheet: Play | Unpin Song, a hairline at 50; rows 2..4 hidden ({moved(m)})')
             m.click('rm_scrim', count=900000000)
         elif rows == 3:
             expect(m.is_shown(m.widgets['rm_item2']) and not m.is_shown(m.widgets['rm_item3']) and not m.is_shown(m.widgets['rm_item4'])
                    and tr(m, 'rm_label1') == 'Shuffle' and tr(m, 'rm_label2') == 'Unpin Playlist'
-                   and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin',
-                   'a playlist\'s sheet: Play, Shuffle, Unpin Playlist; rows 3..4 hidden')
+                   and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin'
+                   and moved(m) == {'rm_item0': 0, 'rm_item1': 50, 'rm_hair0': 100, 'rm_item2': 100} and not m.is_visible(m.widgets['rm_hair1']),
+                   f'a playlist\'s sheet: Play, Shuffle | Unpin Playlist, a hairline at 100; rows 3..4 hidden ({moved(m)})')
             m.click('rm_scrim', count=900000000)
         else:
-            expect(all(m.is_shown(m.widgets[f'rm_item{i}']) for i in (2, 3, 4))
+            expect(all(m.is_shown(m.widgets[f'rm_item{i}']) for i in range(6)) and not m.is_shown(m.widgets['rm_item6'])
                    and tr(m, 'rm_label1') == 'Shuffle' and m.props.get((m.widgets['rm_icon1'], 'image')) == 'rm_ic_pshuffle'
-                   and tr(m, 'rm_label2') == 'Play Next' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_next'
-                   and tr(m, 'rm_label4') == 'Unpin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_unpin',
-                   'an album\'s sheet restores Shuffle, Play Next, Play After and Unpin Album on pc_sheet5')
+                   and tr(m, 'rm_label2') == 'Unpin Album' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin'
+                   and tr(m, 'rm_label3') == 'Add to Playlist' and m.props.get((m.widgets['rm_icon3'], 'image')) == 'rm_ic_add'
+                   and tr(m, 'rm_label4') == 'Play Next' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_next'
+                   and tr(m, 'rm_label5') == 'Play After' and m.props.get((m.widgets['rm_icon5'], 'image')) == 'rm_ic_after'
+                   and moved(m) == {'rm_item0': 0, 'rm_item1': 50, 'rm_hair0': 100, 'rm_item2': 100, 'rm_item3': 150, 'rm_hair1': 200, 'rm_item4': 200, 'rm_item5': 250},
+                   f'an album\'s sheet restores its words: Play, Shuffle | Unpin Album, Add to Playlist | Play Next, Play After on pc_sheet6, hairlines at 100 and 200 ({moved(m)})')
             m.click('rm_scrim', count=900000000)
     # Play Next and Play After on the pinned album queue all three tracks in order and toast
     want_paths = ['/mnt/mmc/Miles Davis/Kind of Blue/1.flac', '/mnt/mmc/Miles Davis/Kind of Blue/2.flac', '/mnt/mmc/Miles Davis/Kind of Blue/3.flac']
-    for item, after, toast in (('rm_item2', 0, 'Playing Next'), ('rm_item3', 1, 'Added to Queue')):
+    for item, after, toast in (('rm_item4', 0, 'Playing Next'), ('rm_item5', 1, 'Added to Queue')):
         m.up_calls = []; m.calls = []
         m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000)
         m.click(item, count=900000000)
@@ -445,26 +458,36 @@ def sheet_tests(ctx):
                f'pinned album {toast}: upnext_add gets all 3 tracks in order ({m.up_calls}, {toasts(m)})')
     # UPNEXT_STARTED: no toast; refusals: translated toast
     m.up_ret = 2; m.up_calls = []; m.calls = []
-    m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item2', count=900000000)
+    m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item4', count=900000000)
     expect(m.up_calls == [(want_paths, 0)] and not toasts(m), 'UPNEXT_STARTED shows no toast')
     for code, say in ((-2, 'Not available while streaming'), (-6, 'Queue is full'), (-8, 'Not available while DLNA is on')):
         m.up_ret = code; m.calls = []
-        m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item3', count=900000000)
+        m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item5', count=900000000)
         expect(toasts(m) == [say], f'refusal {code} toasts {say} ({toasts(m)})')
-    # Album not in the library: "Not found", upnext_add not called, pin stays
-    m.showlist = []; m.up_ret = 1; m.up_calls = []; m.calls = []
-    m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item2', count=900000000)
-    expect(not m.up_calls and toasts(m) == ['Not found'] and len(H.parse(m.fs[PINS])) == 3,
-           f'missing album: Not found, no upnext_add, pin stays ({toasts(m)})')
-    # Unpin Song (rm_item1) and Unpin Album (rm_item4)
+    # Add to Playlist: the picker opens for the album's tracks, every one marked; a picker that will not open says so
+    m.pk_calls = []; m.calls = []
+    m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item3', count=900000000)
+    expect(not m.is_shown(card) and len(m.pk_calls) == 1 and m.pk_calls[0][1] == 3 and m.pk_calls[0][2][0] & 7 == 7 and not toasts(m), f'pinned album Add to Playlist: the picker gets the 3 tracks, all marked ({m.pk_calls}, {toasts(m)})')
+    m.pk_ret = -1; m.calls = []
+    m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click('rm_item3', count=900000000)
+    expect(toasts(m) == ['Adding Failed'], f'a picker that cannot open: Adding Failed ({toasts(m)})')
+    m.pk_ret = 0
+    # Album not in the library: "Not found", upnext_add and the picker not called, pin stays
+    m.showlist = []; m.up_ret = 1; m.up_calls = []; m.pk_calls = []
+    for item in ('rm_item4', 'rm_item3'):
+        m.calls = []
+        m.call(PSYMS['pn_open_sheet'], a0=2, count=900000000); m.click(item, count=900000000)
+        expect(not m.up_calls and not m.pk_calls and toasts(m) == ['Not found'] and len(H.parse(m.fs[PINS])) == 3,
+               f'missing album ({item}): Not found, no upnext_add, no picker, pin stays ({toasts(m)})')
+    # Unpin Song (rm_item1) and Unpin Album (rm_item2)
     m.call(PSYMS['pn_open_sheet'], a0=0, count=900000000); m.click('rm_item1', count=900000000)
     expect(H.parse(m.fs[PINS]) == [ENTRIES[1], ENTRIES[0]] and not m.is_shown(card), 'Unpin Song removes the song\'s line')
-    m.call(PSYMS['pn_open_sheet'], a0=1, count=900000000); m.click('rm_item4', count=900000000)
-    expect(H.parse(m.fs[PINS]) == [ENTRIES[1]] and not m.is_shown(card), 'Unpin Album on slot 4 removes the album\'s line')
+    m.call(PSYMS['pn_open_sheet'], a0=1, count=900000000); m.click('rm_item2', count=900000000)
+    expect(H.parse(m.fs[PINS]) == [ENTRIES[1]] and not m.is_shown(card), 'Unpin Album on slot 2 removes the album\'s line')
 
 
 def recent_sheet_tests(ctx):
-    """A Recently Played tile on Home held RM_LONG_MS opens the five-row album sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album by the pins file) and its release opens no album; a drift, an abort or an early release cancels
+    """A Recently Played tile on Home held RM_LONG_MS opens the six-row album sheet (Play, Shuffle | Pin Album / Unpin Album by the pins file, Add to Playlist | Play Next, Play After) and its release opens no album; a drift, an abort or an early release cancels
     the hold; Pin Album writes the album's line (the tile's title, cover key and track path), Unpin Album removes it; Play Next / Play After queue the album via upnext_add; Play and Shuffle read the stock album list."""
     expect = ctx.expect
     RM = sibling('rowmenu')
@@ -490,26 +513,26 @@ def recent_sheet_tests(ctx):
     expect(len(timers()) == 1 and timers()[0][2] == O['RM_LONG_MS'] and not m.is_shown(m.widgets['rm_card']), f'a press on a Recently Played tile arms the one {O["RM_LONG_MS"]} ms hold, nothing is open yet')
     m.call(PSYMS['rm_on_hold'], count=900000000)
     card = m.widgets['rm_card']
-    expect(m.is_shown(card) and m.props.get((card, 'style:normal:bg_image')) == 'pc_sheet5'
-           and tr(m, 'rm_label1') == 'Shuffle' and tr(m, 'rm_label2') == 'Play Next' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_next'
-           and tr(m, 'rm_label4') == 'Pin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_pin'
-           and all(m.is_shown(m.widgets[f'rm_item{i}']) for i in (2, 3, 4)),
-           'held: the five-row sheet opens with Play, Shuffle, Play Next, Play After, Pin Album')
+    expect(m.is_shown(card) and m.props.get((card, 'style:normal:bg_image')) == 'pc_sheet6'
+           and tr(m, 'rm_label1') == 'Shuffle' and tr(m, 'rm_label4') == 'Play Next' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_next'
+           and tr(m, 'rm_label2') == 'Pin Album' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_pin' and tr(m, 'rm_label3') == 'Add to Playlist'
+           and all(m.is_shown(m.widgets[f'rm_item{i}']) for i in range(6)),
+           'held: the six-row sheet opens with Play, Shuffle | Pin Album, Add to Playlist | Play Next, Play After')
     got = m.gesture([('u', x, y, 600)])
     expect(m.is_shown(card) and not [c for c in got if c[0] == 'navigator_to_with_context'] and m.opened() == [], 'the release afterwards opens no album and leaves the sheet open')
     m.u.mem_write(m.pins + 0xc, struct.pack('<i', 0))   # a stale height: only a redone section is 130 again
-    m.click('rm_item4', count=900000000)
+    m.click('rm_item2', count=900000000)
     want = H.parse(m.fs.get(PINS, b''))
     expect(m.s32(m.pins + 0xc) == 130 and m.is_shown(m.pins), 'Pin Album redoes the section at once (Home stays in front: no to-foreground does it)')
     expect(not m.is_shown(card) and want[-1][0] == 'a' and want[-1][3] == t[3] and want[-1][1] == H.identity(tname) and want[-1][2][0] == t[1] and want[-1][4] == t[5] and len(want) == 2,
            f'Pin Album writes the tile\'s album (title, cover key, track path) at the end and closes the sheet ({want})')
     m.gesture([('d', x, y, 1000)]); m.call(PSYMS['rm_on_hold'], count=900000000)
-    expect(tr(m, 'rm_label4') == 'Unpin Album' and m.props.get((m.widgets['rm_icon4'], 'image')) == 'rm_ic_unpin', 'a pinned album reads Unpin Album with the pin-off glyph')
+    expect(tr(m, 'rm_label2') == 'Unpin Album' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin', 'a pinned album reads Unpin Album with the pin-off glyph')
     m.gesture([('u', x, y, 600)])
     m.u.mem_write(m.pins + 0xc, struct.pack('<i', 0))
-    m.click('rm_item4', count=900000000)
+    m.click('rm_item2', count=900000000)
     expect([e[3] for e in H.parse(m.fs.get(PINS, b''))] == [ENTRIES[1][3]] and m.s32(m.pins + 0xc) == 130, 'Unpin Album removes the line and redoes the section')
-    for item, after, toast in (('rm_item2', 0, 'Playing Next'), ('rm_item3', 1, 'Added to Queue')):
+    for item, after, toast in (('rm_item4', 0, 'Playing Next'), ('rm_item5', 1, 'Added to Queue')):
         m.gesture([('d', x, y, 1000)]); m.call(PSYMS['rm_on_hold'], count=900000000); m.gesture([('u', x, y, 600)])
         m.up_calls = []; m.calls = []
         m.click(item, count=900000000)
@@ -1003,11 +1026,11 @@ def pin_write_tests(ctx):
 
     # ---- the sheet's Unpin with a write that fails
     m = mk(ENTRIES[:4]); before = m.fs[PINS]; m.fail.add(('rename', PINS)); m.calls = []
-    m.call(PSYMS['pn_open_sheet'], a0=0, count=900000000); m.click('rm_item4', count=900000000)
+    m.call(PSYMS['pn_open_sheet'], a0=0, count=900000000); m.click('rm_item2', count=900000000)
     expect(m.fs[PINS] == before and PINS_TMP not in m.fs and toasts(m) == ["Can't update pins"] and m.is_shown(m.pins) and m.s32(m.pins + 0xc) == 256 and m.call(PSYMS['pn_tile_in'], a0=0, count=100000) == 0,
            f'Unpin with a failing write: the file and the tile stay, "Can\'t update pins" ({toasts(m)}, h {m.s32(m.pins + 0xc)})')
     m.fail.clear(); m.calls = []
-    m.call(PSYMS['pn_open_sheet'], a0=0, count=900000000); m.click('rm_item4', count=900000000)
+    m.call(PSYMS['pn_open_sheet'], a0=0, count=900000000); m.click('rm_item2', count=900000000)
     expect(H.parse(m.fs[PINS]) == ENTRIES[1:4] and m.s32(m.pins + 0xc) == 130 and not toasts(m), 'and once the card writes again the same Unpin removes it and the section shrinks')
     # ---- the API
     m = machine(H.dump(ENTRIES[:3])); m.fail.add(('rename', PINS)); m.calls = []

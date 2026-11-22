@@ -27,12 +27,20 @@ typedef void (*rowmenu_queue_fn)(int row, int act);
 #define RMP_PLAY RMQ_NEXT /* Play */
 #define RMP_SHUFFLE RMQ_AFTER /* Shuffle */
 #define RMP_UNPIN RMQ_REMOVE /* Unpin Playlist / Unpin Artist / Pin Artist (three-row sheet) */
-/* The five-row album long-press sheet (Albums page, Home album pins, Recently Played; tools/pod_ui.py row_menu(album=True)): Play, Shuffle, Play Next, Play After, Pin / Unpin Album. */
+/* The acts of a sheet opened with rowmenu_open_rows (the album sheet: Albums page, Home pins, Recently Played, the album page's "..."): what its rows call back with. */
 #define RMA_PLAY 0
 #define RMA_SHUFFLE 1
-#define RMA_NEXT 2
-#define RMA_AFTER 3
-#define RMA_PIN 4
+#define RMA_PIN 2 /* Pin / Unpin Album (Unpin Playlist / Artist / Song on Home) */
+#define RMA_ADD 3 /* Add to Playlist */
+#define RMA_NEXT 4
+#define RMA_AFTER 5
+#define RMA_SELECT 6 /* the album page's Select */
+/* A row of a sheet opened with rowmenu_open_rows: its words, its glyph and the act it calls back with; text NULL (RM_GROUP) is a group break: a hairline between two groups, none inside one. */
+typedef struct {
+    const char *text, *glyph;
+    int act;
+} rowmenu_row_t;
+#define RM_GROUP {(const char *)0, (const char *)0, -1}
 
 struct rowmenu_slot {
     rowmenu_t *rm;
@@ -42,6 +50,12 @@ struct rowmenu_slot {
 struct rowmenu {
     void *win, *scrim, *card;
     void *item[RM_ROWS];
+    void *hair
+        [RM_HAIRS]; /* the hairlines between groups (rm_hair0..1), placed at every open; NULL: an asset without them (no lines) */
+    void *label[RM_ROWS]; /* the rows' labels (the popup measures them) */
+    int nitems; /* the rows the asset has (RM_ROWS, RM_QUEUE_ROWS, RM_ALBUM_ROWS or RM_POPUP_ROWS) */
+    int popup; /* bound by rowmenu_bind_popup: the rp_* widgets, a floating card under the navbar instead of the sheet */
+    signed char act[RM_ROWS]; /* what row i calls back with (rowmenu_open_rows; i itself for the Queue / pins sheets) */
     void *fav_label,
         *fav_icon; /* the Favorite row's label and glyph: "Favorite" / "Undo Favorite" and the outline / filled star, set at every open */
     void *
@@ -54,8 +68,8 @@ struct rowmenu {
     int row; /* the page's index of the row */
     rowmenu_add_fn add;
     rowmenu_queue_fn queue; /* the Queue page's sheet is open (three rows: RMQ_*), this is what its rows call */
-    int alt; /* the track sheet is showing the album sheet's five rows (rowmenu_open_album): its words are put back at the next rowmenu_open_src */
-    int queued; /* bound by rowmenu_bind_queue (three rows, the Queue page's) or rowmenu_bind_album (five rows) */
+    int alt; /* the sheet shows rows of rowmenu_open_rows (their acts in act[]); on the track sheet its words are put back at the next rowmenu_open_src */
+    int queued; /* bound by rowmenu_bind_queue (three rows, the Queue page's) or rowmenu_bind_album (six rows) */
     struct rowmenu_slot slot[RM_ROWS];
     /* A source's row (rowmenu_open_src): the third row is Download / Cancel Download / Remove Download in place of Add to Playlist, Favorite and its toast go through the source. */
     const lib_src_t *src; /* NULL: the stock library */
@@ -75,22 +89,27 @@ int rowmenu_bind(rowmenu_t *rm, void *win);
 /* The Queue page's menu: the same widgets and the same sheet with three rows only (Play Next, Play After, Remove from Queue; the page's asset, tools/pod_ui.py row_menu(queue=True)). */
 int rowmenu_bind_queue(rowmenu_t *rm, void *win);
 
-/* The album long-press sheet: the same widgets and callback shape with RM_ALBUM_ROWS (5) rows (Play, Shuffle, Play Next, Play After, Pin / Unpin Album; tools/pod_ui.py row_menu(album=True)). */
+/* The album long-press sheet's widgets: RM_ALBUM_ROWS (6) rows (tools/pod_ui.py row_menu(album=True)), opened with rowmenu_open_album or rowmenu_open_rows. */
 int rowmenu_bind_album(rowmenu_t *rm, void *win);
 
-/* Opens the Queue or pins/album sheet for its row `row`; `fn(row, act)` runs after the sheet has closed, when a row of it is tapped. 1 when open. */
+/* The popup form (rp_scrim, rp_card, rp_item0..4, rp_hair0..1; tools/pod_ui.py popup_menu): an item's actions under a navbar "..." in the view-sort card's look, opened with rowmenu_open_rows
+ * (the same groups and hairlines; the card fitted to the language at PL_CARD_RIGHT / PL_CARD_Y). 1 when its widgets are there. */
+int rowmenu_bind_popup(rowmenu_t *rm, void *win);
+
+/* Opens the three-row Queue or pins sheet (rows 0 and 1, a hairline, row 2) for its row `row`; `fn(row, act)` with act the row's index (RMQ_* / RMP_*) runs after the sheet has closed, when a
+ * row of it is tapped. 1 when open. */
 int rowmenu_open_queue(rowmenu_t *rm, int row, rowmenu_queue_fn fn);
+
+/* Opens the sheet with the n entries of `rows` (rows and RM_GROUP breaks, top to bottom) on any bound menu with enough rows: the asset's rows are worded in order, the glass is as high as the
+ * rows, a hairline marks each group break. `fn(row, act)` with the tapped row's act runs after the sheet has closed. 1 when open. */
+int rowmenu_open_rows(rowmenu_t *rm, int row, const rowmenu_row_t *rows, int n, rowmenu_queue_fn fn);
 
 /* The toast of upnext_add's return status (`r`, with `after` 0 Play Next / 1 Play After): UPNEXT_ADDED -> "Playing Next" / "Added to Queue", refusal -> translated reason, UPNEXT_STARTED -> none. */
 void rowmenu_upnext_toast(int r, int after);
 
-/* The five-row album sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album: `pinned` picks the last) on a menu bound by rowmenu_bind (a page whose asset has the track sheet: its rows
- * are reworded and the rows past the fifth hidden; rowmenu_open_src puts them back). `fn(row, act)` with act RMA_* runs after the sheet has closed. 1 when open. */
+/* The album sheet (Play, Shuffle | Pin Album / Unpin Album by `pinned`, Add to Playlist | Play Next, Play After) through rowmenu_open_rows, on the album asset or the track sheet's (rowmenu_open_src
+ * puts the track words back). `fn(row, act)` with act RMA_* runs after the sheet has closed. 1 when open. */
 int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn);
-
-/* The sheet `n` rows high (1..RM_ROWS) at the window's foot, in the glass of that height (pc_sheet<n>; a crop of a taller one is never used): the rows past the n-th are the caller's to hide
- * (m1_show(rm->item[i], 0)). Call before an open when the sheet's rows vary (the Home pins' sheet, the track rows' sheet: rowmenu_open_src does it). */
-void rowmenu_set_rows(rowmenu_t *rm, int n);
 
 /* Frees the bitmap and the row copy (the window's destroy). */
 void rowmenu_free(rowmenu_t *rm);

@@ -22,7 +22,7 @@ UI = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_queue.bi
 FLAG_FILE = '/mnt/data/m1plus/playback-shuffle'
 flag_on = lambda m: m.fs.get(FLAG_FILE) == b'1\n'   # the Shuffle flag as saved
 RM = sibling('rowmenu')
-MENU_WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_label0', 'rm_label1', 'rm_label2')
+MENU_WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_label0', 'rm_label1', 'rm_label2', 'rm_hair0', 'rm_hair1')
 WIDGETS = ('view_queue', 'btn_return', 'btn_shuffle', 'btn_repeat', 'label_status', 'label_row_title', 'label_row_sub', 'qp_title', 'qp_artist', 'qp_empty', 'qp_head', 'btn_qclear', 'label_title')
 NAMES = ['So What', 'Freddie Freeloader', 'Blue in Green', 'All Blues', 'Flamenco Sketches', 'Chorus Complains', 'Come Together', 'Something', 'Hey Jude', 'Let It Be']
 RGB = (190, 50, 55)
@@ -1258,7 +1258,9 @@ def rowedit_tests(ctx):
     # the sheet itself: shown by the asset, the scrim closes it and changes nothing
     m = opened(n=6, pos=1, menu=True); before = recs(m)
     open_row(m, 1)
-    expect(not [c for c in m.calls if c[0] in ('widget_move', 'widget_resize')] and m.word(m.widgets['rm_scrim']) is not None, 'the sheet opens in the asset\'s place (nothing moved or resized)')
+    ys, cd = RM.where(m, [c for c in m.calls if c[0] in ('widget_move', 'widget_resize')])
+    expect(ys == {'rm_item0': 0, 'rm_item1': 50, 'rm_hair0': 100, 'rm_item2': 100} and cd == [(0, 300), (320, 150)] and vis(m, 'rm_hair0')[0] == 1 and vis(m, 'rm_hair1')[0] == 0 and m.word(m.widgets['rm_scrim']) is not None,
+           f'the sheet opens in the asset\'s place, Play Next, Play After | Remove from Queue with a hairline at 100 ({ys}, {cd})')
     click(m, 'rm_scrim')
     expect(closed(m) and recs(m) == before and not plays(m), 'the scrim closes it, the queue is untouched')
     destroy(m)

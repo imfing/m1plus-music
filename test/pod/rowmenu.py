@@ -19,9 +19,10 @@ ASSET_ROWS = O['RM_ROWS']                              # the asset's seven rows 
 ASSET_H = ASSET_ROWS * PLROW
 CARD_Y = 450 - CARD_H                                   # the sheet sits on the window's foot (window y 150..450; a row without Pin Song: five rows, 200..450)
 LABEL_W = 320 - pod_ui.RM_TEXT_X - pod_ui.RM_TEXT_R    # 250: Now Playing's More sheet's label box (48..298)
-PLACED = [(0, 150), (320, 300)]   # the card at the foot, six rows high: what rowmenu_set_rows does for a song of the card
+PLACED = [(0, 150), (320, 300)]   # the card at the foot, six rows high (what rm_layout does for a song of the card)
+TRACK6 = {'rm_item5': 0, 'rm_item2': 50, 'rm_item3': 100, 'rm_item4': 150, 'rm_hair0': 200, 'rm_item0': 200, 'rm_item1': 250}   # a song of the card: Pin Song, Add to Playlist, Favorite, Get Info | Play Next, Play After
 EN = ('Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info', 'Pin Song', 'Remove from Playlist')
-WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_item3', 'rm_item4', 'rm_item5', 'rm_item6', 'rm_label0', 'rm_label1', 'rm_label2', 'rm_label3', 'rm_label4', 'rm_label5', 'rm_label6', 'rm_icon2', 'rm_icon3', 'rm_icon5', 'rm_icon6')
+WIDGETS = ('rm_scrim', 'rm_card', 'rm_item0', 'rm_item1', 'rm_item2', 'rm_item3', 'rm_item4', 'rm_item5', 'rm_item6', 'rm_label0', 'rm_label1', 'rm_label2', 'rm_label3', 'rm_label4', 'rm_label5', 'rm_label6', 'rm_icon0', 'rm_icon1', 'rm_icon2', 'rm_icon3', 'rm_icon4', 'rm_icon5', 'rm_icon6', 'rm_hair0', 'rm_hair1')
 SEL_VEC = pod.DATA['SEL_VEC'][0]
 UI_SONGS = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_songs.bin') if WORK else None
 UI_ALBUM = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_album.bin') if WORK else None
@@ -96,6 +97,13 @@ def titles_of(texts, names=LETTERS): return {t: r for t, r in texts if t in name
 def toasts_in(calls): return [c[1] for c in calls if c[0] == 'toast']
 
 
+def where(m, moved):
+    """The y each widget but the card was moved to (by name), and the card's own moves."""
+    names = {v: k for k, v in m.widgets.items()}
+    card = m.widgets['rm_card']
+    return {names[c[1]]: c[3] for c in moved if c[0] == 'widget_move' and c[1] != card}, [c[2:] for c in moved if c[1] == card]
+
+
 def card_of(m):
     """The menu's widgets the payload moved or resized (none: the asset places the sheet), and whether the card is shown."""
     ours = {m.widgets[n] for n in m.widgets if n.startswith('rm_')}
@@ -124,17 +132,19 @@ def asset_tests(ctx):
         expect(all(w.get('visible') == 'false' and w.get('sensitive') == 'false' for w in (scrim, card)), f'{name}: the scrim and the card start hidden and insensitive')
         expect([(i.type, i.x, i.y, i.h, i.w) for i in items] == [('button', 0, k * PLROW, PLROW, 320) for k in range(ASSET_ROWS)]
                and all(i.get(f'style:{st}:bg_color') == ('#FFFFFD10' if st == 'pressed' else '#00000000') and i.get(f'style:{st}:text_color') == '#FFFFFF' for i in items for st in pod_ui.STATES)
-               and all(i.get(f'style:{st}:border') == ('top' if k else 'none') and i.get(f'style:{st}:border_width') == ('1' if k else '0')
-                       and i.get(f'style:{st}:border_color') == ('#FFFFFF22' if k else '#00000000') for k, i in enumerate(items) for st in pod_ui.STATES),
-               f'{name}: seven transparent full-width 50 px rows, pressed 6 % white, the sheet\'s 13 % white hairline above every row but the first')
-        expect([ic.get('image') for ic in icons] == ['rm_ic_next', 'rm_ic_after', 'rm_ic_add', 'rm_ic_fav', 'rm_ic_info', 'rm_ic_pin', 'rm_ic_remove'] == [n for n, _ in mod_icons.RM_MENU_ICONS + (mod_icons.RM_REMOVE,)] and mod_icons.RM_FAV_ON == ('rm_ic_unfav', 'star')
-               and mod_icons.RM_REMOVE == ('rm_ic_remove', 'list-x')
+               and all(i.get(f'style:{st}:border') == 'none' and i.get(f'style:{st}:border_width') == '0' for i in items for st in pod_ui.STATES)
+               and [c.name for c in card.children][-2:] == ['rm_hair0', 'rm_hair1'] and len(card.children) == ASSET_ROWS + 2
+               and all((h.type, h.x, h.y, h.w, h.h) == ('view', 0, 0, 320, 1) and h.get('visible') == 'false' and h.get('sensitive') == 'false'
+                       and all(h.get(f'style:{st}:bg_color') == '#FFFFFF22' for st in pod_ui.STATES) for h in (tree.find('rm_hair0'), tree.find('rm_hair1'))),
+               f'{name}: seven transparent full-width 50 px rows without a border, pressed 6 % white; two hidden insensitive 320 x 1 hairlines (13 % white) last in the card, placed by the payload')
+        expect([ic.get('image') for ic in icons] == ['rm_ic_next', 'rm_ic_after', 'rm_ic_add', 'rm_ic_fav', 'rm_ic_info', 'rm_ic_pin', 'pod_ic_remove_red'] == [n for n, _ in mod_icons.RM_MENU_ICONS + (mod_icons.RM_REMOVE,)] and mod_icons.RM_FAV_ON == ('rm_ic_unfav', 'star')
+               and mod_icons.RM_REMOVE == ('pod_ic_remove_red', 'list-x')
                and [g for _, g in mod_icons.RM_MENU_ICONS] == ['list-start', 'list-end', 'list-plus', 'star', 'info', 'pin']
                and all((ic.x, ic.y, ic.w, ic.h) == (14, 13, 24, 24) and ic.get('sensitive') == 'false' for ic in icons),
                f'{name}: Lucide list-start, list-end, list-plus, star, info, pin and list-x, 24 px at x 14 (the More sheet\'s own rows, pod_tape_icon)')
-        expect(all(lb.x == 48 and lb.w == LABEL_W == 250 and lb.get('sensitive') == 'false' and lb.get('style:normal:font_size') == '18' and lb.get('style:normal:text_color') == '#FFFFFF'
-                   for lb in labels) and [pod_i18n.shown_english(lb) for lb in labels] == list(EN),
-               f'{name}: the labels start at x 48, 18 px white: Play Next, Play After, Add to Playlist, Favorite, Get Info, Pin Song, Remove from Playlist')
+        expect(all(lb.x == 48 and lb.w == LABEL_W == 250 and lb.get('sensitive') == 'false' and lb.get('style:normal:font_size') == '18'
+                   and lb.get('style:normal:text_color') == ('#FF6B6B' if k == 6 else '#FFFFFF') for k, lb in enumerate(labels)) and [pod_i18n.shown_english(lb) for lb in labels] == list(EN),
+               f'{name}: the labels start at x 48, 18 px white: Play Next, Play After, Add to Playlist, Favorite, Get Info, Pin Song, and Remove from Playlist in red #FF6B6B')
     # the images: the glass is the generator's, five rows high; the glyphs and the dots are in the tree
     xx = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx')
     w, h, r = mod_icons.GLASS_ROWMENU
@@ -406,7 +416,9 @@ def menu_tests(ctx):
     for i in range(6):
         SG.tap(m, 288, lay.row_y(i) + 30)
         moved, shown = card_of(m)
-        expect([c[2:] for c in moved] == PLACED and shown == (1, 1) and vis(m, 'rm_scrim') == (1, 1), f'Songs row {i}: the sheet and the scrim show, the card placed six rows high ({moved})')
+        ys, cd = where(m, moved)
+        expect(cd == PLACED and ys == TRACK6 and shown == (1, 1) and vis(m, 'rm_scrim') == (1, 1) and vis(m, 'rm_hair0')[0] == 1 and vis(m, 'rm_hair1')[0] == 0 and not any(c[0] == 'widget_set_sensitive' and c[1] == m.widgets['rm_hair0'] for c in m.calls),
+               f'Songs row {i}: the sheet and the scrim show, six rows in two groups (a hairline between them, never made sensitive), the card placed six rows high ({moved})')
         SG.click(m, 'rm_scrim')
         m.calls = []
     for off, row in ((300, 1), (0, 0), (384, 0)):
@@ -418,7 +430,8 @@ def menu_tests(ctx):
         ry = AB.row_y(row) - off
         AB.tap(m, 288, max(ry + 30, 10))   # (a row half under the navbar is tapped where it shows)
         moved, shown = card_of(m)
-        expect([c[2:] for c in moved] == PLACED and shown == (1, 1), f'album page, row {row} at window y {ry}: the sheet shows, the card placed six rows high ({moved})')
+        ys, cd = where(m, moved)
+        expect(cd == PLACED and ys == TRACK6 and shown == (1, 1), f'album page, row {row} at window y {ry}: the sheet shows, the card placed six rows high, the rows grouped ({moved})')
         m.calls = []
     # every language's labels fit the 250 px box (the row's label is cut with an ellipsis otherwise)
     import awtk_strings
@@ -750,15 +763,17 @@ def queue_tests(ctx):
            and card.get('visible') == 'false' and card.get('sensitive') == 'false' and scrim.get('visible') == 'false' and scrim.get('sensitive') == 'false',
            'the card is the 320 x 150 bottom sheet on the three-row glass, hidden and insensitive with the scrim')
     expect([(i.x, i.y, i.w, i.h) for i in items] == [(0, k * PLROW, 320, PLROW) for k in range(3)]
-           and all(i.get(f'style:{st}:border') == ('top' if k else 'none') and i.get(f'style:{st}:border_color') == ('#FFFFFF22' if k else '#00000000') for k, i in enumerate(items) for st in pod_ui.STATES),
-           'three full-width 50 px rows, the sheet\'s one hairline above every row but the first')
-    expect([ic.get('image') for ic in icons] == ['rm_ic_next', 'rm_ic_after', 'rm_ic_remove'] and mod_icons.RM_REMOVE == ('rm_ic_remove', 'list-x') and [pod_i18n.shown_english(lb) for lb in labels] == ['Play Next', 'Play After', 'Remove from Queue'],
+           and all(i.get(f'style:{st}:border') == 'none' for i in items for st in pod_ui.STATES)
+           and [c.name for c in card.children][-2:] == ['rm_hair0', 'rm_hair1'] and tree.find('rm_hair0').get('visible') == 'false' and tree.find('rm_hair0').get('sensitive') == 'false',
+           'three full-width 50 px rows without borders, the card\'s hairlines last (the payload puts one above Remove from Queue)')
+    expect([lb.get('style:normal:text_color') for lb in labels] == ['#FFFFFF', '#FFFFFF', '#FF6B6B'], 'Remove from Queue is red (#FF6B6B), the other two white')
+    expect([ic.get('image') for ic in icons] == ['rm_ic_next', 'rm_ic_after', 'pod_ic_remove_red'] and mod_icons.RM_REMOVE == ('pod_ic_remove_red', 'list-x') and [pod_i18n.shown_english(lb) for lb in labels] == ['Play Next', 'Play After', 'Remove from Queue'],
            'Play Next and Play After keep their words and glyphs; the third row is Remove from Queue with the Lucide list-x')
     xx = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx')
-    expect(open(os.path.join(xx, 'rm_ic_remove.png'), 'rb').read() == open(os.path.join(mod_icons.PNG, 'rm_ic_remove.png'), 'rb').read()
+    expect(open(os.path.join(xx, 'pod_ic_remove_red.png'), 'rb').read() == open(os.path.join(mod_icons.PNG, 'pod_ic_remove_red.png'), 'rb').read()
            and same_pixels(open(os.path.join(xx, 'pc_sheet3.png'), 'rb').read(), mod_icons.glass_image(320, 150, 18, fill=mod_icons.GLASS_SHEET_FILL, top_only=True)),
-           'rm_ic_remove.png is the committed PNG and pc_sheet3.png the generator\'s three-row glass')
-    expect(palette.ACCENT_GLYPH[3] == 'rm_ic_' and 'rm_ic_remove'.startswith(palette.ACCENT_GLYPH), 'the new glyph takes the accent like the others (the rm_ic_ prefix)')
+           'pod_ic_remove_red.png is the committed PNG and pc_sheet3.png the generator\'s three-row glass')
+    expect(palette.ACCENT_GLYPH[3] == 'rm_ic_' and palette.accent_kind('pod_ic_remove_red') is None, 'the destructive glyph is red: no accent tints it (like pod_ic_trash_red, palette.ACCENT_GLYPH_NOT)')
     import awtk_strings
     from awtk_text import Ttf, StbText
     raw = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw')
@@ -796,6 +811,9 @@ def pin_row_tests(ctx):
         expect(ok and vis(mm, 'rm_item5') == (0, 0) and mm.props.get((mm.widgets['rm_card'], 'style:normal:bg_image')) == 'pc_sheet5'
                and [c[2:] for c in mm.calls if c[0] in ('widget_move', 'widget_resize') and c[1] == mm.widgets['rm_card']] == [(0, 200), (320, 250)],
                f'{page}: a source\'s row has five rows (the sixth hidden and insensitive, the card five rows high on pc_sheet5)')
+        ys, cd = where(mm, [c for c in mm.calls if c[0] in ('widget_move', 'widget_resize')])
+        expect(ys == {'rm_item2': 0, 'rm_item3': 50, 'rm_item4': 100, 'rm_hair0': 150, 'rm_item0': 150, 'rm_item1': 200} and vis(mm, 'rm_hair0')[0] == 1 and vis(mm, 'rm_hair1')[0] == 0,
+               f'{page}: a source\'s row: Download, Favorite, Get Info | Play Next, Play After, one hairline at 150 ({ys})')
 
 
 SECTIONS = [asset_tests, paint_tests, touch_tests, hold_tests, menu_tests, fav_info_tests, source_tests, queue_tests, pin_row_tests]

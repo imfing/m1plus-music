@@ -39,6 +39,7 @@
 #include "upnext.h"
 #include "rowmenu.h"
 #include "songops.h"
+#include "picker.h"
 #include "entries.h"
 #include "artistphoto.h"
 #include "artists.h"
@@ -68,15 +69,11 @@ static struct {
     pin_t ent[PIN_MAX];
     unsigned n; /* pins held, in the user's order */
     int good; /* the last pn_load read the file (or found none): pn_save writes nothing else, so an unreadable file is never overwritten */
-    void *win, *sec, *sv, *st_title, /* sv: the list's scroll_view (its yslidable is off while a tile is lifted) */
-        *lab_row2,
-        *ic_row2, /* the sheet's third row (Play Next on an album; Unpin Playlist / Unpin Artist on a three-row sheet) */
-        *lab_pin, *ic_pin; /* the sheet's fifth row (Pin Album / Unpin Album on an album) */
+    void *win, *sec, *sv, *st_title; /* sv: the list's scroll_view (its yslidable is off while a tile is lifted) */
     char xname[PIN_STR],
         xpath
             [PIN_PATH]; /* the album the open sheet is for when it came from Recently Played (pins_album_sheet): its title and a track path; xckey its cover key */
     unsigned xckey;
-    void *lab_shuf, *ic_shuf; /* the second row's label and glyph (Shuffle; Unpin Song on a song's tile) */
     unsigned *tmp; /* one quadrant of a mosaic (PIN_COVER / 2 squared words) for grid_mosaic */
     unsigned timer; /* the one-shot or the decode tick, 0 none */
     int fg; /* the window is in front */
@@ -424,7 +421,6 @@ int pins_has_playlist(int id, const char *name) {
     return pn_pl_at(id, name) >= 0;
 }
 
-const char *pins_label_album(const char *album) { return pins_has_album(album) ? "Unpin Album" : "Pin Album"; }
 const char *pins_label_playlist(int id, const char *name) {
     return pins_has_playlist(id, name) ? "Unpin Playlist" : "Pin Playlist";
 }
@@ -1061,15 +1057,56 @@ static int pn_queue_album(const pin_t *e, int after) {
     return r;
 }
 
+/* The whole album to a playlist: its tracks (pn_album_tracks, in *PDEQ_SHOWLIST) all marked, our picker over the page (patch/picker.c, which copies the list and the marks). */
+static void pn_add_album(const pin_t *e) {
+    int cls = 0;
+    unsigned n, bytes;
+    unsigned char *sel;
+    void *list = pn_album_tracks(e, "", 0, &cls);
+    if (!list) {
+        pod_toast(TR("Not found"));
+        return;
+    }
+    n = deque_size(list), bytes = (n + 7) / 8;
+    sel = (unsigned char *)calloc(bytes, 1);
+    if (sel) memset(sel, 0xff, bytes); /* (the bits past n are never read: so_selection stops at the count) */
+    if (!sel || picker_open(cls, n, sel) < 0) pod_toast(TR("msg_addfailed"));
+    free(sel);
+}
+
+/* An album of the library as a pin (kind 'a', its cover key, title and a track path) for the album actions without a pin. */
+static void pn_album_of(pin_t *e, const char *album, unsigned ckey, const char *path) {
+    memset(e, 0, sizeof *e);
+    e->kind = 'a';
+    e->ck[0] = ckey;
+    pn_copy(e->name, sizeof e->name, album);
+    pn_copy(e->path, sizeof e->path, path ? path : "");
+}
+
 int pins_queue_album(const char *album, unsigned ckey, const char *path, int after) {
     pin_t e;
     if (!album || !*album) return 0;
-    memset(&e, 0, sizeof e);
-    e.kind = 'a';
-    e.ck[0] = ckey;
-    pn_copy(e.name, sizeof e.name, album);
-    pn_copy(e.path, sizeof e.path, path ? path : "");
+    pn_album_of(&e, album, ckey, path);
     return pn_queue_album(&e, after);
+}
+
+void pins_album_act(const char *album, unsigned ckey, const char *path, int act) {
+    pin_t e;
+    if (!album || !*album) return;
+    if (act == RMA_PIN) {
+        if (pins_has_album(album))
+            pins_unpin_album(album);
+        else
+            pins_pin_album(album, ckey, path);
+        return;
+    }
+    pn_album_of(&e, album, ckey, path);
+    if (act == RMA_ADD)
+        pn_add_album(&e);
+    else if (act == RMA_NEXT || act == RMA_AFTER)
+        pn_queue_album(&e, act == RMA_AFTER);
+    else if (pn_play_album(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER) < 0)
+        pod_toast(TR("Can't play"));
 }
 
 /* 1 when the card is in and the file is positively not there (ENOENT, ENOTDIR); 0 when it opens, or when it fails for another reason (EIO, a card that is busy: the file may well be there). */
@@ -1217,67 +1254,42 @@ static void pn_open(int i) {
         pn_open_playlist(&e);
 }
 
-/* A row of the long press sheet (the sheet has closed): Play, Shuffle, (Play Next, Play After for an album), Unpin for the tile it was opened on. */
+/* A row of the long press sheet (the sheet has closed): Play, Shuffle, (Add to Playlist, Play Next, Play After for an album), Unpin for the tile it was opened on. */
 static void pn_sheet(int tile, int act) {
     pin_t e;
     int r = 0;
     if (!pn_pin_of(tile, &e)) return;
-    if (e.kind == 's') { /* a song's sheet has two rows: Play, Unpin Song (the second row is the Shuffle slot) */
-        if (act == RMP_PLAY)
-            pn_play_song(&e);
-        else
-            pn_remove(e.kind, e.key);
+    if (act == RMA_PIN) {
+        pn_remove(e.kind, e.key);
         return;
     }
-    if (e.kind == 'a') { /* an album's sheet has five rows: Play, Shuffle, Play Next, Play After, Unpin Album */
-        if (act == RMA_PIN)
-            pn_remove(e.kind, e.key);
+    if (e.kind == 's') { /* a song's sheet: Play | Unpin Song */
+        pn_play_song(&e);
+        return;
+    }
+    if (e.kind == 'a') {
+        if (act == RMA_ADD)
+            pn_add_album(&e);
         else if (act == RMA_NEXT || act == RMA_AFTER)
             pn_queue_album(&e, act == RMA_AFTER);
         else if (pn_play_album(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER) < 0)
             pod_toast(TR("Can't play")); /* not in the library now (or it could not be read): the pin stays */
         return;
     }
-    if (act == RMP_UNPIN) {
-        pn_remove(e.kind, e.key);
-        return;
-    }
     if (e.kind == 'r') {
-        pn_play_artist(&e, act == RMP_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
+        pn_play_artist(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
         return;
     }
-    r = pn_play_playlist(&e, act == RMP_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
+    r = pn_play_playlist(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
     if (r < 0) pod_toast(TR("Can't play")); /* not in the library now (or it could not be read): the pin stays */
 }
 
-/* A row of the sheet opened for a Recently Played tile (the sheet has closed): Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album. Home stays in front, so no to-foreground redoes the section: the pin
- * and the unpin redo it here. */
+/* A row of the sheet opened for a Recently Played tile (the sheet has closed): the album sheet's rows. Home stays in front, so no to-foreground redoes the section: the pin and the unpin redo it
+ * here. */
 static void pn_xsheet(int row, int act) {
     (void)row;
-    if (act == RMA_PIN) {
-        if (pins_has_album(pn.xname))
-            pins_unpin_album(pn.xname);
-        else
-            pins_pin_album(pn.xname, pn.xckey, pn.xpath);
-        if (pn.win && pn.fg) pn_apply();
-    } else if (act == RMA_NEXT || act == RMA_AFTER)
-        pins_queue_album(pn.xname, pn.xckey, pn.xpath, act == RMA_AFTER);
-    else if (pins_play_album(pn.xname, pn.xckey, pn.xpath, act == RMA_SHUFFLE) < 0)
-        pod_toast(TR("Can't play"));
-}
-
-/* Sets the album sheet's five rows (Play, Shuffle, Play Next, Play After, Pin / Unpin Album) and opens it. */
-static void pn_album_rows(int pinned) {
-    if (pn.lab_shuf) widget_set_tr_text(pn.lab_shuf, "Shuffle");
-    if (pn.ic_shuf) widget_set_prop_str(pn.ic_shuf, "image", "rm_ic_pshuffle");
-    if (pn.lab_row2) widget_set_tr_text(pn.lab_row2, "Play Next");
-    if (pn.ic_row2) widget_set_prop_str(pn.ic_row2, "image", "rm_ic_next");
-    if (pn.lab_pin) widget_set_tr_text(pn.lab_pin, pinned ? "Unpin Album" : "Pin Album");
-    if (pn.ic_pin) widget_set_prop_str(pn.ic_pin, "image", pinned ? "rm_ic_unpin" : "rm_ic_pin");
-    m1_show(pn.rm.item[2], 1);
-    m1_show(pn.rm.item[3], 1);
-    m1_show(pn.rm.item[4], 1);
-    rowmenu_set_rows(&pn.rm, RM_ALBUM_ROWS);
+    pins_album_act(pn.xname, pn.xckey, pn.xpath, act);
+    if (act == RMA_PIN && pn.win && pn.fg) pn_apply();
 }
 
 int pins_album_sheet(const char *album, unsigned ckey, const char *path) {
@@ -1285,36 +1297,28 @@ int pins_album_sheet(const char *album, unsigned ckey, const char *path) {
         strlen(path) >= PIN_PATH)
         return 0;
     memcpy(pn.xname, album, strlen(album) + 1), memcpy(pn.xpath, path, strlen(path) + 1), pn.xckey = ckey;
-    pn_album_rows(pins_has_album(album));
-    return rowmenu_open_queue(&pn.rm, 0, pn_xsheet);
+    return rowmenu_open_album(&pn.rm, 0, pins_has_album(album), pn_xsheet);
 }
 
-/* The sheet for tile `row`: a press held and released where it was. */
+/* The sheet for tile `row`: a press held and released where it was. It follows the tile's type: an album has the album sheet (Play, Shuffle | Unpin Album, Add to Playlist | Play Next, Play After),
+ * a playlist or artist Play, Shuffle | Unpin, a song Play | Unpin Song. */
 static void pn_open_sheet(int row) {
+    const rowmenu_row_t song[] = {{"Play", "rm_ic_pplay", RMA_PLAY}, RM_GROUP, {"Unpin Song", "rm_ic_unpin", RMA_PIN}};
+    rowmenu_row_t set[] = {{"Play", "rm_ic_pplay", RMA_PLAY},
+                           {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
+                           RM_GROUP,
+                           {"Unpin Artist", "rm_ic_unpin", RMA_PIN}};
     int k;
     if (!pn.win || !pn.shown || !pn.fg || row < 0 || row >= PIN_MAX) return;
     k = pn.tkind[row];
-    /* the sheet follows the tile's type: an album has five rows (Play, Shuffle, Play Next, Play After, Unpin Album), a playlist or artist three (Play, Shuffle, Unpin), a song two (Play, Unpin Song) */
-    if (k == 's') {
-        if (pn.lab_shuf) widget_set_tr_text(pn.lab_shuf, "Unpin Song");
-        if (pn.ic_shuf) widget_set_prop_str(pn.ic_shuf, "image", "rm_ic_unpin");
-        m1_show(pn.rm.item[2], 0);
-        m1_show(pn.rm.item[3], 0);
-        m1_show(pn.rm.item[4], 0);
-        rowmenu_set_rows(&pn.rm, 2);
-    } else if (k == 'a') {
-        pn_album_rows(1);
+    if (k == 'a') {
+        rowmenu_open_album(&pn.rm, row, 1, pn_sheet);
+    } else if (k == 's') {
+        rowmenu_open_rows(&pn.rm, row, song, (int)(sizeof song / sizeof song[0]), pn_sheet);
     } else {
-        if (pn.lab_shuf) widget_set_tr_text(pn.lab_shuf, "Shuffle");
-        if (pn.ic_shuf) widget_set_prop_str(pn.ic_shuf, "image", "rm_ic_pshuffle");
-        if (pn.lab_row2) widget_set_tr_text(pn.lab_row2, k == 'p' ? "Unpin Playlist" : "Unpin Artist");
-        if (pn.ic_row2) widget_set_prop_str(pn.ic_row2, "image", "rm_ic_unpin");
-        m1_show(pn.rm.item[2], 1);
-        m1_show(pn.rm.item[3], 0);
-        m1_show(pn.rm.item[4], 0);
-        rowmenu_set_rows(&pn.rm, RM_QUEUE_ROWS);
+        if (k == 'p') set[3].text = "Unpin Playlist";
+        rowmenu_open_rows(&pn.rm, row, set, (int)(sizeof set / sizeof set[0]), pn_sheet);
     }
-    rowmenu_open_queue(&pn.rm, row, pn_sheet);
 }
 
 /* The press has been held RM_LONG_MS: the sheet opens at once, the tile lifts (drawn larger) and takes the touch (widget_grab on the list); the list stops sliding (pn_scroll, and pins_lift_sv keeps it so). A drag
@@ -1509,12 +1513,6 @@ void pins_start(void *win) {
     pn.g.st_title = pn.st_title, pn.g.st_sub = pn.st_title;
     pn.tmp = (unsigned *)calloc((PIN_COVER / 2) * (PIN_COVER / 2),
                                 sizeof(unsigned)); /* (none: a mosaic is its first cover alone) */
-    pn.lab_row2 = widget_lookup(win, "rm_label2", 1);
-    pn.ic_row2 = widget_lookup(win, "rm_icon2", 1);
-    pn.lab_pin = widget_lookup(win, "rm_label4", 1);
-    pn.ic_pin = widget_lookup(win, "rm_icon4", 1);
-    pn.lab_shuf = widget_lookup(win, "rm_label1", 1);
-    pn.ic_shuf = widget_lookup(win, "rm_icon1", 1);
     rowmenu_bind_album(&pn.rm, win); /* the long press sheet (an asset without it: no long press, a tap still opens) */
     pn_load();
     pn_apply(); /* the section is up (with its names) from the first paint; the covers come with the ticks */

@@ -1,4 +1,4 @@
-# Track rows' "..." menu (Play Next, Play After, Add to Playlist, Favorite, Get Info)
+# Item sheets: the track rows' "..." menu and its forms
 
 A grey "..." at the right end of every track row opens a bottom sheet in the look of Now Playing's More sheet ([playmore](playmore.md)).
 Pages: the album page (`patch/albumpage.c`) and the Songs page (`patch/songs.c`) with every list it hosts (the library, a playlist, genre, artist, Most Played,
@@ -25,16 +25,18 @@ Recently Played / Added, Hi-Res, Favourites; whatever `sg.cls` covers). Not cove
   and a release on the title block, a section header or the air below the last row open nothing. A press that began elsewhere in the row and moved a few pixels into the zone is a row tap
   (it plays, as it always did). The rest of the row plays the song as before.
 - **Long press**: a press on a row (anywhere on it, the "..." zone included) held `RM_LONG_MS` 500 ms without moving `SC_DRAG_PX` 10 px opens the same menu while the finger is still down. The row's press fill is cleared and the release afterwards does nothing. A scroll (ABORT), a move of 10 px or more or an earlier release cancels it (`rowmenu_hold_start` arms one timer, `rowmenu_hold_stop` / `rowmenu_hold_move` cancel it; `rowmenu_close` stops it too). Select mode (a tap still marks), section headers, the pinned header, the title block and the air below the last row have none. Songs page, album page and the Queue page's Up Next rows (while their "..." shows) have it; no haptics.
-- **The sheet** copies Now Playing's More sheet ([playmore](playmore.md) "Glass"): a full-window `#00000082` scrim (the sheet's dim) whose tap closes the menu, then `rm_card`, 320 x 250 on the
-  window's foot (window y 200..450, screen 230..480) with `pc_sheet5` (`mod_icons.glass_image(320, 250, 18, GLASS_SHEET_FILL, top_only=True)`: top corners only) as its `bg_image`, drawn 1:1.
-  Five full-width 50 px rows: a bare 24 px Lucide glyph at x 14 (the accent with one picked, as every sheet's glyphs: `ACCENT_GLYPH_STOCK`, [accent](accent.md)) and the 18 px white label from x 48 to 298 (the sheet's own rows, `pod_tape`), rows transparent and `#FFFFFF10` pressed,
-  the sheet's `#FFFFFF22` hairline above every row but the first. Rows, top to bottom: **Play Next** (`list-start`), **Play After** (`list-end`), **Add to Playlist** (`list-plus`), **Favorite** (`star`; "Undo Favorite" with the filled star `rm_ic_unfav` when the track is a favourite), **Get Info** (`info`).
-  The label is "Play After", not "Play Last". The hairline sits above every row (not only between the groups). No Go to Album / Go to Artist.
-- **Place and width** are the asset's for every row and language: the payload only shows and hides the scrim and the sheet. The longest label of the 13 languages (Russian, 212 px) fits the 250 px box.
+- **The sheet** copies Now Playing's More sheet ([playmore](playmore.md) "Glass"): a full-window `#00000082` scrim (the sheet's dim) whose tap closes the menu, then `rm_card` on the
+  window's foot, as high as its rows, with `pc_sheet<n>` (`mod_icons.glass_image(320, 50 n, 18, GLASS_SHEET_FILL, top_only=True)`: top corners only) as its `bg_image`, drawn 1:1.
+  Full-width 50 px rows: a bare 24 px Lucide glyph at x 14 (the accent with one picked, as every sheet's glyphs: `ACCENT_GLYPH_STOCK`, [accent](accent.md)) and the 18 px white label from x 48 to 298 (the sheet's own rows, `pod_tape`), rows transparent and `#FFFFFF10` pressed.
+- **Groups** ([ui-rules](ui-rules.md) "Item sheets"): the rows come in groups with one `#FFFFFF22` hairline between two groups (`rm_hair0` / `rm_hair1`, 320 x 1 views, the card's last children, shown with `widget_set_visible` only: they stay insensitive) and none inside a group or above the first row. The track sheet, top to bottom:
+  **Pin Song** / **Unpin Song** (`pin` / `pin-off`; a song of the card only), **Add to Playlist** (`list-plus`), **Favorite** (`star`; "Undo Favorite" with the filled star `rm_ic_unfav` when the track is a favourite), **Get Info** (`info`) |
+  **Play Next** (`list-start`), **Play After** (`list-end`) | **Remove from Playlist** (a stock playlist's songs page only). The label is "Play After", not "Play Last". No Go to Album / Go to Artist.
+- **Place**: `rm_layout(rm, seq, len)` lays every sheet out from a sequence of the asset's row indices with `RM_BREAK` between groups: the rows listed `PM_ROW_H` apart from y 0, the others hidden, a hairline on the top edge of each later group's first row, the card moved to `AH_WIN_H` minus its height and given the glass of that many rows (`pc_sheet1..7`). The track sheet's widget indices keep their meaning (`rm_item0` Play Next .. `rm_item6` Remove from Playlist); only their places follow the groups. The longest label of the 13 languages (Russian, 212 px) fits the 250 px box.
+- **Destructive rows** (Remove from Playlist, Remove from Queue) have the red label `RED_RGB` and the red `list-x` glyph `pod_ic_remove_red` (in `ACCENT_GLYPH_NOT`: no accent tints it), as the other sheets' Delete rows.
 
 ## Actions
 
-A sixth row, **Pin Song** / **Unpin Song**, shows for a song of the card (not a source's row, whose sheet keeps five rows and the five-row glass); see `docs/modules/pins.md`. A seventh, **Remove from Playlist** (`rm_ic_remove`), shows only on a page that registered it with `rowmenu_set_remove` (a stock playlist's songs page) for a playlist song record (`REC_ID` over 100); with Pin Song hidden it moves up into the sixth place. `rm_tail_rows` shows them and `rowmenu_set_rows` sizes the glass to the rows shown (`pc_sheet5` to `pc_sheet7`). The row calls the page's function with the menu's record copy after the sheet closed ([playlists](playlists.md) "Remove from Playlist").
+**Pin Song** / **Unpin Song** shows for a song of the card (not a source's row); see `docs/modules/pins.md`. **Remove from Playlist** shows only on a page that registered it with `rowmenu_set_remove` (a stock playlist's songs page) for a playlist song record (`REC_ID` over 100). `rm_track_rows` decides both at every open and lays the sheet out (five to seven rows). The row calls the page's function with the menu's record copy after the sheet closed ([playlists](playlists.md) "Remove from Playlist").
 
 
 | Row | What it does |
@@ -62,7 +64,7 @@ The menu also closes when the page reads its list again (`sg_load` / `ab_load`: 
 
 ## A library source's rows
 
-`rowmenu_open_src(rm, row, rec, add, src)` (the pages pass their `src`, NULL for the card's library) shows the same five-row card for a Navidrome track ([subsonic](subsonic.md) "Row sheet"): the third row is **Download**
+`rowmenu_open_src(rm, row, rec, add, src)` (the pages pass their `src`, NULL for the card's library) shows the same sheet for a Navidrome track ([subsonic](subsonic.md) "Row sheet"), five rows (Download, Favorite, Get Info | Play Next, Play After): the Add to Playlist row is **Download**
 (`rm_ic_dl`), **Cancel Download** (`rm_ic_cxdl`, waiting or running) or **Remove Download** (`pc_ic_trash`, on the card) from `src->row` (`ls_row_t.dl`), in place of Add to Playlist; Favorite / **Undo Favorite** follows `ls_row_t.fav`
 and goes through `src->act(LS_ACT_FAVORITE)` (no stock myfav call); the words and glyph of the third row are set at every open (Add to Playlist and `rm_ic_add` again for the stock library). Download, Cancel and Remove are
 `src->act` (`LS_ACT_DOWNLOAD`, `LS_ACT_CANCEL_DL`, `LS_ACT_DELETE_DL`); the row re-paints when `src->gen` moves. Play Next / Play After hand `src->queue_row(rec)` (a stock queue record: the stream address or the local file, its
@@ -71,13 +73,30 @@ row asks `ls_dsd_confirm` instead ("Download to Play?"). Get Info is `songinfo_o
 
 ## The Queue page's sheet
 
-The Queue page ([queue](queue.md) "Row edit") reuses this menu for its Up Next rows: same widgets, scrim, glass, row look and "..." painter, in a three-row form. The page's asset holds `row_menu(queue=True)`: `rm_card` 320 x 150 on `pc_sheet3` with `rm_item0..2`, rows **Play Next**, **Play After** and (under the one hairline) **Remove from Queue** (`rm_ic_remove`, `list-x`, bare 24 px, an accent glyph by the `rm_ic_` prefix). `rowmenu_bind_queue` binds those three (and sets `rowmenu_t.queued`), `rowmenu_open_queue(rm, row, fn)` shows the sheet with no row copy and no source, and a tapped row closes the sheet and calls `fn(row, RMQ_NEXT / RMQ_AFTER / RMQ_REMOVE)`: the page does the act (`pod_queue_move` / `pod_queue_remove`), not `upnext_add`. Everything else (close on the scrim, the "..." bitmap, `rowmenu_paint`) is shared. The Artists page's long press sheet uses the same three-row form (`row_menu(pins=True)`, callbacks `RMP_*`). The album long press sheet on the Albums page and Home ([pins](pins.md)) uses a five-row form (`row_menu(album=True)`, `rowmenu_bind_album`, `pc_sheet5`, callbacks `RMA_*`) with **Play**, **Shuffle**, **Play Next**, **Play After**, and **Pin Album** / **Unpin Album** (Home shrinks it to three rows for playlists and artists, and two for songs). A page whose asset has only the track sheet shows the same five rows with `rowmenu_open_album` (the Recently Added album grid): it rewords the first five rows, hides the other two and sets `rowmenu_t.alt`, and the next `rowmenu_open_src` restores the track sheet's words. `rowmenu_upnext_toast` formats the toast of any `upnext_add` status.
+The Queue page ([queue](queue.md) "Row edit") reuses this menu for its Up Next rows: same widgets, scrim, glass, row look and "..." painter, in a three-row form. The page's asset holds `row_menu(queue=True)`: `rm_card` 320 x 150 on `pc_sheet3` with `rm_item0..2`, rows **Play Next**, **Play After** | **Remove from Queue** (red, `pod_ic_remove_red`). `rowmenu_bind_queue` binds those three (and sets `rowmenu_t.queued`), `rowmenu_open_queue(rm, row, fn)` lays out rows 0, 1 | 2 and shows the sheet with no row copy and no source, and a tapped row closes the sheet and calls `fn(row, RMQ_NEXT / RMQ_AFTER / RMQ_REMOVE)`: the page does the act (`pod_queue_move` / `pod_queue_remove`), not `upnext_add`. Everything else (close on the scrim, the "..." bitmap, `rowmenu_paint`) is shared. The Artists and Playlists pages' long press sheets use the same three-row form (`row_menu(pins=True)`: Play, Shuffle | Pin; callbacks `RMP_*`).
+
+## Sheets from a table
+
+`rowmenu_open_rows(rm, row, rows, n, fn)` opens any bound menu with a table of `rowmenu_row_t` (words, glyph, act) and `RM_GROUP` breaks: the asset's rows are worded in order, their acts kept in `rowmenu_t.act`, the sheet laid out by `rm_layout`, `rowmenu_t.alt` set; a tapped row calls `fn(row, act)` once the sheet has closed. On the track sheet's widgets the next `rowmenu_open_src` puts the track words back (rows 0, 1 and 4; no table rewords row 6). Users:
+
+| Sheet | Rows (act) |
+|---|---|
+| Album (`rowmenu_open_album`: Albums long press, the Recently Added album grid, Home's Recently Played, an album pin on Home) | Play, Shuffle \| Pin Album / Unpin Album, Add to Playlist \| Play Next, Play After (`RMA_*`); the album form of the asset (`row_menu(album=True)`, `rowmenu_bind_album`, 6 rows) or the track sheet's |
+| Album page "..." (the library's, [album-page](album-page.md)): the popup form, below | Select \| Pin Album / Unpin Album (a titled album), Add to Playlist \| Play Next, Play After (20 px `pod_ic_vs*` glyphs) |
+| Home: a pinned playlist or artist | Play, Shuffle \| Unpin Playlist / Unpin Artist |
+| Home: a pinned song | Play \| Unpin Song |
+
+The album sheet's rows go to `pins_album_act` ([pins](pins.md)) on the Albums page, the Recently Added grid and Recently Played. `rowmenu_upnext_toast` formats the toast of any `upnext_add` status.
+
+## Popup form
+
+A navbar "..." opens a floating card under the button, as every page's "..." card does; a long press or a row's "..." opens the sheet ([ui-rules](ui-rules.md) "Item sheets"). `rowmenu_bind_popup(rm, win)` binds the popup widgets of `tools/pod_ui.py popup_menu()` (`rp_scrim`, `rp_card`, `rp_item0..4` with `rp_icon` / `rp_label`, `rp_hair0..1`; `RM_POPUP_ROWS` 5; no "..." bitmap) and `rowmenu_open_rows` opens it with the same tables, groups and acts. `rm_popup_fit` places it as `vs_fit` places the action-only view-sort card ([albums](albums.md) "View sort card"): 50 px rows, the 20 px glyph at `VS_TICK_X`, the 18 px label 28 px after it, as wide as the widest label plus `VS_TEXT_SLACK` and `VS_LABEL_R` (`VS_CARD_MIN`..`PL_CARD_MAX`), its right edge at `PL_CARD_RIGHT`, its top at `PL_CARD_Y`, in the glass `vs_glass<n>` (`patch3_x`); the rows, labels and hairlines take that width. User: the library album page (`ab.pop`).
 
 ## Design notes
 
 - No widget per row: the "..." is a bitmap (`rm_make_dots`: the image `rm_dots` decoded by `cc_decode`, its red channel the coverage, `#8C8C8C`) drawn by `rowmenu_paint` from the page's row painter with
   the chevrons' crop to the list's view, and the zone is hit-tested in the page's `EVT_POINTER_DOWN/UP` handlers (`sg_in_zone`, `ab_in_zone`). The asset holds only the hidden, insensitive `rm_scrim`
-  and `rm_card` (with `rm_item0..6`, `rm_icon0..6`, `rm_label0..6`, on the seven-row `pc_sheet7`) as the window's last two children (`pod_ui.row_menu`, after the sort card on the Songs page and the navbar on the album page).
+  and `rm_card` (with `rm_item0..6`, `rm_icon0..6`, `rm_label0..6` and the hairlines `rm_hair0..1`, on the seven-row `pc_sheet7`) as the window's last two children (`pod_ui.row_menu`, after the sort card on the Songs page and the navbar on the album page).
 - `rowmenu_t` lives in each page's state (`sg.rm`, `ab.rm`); the page text edge follows `rowmenu_on` and, on Songs, the rail (`sg_edge`). A list read again with the rail's presence changed drops its text tiles
   (`sg.tend`): their ellipses were cut for the other width.
 - No Go to Album / Go to Artist. Removing a queued song is the Queue page's own sheet, above.

@@ -36,6 +36,7 @@
 #include "i18n.h"
 #include "songops.h"
 #include "rowmenu.h"
+#include "upnext.h"
 #include "nextalbum.h"
 #include "libsrc.h"
 #include "viewsort.h"
@@ -96,6 +97,8 @@ static struct {
     int bar; /* the status bar's bg_color is ours and must go back to black */
     void *wave; /* the playing track's marker (ah_wave, AB_WAVE px), NULL when it did not decode: the number stays */
     rowmenu_t rm; /* the rows' "..." menu (patch/rowmenu.c) */
+    rowmenu_t
+        pop; /* the library's "..." popup (rowmenu_bind_popup: Pin Album, Add to Playlist | Play Next, Play After | Select) */
     const lib_src_t *
         src; /* the library source the page is of (patch/libsrc.h); NULL: the stock library, every line below that mentions it is skipped */
     void *
@@ -788,6 +791,7 @@ static void ab_load(int keep) {
     if (ab.src && ab.list) deque_destroy(ab.list); /* (our copy; the tiles above held texts, not records) */
     ab_build_end(); /* a set of an earlier read: the tracks may have changed */
     rowmenu_close(&ab.rm); /* (a menu's row is an index of the list that is read again) */
+    rowmenu_close(&ab.pop);
     m1_sel_reset(&ab.sel, 0);
     ab.list = ab.first = (void *)0, ab.count = 0, ab.press = ab.down = 0;
     ab.dur = 0, ab.ltried = 0, ab.wait = 0;
@@ -1041,15 +1045,53 @@ static int ab_on_abort(void *ctx, void *e) {
 /* ---------------------------------------------------------------------------
  * The window
  */
-/* The "...": the card opens and closes. The library's Pin Album row reads Unpin Album (and its glyph the pin-off one) while the album is pinned. */
+/* A row of the library's "..." popup (it has closed): Pin / Unpin Album, Add to Playlist (every track marked: the page's picker), Play Next / Play After (the page's tracks through upnext_add), Select. */
+static void ab_sheet(int row, int act) {
+    unsigned bytes = (ab.count + 7) / 8;
+    int r;
+    (void)row;
+    if (ab.src || !ab.view || !ab.count || ab.select) return;
+    if (!ab_valid()) {
+        ab_load(1);
+        return;
+    }
+    if (act == RMA_SELECT) {
+        ab_select(1);
+    } else if (act == RMA_PIN && *ab.pname) {
+        if (pins_has_album(ab.pname))
+            pins_unpin_album(ab.pname);
+        else
+            pins_pin_album(ab.pname, ab.cover_key, ab.ppath);
+    } else if (act == RMA_ADD && ab.sel.bits) {
+        memset(ab.sel.bits, 0xff, bytes); /* (the bits past the count are never read) */
+        r = so_add(ab.cls, ab.count, ab.sel.bits, ab.count, 1, ab.title_save, &ab.picker);
+        memset(ab.sel.bits, 0, bytes); /* (the picker and the stock vector have their own copies) */
+        if (r < 0) ab_load(1);
+    } else if (act == RMA_NEXT || act == RMA_AFTER) {
+        r = upnext_add(ab.list, act == RMA_AFTER);
+        rowmenu_upnext_toast(r, act == RMA_AFTER);
+    }
+}
+
+/* The "...": the library's album opens the popup (under the button, as the other pages' "..." cards) Select | Pin Album / Unpin Album (an album with a title), Add to Playlist | Play Next, Play After (Play and Shuffle are the header's pill and disc);
+ * a source's page opens and closes the card (Download Album). */
 static int ab_on_more(void *ctx, void *e) {
     (void)ctx;
     (void)e;
-    if (!ab.src && (!ab.view || !ab.count || ab.select)) return RET_OK;
-    if (!ab.vs.on && !ab.src && *ab.pname) {
-        widget_set_tr_text(ab.vs.label[VS_ACT2], pins_label_album(ab.pname));
-        widget_set_prop_str(ab.vs.glyph[VS_ACT2 - VS_SORTS], "image",
-                            pins_has_album(ab.pname) ? "pod_ic_vsunpin" : "pod_ic_vspin");
+    if (!ab.src) {
+        int pinned = *ab.pname && pins_has_album(ab.pname), n = 0;
+        rowmenu_row_t rows[RM_POPUP_ROWS + 2];
+        rows[n++] = (rowmenu_row_t){"Select", "pod_ic_vsselect", RMA_SELECT};
+        rows[n++] = (rowmenu_row_t)RM_GROUP;
+        if (*ab.pname)
+            rows[n++] = (rowmenu_row_t){pinned ? "Unpin Album" : "Pin Album",
+                                        pinned ? "pod_ic_vsunpin" : "pod_ic_vspin", RMA_PIN};
+        rows[n++] = (rowmenu_row_t){"Add to Playlist", "pod_ic_vsadd", RMA_ADD};
+        rows[n++] = (rowmenu_row_t)RM_GROUP;
+        rows[n++] = (rowmenu_row_t){"Play Next", "pod_ic_vsnext", RMA_NEXT};
+        rows[n++] = (rowmenu_row_t){"Play After", "pod_ic_vsafter", RMA_AFTER};
+        if (ab.view && ab.count && !ab.select) rowmenu_open_rows(&ab.pop, 0, rows, n, ab_sheet);
+        return RET_OK;
     }
     vs_menu(&ab.vs, !ab.vs.on, 0, 0, 0);
     return RET_OK;
@@ -1062,23 +1104,12 @@ static int ab_on_scrim(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* A source's Download Album: the source queues the page's tracks and toasts the outcome (LS_ACT_DOWNLOAD_ALL). The library's Select enters select mode; Pin / Unpin Album writes or removes the album's pin. */
+/* A source's Download Album: the source queues the page's tracks and toasts the outcome (LS_ACT_DOWNLOAD_ALL). */
 static int ab_on_card(void *ctx, void *e) {
     int k = (int)(long)ctx;
     (void)e;
     vs_menu(&ab.vs, 0, 0, 0, 0);
-    if (ab.src) {
-        if (k == VS_SEARCH && ab.list) ab.src->act(ab.src, ab.list, LS_ACT_DOWNLOAD_ALL);
-    } else if (ab.view && ab.count && !ab.select) {
-        if (k == VS_SELECT)
-            ab_select(1);
-        else if (k == VS_ACT2 && *ab.pname) {
-            if (pins_has_album(ab.pname))
-                pins_unpin_album(ab.pname);
-            else
-                pins_pin_album(ab.pname, ab.cover_key, ab.ppath);
-        }
-    }
+    if (ab.src && k == VS_SEARCH && ab.list) ab.src->act(ab.src, ab.list, LS_ACT_DOWNLOAD_ALL);
     return RET_OK;
 }
 
@@ -1114,6 +1145,7 @@ static int ab_on_bg(void *ctx, void *e) {
     ab.fg = 0;
     ab_bar_black();
     rowmenu_close(&ab.rm);
+    rowmenu_close(&ab.pop);
     return ab_on_abort(ctx, e);
 }
 
@@ -1133,6 +1165,7 @@ static int ab_on_destroy(void *ctx, void *e) {
     m1_sel_free(&ab.sel);
     if (ab.wave) bitmap_destroy(ab.wave);
     rowmenu_free(&ab.rm);
+    rowmenu_free(&ab.pop);
     if (ab.src && ab.list) deque_destroy(ab.list);
     if (ab.src && ab.srow_d) deque_destroy(ab.srow_d);
     memset(&ab, 0, sizeof ab);
@@ -1210,8 +1243,10 @@ static int ab_open(const lib_src_t *src, unsigned cls, void *row) {
         navigator_back(); /* an asset that is not ours */
         return -2;
     }
-    if (vs_bind(&ab.vs, ab.win, ab_on_card, ab_on_scrim,
-                src ? VS_WITH_SEARCH : VS_WITH_SELECT | (*ab.pname ? VS_WITH_ACT2 : 0))) {
+    if (vs_bind(
+            &ab.vs, ab.win, ab_on_card, ab_on_scrim,
+            src ? VS_WITH_SEARCH
+                : VS_WITH_SELECT)) { /* (the library's page binds the card but never opens it: its "..." is the row menu's sheet) */
         navigator_back();
         return -2;
     }
@@ -1222,6 +1257,8 @@ static int ab_open(const lib_src_t *src, unsigned cls, void *row) {
                 (void *)0); /* the marks: all or none */
     ab.wave = grid_wave_make(ab.win);
     rowmenu_bind(&ab.rm, ab.win); /* the rows' "..." menu (optional: no widgets means no "...") */
+    if (!src)
+        rowmenu_bind_popup(&ab.pop, ab.win); /* the library's "..." popup (a source's "..." is the view-sort card) */
     widget_on(ab.view, EVT_POINTER_DOWN, ab_on_down, (void *)0);
     widget_on(ab.view, EVT_POINTER_UP, ab_on_up, (void *)0);
     widget_on(ab.view, EVT_POINTER_MOVE, ab_on_move, (void *)0);

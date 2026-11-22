@@ -70,9 +70,16 @@ shows the remaining hours and minutes. This is the same timer as **All System Se
 
 ### Track actions
 
-On an album or Songs list, tap a track's **…** or long-press its row. Choose **Play Next**,
-**Play After**, **Add to Playlist**, **Favorite** or **Get Info**. A favorited track offers
-**Undo Favorite** instead. In a playlist, **Remove from Playlist** is the last choice. Get Info shows the track's format, quality, length, size and path.
+On an album or Songs list, tap a track's **…** or long-press its row. The menu is in groups:
+**Pin Song**, **Add to Playlist**, **Favorite** and **Get Info**, then **Play Next** and **Play After**. A
+favorited track offers **Undo Favorite** instead. In a playlist, **Remove from Playlist** (in red) is the last choice.
+
+### Album actions
+
+Touch and hold an album on **Albums**, the **Recently Added** album grid, **Recently Played** or a Home pin for
+**Play** and **Shuffle**, then **Pin Album** and **Add to Playlist** (the whole album), then **Play Next** and
+**Play After**. On an album's page, **…** has the same choices without Play and Shuffle (the buttons under
+the cover), and **Select** last. Get Info shows the track's format, quality, length, size and path.
 
 ### Manage Up Next
 

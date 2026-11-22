@@ -303,7 +303,7 @@ PL_MENU_ICONS = (('pl_ic_new', 'list-plus'), ('pl_ic_import', 'file-input'), ('p
 # the row's own "..." (RM_DOTS: the Lucide ellipsis, 24 px white on transparent; the payload makes it a RM_DOTS_RGB bitmap from the image's coverage and paints it at the right end of a track row)
 RM_MENU_ICONS = (('rm_ic_next', 'list-start'), ('rm_ic_after', 'list-end'), ('rm_ic_add', 'list-plus'), ('rm_ic_fav', 'star'), ('rm_ic_info', 'info'), ('rm_ic_pin', 'pin'))
 RM_PIN_ICONS = (('rm_ic_pplay', 'play'), ('rm_ic_pshuffle', 'shuffle'), ('rm_ic_unpin', 'pin-off'))   # the Home pins' long press sheet (patch/pins.c, docs/modules/pins.md): Play, Shuffle, Unpin Album / Unpin Playlist
-RM_REMOVE = ('rm_ic_remove', 'list-x')   # the Queue page's sheet (patch/rowmenu.c, docs/modules/queue.md): Remove from Queue; the track sheet's Remove from Playlist (a stock playlist's songs page)
+RM_REMOVE = ('pod_ic_remove_red', 'list-x')   # the Queue page's sheet (patch/rowmenu.c, docs/modules/queue.md): Remove from Queue; the track sheet's Remove from Playlist (a stock playlist's songs page). A destructive row: red (PA_RED, as pod_ic_trash_red; tools/palette.py ACCENT_GLYPH_NOT keeps the accent off it)
 RM_FAV_ON = ('rm_ic_unfav', 'star')   # Favorite's glyph while the track is a favourite (Undo Favorite): the same star filled solid; the payload swaps the row's image
 RM_DL_ICONS = (('rm_ic_dl', 'download'), ('rm_ic_cxdl', 'x'))   # a Navidrome row's sheet (patch/rowmenu.c rm_third): the third row's Download / Remove Download / Cancel Download, in place of Add to Playlist's glyph
 RM_DOTS = ('rm_dots', 'ellipsis')
@@ -854,7 +854,7 @@ def generate_all(sizes):
     for n, g in RM_MENU_ICONS: f[n] = glyph(g, BARE_PX, 'bare')
     for n, g in RM_DL_ICONS: f[n] = glyph(g, BARE_PX, 'bare')
     f[RM_FAV_ON[0]] = glyph(RM_FAV_ON[1], BARE_PX, 'solid')
-    f[RM_REMOVE[0]] = glyph(RM_REMOVE[1], BARE_PX, 'bare')
+    f[RM_REMOVE[0]] = tint(glyph(RM_REMOVE[1], BARE_PX, 'bare'), PA_RED)
     for n, g in RM_PIN_ICONS: f[n] = glyph(g, BARE_PX, 'bare')
     f[RM_DOTS[0]] = glyph(RM_DOTS[1], RM_DOTS_PX, 'bare')
     for n, g in ES_ICONS.items(): f[n] = glyph_fit(g, ES_PX, ES_PX, ES_RGB, 2, 2.0)
@@ -903,6 +903,7 @@ SONGS_IMAGES = {'sg_play': ('play:filled', WHITE, 14, 16), 'sg_shuffle': ('shuff
                 'pod_ic_vsartist': ('mic-vocal', WHITE, None, 20), 'pod_ic_vsalbumartist': ('user-star', WHITE, None, 20),
                 'pod_ic_vsrefresh': ('refresh-cw', WHITE, None, 20), 'pod_ic_vsserver': ('server', WHITE, None, 20),   # the Subsonic root's "..." card (patch/ndroot.c): Sync Now, Server Settings
                 'pod_ic_vsdownload': ('download', WHITE, None, 20),   # the Subsonic album page's "..." card (patch/albumpage.c): Download Album
+                'pod_ic_vsadd': ('list-plus', WHITE, None, 20), 'pod_ic_vsnext': ('list-start', WHITE, None, 20), 'pod_ic_vsafter': ('list-end', WHITE, None, 20),   # the library album page's "..." popup (patch/albumpage.c ab_on_more): Add to Playlist, Play Next, Play After
                 'pod_ic_vspin': ('pin', WHITE, None, 20), 'pod_ic_vsunpin': ('pin-off', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Pin Playlist / Unpin Playlist
                 'pod_ic_vsclean': ('broom', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Clean Up
                 'pod_ic_vsrename': ('pencil', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Rename

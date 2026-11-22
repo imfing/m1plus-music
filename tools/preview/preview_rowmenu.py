@@ -24,13 +24,14 @@ TONE = (0x3A, 0x1E, 0x24)   # a cover's tone behind the album page (m1_tone of a
 
 
 ND_STATES = {   # a Navidrome row's sheet (patch/rowmenu.c rm_third): the third row and the star by the row's state
-    'new': (('Play Next', 'Play After', 'Download', 'Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'rm_ic_dl', 'rm_ic_fav', 'rm_ic_info')),
-    'done': (('Play Next', 'Play After', 'Remove Download', 'Undo Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'pc_ic_trash', 'rm_ic_unfav', 'rm_ic_info')),
-    'busy': (('Play Next', 'Play After', 'Cancel Download', 'Favorite', 'Get Info'), ('rm_ic_next', 'rm_ic_after', 'rm_ic_cxdl', 'rm_ic_fav', 'rm_ic_info'))}
+    'new': (('Download', 'Favorite', 'Get Info', 'Play Next', 'Play After'), ('rm_ic_dl', 'rm_ic_fav', 'rm_ic_info', 'rm_ic_next', 'rm_ic_after')),
+    'done': (('Remove Download', 'Undo Favorite', 'Get Info', 'Play Next', 'Play After'), ('pc_ic_trash', 'rm_ic_unfav', 'rm_ic_info', 'rm_ic_next', 'rm_ic_after')),
+    'busy': (('Cancel Download', 'Favorite', 'Get Info', 'Play Next', 'Play After'), ('rm_ic_cxdl', 'rm_ic_fav', 'rm_ic_info', 'rm_ic_next', 'rm_ic_after'))}
+ALBUM_PAGE_POPUP = (('Select', 'pod_ic_vsselect'), ('Pin Album', 'pod_ic_vspin'), ('Add to Playlist', 'pod_ic_vsadd'), ('Play Next', 'pod_ic_vsnext'), ('Play After', 'pod_ic_vsafter'))   # the library album page's "..." popup (patch/albumpage.c ab_on_more, patch/rowmenu.c rowmenu_bind_popup): groups 1 | 2 | 2
 
 
 def album(s, scroll=300, menu=False, playing=2, nd=None, pins=False):
-    """The album page (patch/albumpage.c) scrolled to its tracks: the tinted window, the glass Back and Select | "..." | Now Playing capsule (the "..." opens the pins' sheet), each track's number, title and "..." (the title ends
+    """The album page (patch/albumpage.c) scrolled to its tracks: the tinted window, the glass Back and "..." | Now Playing capsule (pins: the "..." sheet open), each track's number, title and "..." (the title ends
     RM_INK_GAP before the glyph's ink), the hairline; the menu when asked. 450 px of window."""
     win, hdr = O['AH_WIN_H'], O['AH_HDR_H']
     im = Image.new('RGBA', (320, win), TONE + (255,))
@@ -48,16 +49,43 @@ def album(s, scroll=300, menu=False, playing=2, nd=None, pins=False):
         im.alpha_composite(more, (right - O['RM_MORE_W'] + (O['RM_MORE_W'] - O['RM_DOTS_PX']) // 2, y + (ROW - 1 - O['RM_DOTS_PX']) // 2))
     for name, x, w in (('ah_nav_back', 7, 44), ('pod_nav_more', O['NAV_VIEW_X'], O['NAV_VIEW_W']), ('ah_nav_play', 260, 60)):
         g = s.img(name); im.alpha_composite(g, (x + (w - g.width) // 2, (NAV - g.height) // 2))
-    if pins: PS.row_menu(s, im, keys=('Play', 'Shuffle', 'Pin Album'), glyphs=('rm_ic_pplay', 'rm_ic_pshuffle', 'rm_ic_pin'))
+    if pins:   # the "..." popup: the view-sort card's look, a hairline between the groups
+        im.alpha_composite(Image.new('RGBA', im.size, (0, 0, 0, 0x82)))
+        PI.view_card(s, im, [(k, g, False, None) for k, g in ALBUM_PAGE_POPUP], 'vs_glass5', (1, 3))
     elif menu: PS.row_menu(s, im, *([ND_STATES[nd][0]] if nd else []), **({'glyphs': ND_STATES[nd][1]} if nd else {}))
+    return im
+
+
+def sheet(s, im, rows): PS.row_menu(s, im, keys=tuple(k for k, _ in rows), glyphs=tuple(g for _, g in rows))
+
+
+GROUPED = (   # every grouped sheet: (panel title, rows (key, glyph)); the groups follow from the words (preview_songs.SHEET_GROUPS)
+    ('Album: long press', (('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Pin Album', 'rm_ic_pin'), ('Add to Playlist', 'rm_ic_add'),
+                           ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'))),
+    ('Album page: "..." popup', None),
+    ('Song: a playlist\'s row', (('Pin Song', 'rm_ic_pin'), ('Add to Playlist', 'rm_ic_add'), ('Favorite', 'rm_ic_fav'), ('Get Info', 'rm_ic_info'),
+                                 ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'), ('Remove from Playlist', 'pod_ic_remove_red'))),
+    ('Song: Navidrome', tuple(zip(*ND_STATES['new']))),
+    ('Artist / Playlist: long press', (('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Pin Artist', 'rm_ic_pin'))),
+    ('Home: a pinned song', (('Play', 'rm_ic_pplay'), ('Unpin Song', 'rm_ic_unpin'))),
+    ('Queue: Up Next row', (('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'), ('Remove from Queue', 'pod_ic_remove_red'))))
+
+
+def grouped(s, rows):
+    if rows is None: return album(s, pins=True)   # (the popup, not a sheet)
+    im = album(s)
+    sheet(s, im, rows)
     return im
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('workdir'); ap.add_argument('out'); ap.add_argument('--lang', default='en_US')
+    ap.add_argument('--groups', action='store_true', help='every grouped sheet instead (album, album page, song, Navidrome, artist, pinned song, queue)')
     a = ap.parse_args()
     s = PI.Side(a.workdir, True, a.lang)
+    if a.groups:
+        return save(a.out, [(t, grouped(s, rows)) for t, rows in GROUPED])
     items, heads, _ = PS.build_items()
     scroll = heads['A'] - 8
     fav = PS.tr(s, 'Favorites')
@@ -70,14 +98,18 @@ def main():
               ('Navidrome: the sheet', album(s, menu=True, nd='new')),
               ('Navidrome: downloaded, a favourite', album(s, menu=True, nd='done')),
               ('Navidrome: downloading', album(s, menu=True, nd='busy'))]
+    save(a.out, panels)
+
+
+def save(out, panels):
     pad, lab = 12, 20
     sheet = Image.new('RGB', (len(panels) * (320 + pad) + pad, 450 + lab + 2 * pad), (0x2A, 0x2A, 0x2A)); d = ImageDraw.Draw(sheet)
     for i, (title, im) in enumerate(panels):
         x = pad + i * (320 + pad)
         d.text((x, pad), title, fill=(0xAA,) * 3, font=PI.ANN); sheet.paste(im.convert('RGB'), (x, pad + lab))
-    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    PI.save_compact(sheet, a.out)
-    print('wrote', a.out, sheet.size)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    PI.save_compact(sheet, out)
+    print("wrote", out, sheet.size)
 
 
 if __name__ == '__main__': main()

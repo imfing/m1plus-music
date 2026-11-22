@@ -277,20 +277,32 @@ def sort_card(s, im, current=0, rev=False, kind='library'):
     PI.view_card(s, im, rows, glass_name, hairs)
 
 
-def row_menu(s, im, keys=('Play Next', 'Play After', 'Add to Playlist', 'Favorite', 'Get Info'), fav_on=False, glyphs=('rm_ic_next', 'rm_ic_after', 'rm_ic_add', 'rm_ic_fav', 'rm_ic_info')):
-    """The rows' menu (patch/rowmenu.c, tools/pod_ui.py row_menu): the scrim's dim, then Now Playing's More sheet at the window's foot: the pc_sheet5 pane (320 x 250, top corners only),
-    five 50 px rows, a 24 px glyph at x 14, the 18 px label from x 48, the 13 % white hairline above every row but the first."""
+SHEET_GROUPS = ({'Play', 'Shuffle'},
+                {'Pin Album', 'Unpin Album', 'Pin Song', 'Unpin Song', 'Pin Artist', 'Unpin Artist', 'Pin Playlist', 'Unpin Playlist', 'Add to Playlist', 'Download', 'Remove Download',
+                 'Cancel Download', 'Favorite', 'Undo Favorite', 'Get Info'},
+                {'Play Next', 'Play After'}, {'Select'}, {'Remove from Playlist', 'Remove from Queue'})   # the sheets' groups (patch/rowmenu.c: a hairline between two, none inside one)
+
+
+def sheet_group(key): return next((i for i, g in enumerate(SHEET_GROUPS) if key in g), -1)
+
+
+def row_menu(s, im, keys=('Pin Song', 'Add to Playlist', 'Favorite', 'Get Info', 'Play Next', 'Play After'), fav_on=False,
+             glyphs=('rm_ic_pin', 'rm_ic_add', 'rm_ic_fav', 'rm_ic_info', 'rm_ic_next', 'rm_ic_after')):
+    """The rows' menu (patch/rowmenu.c rm_layout, tools/pod_ui.py row_menu): the scrim's dim, then the sheet at the window's foot: the pc_sheet<n> pane (320 x 50 n, top corners only),
+    50 px rows, a 24 px glyph at x 14, the 18 px label from x 48; the rows in groups (SHEET_GROUPS) with the 13 % white hairline on the top edge of every group's first row but the sheet's
+    first, none inside a group; the destructive rows' labels red (pod_ui.RM_RED_KEYS)."""
     import pod_ui
     im.alpha_composite(Image.new('RGBA', im.size, (0, 0, 0, 0x82)))
     rh = O['PM_ROW_H']; h = len(keys) * rh; y = im.height - h
     im.alpha_composite(s.img('pc_sheet%d' % len(keys)), (0, y))
     for i, (key, name) in enumerate(zip(keys, glyphs)):
         ry = y + i * rh
-        if i: im.alpha_composite(Image.new('RGBA', (W, 1), (255, 255, 255, 0x22)), (0, ry))
+        if i and sheet_group(key) != sheet_group(keys[i - 1]): im.alpha_composite(Image.new('RGBA', (W, 1), (255, 255, 255, 0x22)), (0, ry))
         if i == PRESSED_ROW: im.alpha_composite(Image.new('RGBA', (W, rh), (ACC + (56,)) if ACC else (255, 255, 253, 0x10)), (0, ry))
         if fav_on and key == 'Favorite': name, key = 'rm_ic_unfav', 'Undo Favorite'
         g = s.img(name); im.alpha_composite(g, (pod_ui.RM_ICON_X, ry + (rh - g.height) // 2))
-        s.text(im, pod_ui.RM_TEXT_X, ry + rh / 2, s.clip(tr(s, key), pod_ui.RM_LABEL_PX, W - pod_ui.RM_TEXT_X - pod_ui.RM_TEXT_R), pod_ui.RM_LABEL_PX)
+        s.text(im, pod_ui.RM_TEXT_X, ry + rh / 2, s.clip(tr(s, key), pod_ui.RM_LABEL_PX, W - pod_ui.RM_TEXT_X - pod_ui.RM_TEXT_R), pod_ui.RM_LABEL_PX,
+               tuple(int(pod_ui.RED_RGB[k:k + 2], 16) for k in (1, 3, 5)) if key in pod_ui.RM_RED_KEYS else (255, 255, 255))
     return 0, y, W, h
 
 
