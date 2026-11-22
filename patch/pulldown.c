@@ -643,6 +643,13 @@ static int pd_on_close(void *dlg, void *evt) {
     return RET_OK;
 }
 
+/* The bar copy's clock follows 24-Hour Time as the real bar does: stock's switch (change_time24h_12h) re-formats only the real bar's bar_dclock, so the copy kept the asset's
+ * "hh:mm" (24 h) whatever the setting. With the switch off it takes the real bar's 12 h format. The dialog is built each time it opens, so a change shows the next time. */
+static void pd_clock(void *dlg) {
+    void *w = *(volatile unsigned char *)TIME_24H ? 0 : widget_lookup(dlg, PD_CLOCK_NAME, 1);
+    if (w) digit_clock_set_format(w, PD_CLOCK_12H);
+}
+
 /* The hook (tools/pod.py PULLDOWN_INIT): the flags, then stock, then ours. */
 int m1plus_pulldown_init(void *dlg, void *ctx) {
     int ret;
@@ -655,6 +662,7 @@ int m1plus_pulldown_init(void *dlg, void *ctx) {
             bp_pulldown(
                 dlg); /* the Battery Percentage and the EQ mark of the bar copy at once, before the first paint */
             lo_bar_refresh(dlg);
+            pd_clock(dlg);
         }
     }
     return ret;

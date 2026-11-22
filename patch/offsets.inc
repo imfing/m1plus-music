@@ -721,6 +721,8 @@
 #define LK_DATE_NAME "dclock_date" /* the lock screen's date (a digit_clock; patch/lockscreen.c lk_date) */
 #define LK_CLOCK_NAME "dclock_time" /* the lock screen's clock (a digit_clock, asset format "hh:mm"; patch/lockscreen.c lk_clock) */
 #define LK_CLOCK_12H "HH:mm" /* its format with 24-Hour Time off: "9:41" (tools/mod_lockscreen.py HOUR12_VA) */
+#define PD_CLOCK_NAME "bar_dclock" /* the pull-down's status bar copy clock (a digit_clock, asset format "hh:mm"; patch/pulldown.c pd_clock) */
+#define PD_CLOCK_12H "HH:TT" /* its format with 24-Hour Time off, stock change_time24h_12h's for the real bar (0x752334): "9:41 AM" */
 #define MB_FIRST_MS 120
 #define MB_TICK_MS 500
 #define MB_SETTLE 3

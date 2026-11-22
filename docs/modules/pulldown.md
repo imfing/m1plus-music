@@ -83,6 +83,9 @@ dispatcher, the pointer binds and the tile visitor's click bind.
 - Without the kill switch, after the tiles: `bp_pulldown` fills the bar copy's Battery Percentage label and
   `lo_bar_refresh` sets its EQ mark and sleep timer icon (stock's face call has by then set `img_digital`), so all are in the
   first frame instead of one timer tick later.
+- Also without the kill switch, `pd_clock` gives the bar copy's clock (`bar_dclock`, asset format
+  `hh:mm`, 24 h) the real bar's 12 h format `HH:TT` (`9:41 AM`) when 24-Hour Time is off. Stock's
+  switch (`change_time24h_12h`) only formats the real bar, so on stock the copy is 24 h whatever the setting.
 - The file is read. Shown tile k takes the place of stock tile k (positions read from the widgets)
   and its caption keeps its own offset; the other tiles and captions get `visible=false` **and**
   `sensitive=false`. When **Control Labels** (Settings > Appearance, `/mnt/data/m1plus/pulldown-labels`,

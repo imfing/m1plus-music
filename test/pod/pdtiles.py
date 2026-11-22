@@ -161,8 +161,8 @@ def hook_tests(ctx):
            and all(c[2] == 0 for c in m.calls if c[0] in ('widget_set_visible', 'widget_set_sensitive')),
            'every tile not listed is hidden, ours too (a listed hidden id adds nothing)')
     lookups = {c[1] for c in m.calls if c[0] == 'widget_lookup'}
-    expect(lookups - {'view_bar_left', 'pod_sleep'} == set(IMG + LAB) and not any(c[0] in ('widget_destroy_children', 'widget_set_prop_str', 'widget_set_text_utf8', 'widget_set_tr_text') for c in m.calls),
-           'only the thirty tiles and captions (and the bar refresh: view_bar_left, pod_sleep) are looked up; nothing is renamed, destroyed or re-labelled')
+    expect(lookups - {'view_bar_left', 'pod_sleep', 'bar_dclock'} == set(IMG + LAB) and not any(c[0] in ('widget_destroy_children', 'widget_set_prop_str', 'widget_set_text_utf8', 'widget_set_tr_text') for c in m.calls),
+           'only the thirty tiles and captions (and the bar refresh: view_bar_left, pod_sleep; the 12 h clock: bar_dclock) are looked up; nothing is renamed, destroyed or re-labelled')
 
     # -- 3b. the bar copy at the dialog's init: the Battery Percentage and the EQ mark are there in the first frame, not one timer tick later ---------
     bp, lo = (cdefs.defines(os.path.join(ROOT, 'patch', f), strings=True) for f in ('battery.h', 'lineout.h'))
@@ -191,6 +191,21 @@ def hook_tests(ctx):
     m = bar_machine(kill=True)
     expect(shown(m, m.lbl) == [] and shown(m, m.bg) == [] and shown(m, m.eq) == [] and not [c for c in m.calls if c[0] == 'widget_set_text_utf8'] and 'view_bar_left' not in {c[1] for c in m.calls if c[0] == 'widget_lookup'},
            'kill switch: nothing of this happens')
+
+    # -- 3c. the bar copy's clock follows 24-Hour Time as the real bar does (patch/pulldown.c pd_clock): stock's change_time24h_12h formats only the real bar
+    C = cdefs.defines(os.path.join(ROOT, 'patch', 'offsets.inc'), strings=True)
+    CLOCK, H24 = C['PD_CLOCK_NAME'], pod.DATA['TIME_24H'][0]
+    def clocked(byte, kill=False, widget=True):
+        m = PD()
+        if widget: m.clock = m.widget(CLOCK)
+        m.u.mem_write(H24, bytes([byte]))
+        if kill: m.present.add('/mnt/mmc/m1plus-off')
+        m.open()
+        return [c for c in m.calls if c[0] == 'digit_clock_set_format' and widget and c[1] == m.clock]
+    sets = clocked(0)
+    expect(pod.DATA['TIME_24H'] == (0xa05ab0, 'time24hflag') and CLOCK == 'bar_dclock' and awtk_ui.parse(open(os.path.join(WORK, UI), 'rb').read()).find(CLOCK).get('format') == 'hh:mm'
+           and len(sets) == 1 and sets[0][2] == C['PD_CLOCK_12H'] == 'HH:TT', '24-Hour Time off: the bar copy\'s clock takes the real bar\'s 12 h format "HH:TT", once')
+    expect(not clocked(1) and not clocked(0, kill=True) and not clocked(0, widget=False), '24-Hour Time on, the kill switch, or no clock widget: the asset\'s "hh:mm" stays')
 
     # -- 4. the parser: the payload against the Python model on random files --------------------------------------------
     rnd = random.Random(11)
