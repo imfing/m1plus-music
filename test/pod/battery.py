@@ -291,7 +291,7 @@ def run(ctx):
     # 7. The assets: the hidden number and its backdrops inside the battery of the system bar and the pull-down
     import awtk_ui, statusbar, battery_art
     from PIL import Image
-    expect((W, W_CHG) == (battery_art.STATUS.body[2], battery_art.PCT_W_CHG) and W_CHG <= battery_art.BOLT_SMALL[0], 'BP_W and BP_W_CHG are the art\'s: the body, and its part left of the small bolt')
+    expect((W, W_CHG) == (battery_art.STATUS.body[2], battery_art.PCT_W_CHG) and battery_art.BOLT_SMALL[0] < W_CHG < battery_art.BOLT_SMALL[0] + battery_art.BOLT_SMALL[2], 'BP_W and BP_W_CHG are the art\'s: the body, and a box reaching into the small bolt\'s (the digits\' ink sits left of its centre)')
     from awtk_text import Ttf, StbText
     font = Ttf(os.path.join(WORK, 'rootfs', 'release/assets/default/raw/fonts/default.ttf'))
     stock_bar = awtk_ui.parse(open(os.path.join(paths.find_stock(paths.ZIP), 'rootfs', 'release/assets/default/raw/ui/system_bar.bin'), 'rb').read())

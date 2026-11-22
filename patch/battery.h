@@ -32,7 +32,7 @@
     0xff000000u /* the number's colour (0xAABBGGRR): black, as the asset has it (tools/statusbar.py PCT_RGB) */
 #define BP_INK_CHG 0xffffffffu /* and white while charging, like the small bolt */
 #define BP_W 26 /* the number's label: the body's width (tools/battery_art.py STATUS.body) */
-#define BP_W_CHG 19 /* and while the small bolt shows (tools/battery_art.py PCT_W_CHG) */
+#define BP_W_CHG 21 /* and while the small bolt shows (tools/battery_art.py PCT_W_CHG) */
 
 #define BP_LOW \
     5 /* a gauge reading of at most this, on battery, is stored as 0: stock's red bar_lowpower (and its other low-battery readers) */

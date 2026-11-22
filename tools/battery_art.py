@@ -44,7 +44,7 @@ BOLT = ((0.62, 0.0), (0.0, 0.58), (0.42, 0.58), (0.30, 1.0), (1.0, 0.38), (0.55,
 # the bolts' widgets in the battery image's box (x, y, w, h), and the bolt inside each (x, y, w, h)
 BOLT_MID, BOLT_MID_INK = (8, 0, 10, 14), (1, 1, 8, 12)
 BOLT_SMALL, BOLT_SMALL_INK = (19, 2, 6, 10), (0, 0.5, 5, 9)
-PCT_W_CHG = 19                     # the number's box while the small bolt shows: the body's left 19 px (patch/battery.h BP_W_CHG)
+PCT_W_CHG = 21                     # the number's box while the small bolt shows: the body's left 21 px, into the bolt's box, as the digits' ink sits ~1.5 px left of the box's centre: two digits clear the rim by 1 px and the bolt by 2 (patch/battery.h BP_W_CHG)
 
 def mask(spec):
     """-> the rim + nub as an L mask at 1x."""

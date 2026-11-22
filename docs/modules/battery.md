@@ -138,8 +138,8 @@ DAC's no-charge case, and `PMUCHARGE_STATUS` not 2 (full shows `bar_power` at 10
 
 - While charging the number is white (`BP_INK_CHG`, set on the label's style; black again on the
   tick after) over the body's darker grey: `pod_pct_bg` stays hidden.
-- With the small bolt the label is `BP_W_CHG` (19) px wide, so the number is centred left of the
-  bolt; otherwise it is the body's 26 px. `100` has no room for a bolt.
+- With the small bolt the label is `BP_W_CHG` (21) px wide: the digits' ink sits about 1.5 px left
+  of the box's centre, so two digits clear the rim by 1 px and the bolt by 2; otherwise it is the body's 26 px. `100` has no room for a bolt.
 - `bp_face` sets all of this for the status bar, the pull-down (`_dd`) and the lock screen (`_lk`)
   on the status bar's tick; `bp_pulldown` and `bp_lock` set their page at its init.
 - On battery with the setting off the tick does no lookups; the tick after an unplug hides the look.
