@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Publish the accepted release package as a GitHub release named VERSION (e.g. 1.0.0; the package and golden row use TAG) (q2-pod's model: no local tag).
 
-  make publish [PUBLISH=1] [DRY_RUN=1]
-  uv run python -I tools/publish.py [--publish] [--dry-run]
+  make publish [NOTES=file.md] [PUBLISH=1] [DRY_RUN=1]
+  uv run python -I tools/publish.py [--notes file.md] [--publish] [--dry-run]
 
 Refuses unless
   - the tracked tree is clean (untracked files are ignored),
@@ -10,10 +10,11 @@ Refuses unless
     and TAG are the release row of test/golden.sha256 (so `make check` ran on this commit),
   - a local git tag VERSION, if any, is on HEAD, and any GitHub release
     VERSION is still a draft.
-Then writes out/publish/<VERSION>/ (the package as update.bin, SHA256SUMS, notes = the message of the commit that last changed the golden), creates or refreshes the draft release with
+Then writes out/publish/<VERSION>/ (the package as update.bin, SHA256SUMS, and the notes file when given), creates or refreshes the draft release with
 both files (`gh release create --draft --target HEAD`: no tag is created or pushed here, GitHub
 creates it at HEAD when the draft is published; if the tag was already pushed, the release uses it),
-downloads the assets back and compares hashes. --publish then makes the release public.
+downloads the assets back and compares hashes. A new draft needs --notes; an existing draft keeps
+its notes unless --notes is given (so notes edited on GitHub survive a refresh). --publish then makes the release public.
 Only the release package is published; the stock restore image stays local.
 """
 import argparse, os, shutil, subprocess, sys, tempfile
@@ -43,6 +44,7 @@ def golden_release():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--publish', action='store_true', help='make the verified draft public')
+    ap.add_argument('--notes', help='release notes file (required for a new draft; replaces the notes of an existing one)')
     ap.add_argument('--dry-run', action='store_true', help='check and stage only; no tag, push or upload')
     a = ap.parse_args()
     tag, ver = build.TAG, build.VERSION   # the package and golden row use tag; the git tag and GitHub release are named ver
@@ -59,23 +61,23 @@ def main():
     if at and at != head: sys.exit(f'local tag {ver} is on {at[:10]}, not HEAD {head[:10]}')
     rel = gh('release', 'view', ver, '--json', 'isDraft', '--jq', '.isDraft', check=False)
     exists = rel.returncode == 0
+    if a.notes and not os.path.isfile(a.notes): sys.exit(f'notes file {a.notes} missing')
+    if not exists and not a.notes: sys.exit('a new draft needs --notes <file> (make publish NOTES=<file>)')
     if exists and rel.stdout.strip() != 'true': sys.exit(f'release {ver} is already published: bump VERSION')
 
     out = os.path.join(ROOT, 'out', 'publish', ver)
     shutil.rmtree(out, ignore_errors=True); os.makedirs(out)
     shutil.copyfile(PACKAGE, os.path.join(out, 'update.bin'))
     with open(os.path.join(out, 'SHA256SUMS'), 'w') as f: f.write(f'{sha}  update.bin\n')
-    notes = os.path.join(out, 'notes.md')
-    with open(notes, 'w') as f: f.write(git('log', '-1', '--format=%B', '--', 'test/golden.sha256').stdout)
     print(f'{ver} ({tag})  {sha}  HEAD {head[:10]}  staged in {os.path.relpath(out, ROOT)}')
     if a.dry_run: return print('dry run: no upload')
 
     files = [os.path.join(out, n) for n in ASSETS]
     if exists:
         gh('release', 'upload', ver, *files, '--clobber')
-        gh('release', 'edit', ver, '--notes-file', notes)
+        if a.notes: gh('release', 'edit', ver, '--notes-file', a.notes)
     else:
-        gh('release', 'create', ver, *files, '--draft', '--target', head, '--title', ver, '--notes-file', notes)
+        gh('release', 'create', ver, *files, '--draft', '--target', head, '--title', ver, '--notes-file', a.notes)
     with tempfile.TemporaryDirectory() as d:
         gh('release', 'download', ver, '--dir', d, *(x for n in ASSETS for x in ('--pattern', n)))
         for n in ASSETS:

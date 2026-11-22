@@ -140,13 +140,13 @@ Shanling's official V2.1 ([version](modules/version.md)).
 
 ## Publish
 
-After the integration commit and a matching `make check`, `make publish` uploads the golden
-release package (as `update.bin`, with `SHA256SUMS`) to a draft GitHub release named `VERSION`,
-created with `--target HEAD`. The notes are the golden's last commit message. It downloads the
-assets back and compares hashes.
+After the integration commit and a matching `make check`, `make publish NOTES=<file>` uploads the
+golden release package (as `update.bin`, with `SHA256SUMS`) to a draft GitHub release named
+`VERSION` (`--target HEAD`) and compares the downloaded assets. The notes come from the `NOTES`
+file, never the commit message.
 
-- It creates and pushes no tag: GitHub creates the tag `VERSION` at HEAD when the draft is
-  published.
+- No tag is created or pushed: GitHub tags `VERSION` at HEAD on publish.
+- A refresh keeps the draft's notes unless `NOTES` is given.
 - Review the draft, then `make publish PUBLISH=1` (or publish on GitHub).
 - `DRY_RUN=1` checks and stages `out/publish/<VERSION>/` only.
 - It refuses a dirty tree, a package that is not the golden, a local tag on another commit and

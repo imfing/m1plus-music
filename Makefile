@@ -20,7 +20,7 @@ help:
 	@echo 'make ota [BUILD=latest]     Push the tested dev package to that server; then Software Update on the device'
 	@echo 'make check                  Full release + restore integration check'
 	@echo 'make accept                 Integration-only golden acceptance'
-	@echo 'make publish [PUBLISH=1]    Upload the golden package as a draft GitHub release named VERSION'
+	@echo 'make publish NOTES=f [PUBLISH=1]  Upload the golden package as a draft GitHub release named VERSION'
 	@echo 'make clean                  Remove retained check scratch files/logs'
 	@echo 'make format                 Format payload C and headers'
 	@echo 'make format-check           Check payload formatting without edits'
@@ -47,7 +47,7 @@ check: lint format-check
 accept:
 	$(RUN) tools/check.py --update $(if $(JOBS),--jobs "$(JOBS)")
 publish:
-	$(RUN) tools/publish.py $(if $(PUBLISH),--publish) $(if $(DRY_RUN),--dry-run)
+	$(RUN) tools/publish.py $(if $(NOTES),--notes "$(NOTES)") $(if $(PUBLISH),--publish) $(if $(DRY_RUN),--dry-run)
 clean:
 	$(RUN) tools/check.py --clean
 format:
