@@ -9,7 +9,8 @@
  * `pod_lo` (an image in the same group, hidden and insensitive in the UI files); otherwise it restores the label and hides the pill. It runs in both timers right where stock sets the text, so
  * nothing lags and nothing flickers (the label is shown and hidden inside one timer call, before any paint). The group's layouter skips an invisible child, so the pill takes the label's place.
  * The same call also toggles the status bar's sync icon pod_sync (lo_sync) from one volatile flag of patch/covercache.c, and the Sleep Timer moon pod_sleep (lo_sleep). Cost: one access and a few lookups by name per second per bar
- * (seven more while a Sleep Timer runs, for the moon's room test); no allocation, no state. Not on the boot path.
+ * (seven more while a Sleep Timer runs, for the moon's room test); no allocation, no state. Not on the boot path. On the real bar it also lets the palette repaint the bar when the window in front
+ * is painted otherwise (pal_bar_follow, patch/palette.c: one top-window lookup per second).
  */
 #include "offsets.inc"
 #include "stock.h"
@@ -18,6 +19,7 @@
 #include "lineout.h"
 #include "covercache.h"
 #include "peqout.h"
+#include "palette.h"
 
 /* The sync icon (docs/modules/lineout.md "Sync icon"): pod_sync in the bar's right group, shown while the cover worker has a cover or duration set with work left (cc_build_active: volatile reads, no lock, no file) and the
  * kill switch is absent. `parent` is label_volume's parent (view_bar_left); the bar is its parent. Set only when it changes, so a steady state costs no relayout. A bar without the widget is left alone. */
@@ -90,14 +92,18 @@ void lo_bar_refresh(void *win) {
 /* The hooks (tools/pod.py LINEOUT_SITES): stock's widget_set_text_utf8(label, text), then the pill swap. */
 int lo_set_text(void *label, const char *text) {
     int r = widget_set_text_utf8(label, text);
-    void *parent, *pill;
+    void *parent, *pill, *bar;
     int kill;
     if (!label) return r;
     parent = (void *)((int *)label)[LO_W_PARENT / 4];
     if (!parent) return r;
     kill = access(KILL_SD, F_OK) == 0;
     lo_sync(parent, kill);
-    lo_sleep((void *)((int *)parent)[LO_W_PARENT / 4], kill);
+    bar = (void *)((int *)parent)[LO_W_PARENT / 4];
+    lo_sleep(bar, kill);
+    if (bar && m1_is_type(bar, "system_bar"))
+        pal_bar_follow(
+            bar); /* the real bar (not the pull-down's copy) repainted when the window in front is painted otherwise */
     if (!kill) peqout_sync(1); /* the per-output EQ follows Line Out and a USB DAC within a second (patch/peqout.c) */
     lo_eq(parent, kill); /* after the sync above, which can turn the switch for the new output */
     pill = widget_lookup(parent, LO_PILL, 0);

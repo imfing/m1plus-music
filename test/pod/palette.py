@@ -1049,6 +1049,66 @@ def tinted_tests(ctx):
     expect(m.call(PSYMS['pal_active'], count=20000) == 1, 'and taking it away brings the saved choice back')
 
 
+def bar_follow_tests(ctx):
+    """The status bar follows the window in front (pal_bar_follow from the bar's 1 s tick, pal_bar_paint on the bar's own EVT_BEFORE_PAINT): the reported black bar on the Sleep Timer page under
+    Tinted. A dialog over Now Playing (the More sheet) has Now Playing put the bar back to black while Now Playing is still the top main window, so the bar is painted with Now Playing's answer
+    (no wash): pure black. The Sleep Timer page then opens below the bar and invalidates nothing of it, so the black stayed until a full repaint (lock and wake). What counts is the answer the
+    bar was painted with, not the one a tick saw: the whole navigation can happen between two ticks."""
+    expect = ctx.expect
+    def bar_machine(**kw):
+        m = LM(hook=True, **kw); m.bar = m.alloc(0x80); m.black = m.style(color=BLACK); m.listened = False
+
+        def follow(bar=None):   # one tick of the bar; how many times it invalidated the bar (Machine.call starts a fresh call log)
+            m.call(PSYMS['pal_bar_follow'], a0=m.bar if bar is None else bar, count=20000)
+            m.listened |= any(c[0] == 'widget_on' for c in m.calls)
+            return sum(c[0] == 'widget_invalidate_force' and c[1] == m.bar for c in m.calls)
+
+        def paint():   # a paint of the bar (whole or a part, the clock): its EVT_BEFORE_PAINT, then its black through the style hook; the colour it got
+            fn, ctx_ = m.bound[(m.bar, O['EVT_BEFORE_PAINT'])]
+            m.call(fn, a0=ctx_, a1=0, count=20000)
+            return m.color(m.black)
+        m.follow, m.paint = follow, paint
+        return m
+
+    teal_black = word(L.map_colour((0, 0, 0, 255), 'tinted', 'teal'))
+    m = bar_machine(mode=b'1\n', acc=b'4\n')
+    m.on_top('home_page'); n = m.follow()
+    expect(m.listened and (m.bar, O['EVT_BEFORE_PAINT']) in m.bound and n == 1, 'the first tick listens to the bar\'s paints and repaints it once (what it showed is unknown)')
+    expect(m.paint() == teal_black, 'Home in front: the bar\'s black is washed')
+    expect(m.follow() + m.follow() == 0, 'steady: ticks repaint nothing')
+    # the review case: Home -> Now Playing -> More -> Sleep Timer between two ticks (both ticks see a plain page)
+    m.on_top('playing_page'); under_np = m.paint()   # Now Playing tints the bar, the More sheet makes it black: both repaint it under Now Playing
+    m.on_top('m1plus_sleeptimer')
+    expect(under_np == BLACK and m.follow() == 1, 'painted under Now Playing (pure black), the Sleep Timer page in front at the next tick: the bar is repainted once')
+    expect(m.paint() == teal_black, 'and the repaint washes it')
+    expect(sum(m.follow() for _ in range(5)) == 0, 'once: five more ticks repaint nothing (no loop)')
+    # a part painted under another window (the clock's minute under Radio Now Playing, which never tints the bar), then back to a plain page before the tick
+    m.on_top('m1plus_radionp_page'); m.paint(); m.on_top('home_page')
+    expect(m.follow() == 1, 'a part painted under a cover-tinted page, a plain page in front again by the tick: repainted')
+    m.paint(); m.on_top('m1plus_settings_page')
+    expect(m.follow() == 0, 'another plain page, the bar painted the same way: nothing to repaint')
+    for name, why in (('screensaver_page', 'an exempt window'), ('m1plus_dailymix_page', 'a cover-tinted page')):
+        m.on_top(name); m.paint(); m.on_top('home_page')
+        expect(m.follow() == 1, f'painted under {why} ({name}), Home in front: repainted once')
+        m.paint()
+    m.on_top('playing_page'); n = m.follow(); m.paint()
+    expect(n == 1 and m.follow() == 0, 'into Now Playing with the bar painted under Home: repainted; once painted under it, nothing more')
+    m.call(PSYMS['pal_bar_follow'], a0=0, count=20000)
+    expect(not any(c[0] in ('widget_on', 'widget_invalidate_force') for c in m.calls), 'no bar: nothing')
+    # Black + Neutral (the hooks pass through) and the kill switch: no listener, no repaint
+    for kw, what in ((dict(mode=b'0\n'), 'Black + Neutral'), (dict(mode=b'1\n', acc=b'4\n', kill=True), 'the kill switch')):
+        k = bar_machine(**kw); n = 0
+        for name in ('playing_page', 'm1plus_sleeptimer', 'screensaver_page'):
+            k.on_top(name); n += k.follow()
+        expect(n == 0 and not k.listened, f'{what}: the bar is painted the same under every window, nothing listens or repaints')
+    k = bar_machine(mode=b'1\n', acc=b'4\n'); k.on_top('home_page'); k.widget_on_fail = {O['EVT_BEFORE_PAINT']}
+    expect(k.follow() == 0, 'a refused listener: nothing is repainted (the bar stays as stock paints it)')
+    k = bar_machine(mode=b'1\n', acc=b'4\n').count(); k.on_top('m1plus_sleeptimer'); k.follow(); k.paint(); k.follow(); k.follow()
+    tick = k.icount
+    fn, ctx_ = k.bound[(k.bar, O['EVT_BEFORE_PAINT'])]; k.call(fn, a0=ctx_, a1=0, count=20000)
+    expect(tick < 300 and k.icount < 300, f'a steady tick costs {tick} instructions, a paint of the bar {k.icount}')
+
+
 def rest_glyph_tests(ctx):
     """Every row glyph (pod_ic_*, fo_ic_*, the Settings cards' pod_ci_*) in the accent at rest: tinted when they are decoded (the image hook, kind GLYPH), pixel for pixel as tools/palette.py; a decode
     after an eviction or an accent change tints again, Neutral leaves them, the two tiles and the swatches stay as they are; a press swaps nothing (no binding exists), and nothing runs on a timer."""
@@ -1249,4 +1309,4 @@ def own_roles_tests(ctx):
         expect(set(h) <= allowed, f'in the sources the {k} role colour is only where it is defined ({h})')
 
 
-SECTIONS = [hooks_tests, flip_tests, style_tests, image_tests, model_tests, setting_tests, settings_tests, accent_map_tests, accent_image_tests, accent_setting_tests, accent_picker_tests, roles_tests, press_tests, own_roles_tests, tinted_tests, findings_tests, rest_glyph_tests]
+SECTIONS = [hooks_tests, flip_tests, style_tests, image_tests, model_tests, setting_tests, settings_tests, accent_map_tests, accent_image_tests, accent_setting_tests, accent_picker_tests, roles_tests, press_tests, own_roles_tests, tinted_tests, bar_follow_tests, findings_tests, rest_glyph_tests]

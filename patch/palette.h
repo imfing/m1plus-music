@@ -52,5 +52,9 @@ unsigned pal_tone(unsigned tone);
 /* A colour derived from a cover (a tone, a shade of it, the status bar's colour) that is a role colour (a pressed row, the progress fill) moved one LSB off it; any other as it is. */
 unsigned pal_not_role(unsigned c);
 
+/* The status bar's tick (patch/lineout.c): listens to `bar`'s paints (the first call) and repaints it whole once when it holds a paint made under another answer than the window in front gets
+ * (painted under a cover-tinted page, then a plain page in front). Nothing while the palette is inactive. */
+void pal_bar_follow(void *bar);
+
 /* Set a canvas fill from the payload's own palette. */
 #define ui_fill_color(canvas, c) canvas_set_fill_color(canvas, ui_ink(c))

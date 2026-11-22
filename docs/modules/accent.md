@@ -181,6 +181,16 @@ lyrics, the Wi-Fi bars and spinner, the stock pages' 40 px icons, the EQ cards' 
   the wash applies to no colour (`pal_cover_page`). The accent roles and images still apply. A
   window opened over a page follows its own name. Why not a colour registry: a cover that averaged
   a grey would leave that grey untinted on other pages.
+- **The status bar follows the window in front.** The bar is a window of its own, painted with the
+  answer for the top main window of the moment, and the window manager repaints only what is
+  invalidated. A page opened from a dialog over Now Playing (its More sheet, the pull-down) found
+  the bar as painted under Now Playing, its black not washed. The bar's own `EVT_BEFORE_PAINT`
+  (`pal_bar_paint`, any paint of it, a part such as the clock too) records the answer it was
+  painted with (`pal_kind`: inactive, exempt, cover page; one bit each). `pal_bar_follow` (the real
+  bar's 1 s tick, `lo_set_text` in [lineout](lineout.md)) adds that listener on its first call and
+  repaints the whole bar once when it holds a paint made under another answer than the window in
+  front gets. So the bar can lag the page by up to a second. Black + Neutral and the kill switch add
+  no listener.
 - Limits: the global `nb_fade` is a tinted black over the cover tone on a cover page; slider and
   progress tracks (`#333`) stay neutral.
 

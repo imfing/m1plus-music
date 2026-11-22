@@ -317,3 +317,20 @@ def run(ctx):
            'AAC + Wi-Fi: the moon shows; the screenshot camera appears: it hides; the camera goes: it shows again')
     m = sleep_machine(1, 900); m.setword(m.sleep + 8, statusbar.SLEEP_W); m.calls = []; tick(m, '50')
     expect(m.icount < 3000, f'cost with the timer running: {m.icount} instructions')
+
+    # the palette follows the window in front on the real bar's tick (pal_bar_follow, test/pod/palette.py bar_follow_tests): under Tinted, a bar painted under Now Playing is repainted once
+    # the Sleep Timer page is in front
+    def follow_machine(kind):
+        m = machine(); bar = m.word(m.word(m.label + DEFS['LO_W_PARENT']) + DEFS['LO_W_PARENT']); m.types[bar] = kind
+        m.fs['/mnt/data/m1plus/appearance-background'] = b'1\n'; m.fs['/mnt/data/m1plus/appearance-accent'] = b'4\n'
+        np_win = m.alloc(0x80); m.setword(np_win + 0x10, m.cstr('playing_page')); m.top_main = np_win
+        tick(m, '50')
+        paint = m.bound.get((bar, O['EVT_BEFORE_PAINT']))
+        if paint: m.call(paint[0], a0=paint[1], a1=0, count=20000)   # the bar painted under Now Playing
+        tick(m, '50'); quiet = not [c for c in m.calls if c[0] == 'widget_invalidate_force']
+        page = m.alloc(0x80); m.setword(page + 0x10, m.cstr('m1plus_sleeptimer')); m.top_main = page; tick(m, '50')
+        return paint, quiet, [c[1] for c in m.calls if c[0] == 'widget_invalidate_force'], bar
+    paint, quiet, inv, bar = follow_machine('system_bar')
+    expect(paint and quiet and inv == [bar], 'the status bar\'s tick: its paints are listened to, steady under Now Playing, then the Sleep Timer page in front repaints the bar once')
+    paint, quiet, inv, bar = follow_machine('view')
+    expect(not paint and not inv, 'the pull-down\'s bar copy (a view in the dialog, which paints itself whole) is not followed')

@@ -42,6 +42,8 @@ static struct {
     const char *name;
     int exempt;
     int cover; /* the cover-tinted page the top window is: PAL_COVER_* (0 none) */
+    void *bar; /* pal_bar_follow: the status bar whose paints are listened to */
+    unsigned bar_seen; /* one bit per answer (pal_kind) the bar was painted with since its last whole repaint */
 } pal __attribute__((section(".scratch")));
 
 static const char keep_names[] = LIGHT_KEEP;
@@ -373,6 +375,37 @@ static int pal_cover_page(void) {
 
 /* What the style hooks do: the palette is active and the page in front is not exempt. */
 static int pal_styled(void) { return pal_active() && !pal_exempt(); }
+
+/* What the style hooks do for the window in front, as one number: 0 nothing (inactive); else 1, plus 2 exempt, plus 4 a cover-tinted page showing its tone (no wash). */
+static int pal_kind(void) { return pal_active() ? 1 | pal_exempt() << 1 | pal_cover_page() << 2 : 0; }
+
+/* The status bar is a window of its own, painted with the answer for the top main window of the moment, and the window manager repaints only what is invalidated. A page opened
+ * from a dialog over a cover-tinted page (Now Playing's More sheet, the pull-down) invalidates nothing of the bar, so the bar stayed as painted under Now Playing (its black not
+ * washed) until something repainted it. So the bar's own EVT_BEFORE_PAINT (any paint of it, a part such as the clock too) records the answer it was painted with, and the bar's
+ * 1 s tick (patch/lineout.c lo_set_text, the real bar only) repaints it whole once when it holds a paint made with another answer than the one for the window in front now.
+ * A steady state costs a top-window lookup and a mask test per tick and per paint of the bar. */
+static int pal_bar_paint(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    pal.bar_seen |= 1u << pal_kind();
+    return RET_OK;
+}
+
+void pal_bar_follow(void *bar) {
+    unsigned now;
+    if (!bar) return;
+    if (bar !=
+        pal.bar) { /* the first tick (or another bar): listen to its paints; what it shows already is unknown, so repaint it */
+        if (!pal_active() || !widget_on(bar, EVT_BEFORE_PAINT, pal_bar_paint, (void *)0))
+            return; /* (Black + Neutral, the kill switch: every window paints the bar alike) */
+        pal.bar = bar;
+        pal.bar_seen = ~0u;
+    }
+    now = 1u << pal_kind();
+    if (!(pal.bar_seen & ~now)) return;
+    pal.bar_seen = 0; /* the repaint records its own answer */
+    widget_invalidate_force(bar, (void *)0);
+}
 
 unsigned *m1plus_style_color(unsigned *color, void *style, const char *name, unsigned fallback) {
     ++pal.depth;
