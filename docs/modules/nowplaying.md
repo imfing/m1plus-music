@@ -203,7 +203,9 @@ at offset 0.
   shows stock's label again. The next good text takes it back.
 - **Scrolling.** `np_info_scroll(off)` is the one place that moves the content, clamped to
   `0..ih-252`. A vertical drag of 10 px or more moves the content with the finger; no overscroll
-  and no fling. A sideways move still turns the page, and a tap does nothing. Only the container
+  and no fling. A swipe that goes sideways first still turns the page, and a tap does nothing.
+  Once the drag is vertical its MOVEs return `RET_STOP`, so the slide view is aborted and a
+  sideways drift turns no page (the direction lock in [lyrics](lyrics.md)). Only the container
   takes touches; the stock fallback labels do not move.
 - **Reset.** The content goes back to the top when the page is entered, when Now Playing comes to
   the front, and on a track change. A content that got shorter pulls the offset back.

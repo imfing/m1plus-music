@@ -1024,8 +1024,8 @@ __attribute__((noinline)) void np_info_scroll(int off) {
     np_flow();
 }
 
-/* DOWN, MOVE, UP and ABORT of np_i_scroll (listeners, as the lyrics page's: they never answer RET_STOP, so the slide view sees every event). A vertical drag of NPI_TAP_PX or more scrolls the content with the finger;
- * a sideways one is the slide view's page swipe, and a tap does nothing. */
+/* DOWN, MOVE, UP and ABORT of np_i_scroll (listeners, as the lyrics page's). A vertical drag of NPI_TAP_PX or more scrolls the content with the finger; a sideways one is the slide view's page swipe, and a tap
+ * does nothing. Once the drag is vertical every MOVE of it answers RET_STOP, so the slide view gets an ABORT in its place (widget_on_pointer_move @0x6716f8) and turns no page however far the finger drifts sideways. */
 static int np_on_info_touch(void *ctx, void *e) {
     int type, x, y;
     if (!e || !np.win || ctx != np.iw[NI_SCROLL]) return RET_OK;
@@ -1043,6 +1043,7 @@ static int np_on_info_touch(void *ctx, void *e) {
             np_info_scroll(np.ioff - (y - np.tly));
             np.tly = y;
         }
+        if (np.tm) return RET_STOP;
     } else if (type == EVT_POINTER_UP || type == EVT_POINTER_ABORT) {
         np.td = 0;
     }

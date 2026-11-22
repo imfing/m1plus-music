@@ -137,6 +137,11 @@ integer arithmetic without blur.
 - Pointer listeners on `np_lyrics` return `RET_OK`, leaving sideways swipes to the slide view. Labels
   are insensitive. A vertical move over 10 px starts browsing, and after 3 s without touches the
   lines return. The highlight keeps following playback.
+- **Direction lock.** Once a drag is vertical, each of its MOVEs returns `RET_STOP`. Stock's
+  `widget_on_pointer_move` (`0x6716f8`) then sends the slide view an ABORT in place of the move, so
+  a finger that drifts sideways turns no page. The slide view starts a page drag only at 11 px
+  sideways (`0x618d38`), later than the 10 px that decides the direction here. Same rule on the
+  information page ([nowplaying](nowplaying.md)).
 - A tap seeks with stock `seek_time(seconds)`. It is ignored while stopped or within the first
   200 ms of an animation, and a 1 s hold lets the player catch up. The stock seek can block the UI thread for up to 2 s.
 - **Idle countdown.** Stock restarts Now Playing's ten idle seconds only from its button handlers

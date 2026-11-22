@@ -725,13 +725,17 @@ def overflow_tests(ctx):
 def touch_tests(ctx):
     expect = ctx.expect
     D, MV, UP, AB = O['EVT_POINTER_DOWN'], O['EVT_POINTER_MOVE'], O['EVT_POINTER_UP'], O['EVT_POINTER_ABORT']
-    # the listeners: four events on np_lyrics, nothing grabbed, no RET_STOP
+    # the listeners: four events on np_lyrics, nothing grabbed; the MOVEs of a vertical drag answer RET_STOP (the slide view is aborted), every other event RET_OK
     m = LyMachine(SONG); m.init()
     on = [(c[2], c[3]) for c in m.calls if c[0] == 'widget_on' and c[1] == m.box]
     expect(on == [(D, PSYMS['ly_on_touch']), (MV, PSYMS['ly_on_touch']), (UP, PSYMS['ly_on_touch']), (AB, PSYMS['ly_on_touch'])], f'np_lyrics listens to DOWN, MOVE, UP and ABORT ({on})')
     expect(all(m.props.get((h, 'sensitive')) == 0 for h in m.children[m.box]), 'its labels stay insensitive: the touch lands on np_lyrics')
     r = [m.down(100, 90), m.move(100, 70), m.move(100, 60), m.up(100, 60)]
-    expect(r == [0, 0, 0, 0] and not any(c[0] in ('widget_grab', 'widget_ungrab') for c in m.calls), 'every handler answers RET_OK and nothing is grabbed (the slide view and the window manager see every event)')
+    expect(r == [0, O['RET_STOP'], O['RET_STOP'], 0] and not any(c[0] in ('widget_grab', 'widget_ungrab') for c in m.calls), f'the MOVEs of a vertical drag answer RET_STOP (the slide view gets an ABORT and turns no page), DOWN and UP RET_OK; nothing is grabbed ({r})')
+    r = [m.down(100, 90), m.move(103, 85), m.move(130, 70), m.move(170, 60), m.up(170, 60)]
+    expect(r == [0, 0, 0, 0, 0], f'a tap-sized wobble and a sideways swipe answer RET_OK: the slide view sees the swipe ({r})')
+    r = [m.down(100, 90), m.move(100, 70), m.move(140, 66), m.move(190, 64), m.up(190, 64)]
+    expect(r == [0, O['RET_STOP'], O['RET_STOP'], O['RET_STOP'], 0], f'once the drag is vertical a sideways drift is stopped too ({r})')
 
     # tap on a line: the player seeks to its lrc_time and the lines move there
     m = LyMachine(SONG); m.init(); m.at(5); m.frame(10000)        # line one current; line two at ANCHOR + PITCH
@@ -1679,4 +1683,60 @@ def retarget_tests(ctx):
     expect(m.call(PSYMS['ly_retarget'], a0=w2, a1=b2, a2=VH2, count=2000000) == 0xffffffff and m.call(PSYMS['ly_target']) == 0, 'no engine to take: refused, nothing made')
 
 
-SECTIONS = [reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests]
+SV_SLIDE_VT = 0x97a518   # g_slide_view_vtable
+SV_DRAGGED, SV_PRESSED, SV_XOFF, SV_ACTIVE = 0xc8, 0xc9, 0xb8, 0xc0   # slide_view: dragged, pressed (u8), xoffset, active page (slide_view_on_event @0x618940)
+
+
+class SlideMachine(StockEventMachine):
+    """root > slide_view (demo's own) > three pages; page 1 holds `box`, the scrolling text of the lyrics or the info page. The window manager's pointer
+    events, widget_on_pointer_move and the slide view's on_event run for real; box's MOVE listener answers what `answer` says (the payload's answer:
+    ly_on_touch and np_on_info_touch, whose RET_STOP is checked in touch_tests and nowplaying.py)."""
+    EXTRA = ('widget_animator_destroy',)
+    REAL = ('widget_get_child', 'widget_count_children')   # the slide view's find_target and its prev / next pages: stock's own
+
+    def __init__(self, answer):
+        super().__init__()
+        self.answer, self.moves, self.seen = answer, 0, []
+        self.root = self.widget(SV_VT, 0, 0, 320, 450)
+        self.sv = self.widget(SV_SLIDE_VT, 0, 0, 320, 300, self.root)
+        self.pages = [self.widget(SV_VT, 0, 0, 320, 300, self.sv) for _ in range(3)]
+        self.box = self.widget(SV_VT, 0, 36, 320, 252, self.pages[1], emitter=True)
+        self.kids(self.root, [self.sv]); self.kids(self.sv, self.pages); self.kids(self.pages[1], [self.box])
+        self.setword(self.sv + SV_ACTIVE, 1)
+
+    def leaf(self, name, a0, a1, a2, a3, sp):
+        if name == 'emitter_dispatch' and self.owner.get(a0) == self.box and self.word(a1) & 0xffff == O['EVT_POINTER_MOVE']:
+            super().leaf(name, a0, a1, a2, a3, sp); self.moves += 1
+            return self.answer(self.moves)
+        return super().leaf(name, a0, a1, a2, a3, sp)
+
+    def gesture(self, steps):
+        for k, x, y in steps: self.pointer(k, x, y); self.seen += self.log
+        return self.u.mem_read(self.sv + SV_DRAGGED, 2), self.word(self.sv + SV_XOFF)
+
+    def aborted_box(self): return [e for e in self.seen if e[:2] == ('emit', self.box) and e[2] == O['EVT_POINTER_ABORT']]
+
+
+def slide_view_tests(ctx):
+    """The page swipe and a vertical drag on the lyrics or the info page, with demo's own slide view: the drag's MOVEs answer RET_STOP, so a sideways drift
+    turns no page."""
+    expect = ctx.expect
+    OK, STOP = O['RET_OK'], O['RET_STOP']
+    drift = [('d', 100, 200), ('m', 100, 180), ('m', 112, 160), ('m', 130, 140), ('m', 160, 120)]   # a vertical drag that drifts 60 px sideways
+    m = SlideMachine(lambda n: OK)   # the listeners before this fix: every MOVE went on to the slide view
+    flags, _ = m.gesture(drift[:4])
+    aborts = m.aborted_box()
+    expect(flags[0] == 1, f'reproducer: a box that answers RET_OK lets the slide view start its page drag once the finger has drifted 11 px sideways (dragged {flags[0]})')
+    expect(aborts != [], 'and the slide view sends the box an ABORT, which ends the vertical drag')
+    m = SlideMachine(lambda n: STOP)   # this fix: the MOVEs of a vertical drag answer RET_STOP
+    flags, xoff = m.gesture(drift)
+    expect(tuple(flags) == (0, 0) and xoff == 0, f'a box that answers RET_STOP: the slide view gets an ABORT in place of the MOVE, is not pressed and never drags (dragged/pressed {tuple(flags)}, xoffset {xoff})')
+    expect(m.aborted_box() == [], 'the box itself gets no ABORT: its drag goes on')
+    m.pointer('u', 160, 120)
+    expect(m.word(m.sv + SV_ACTIVE) == 1, 'after UP the page is still the same')
+    m = SlideMachine(lambda n: OK)   # a sideways swipe: the listeners answer RET_OK (touch_tests), the slide view turns the page
+    flags, xoff = m.gesture([('d', 200, 200), ('m', 185, 202), ('m', 150, 204), ('m', 100, 205)])
+    expect(flags[0] == 1 and xoff != 0, f'a sideways swipe still drags the page (dragged {flags[0]}, xoffset {xoff})')
+
+
+SECTIONS = [reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests, slide_view_tests]

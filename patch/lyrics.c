@@ -25,8 +25,8 @@
  * The offsets are per label slot (o0, ts): a new move adds D to what each line still has. One LY_FRAME_MS timer exists while any line moves and ends
  * itself. A move of more than LY_SNAP_LINES lines jumps.
  *
- * Touch (listeners on np_lyrics; nothing is grabbed or stopped, so the slide view and the window manager see every event as on any page): a
- * vertical drag of LY_TAP_PX or more scrolls the lines with the finger (a sideways one is the slide view's); LY_IDLE_MS after the last touch (checked by
+ * Touch (listeners on np_lyrics; nothing is grabbed): a vertical drag of LY_TAP_PX or more scrolls the lines with the finger and stops its moves, so
+ * the slide view is aborted and turns no page (a sideways one is the slide view's); LY_IDLE_MS after the last touch (checked by
  * the 500 ms page tick) the lines move back to the current one with the same motion; a tap (less than LY_TAP_PX, not within LY_COAST_MS of a move that
  * started) on a line seeks the player to that line's lrc_time with the stock seek_time (the call the Now Playing slider makes) and moves the lines there.
  *
@@ -800,7 +800,8 @@ static void ly_tap(int x, int y) {
         }
 }
 
-/* DOWN, MOVE, UP and ABORT of np_lyrics (listeners: they run after the scroll_view's own handler, which has no slidable axis, and never answer RET_STOP). */
+/* DOWN, MOVE, UP and ABORT of np_lyrics (listeners: they run after the scroll_view's own handler, which has no slidable axis). Once the drag is vertical every MOVE of it answers RET_STOP: the slide view gets an
+ * ABORT in its place (widget_on_pointer_move @0x6716f8) and turns no page however far the finger drifts sideways. */
 static int ly_on_touch(void *ctx, void *e) {
     int type, x, y;
     unsigned now;
@@ -827,6 +828,7 @@ static int ly_on_touch(void *ctx, void *e) {
             ly_rebase();
             ly_layout();
         }
+        if (ly.moved) return RET_STOP;
     } else if (type == EVT_POINTER_UP && ly.down) {
         ly.down = 0;
         if (!ly.moved && ly.tapok && m1_abs(x - ly.sx) < LY_TAP_PX && m1_abs(y - ly.sy) < LY_TAP_PX) ly_tap(x, y);
