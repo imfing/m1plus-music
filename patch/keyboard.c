@@ -1320,6 +1320,17 @@ static int kb_init(const char *placeholder, const char *initial, int embedded) {
     return 0;
 }
 
+/* A name entry: the search fill and magnifier (kb_capsule) hidden, the card row shown, the field on the row with its clear button at the row's right end. The text origin stays KB_TEXT_X in the
+ * field, so the field starts that far left of KB_NAME_X. */
+static void kb_name_row(void) {
+    int w = KB_NAME_FIELD_W + KB_TEXT_X;
+    m1_show(kb_find("kb_capsule"), 0);
+    m1_show(kb_find("kb_card"), 1);
+    widget_move(kb_find("kb_field"), KB_NAME_X - KB_TEXT_X, KB_NAME_Y + KB_NAME_DY);
+    widget_resize(kb_find("kb_field"), w, KB_FIELD_H);
+    widget_move(kb.clear, w - KB_CLEAR_W, 0);
+}
+
 int keyboard_busy(void) { return kb.win != 0; }
 
 int keyboard_open(const char *title, const char *placeholder, const char *initial, kb_done_fn on_done,
@@ -1335,11 +1346,12 @@ int keyboard_open(const char *title, const char *placeholder, const char *initia
                                  : KB_MAX; /* before kb_init, which cuts the initial text to it */
     kb.mask = (flags & KB_PASSWORD) != 0; /* a password: one dot a character (the Server page's) */
     kb.clear_to = flags & KB_PASSWORD ? (const char *)0 : "";
-    kb.tx = KB_TEXT_X, kb.tw = KB_TEXT_W, kb.cy = KB_CARET_Y;
+    kb.tx = KB_TEXT_X, kb.tw = flags & KB_DONE ? KB_NAME_TW : KB_TEXT_W, kb.cy = KB_CARET_Y;
     if (kb_init(placeholder, initial, 0) != 0) {
         navigator_back();
         return -1;
     }
+    if (flags & KB_DONE) kb_name_row();
     widget_on(kb.win, EVT_DESTROY, kb_on_destroy, kb.win);
     m1_bind(kb.win, "btn_return", kb_on_back, (void *)0);
     m1_bind(kb.win, "btn_backtoplayer", m1_on_player, (void *)0);

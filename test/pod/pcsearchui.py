@@ -673,7 +673,9 @@ def field_tests(ctx):
     box = lambda t, n: (t.find(n).x, t.find(n).y, t.find(n).w, t.find(n).h)
     kf, pf = kb.find('kb_field'), ps.find('ps_field')
     expect((kf.x, kf.w, kf.h) == (pf.x, pf.w, pf.h) and kf.y == O['PG_LIST_Y'] + pf.y, f'the level\'s field is the keyboard page\'s on the screen: x, width, height and y (window row {kf.y} = {O["PG_LIST_Y"]} + {pf.y})')
-    expect(box(kb, 'kb_mag') == box(ps, 'ps_mag') and box(kb, 'kb_hint') == box(ps, 'ps_hint') and box(kb, 'kb_text') == box(ps, 'ps_text'), 'the magnifier, the hint and the text have the same rectangles in the field')
+    xyh = lambda b: (b[0], b[1], b[3])   # the keyboard's labels are as wide as the name row's room too (KB_NAME_TW); a search text is cut at KB_TEXT_W
+    expect(box(kb, 'kb_mag') == box(ps, 'ps_mag') and all(xyh(box(kb, k)) == xyh(box(ps, p)) and box(kb, k)[2] >= box(ps, p)[2] for k, p in (('kb_hint', 'ps_hint'), ('kb_text', 'ps_text'))),
+           'the magnifier, the hint and the text have the same rectangles in the field (the keyboard\'s labels at least as wide)')
     kc = kb.find('kb_clear')
     expect(box(ps, 'ps_clear') == (kc.x + (kc.w - 16) // 2, (kc.h - 16) // 2, 16, 16) and ps.find('ps_clear').get('image') == 'qk_clear' and ps.find('ps_clear').get('sensitive') == 'false', 'the level\'s clear disc is where the keyboard page\'s is')
     pk = sys.modules['podtest_keyboard'].PK if 'podtest_keyboard' in sys.modules else None

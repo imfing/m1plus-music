@@ -147,32 +147,39 @@ def strip_bar(s, pg, im, pinyin, cands, hot=None, sx=0):
     im.alpha_composite(tmp)
 
 
-def screen(s, pg, text, page=None, held=None, hint='Shows, e.g. All-In', title='Search', lang=False, zh=False, strip=None, fr=False, tag=None, acc=None):
-    """Status bar, the navbar (Back chevron, title), the field and, when page is given, the pad (lang: with the language key, zh: the Chinese layer; strip: (pinyin, candidates) above the pad)."""
+def screen(s, pg, text, page=None, held=None, hint='Shows, e.g. All-In', title='Search', lang=False, zh=False, strip=None, fr=False, tag=None, acc=None, name=False):
+    """Status bar, the navbar (Back chevron, title), the field and, when page is given, the pad (lang: with the language key, zh: the Chinese layer; strip: (pinyin, candidates) above the pad).
+    name: a name entry (KB_DONE), the field on the card's one row as patch/keyboard.c kb_name_row places it, no capsule or magnifier."""
     im = Image.new('RGBA', (W, H), (0, 0, 0, 255))
     PI.status_bar(s, im)
-    f = pg.field
+    cap, card = pg.root.find('kb_capsule'), pg.root.find('kb_card')
     mag, clear = pg.root.find('kb_mag'), pg.root.find('kb_clear')
+    if name:   # the field's own box: x is that far left of the text origin (PK.FIELD_TEXT_X), the clear button at its right end
+        fx, fy, fw = PK.NAME_X - PK.FIELD_TEXT_X, PK.NAME_Y + PK.NAME_DY, PK.NAME_FIELD_W + PK.FIELD_TEXT_X
+        cx0 = fw - PK.FIELD_CLEAR_W
+    else:
+        fx, fy, fw, cx0 = pg.field.x, pg.field.y, pg.field.w, clear.x
     def paint(d, k):
         d.line(k(20, BAR + 17, 13, BAR + 25, 20, BAR + 33), fill=WHITE + (255,), width=int(2.5 * SS), joint='curve')   # the navbar's Back chevron (the glass disc is the real asset's)
-        d.rounded_rectangle(k(f.x, BAR + f.y, f.x + f.w, BAR + f.y + f.h), radius=int(f.get('style:normal:round_radius')) * SS, fill=pg.fill('kb_field') + (255,))
+        if name: d.rounded_rectangle(k(card.x, BAR + card.y, card.x + card.w, BAR + card.y + card.h), radius=int(card.get('style:normal:round_radius')) * SS, fill=pg.fill('kb_card') + (255,))
+        else: d.rounded_rectangle(k(cap.x, BAR + cap.y, cap.x + cap.w, BAR + cap.y + cap.h), radius=int(cap.get('style:normal:round_radius')) * SS, fill=pg.fill('kb_capsule') + (255,))
     im.alpha_composite(layer(paint))
     s.text(im, 36, BAR + 25, title, 22)
-    im.alpha_composite(s.img(mag.get('image')), (f.x + mag.x + (mag.w - 16) // 2, BAR + f.y + mag.y))
-    tx, ty = f.x + PK.FIELD_TEXT_X, BAR + f.y + f.h / 2
+    if not name: im.alpha_composite(s.img(mag.get('image')), (cap.x + mag.x + (mag.w - 16) // 2, BAR + cap.y + mag.y))
+    tx, ty = fx + PK.FIELD_TEXT_X, BAR + fy + PK.FIELD_H / 2
     px = pg.px('kb_text')
     if text:
         t, w = shown_text(s, text, px)
         s.text(im, tx, ty, t, px, rgb(pg.root.find('kb_text').get('style:normal:text_color')))
-        c = s.img(clear.get('style:normal:icon')); im.alpha_composite(c, (f.x + clear.x + (clear.w - c.width) // 2, int(ty - c.height / 2)))
+        c = s.img(clear.get('style:normal:icon')); im.alpha_composite(c, (fx + cx0 + (clear.w - c.width) // 2, int(ty - c.height / 2)))
         cx = tx + w + 1
     else:
         s.text(im, tx, ty, hint, px, rgb(pg.root.find('kb_hint').get('style:normal:text_color')))
         cx = tx
     if page:
         car = pg.root.find('kb_caret')
-        ImageDraw.Draw(im).rectangle((cx, BAR + f.y + car.y, cx + car.w - 1, BAR + f.y + car.y + car.h - 1), fill=rgb(car.get('style:normal:bg_color')))
-        keyboard(pg, im, page, held, lang, zh, fr=fr, tag=tag, acc=acc)
+        ImageDraw.Draw(im).rectangle((cx, BAR + fy + car.y, cx + car.w - 1, BAR + fy + car.y + car.h - 1), fill=rgb(car.get('style:normal:bg_color')))
+        keyboard(pg, im, page, held, lang, zh, fr=fr, tag=tag, acc=acc, go=('Done', False) if name else None)
         if strip: strip_bar(s, pg, im, *strip)
     return im
 
@@ -355,6 +362,8 @@ def main():
     after_nihao = ['啊', '吗', '像', '的', '了', '好', '多', '久', '吧', '看']
     rest = ['喜欢听博客', '喜欢', '喜欢听', '系', '西', '洗', '戏', '喜', '係', '细', '吸', '希']
     panels = [('Stock T9 (tree as laid out)', stock_t9(s, pg, '')),
+              ('Name entry (KB_DONE): Rename Playlist, empty', screen(s, pg, '', 'ABC', hint='Enter a playlist name', title='Rename Playlist', name=True)),
+              ('Name entry (KB_DONE): a name typed', screen(s, pg, 'Road Trip', 'abc', title='Rename Playlist', name=True)),
               ('Empty field, shift on', screen(s, pg, '', 'ABC')),
               ('Typing, "n" held', screen(s, pg, 'all i', 'abc', held='n')),
               ('123 page', screen(s, pg, 'all in', '123')),

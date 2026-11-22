@@ -267,7 +267,7 @@ clean-up does. No file is ever deleted and no other playlist's copy of the song 
 
 The "..." card's second row on a stock playlist, **Rename** (Lucide `pencil`, `pod_ic_vsrename`,
 slot 6 packed under Select by `VS_SELECT_FIRST`). It opens our keyboard as New Playlist does
-(title "Rename Playlist", hint `msg_newplaylists`, action key **Done**, the current name in the
+(a name on the keyboard's card row, no magnifier; title "Rename Playlist", hint `msg_newplaylists`, action key **Done**, the current name in the
 field). The keyboard is not modal; `sg_renamed` runs on Done for the playlist it was opened for
 (`sg_rn_id`; `sg_rn_on` says one is waiting, since stock's ids start at 0), with the name trimmed and 1 to 63 bytes:
 

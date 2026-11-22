@@ -31,7 +31,8 @@ pad at the bottom of the 450 px window, `#1C1C1E`. White and grey only, no accen
   visibility changes. A key types when the finger lifts on it.
 - **Delete** acts on touch down and repeats while held (80 ms ticks, first repeat after six). Its
   timer exists only between down and up, abort or background.
-- **Field** (`kb_field`, 300x36 at (10, 58), radius 10) has a magnifier, a grey placeholder, the
+- **Field**: the rounded fill and magnifier are `kb_capsule` (300x36 at (10, 58), radius 10)
+  under a transparent `kb_field` of the same box, which holds a grey placeholder, the
   text (18 px white), a 2x22 caret (not blinking) and a clear button (shown only with text). It
   must stay sensitive: stock's hit test skips an insensitive parent. The caret sits at the measured
   text width (`widget_measure_text`; 9 px a character if it cannot be measured). A text wider than
@@ -170,7 +171,7 @@ which. Callers need nothing for Chinese.
 | Flag | Effect |
 |---|---|
 | `KB_LONG` (4) | text limit 255 bytes instead of 63 (a feed address) |
-| `KB_DONE` (2) | the action key reads **Done** |
+| `KB_DONE` (2) | the action key reads **Done**; a name entry: `kb_capsule` (fill, magnifier) is hidden, `kb_card` (the Sign In card's one 48 px row at y 56, as Radio's Add by URL) is shown and `kb_name_row` moves the field onto it (text at x 24, 6 px down, text room 232, clear button at the row's right end); `KB_NAME_*` in `keyboard.h` mirror `NAME_*` in `tools/pod_keyboard.py` |
 | `KB_PASSWORD` (8) | see below |
 | `KB_LITERAL` | plain text, capital start, clear button, spaces typed as pressed |
 
@@ -223,7 +224,7 @@ key and makes it insensitive; a touch the gap rule resolves to it does nothing.
 | Library Search | embedded pad ([search](search.md)) |
 | Radio > Search | embedded pad; `rp_on_go` fetches results ([radio](radio.md)) |
 | Podcasts > Search | `keyboard_open` with `KB_LONG`, title `Apple Podcasts`, placeholder `Search Apple Podcasts`; the callbacks only record what happened, the page handles it when back in front ([podcasts](podcasts.md)) |
-| Playlists > New playlist | `keyboard_open` with `KB_DONE`, no cancel callback; `pl_named` makes the playlist ([playlists](playlists.md)). Limit 63 bytes (stock's edit allowed 127) |
+| Playlists > New playlist (also Rename Playlist, PEQ and 10-band names) | `keyboard_open` with `KB_DONE` (the card row, no magnifier), no cancel callback; `pl_named` makes the playlist ([playlists](playlists.md)). Limit 63 bytes (stock's edit allowed 127) |
 | Tidal > Search | pad embedded in the stock page: [tidalkb](tidalkb.md) |
 | Wi-Fi Join Network / password | one attach with `KB_LITERAL` or `KB_PASSWORD`, two fields served in turn by `keyboard_refocus`; the Security picker over it needs no keyboard, so the pad stays attached ([wifi](wifi.md)) |
 

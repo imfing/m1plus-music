@@ -209,7 +209,7 @@ def asset_tests(ctx):
     expect(max(ws.values()) <= D['TK_TEXT_W'], f'"Search Tidal" fits TK_TEXT_W {D["TK_TEXT_W"]} px at {D["TK_PX"]} px in all 13 languages (widest {max(ws.items(), key=lambda kv: kv[1])}; {ws})')
     # the pad at the bottom of the window (the 450 px client area), the same widgets as the keyboard page's
     kbt = {w.name: w for w in awtk_ui.parse(open(os.path.join(KB.RAW, 'ui', 'm1plus_keyboard.bin'), 'rb').read()).walk() if w.name}
-    same = [n for n in kbt if n.startswith('kb_') and n not in ('kb_field', 'kb_mag', 'kb_hint', 'kb_text', 'kb_caret', 'kb_clear')]
+    same = [n for n in kbt if n.startswith('kb_') and n not in ('kb_field', 'kb_capsule', 'kb_card', 'kb_mag', 'kb_hint', 'kb_text', 'kb_caret', 'kb_clear')]
     expect(all(n in by and (by[n].x, by[n].y, by[n].w, by[n].h) == (kbt[n].x, kbt[n].y, kbt[n].w, kbt[n].h) and by[n].props == kbt[n].props for n in same), 'the pad, the strip and the pop-up are the keyboard page\'s own widgets, byte for byte')
     pad = by['kb_pad']
     expect(pad.y + pad.h == KB.DEFS['KB_WIN_H'] == 450 and pad.x == 0 and pad.w == 320 and (stock_win_h(by)) == 450, 'the pad\'s bottom is the 450 px window\'s bottom (the same client area as the keyboard page)')

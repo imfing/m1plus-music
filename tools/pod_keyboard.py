@@ -51,6 +51,8 @@ FIELD_TEXT_X, FIELD_TEXT_W, FIELD_PX = 30, 228, 18          # the text starts 30
 FIELD_MAG_X, FIELD_MAG = 8, 16                               # the magnifier (16 px square)
 FIELD_CLEAR_X, FIELD_CLEAR_W, FIELD_CLEAR = 264, 36, 16      # the clear button's touch area, and the 16 px disc in it
 CARET_Y, CARET_W, CARET_H = 7, 2, 22
+# A name entry (KB_DONE): the field on one card row (patch/keyboard.h KB_NAME_*), like Radio's Add by URL rows; kb_capsule (the search fill and magnifier) is hidden then
+NAME_Y, NAME_ROW, NAME_X, NAME_DY, NAME_FIELD_W, NAME_TW = 56, 48, 24, 6, 281, 232
 
 PAGES = ('abc', 'ABC', '123', '#+=')
 ROWS = {

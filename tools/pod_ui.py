@@ -2835,11 +2835,19 @@ def keyboard_pad_widgets():
 
 
 def build_keyboard_page(page):
+    """The keyboard page (patch/keyboard.c keyboard_open): the search field is kb_capsule (fill and magnifier) under a transparent kb_field; a name entry (KB_DONE) hides it, shows kb_card
+    (Radio's Add by URL row) and moves kb_field onto the row."""
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
     styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
     root.children.append(navbar(page.title))
-    field = text_field(PK.FIELD_X, PK.FIELD_Y, PK.FIELD_W, PK.FIELD_H, PK.KB_BG, PK.FIELD_R, PK.FIELD_TEXT_X, PK.FIELD_TEXT_W, PK.FIELD_PX, PK.KB_GREY, PK.KB_INK, PK.CARET_Y,
-                       PK.FIELD_CLEAR_X, PK.FIELD_CLEAR_W, (PK.FIELD_MAG_X, PK.FIELD_MAG), True)   # sensitive: stock's hit test does not look into an insensitive parent
+    cap = kb_view('kb_capsule', PK.FIELD_X, PK.FIELD_Y, PK.FIELD_W, PK.FIELD_H, PK.KB_BG, PK.FIELD_R)
+    cap.children.append(Widget('image', PK.FIELD_MAG_X, (PK.FIELD_H - PK.FIELD_MAG) // 2, PK.FIELD_MAG, PK.FIELD_MAG, [('name', 'kb_mag'), ('image', 'qk_mag'), ('draw_type', 'center'), ('sensitive', 'false')]))
+    cap.set('sensitive', 'false')   # the field over it takes the touches
+    root.children.append(cap)
+    root.children.append(hidden(kb_view('kb_card', _ST.CM, PK.NAME_Y, _ST.CARD_W, PK.NAME_ROW, _ST.CARD_RGB, _ST.CARD_R)))
+    tw = max(PK.FIELD_TEXT_W, PK.NAME_TW)   # the labels hold either room (the keyboard fits the text to the room it is given)
+    field = text_field(PK.FIELD_X, PK.FIELD_Y, PK.FIELD_W, PK.FIELD_H, '#00000000', 0, PK.FIELD_TEXT_X, tw, PK.FIELD_PX, PK.KB_GREY, PK.KB_INK, PK.CARET_Y,
+                       PK.FIELD_CLEAR_X, PK.FIELD_CLEAR_W, None, True)   # sensitive: stock's hit test does not look into an insensitive parent
     root.children.append(field)
     root.children += keyboard_pad_widgets()
     return root

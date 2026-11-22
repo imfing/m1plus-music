@@ -923,7 +923,7 @@ def asset_tests(ctx):
     expect(t.name == 'm1plus_search_page' and all(n in by for n in need), f'm1plus_search has every widget the payload and the keyboard look up ({[n for n in need if n not in by]})')
     kbt = awtk_ui.parse(open(os.path.join(RAW, 'ui', 'm1plus_keyboard.bin'), 'rb').read())
     kby = {w.name: w for w in kbt.walk() if w.name}
-    same = [n for n in kby if n.startswith('kb_') and n not in ('kb_field', 'kb_mag', 'kb_hint', 'kb_text', 'kb_caret', 'kb_clear')]
+    same = [n for n in kby if n.startswith('kb_') and n not in ('kb_field', 'kb_capsule', 'kb_card', 'kb_mag', 'kb_hint', 'kb_text', 'kb_caret', 'kb_clear')]
     ok = all(n in by and (by[n].x, by[n].y, by[n].w, by[n].h) == (kby[n].x, kby[n].y, kby[n].w, kby[n].h) and by[n].props == kby[n].props for n in same)
     expect(ok, 'the pad, the strip and the pop-up are the keyboard page\'s own widgets, byte for byte (one builder)')
     f = by['kb_field']

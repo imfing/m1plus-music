@@ -167,6 +167,7 @@ def base_tests(ctx):
            and DEFS['KB_KW'] == PK.KB_KW == 29 and DEFS['KB_GAP'] == PK.KB_GAP == 3 and DEFS['KB_NUM_KW'] == PK.KB_NUM_KW and DEFS['KB_FN_W'] == PK.KB_FN_W == 40 and DEFS['KB_MODE_W'] == PK.KB_MODE_W == 74
            and DEFS['KB_EDGE'] == PK.KB_EDGE and DEFS['KB_KEYS'] == PK.KB_KEYS == 26 and DEFS['KB_MAX'] == PK.KB_MAX and DEFS['KB_POP_W'] == PK.KB_POP_W == 46 and DEFS['KB_POP_H'] == PK.KB_POP_H == 50
            and DEFS['KB_POP_GAP'] == PK.KB_POP_GAP and DEFS['KB_STEM_UP'] == PK.KB_STEM_UP and DEFS['KB_TEXT_X'] == PK.FIELD_TEXT_X and DEFS['KB_TEXT_W'] == PK.FIELD_TEXT_W and DEFS['KB_CARET_Y'] == PK.CARET_Y
+           and (DEFS['KB_FIELD_H'], DEFS['KB_CLEAR_W']) == (PK.FIELD_H, PK.FIELD_CLEAR_W) and [DEFS['KB_' + n] for n in ('NAME_Y', 'NAME_ROW', 'NAME_X', 'NAME_DY', 'NAME_FIELD_W', 'NAME_TW')] == [PK.NAME_Y, PK.NAME_ROW, PK.NAME_X, PK.NAME_DY, PK.NAME_FIELD_W, PK.NAME_TW]
            and DEFS['KB_WIN_H'] == 450, 'patch/keyboard.h and tools/pod_keyboard.py agree on every number')
     pad = node('kb_pad')
     expect((pad.x, pad.y, pad.w, pad.h) == (0, 270, 320, 180) and pad.get('style:normal:bg_color') == '#1C1C1E', 'the pad is 180 px high at the bottom of the 450 px window (the bottom of the 480 px screen), #1C1C1E')
@@ -202,7 +203,13 @@ def base_tests(ctx):
            and acc.get('style:normal:bg_color') == '#6E6E73' and node('kb_acc_h').get('style:normal:bg_color') == '#3A3A3C' and node('kb_a0').get('style:normal:text_color') == '#FFFFFF' and node('kb_a0').get('style:normal:font_size') == '24',
            'the accent strip: a hidden insensitive #6E6E73 bar with a highlight pill and seven white labels, all insensitive')
     fld = node('kb_field')
-    expect((fld.x, fld.y, fld.w, fld.h) == (10, 58, 300, 36) and fld.get('style:normal:bg_color') == '#1C1C1E' and fld.get('style:normal:round_radius') == '10', 'the field: a rounded #1C1C1E bar, 300 x 36')
+    cap, card = node('kb_capsule'), node('kb_card')
+    expect((fld.x, fld.y, fld.w, fld.h) == (10, 58, 300, 36) and fld.get('style:normal:bg_color') == '#00000000' and fld.get('sensitive') == 'true', 'the field: 300 x 36, transparent, sensitive')
+    expect((cap.x, cap.y, cap.w, cap.h) == (10, 58, 300, 36) and cap.get('style:normal:bg_color') == '#1C1C1E' and cap.get('style:normal:round_radius') == '10' and cap.get('sensitive') == 'false'
+           and [c.name for c in cap.children] == ['kb_mag'] and [c.name for c in t.children].index('kb_capsule') < [c.name for c in t.children].index('kb_field'),
+           'the search fill is kb_capsule under the field: a rounded #1C1C1E bar, 300 x 36, with the magnifier')
+    expect((card.x, card.y, card.w, card.h) == (10, 56, 300, 48) and card.get('visible') == 'false' and card.get('sensitive') == 'false' and [c.name for c in t.children].index('kb_card') < [c.name for c in t.children].index('kb_field'),
+           'kb_card is the Sign In card\'s one row, hidden, under the field')
     expect(node('kb_text').get('style:normal:font_size') == '18' and node('kb_text').get('style:normal:text_color') == '#FFFFFF' and node('kb_hint').get('style:normal:text_color') == '#8E8E93' and node('kb_caret').get('style:normal:bg_color') == '#FFFFFF'
            and (node('kb_caret').w, node('kb_caret').h) == (2, 22), 'white 18 px text, a grey hint, a white 2 x 22 caret')
 
@@ -1162,6 +1169,18 @@ def name_tests(ctx):
     expect(said(m, 'label_title') == 'New playlist' and said(m, 'kb_hint') == 'Enter a playlist name' and said(m, 'kb_go') == 'Done' and field(m) == '',
            f'New playlist: the keyboard has the stock title and hint and the action key reads Done ({said(m, "label_title")}, {said(m, "kb_hint")}, {said(m, "kb_go")})')
     expect(not [c for c in m.calls if c[0] in ('navigator_to_with_context', 'createPlayListItem')], 'opening creates nothing and opens no stock dialog')
+    def rowgeo(m):
+        f = geo(m, 'kb_field')
+        return f[:4], geo(m, 'kb_clear')[:2], geo(m, 'kb_caret')[:2], shown(m, 'kb_card'), shown(m, 'kb_capsule'), shown(m, 'kb_mag'), shown(m, 'kb_field')
+    f, cl, car, card, cap, mag, fld = rowgeo(m)
+    expect(card == (1, 1) and cap == (0, 0) and fld[1] == 1 and f == (DEFS['KB_NAME_X'] - DEFS['KB_TEXT_X'], DEFS['KB_NAME_Y'] + DEFS['KB_NAME_DY'], DEFS['KB_NAME_FIELD_W'] + DEFS['KB_TEXT_X'], DEFS['KB_FIELD_H'])
+           and f[0] + DEFS['KB_TEXT_X'] == 24 and f[0] + f[2] - DEFS['KB_CLEAR_W'] + DEFS['KB_CLEAR_W'] // 2 == 287 and cl == (f[2] - DEFS['KB_CLEAR_W'], 0) and car[0] == DEFS['KB_TEXT_X'],
+           f'a name entry: the card row shown, the capsule hidden and insensitive, the field on the row (text at x 24, 6 px down), the clear button at its right end, the caret at the text origin ({rowgeo(m)})')
+    mt = create(); typ(mt, 'M')
+    expect(shown(mt, 'kb_clear') == (1, 1) and caret_x(mt) == 30 + width('M') + 1, 'typing in the row: the clear button shows, the caret follows the text')
+    mn = opened()
+    f, cl, car, card, cap, mag, fld = rowgeo(mn)
+    expect(f == (10, 58, 300, 36) and cl == (264, 0) and card == (0, 0) and cap[0] == 1 and fld[1] == 1, f'a search entry keeps the capsule and the old field geometry ({rowgeo(mn)})')
     m0 = opened()
     expect(said(m0, 'kb_go') is None and not [c for c in m0.calls if c[0] == 'widget_set_tr_text' and c[1] == m0.widgets['kb_go']], 'without KB_DONE the action key is the asset\'s Search')
     m.calls = []

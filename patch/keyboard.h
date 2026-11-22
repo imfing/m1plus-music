@@ -93,6 +93,15 @@ int keyboard_open(const char *title, const char *placeholder, const char *initia
 #define KB_TEXT_X 30 /* the field's text and caret start (field coordinates) */
 #define KB_TEXT_W 228 /* the room for the text */
 #define KB_CARET_Y 7
+#define KB_FIELD_H 36
+#define KB_CLEAR_W 36 /* the clear button's touch area at the field's right end */
+/* A name entry (KB_DONE) has no search field: the field sits on the one row of a card, the Sign In page's row (tools/pod_keyboard.py NAME_*; the card is kb_card, the search fill kb_capsule) */
+#define KB_NAME_Y 56 /* the card's top (the row is 48 px) */
+#define KB_NAME_ROW 48
+#define KB_NAME_X 24 /* the text's left edge on screen: the field is that far left of the text origin KB_TEXT_X */
+#define KB_NAME_DY 6 /* the 36 px field centred in the row */
+#define KB_NAME_FIELD_W 281 /* from the text origin to the clear button's right end, its centre on x 287 */
+#define KB_NAME_TW 232 /* the text room of the row */
 #define KB_HOLD_MS 80 /* delete repeats on this tick ... */
 #define KB_HOLD_TICKS 6 /* ... after this many ticks of holding */
 
