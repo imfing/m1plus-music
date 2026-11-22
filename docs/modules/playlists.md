@@ -18,7 +18,8 @@ playlists in the saved order; no list-plus button, "..." or Now Playing; a tap a
   (`btn_plactions` with `pod_nav_listplus`, the left cap at x 168; `btn_more` at x 214). The small
   title runs to x 168.
 - **Grid** (default): two columns of 144 px tiles with 8 px corners; under a tile the name (18 px
-  white) and "N tracks" (15 px `#AAAAAA`). A tap on a cell opens the playlist.
+  white) and "N tracks" (15 px `#AAAAAA`). A tap on a cell opens the playlist; a long press opens the
+  pins sheet (Play, Shuffle, Pin Playlist / Unpin Playlist), in list mode too.
 - **List**: 64 px rows (`LIST_ROW_H`), 52 px mosaic at (10, 6), name 21 px white and "N tracks"
   18 px grey from x 74, hairline to x 310, chevron at x 288 (none in select mode or the picker),
   pressed row `#333333`. The painter is `grid_list_paint`, shared with Albums.
@@ -179,7 +180,12 @@ so it does not depend on `g_class_type`. The selection vector is the Songs page'
   "..." takes the left cap (`pod_nav_more`) on a source page.
 - **Touch.** As the Albums grid: UP within `SC_DRAG_PX` of the press on the same cell opens the
   playlist in our Songs page (`songs_open_playlist`, [songs](songs.md) "The other lists"), the
-  stock page only if that will not open.
+  stock page only if that will not open. A press held `RM_LONG_MS` (`pl_on_down` arms
+  `rowmenu_hold_start`, `pl_on_move` cancels on a drift) opens the three-row sheet (`pl_on_hold`,
+  `pl_sheet`; [pins](pins.md)) on the library's page only: none in select mode, the picker, a
+  source's page or under a card. The hold forgets the press, so the release opens nothing. Play and
+  Shuffle go through `pins_play_playlist` (the Home pin's play); Pin takes the keys of `info_t`.
+  `pl_on_bg` closes the sheet; the page reads again at the to-foreground.
 - **Menu.** Every row closes the card first, then: slot 6 New Playlist -> `pl_create`; 7 / 8 Import
   / Export -> `stock_playlist_import` / `_export` with `navigation_status` 0; 9 Delete Playlists ->
   `pl_select(1)`; 4 / 5 Grid / List -> `pl_set_mode` and the save; 0 Name -> the order. The page

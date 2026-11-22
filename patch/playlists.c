@@ -45,6 +45,8 @@
 #include "playlists.h"
 #include "fnv.h"
 #include "entries.h"
+#include "rowmenu.h"
+#include "pins.h"
 
 #define CELL_H GRID_CELL_H
 #define PITCH GRID_PITCH
@@ -93,6 +95,9 @@ static struct {
     int seen, dir, noscroll;
     int down;
     m1_tap_t tap;
+    rowmenu_t
+        rm; /* the long press sheet (Play, Shuffle, Pin Playlist / Unpin Playlist; the library's page only: rm.on) */
+    void *rm_label, *rm_icon; /* its third row's label and glyph */
     int menu; /* a card is open: 0 none, 1 the "..." card (views, order), 2 the list-plus button's (the four actions) */
     unsigned more_timer;
     vs_t vs; /* the "..." card (patch/viewsort.c) */
@@ -901,6 +906,45 @@ static int pl_on_back(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The long press sheet (docs/modules/pins.md): the library's page only (not a source's, not the picker, not select mode, not under a card), a playlist of the stock list. */
+static void *pl_pin_rec(int a) {
+    if (!pl.rm.on || pl.src || pl_v() || pl.select || pl.menu || pl.vs.on || a < 0 || a >= (int)pl.count)
+        return (void *)0;
+    return pl_rec(a);
+}
+
+/* A row of the sheet (it has closed): Play, Shuffle, Pin Playlist / Unpin Playlist for the playlist it was opened on. The scans run in this thread's ticks, so none is between the row and the player. */
+static void pl_sheet(int a, int act) {
+    void *rec = pl_pin_rec(a);
+    const char *name;
+    int id;
+    unsigned nk;
+    if (!rec || !pl.info) return;
+    id = I(rec, REC_DISC), name = cc_str(rec, REC_TITLE);
+    if (act == RMP_UNPIN) {
+        if (pins_has_playlist(id, name))
+            pins_unpin_playlist(id, name);
+        else {
+            nk = (unsigned)pl.info[a].nk;
+            pins_pin_playlist(id, name, pl.info[a].key, nk > 4 ? 4 : nk);
+        }
+    } else if (pins_play_playlist(id, name, act == RMP_SHUFFLE) < 0)
+        pod_toast(TR("Can't play"));
+}
+
+/* A press held RM_LONG_MS on a playlist: the sheet opens while the finger is down; the press is forgotten, so the release opens nothing. */
+static void pl_on_hold(int a) {
+    void *rec = pl_pin_rec(a);
+    int has;
+    pl.down = 0;
+    if (pl.list) grid_set_press(&pl.press, 0, pl.sv);
+    if (!rec || pl.bg) return;
+    has = pins_has_playlist(I(rec, REC_DISC), cc_str(rec, REC_TITLE));
+    if (pl.rm_label) widget_set_tr_text(pl.rm_label, has ? "Unpin Playlist" : "Pin Playlist");
+    if (pl.rm_icon) widget_set_prop_str(pl.rm_icon, "image", has ? "rm_ic_unpin" : "rm_ic_pin");
+    rowmenu_open_queue(&pl.rm, a, pl_sheet);
+}
+
 static int pl_on_down(void *ctx, void *e) {
     int a;
     (void)ctx;
@@ -909,12 +953,20 @@ static int pl_on_down(void *ctx, void *e) {
     a = pl_item_of(e);
     pl.down = a + 1, m1_tap_at(&pl.tap, e);
     if (pl.list && !pl.select) grid_set_press(&pl.press, a + 1, pl.sv);
+    if (a >= 0 && pl_pin_rec(a)) rowmenu_hold_start(a, pl_on_hold);
+    return RET_OK;
+}
+
+static int pl_on_move(void *ctx, void *e) {
+    (void)ctx;
+    if (pl.down && e) rowmenu_hold_move(&pl.tap, e); /* a drift of SC_DRAG_PX or more is a drag, not a long press */
     return RET_OK;
 }
 
 static int pl_on_up(void *ctx, void *e) {
     int a = pl.down - 1;
     (void)ctx;
+    rowmenu_hold_stop();
     pl.down = 0;
     if (pl.list) grid_set_press(&pl.press, 0, pl.sv);
     if (a < 0 || !e || !pl.view) return RET_OK;
@@ -930,6 +982,7 @@ static int pl_on_up(void *ctx, void *e) {
 static int pl_on_abort(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    rowmenu_hold_stop();
     pl.down = 0;
     if (pl.list) grid_set_press(&pl.press, 0, pl.sv);
     return RET_OK;
@@ -1171,6 +1224,7 @@ static int pl_on_fg(void *ctx, void *e) {
  * the list the songs page draws its rows from and plays. The to-foreground reads everything again and restarts it. */
 static int pl_on_bg(void *ctx, void *e) {
     pl.bg = 1;
+    rowmenu_close(&pl.rm);
     m1_timer_stop(&pl.more_timer);
     return pl_on_abort(ctx, e);
 }
@@ -1227,6 +1281,7 @@ static int pl_on_destroy(void *ctx, void *e) {
     free(pl.info);
     free(pl.ord);
     m1_sel_free(&pl.sel);
+    rowmenu_free(&pl.rm);
     free(pl.tmp);
     memset(&pl, 0, sizeof pl);
     m1_timer_stop(&pick.timer);
@@ -1263,6 +1318,11 @@ static int pl_open_page(const lib_src_t *src) {
     pl.btn_more = m1_bind(pl.win, "btn_more", pl_on_more, (void *)0);
     pl.btn_plactions = m1_bind(pl.win, "btn_plactions", pl_on_actions, (void *)0);
     pl.view = widget_lookup(pl.win, "view_grid", 1);
+    if (!pl.src && !pl_v()) { /* the long press sheet (an asset without it: no long press) */
+        rowmenu_bind_queue(&pl.rm, pl.win);
+        pl.rm_label = widget_lookup(pl.win, "rm_label2", 1);
+        pl.rm_icon = widget_lookup(pl.win, "rm_icon2", 1);
+    }
     pl.sv = widget_lookup(pl.win, "playlists_scrollview", 1);
     pl.status = widget_lookup(pl.win, "label_status", 1);
     pl.spin = widget_lookup(pl.win, "pl_spin", 1); /* optional */
@@ -1321,6 +1381,7 @@ static int pl_open_page(const lib_src_t *src) {
     widget_on(pl.win, EVT_WINDOW_TO_FG, pl_on_fg, (void *)0);
     widget_on(pl.win, EVT_WINDOW_TO_BG, pl_on_bg, (void *)0);
     widget_on(pl.view, EVT_POINTER_DOWN, pl_on_down, (void *)0);
+    widget_on(pl.view, EVT_POINTER_MOVE, pl_on_move, (void *)0);
     widget_on(pl.view, EVT_POINTER_UP, pl_on_up, (void *)0);
     widget_on(pl.view, EVT_POINTER_ABORT, pl_on_abort, (void *)0);
     widget_on(pl.view, EVT_AFTER_PAINT, pl_on_paint, (void *)0);

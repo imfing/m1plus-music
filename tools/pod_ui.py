@@ -899,7 +899,8 @@ def build_playlists_page(page):
     root = build_grid_page(page, toggle=None, coverflow=False, more_left=True, plactions=True, names=('playlists_listview', 'playlists_scrollview'), title_name='pl_title')
     root.children[0].children.append(selall_button())   # the navbar's select mode text (the card's Delete Playlists starts select mode: patch/playlists.c)
     root.children.append(select_bar('pl_bar', [('pl_del', 'one')]))
-    root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=pod_pages.PLAYLIST_MENU, act_glyphs=[n for n, _ in PL_MENU_ICONS]))   # last: above the list, the bar and the navbar
+    root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=pod_pages.PLAYLIST_MENU, act_glyphs=[n for n, _ in PL_MENU_ICONS]))   # above the list, the bar and the navbar
+    root.children.extend(row_menu(pins=True))   # last: the long press sheet of a playlist (Play, Shuffle, Pin Playlist / Unpin Playlist; patch/playlists.c, docs/modules/pins.md)
     return root
 
 

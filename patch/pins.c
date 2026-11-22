@@ -1108,6 +1108,15 @@ static int pn_play_playlist(const pin_t *e, int how) {
     return 0;
 }
 
+int pins_play_playlist(int id, const char *name, int shuffle) {
+    pin_t e;
+    memset(&e, 0, sizeof e);
+    e.kind = 'p';
+    e.key = (unsigned)id;
+    pn_copy(e.name, sizeof e.name, name ? name : "");
+    return pn_play_playlist(&e, shuffle ? SO_SHUFFLE : SO_IN_ORDER);
+}
+
 /* Once, the first to-foreground after PIN_CHECK_MS: an album pin whose row now has another cover key takes it (as Recently Played re-keys). Nothing is ever dropped here: the library can be
  * mid-scan (Auto Update rebuilds songtable after a card insert or a USB transfer, and a list read then is short) or unreadable, so a pin leaves only by the user's Unpin. */
 static void pn_check(void) {

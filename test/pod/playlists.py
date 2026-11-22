@@ -1293,4 +1293,80 @@ def stock_tests(ctx):
     expect(vis(m, 'view_grid') == (1, 1) and m.props.get((m.widgets['label_title'], 'visible'), 0) == 0, 'the empty page keeps the large title; the small title stays hidden')
 
 
-SECTIONS = [stock_tests, src_tests]
+def hold_tests(ctx):
+    """The long press (docs/modules/pins.md): a playlist held RM_LONG_MS on the library's Playlists page (grid and list) opens the three-row sheet (Play, Shuffle, Pin Playlist / Unpin Playlist by the pins
+    file) and its release opens no playlist; Play and Shuffle play that playlist; Pin writes the page's mosaic keys; no hold in select mode, in the picker, on a source's page or under a card."""
+    expect = ctx.expect
+    import pod_pins_home as PH_
+    RM = sibling('rowmenu')
+    PINS = '/mnt/mmc/.m1plus/home-pins'
+    lists = [(1, 'Road', [0, 1]), (2, 'Night', [2, 2, 3, 4])]
+    timers = lambda m: [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['rm_on_hold']]
+    shown = lambda m: RM.vis(m, 'rm_card') == (1, 1)
+    keys = lambda *albums: tuple(sorted({fnv(fnv(O['FNV_SEED'], alb(a)[0]), alb(a)[1]) or 1 for a in albums}))
+
+    def machine(mode, **kw):
+        m = PM(lists, **kw)
+        if mode == 'list': m.fs[PL_FILE] = b'0\n'
+        m.wtext = {}
+        RM.with_menu(m, 0)
+        m.played = []
+        m.handlers[PSYMS['so_play']] = 'so_play'
+        inner = m._hook
+        def hook(u, address, size, _):
+            if m.handlers.get(address) == 'so_play':
+                a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))   # noqa: F821
+                m.played.append((a0, m.word(O['CLASSINFO'] + 4) if 'CLASSINFO' in O else None, len(m.deques[a1]), a2 if a2 < 1 << 31 else a2 - (1 << 32), a3))
+                u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+            if m.handlers.get(address) == 'widget_set_tr_text': m.wtext[u.reg_read(UC_MIPS_REG_A0)] = m.read_cstr(u.reg_read(UC_MIPS_REG_A1))   # noqa: F821
+            return inner(u, address, size, _)
+        m._hook = hook
+        return m
+
+    def down(m, y, t=1000, x=MARGIN + 40): m.touch('down', x, SCREEN_Y0 + y, t, fn='pl_on_down')
+    def up(m, y, t=1600, x=MARGIN + 40): m.touch('up', x, SCREEN_Y0 + y, t, fn='pl_on_up', count=30000000)
+    opened = lambda calls: [c for c in calls if c[0] == 'navigator_to_with_context']
+
+    for mode in ('grid', 'list'):
+        m = machine(mode); m.windows['m1plus_songs'] = 0; open_page(m); settle(m)
+        y = R0 + 10 if mode == 'grid' else TOP + 10
+        m.calls = []; down(m, y)
+        expect(len(timers(m)) == 1 and timers(m)[0][2] == O['RM_LONG_MS'] and not shown(m), f'{mode}: a press on a playlist arms the one {O["RM_LONG_MS"]} ms timer')
+        m.call(PSYMS['rm_on_hold'], count=900000000)
+        expect(shown(m) and m.wtext[m.widgets['rm_label2']] == 'Pin Playlist' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_pin', f'{mode}: held, the sheet opens with Pin Playlist and the pin glyph')
+        m.calls = []; up(m, y)
+        expect(shown(m) and not opened(m.calls), f'{mode}: the release opens no playlist and leaves the sheet open')
+        RM.SG.click(m, 'rm_item2')
+        got = PH_.parse(m.fs.get(PINS, b''))
+        expect(len(got) == 1 and got[0][0] == 'p' and got[0][1] == 2 and got[0][3] == 'Night' and tuple(sorted(k for k in got[0][2] if k)) == keys(2, 3, 4) and not shown(m),
+               f'{mode}: Pin Playlist writes the playlist\'s line with the page\'s mosaic keys and closes the sheet ({got})')
+        down(m, y, 2000); m.call(PSYMS['rm_on_hold'], count=900000000); up(m, y, 2600)
+        expect(m.wtext[m.widgets['rm_label2']] == 'Unpin Playlist' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_unpin', f'{mode}: a pinned playlist reads Unpin Playlist')
+        RM.SG.click(m, 'rm_item2')
+        expect(PH_.parse(m.fs.get(PINS, b'')) == [], f'{mode}: Unpin Playlist removes the line')
+        for item, name, how in (('rm_item0', 'Play', 0), ('rm_item1', 'Shuffle', 1)):
+            down(m, y, 3000); m.call(PSYMS['rm_on_hold'], count=900000000); up(m, y, 3600)
+            m.played.clear(); m.click(item, count=900000000)
+            expect(not shown(m) and len(m.played) == 1 and m.played[0][0] == O['CLASS_PLAYLIST_SONGS'] and m.played[0][2] == 4 and m.played[0][3] == (-1 if how else 0) and m.played[0][4] == 1 + how
+                   and m.word(pod.DATA['CLASSINFO'][0] + 4) == 2, f'{mode}: {name} plays Night ({m.played})')
+        # cancelled: a drift, an abort, an early release (a tap still opens the playlist)
+        m.calls = []; down(m, y, 5000); m.calls = []
+        m.touch('move', MARGIN + 60, SCREEN_Y0 + y, 5100, fn='pl_on_move')
+        expect(any(c[0] == 'timer_remove' for c in m.calls), f'{mode}: a drift of 20 px stops the timer')
+        m.touch('abort', MARGIN + 40, SCREEN_Y0 + y, 5200, fn='pl_on_abort'); m.calls = []
+        down(m, y, 7000); up(m, y, 7100)
+        expect(opened(m.calls) and any(c[0] == 'timer_remove' for c in m.calls) and not shown(m), f'{mode}: a tap shorter than the time still opens the playlist')
+        # select mode: no hold
+        m.click('btn_plactions'); m.click('vs_item9'); m.calls = []; down(m, y, 8000)
+        expect(not timers(m), f'{mode}: select mode arms no hold')
+    # a card open: no hold
+    m = machine('grid'); open_page(m); settle(m); m.click('btn_more'); m.calls = []; down(m, R0 + 10)
+    expect(not timers(m), 'under the "..." card: no hold')
+    # the picker and a source's page: no sheet
+    m = machine('grid'); m.call(PSYMS['playlists_pick'], count=60000000); settle(m); m.calls = []; down(m, TOP + 10)
+    expect(not timers(m), 'the Add to Playlist picker: no hold')
+    m = machine('grid'); src = m.fake_src(); m.call(PSYMS['playlists_open_src'], a0=src, count=60000000); settle(m); m.calls = []; down(m, R0 + 10)
+    expect(not timers(m), 'a source\'s page: no hold')
+
+
+SECTIONS = [stock_tests, src_tests, hold_tests]

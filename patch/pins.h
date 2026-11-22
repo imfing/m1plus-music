@@ -28,6 +28,9 @@ int pins_unpin_playlist(int id, const char *name);
 /* Rename Playlist (patch/songs.c): the pin of playlist `id` called `old` takes `name`, in its place, with its cover keys; the Home tile reads it when Home is in front again. 1 when it was renamed; 0 when
  * there is no such pin, or the file cannot be read (nothing said) or written ("Can't update pins", the pin keeps the old name). */
 int pins_rename_playlist(int id, const char *old, const char *name);
+/* Plays the stock playlist `id` called `name` as the Playlists long press sheet's Play (shuffle 0: in order) or Shuffle (1), Now Playing opens: the Home pin's play without the pin. 0 when it was started,
+ * -1 when nothing plays (not in the list, empty, or no list). */
+int pins_play_playlist(int id, const char *name, int shuffle);
 /* Plays the album as the Albums long press sheet's Play (shuffle 0: in order from the first) or Shuffle (1): the album page's Play pill and Shuffle disc without the page, Now Playing opens. The album is found by
  * `ckey` (cc_album_key of its row), else by title, else by a track `path` (NULL: none). 0 when it was started or could not be told, -1 when the library has no such album (nothing happens). */
 int pins_play_album(const char *album, unsigned ckey, const char *path, int shuffle);

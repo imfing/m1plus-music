@@ -132,7 +132,9 @@ already there returns `PINS_OK` and changes nothing. A live menu shows the chang
 **Playlist entry:** the Songs page of a playlist: "..." card, the fourth row (slot `VS_ACT3`, under Select, Rename and Clean
 Up) **Pin Playlist** / **Unpin Playlist** (`pod_ic_vspin` / `pod_ic_vsunpin`). `sg_pin_row` sets
 words and glyph at each open; `sg_pin` takes the mosaic keys from the list the page holds
-(`grid_mosaic_keys`).
+(`grid_mosaic_keys`). The Playlists page's row long press (`pl_on_hold`: Play, Shuffle, Pin Playlist /
+Unpin Playlist; [playlists](playlists.md)) is another entry; it pins with the page's mosaic keys and plays through
+`pins_play_playlist(id, name, shuffle)`.
 
 ## Checks against the library
 
