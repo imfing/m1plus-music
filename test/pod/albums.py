@@ -1805,16 +1805,16 @@ def sort_card_tests(ctx):
         lab = [c[2] for c in m.calls if c[0] == 'widget_resize' and c[1] == m.widgets['vs_label2']]
         m.click('btn_more')
         return mv, rs, lab
-    for widest, w in ((60, 206), (130, 206), (200, 254), (300, 292)):
+    for widest, w in ((60, 206), (130, 206), (200, 258), (300, 292)):
         mv, rs, lab = fit(widest)
-        expect(mv == [(311 - w, 52)] and rs == [(w, 350)] and lab == [w - 38 - 16], f'a widest label of {widest} px: a card {w} px wide (38 + the label + 16, 206 .. 292), 350 px high, right edge 311 ({mv} {rs} {lab})')
+        expect(mv == [(311 - w, 52)] and rs == [(w, 350)] and lab == [w - 38 - 16], f'a widest label of {widest} px: a card {w} px wide (38 + the label + 4 + 16, 206 .. 292), 350 px high, right edge 311 ({mv} {rs} {lab})')
     m.measure = lambda t: 150 if t == 'Search Albums' else 40
     m.calls = []; m.click('btn_more')
     rs = [tuple(c[2:]) for c in m.calls if c[0] == 'widget_resize' and c[1] == m.widgets['vs_card']]
     pos = [tuple(c[2:]) for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets['vs_item6']]
     hr = [tuple(c[2:]) for c in m.calls if c[0] in ('widget_move', 'widget_resize') and c[1] == m.widgets['vs_hair']]
-    expect(rs == [(232, 350)] and pos == [(0, 0)] and hr == [(0, 50), (232, 1)],
-           f'the Search row counts, from its glyph x 66: 66 + 150 + 16 = 232 wide; it is the first row, the hairline under it at y 50 ({rs} {pos} {hr})')
+    expect(rs == [(236, 350)] and pos == [(0, 0)] and hr == [(0, 50), (236, 1)],
+           f'the Search row counts, from its glyph x 66: 66 + 150 + 4 + 16 = 236 wide; it is the first row, the hairline under it at y 50 ({rs} {pos} {hr})')
     m.click('btn_more')
     m.measure = lambda t: 0
     m.calls = []; m.click('btn_more')

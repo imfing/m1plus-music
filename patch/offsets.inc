@@ -1804,7 +1804,7 @@
 /* The "..." card of the pages with a sort order and a grid / list view (patch/viewsort.c, tools/pod_ui.py view_sort_card; the Albums page first): an Apple-style grouped menu in its own glass.
  * Slots 0..VS_SORTS - 1 are the sort rows, then VS_VIEWS view rows (Grid, List), then Search (VS_SEARCH) and Select (VS_SELECT); the card shows Search and Select first, then the view rows, then the sorts: VS_ROWS rows of VS_ROW_H. A tick sits at VS_TICK_X on every
  * row but Search, a glyph (view rows, Search, Select) at VS_LABEL_X, its label at VS_LABEL_X_GLYPH, a sort label at VS_LABEL_X. The ticked sort row's label moves up (VS_LABEL2_Y, VS_LABEL2_H) for the direction line
- * under it (VS_SUB_Y, VS_SUB_H). The width is the widest label or direction line + its x + VS_LABEL_R, VS_CARD_MIN..PL_CARD_MAX, the right edge PL_CARD_RIGHT. */
+ * under it (VS_SUB_Y, VS_SUB_H). The width is the widest label or direction line + its x + VS_TEXT_SLACK + VS_LABEL_R, VS_CARD_MIN..PL_CARD_MAX, the right edge PL_CARD_RIGHT. */
 #define VS_SORTS 4
 #define VS_VIEWS 2
 #define VS_SEARCH (VS_SORTS + VS_VIEWS) /* slot 6: the optional Search row, the card's first (a glyph, no tick) */
@@ -1829,6 +1829,7 @@
 #define VS_LABEL_X 38 /* a sort label: the glyph column's x */
 #define VS_LABEL_X_GLYPH 66 /* a label after a glyph: VS_GLYPH_X + VS_GLYPH + 8 */
 #define VS_LABEL_R 16
+#define VS_TEXT_SLACK 4 /* the fitted width leaves the widest label this much past its measured text: a label exactly as wide as its text paints with an ellipsis on the device (AB_TEXT_SLACK) */
 #define VS_CARD_MIN 206 /* 220 less the 14 px the glyph labels gained (VS_LABEL_X_GLYPH 80 -> 66) */
 #define VS_LABEL2_Y 5
 #define VS_LABEL2_H 22

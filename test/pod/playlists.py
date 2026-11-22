@@ -719,13 +719,13 @@ def stock_tests(ctx):
     expect(all(open(os.path.join(xx, n + '.png'), 'rb').read() == open(os.path.join(mod_icons.PNG, n + '.png'), 'rb').read() for n, _ in mod_icons.PL_MENU_ICONS),
            'the four glyph images are in the tree, the committed PNGs')
     glass_users(expect)
-    # the labels fit their room in all 13 languages (18 px in the shipped font; the room after the glyph column is PL_CARD_MAX - VS_LABEL_X_GLYPH - VS_LABEL_R)
+    # the labels fit their room in all 13 languages (18 px in the shipped font; the room after the glyph column is PL_CARD_MAX - VS_LABEL_X_GLYPH - VS_TEXT_SLACK - VS_LABEL_R)
     import awtk_strings
     from awtk_text import Ttf, StbText
     raw = os.path.join(WORK, 'rootfs', 'release', 'assets', 'default', 'raw')
     font = Ttf(os.path.join(raw, 'fonts', 'default.ttf'))
     built = {loc: dict(awtk_strings.load(os.path.join(raw, 'strings', loc + '.bin'))) for loc in pod_i18n.LOCALES}
-    room = O['PL_CARD_MAX'] - O['VS_LABEL_X_GLYPH'] - O['VS_LABEL_R']
+    room = O['PL_CARD_MAX'] - O['VS_LABEL_X_GLYPH'] - O['VS_TEXT_SLACK'] - O['VS_LABEL_R']
     over = [(loc, k, w) for loc in pod_i18n.LOCALES for k in pod_pages.PLAYLIST_MENU for w in [StbText(font, pod_ui.PL_LABEL_PX).layout(built[loc][k])[1]] if w > room]
     expect(not over, f'every action label fits its {room} px room in all 13 languages ({over[:4]})')
     over = [(loc, w) for loc in pod_i18n.LOCALES for w in [StbText(font, 20).layout(built[loc]['No playlists'])[1]] if w > tree.find('label_status').w]
@@ -1042,14 +1042,14 @@ def stock_tests(ctx):
     for loc in pod_i18n.LOCALES:
         m, texts = card_for(loc, px, button='btn_plactions')
         lx = O['VS_TICK_X'] + O['VS_LABEL_X_GLYPH'] - O['VS_GLYPH_X']   # no tick column: the glyph at x 14, the label 28 px after it
-        w = max(O['VS_CARD_MIN'], min(O['PL_CARD_MAX'], lx + max(px(t) for t in texts[6:]) + O['VS_LABEL_R']))
+        w = max(O['VS_CARD_MIN'], min(O['PL_CARD_MAX'], lx + max(px(t) for t in texts[6:]) + O['VS_TEXT_SLACK'] + O['VS_LABEL_R']))
         pos, sizes = fit(m)
         moved = lambda name: [c[2:] for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets[name]][-1]
         expect(pos == (311 - w, 52) and sizes.get('vs_card') == (w, 4 * 50) and all(sizes.get(f'vs_item{i}') == (w, 50) for i in ACTS) and 206 <= w <= 292
                and all(moved(f'vs_glyph{i}') == (O['VS_TICK_X'], 15) for i in ACTS) and all(moved(f'vs_label{i}') == (lx, 0) for i in ACTS) and lx == 42,
                f'{loc}: the list-plus button\'s card {w} px wide, x {311 - w}..311, 200 px high, glyphs at x 14 and labels at x 42 (no tick column) ({pos}, {sizes.get("vs_card")})')
         m, texts = card_for(loc, px)
-        w = max(O['VS_LABEL_X_GLYPH'] + max(px(t) for t in texts[4:6]), O['VS_LABEL_X'] + max(px(texts[0]), px('A–Z'))) + O['VS_LABEL_R']
+        w = max(O['VS_LABEL_X_GLYPH'] + max(px(t) for t in texts[4:6]), O['VS_LABEL_X'] + max(px(texts[0]), px('A–Z'))) + O['VS_TEXT_SLACK'] + O['VS_LABEL_R']
         w = max(O['VS_CARD_MIN'], min(O['PL_CARD_MAX'], w))
         pos, sizes = fit(m)
         moved = lambda name: [c[2:] for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets[name]][-1]
@@ -1063,7 +1063,7 @@ def stock_tests(ctx):
     m, _ = card_for('en_US', lambda t: 100)
     m.click('btn_more'); m.measure = lambda t: 200; m.calls = []
     m.click('btn_more')
-    expect(fit(m)[1].get('vs_card') == (282, 150) and fit(m)[0] == (29, 52), f'every open measures again (a language changed meanwhile): {fit(m)}')
+    expect(fit(m)[1].get('vs_card') == (286, 150) and fit(m)[0] == (25, 52), f'every open measures again (a language changed meanwhile): {fit(m)}')
 
     # 12. Closing frees everything
     m = PM(lists, missing=(7,)); open_page(m); settle(m)

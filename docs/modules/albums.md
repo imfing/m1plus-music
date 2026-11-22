@@ -176,7 +176,8 @@ edge 311, top y 52, seven 50 px rows, pressed 6 % white.
 
 Hairlines (13 % white) sit between groups only. The tick column is x 14 on every row; a card of
 action rows only (nothing tickable) has none, and `vs_fit` moves glyphs to x 14 and labels to x 42.
-The card is as wide as its widest label from its own x plus 16 px, 206 (`VS_CARD_MIN`) to 292,
+The card is as wide as its widest label from its own x plus 20 px (`VS_TEXT_SLACK` 4, then the
+16 px margin: a label exactly as wide as its text gets an ellipsis on the device), 206 (`VS_CARD_MIN`) to 292,
 measured again at every open. Strings: `Search Albums`, `Title`, `Grid`, `List`, `A–Z`, `Z–A`,
 `Newest First`, `Oldest First` (13 languages in `tools/pod_i18n.py`).
 

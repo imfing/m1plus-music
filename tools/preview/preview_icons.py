@@ -355,7 +355,7 @@ def view_card(s, im, rows, glass_name, hairs, pressed=None):
     gx = o['VS_GLYPH_X'] if ticks else o['VS_TICK_X']
     x_of = lambda glyph: gx + o['VS_LABEL_X_GLYPH'] - o['VS_GLYPH_X'] if glyph else o['VS_LABEL_X']
     need = [x_of(r[1]) + max(s.font.width(PS.tr(s, r[0]), 18), s.font.width(r[3], 15) if r[3] else 0) for r in rows]
-    cw = max(o['VS_CARD_MIN'], min(o['PL_CARD_MAX'], max(need) + o['VS_LABEL_R']))
+    cw = max(o['VS_CARD_MIN'], min(o['PL_CARD_MAX'], max(need) + o['VS_TEXT_SLACK'] + o['VS_LABEL_R']))
     cx, cy, ch = o['PL_CARD_RIGHT'] - cw, o['PL_CARD_Y'], len(rows) * o['VS_ROW_H']
     g = s.img(glass_name); t = g.width // 3
     assert g.height == ch, (g.height, ch)

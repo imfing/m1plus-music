@@ -1181,7 +1181,7 @@ def asset_tests(ctx):
         for loc in pod_i18n.LOCALES:
             for key in keys:
                 t = built[loc].get(key, key)
-                if StbText(font, px).layout(t)[1] > w_.w: over.append((loc, key, StbText(font, px).layout(t)[1], w_.w))
+                if StbText(font, px).layout(t)[1] > w_.w - (O['VS_TEXT_SLACK'] if w_.get('name', '').startswith('vs_') else 0): over.append((loc, key, StbText(font, px).layout(t)[1], w_.w))   # (a card label keeps vs_fit's slack)
     expect(not over, f'the sheet and card rows (Station Info, the card\'s actions) fit their labels in all 13 languages ({over[:4]})')
     over = []
     for loc in pod_i18n.LOCALES:

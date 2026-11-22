@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Xin. MIT licence (see LICENSE).
  *
  * Built by tools/pod_ui.py view_sort_card as an Apple-style grouped menu (the optional Search and Select rows first, then View, then Sort) and fitted to the language as the Playlists menu is (patch/playlists.c pl_fit):
- * the card is as wide as its widest label (or direction line) plus its x and the margin, VS_CARD_MIN..PL_CARD_MAX, its right edge fixed under the navbar's glass. The glass is drawn patch3_x, so any width is exact.
+ * the card is as wide as its widest label (or direction line) plus its x, VS_TEXT_SLACK and the margin, VS_CARD_MIN..PL_CARD_MAX, its right edge fixed under the navbar's glass. The glass is drawn patch3_x, so any width is exact.
  */
 #include "offsets.inc"
 #include "stock.h"
@@ -109,7 +109,7 @@ static int vs_text_w(void *w) {
     return t && *t ? m1_text_w(w, t) : 0;
 }
 
-/* The card as wide as the language needs: the widest label (widget_measure_text: the label's own font and translated text) or direction line, each from its own x, plus the margin, clamped; the right
+/* The card as wide as the language needs: the widest label (widget_measure_text: the label's own font and translated text) or direction line, each from its own x, plus the slack and the margin, clamped; the right
  * edge stays. A text that cannot be measured leaves the asset's width (PL_CARD_MAX, the widest language's). Rows are packed from the top in display order. */
 static void vs_fit(vs_t *v) {
     int i, y, w = 0, ok = 1;
@@ -135,7 +135,7 @@ static void vs_fit(vs_t *v) {
             w = x0 + tw;
     }
     if (ok) {
-        w += VS_LABEL_R;
+        w += VS_TEXT_SLACK + VS_LABEL_R; /* (the slack: a label exactly as wide as its text gets an ellipsis) */
         if (w < VS_CARD_MIN) w = VS_CARD_MIN;
         if (w > PL_CARD_MAX) w = PL_CARD_MAX;
         widget_move(v->card, PL_CARD_RIGHT - w, PL_CARD_Y);

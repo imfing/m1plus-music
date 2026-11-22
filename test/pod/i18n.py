@@ -324,7 +324,7 @@ def run(ctx):
                             ('Search Albums', A['VS_LABEL_X_GLYPH'], 18), ('Search Artists', A['VS_LABEL_X_GLYPH'], 18), ('Artists', A['VS_LABEL_X_GLYPH'], 18), ('Album Artists', A['VS_LABEL_X_GLYPH'], 18), ('Name', A['VS_LABEL_X'], 18), ('Date Modified', A['VS_LABEL_X'], 18), ('Type', A['VS_LABEL_X'], 18),
                             ('New Playlist', A['VS_LABEL_X_GLYPH'], 18), ('Import', A['VS_LABEL_X_GLYPH'], 18), ('Export', A['VS_LABEL_X_GLYPH'], 18), ('Delete Playlists', A['VS_LABEL_X_GLYPH'], 18),
                             ('A–Z', A['VS_LABEL_X'], 15), ('Z–A', A['VS_LABEL_X'], 15), ('Newest First', A['VS_LABEL_X'], 15), ('Oldest First', A['VS_LABEL_X'], 15)):   # the Albums "..." card (patch/viewsort.c): its widest width PL_CARD_MAX, 16 px margin
-            if x0 + width(tr_text(loc, key), px) + A['VS_LABEL_R'] > A['PL_CARD_MAX']: over.append((loc, key, 'Albums card'))
+            if x0 + width(tr_text(loc, key), px) + A['VS_TEXT_SLACK'] + A['VS_LABEL_R'] > A['PL_CARD_MAX']: over.append((loc, key, 'Albums card'))
         # the pill: the text is centred in a 104 px rect (194 - margins 32 + 29 - the 44 px icon square - the spacer -15)
         if width(tr_text(loc, 'Play'), 20) > 104: over.append((loc, 'Play', 'pill'))
         for key in ('%d track', '%d tracks'):

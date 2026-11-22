@@ -1079,10 +1079,10 @@ def collapse_and_select_tests(ctx):
     wide = [loc for loc in pod_i18n.LOCALES if StbText(font, 20).layout(built[loc]['Songs'])[1] > lt.w]
     expect(lt.w == 110 and wide == [], f'no language\'s "Songs" is wider than the title\'s 110 px at 20 px: {wide}')
     for key in ('Select', 'Albums', 'Songs'):
-        room = O['PL_CARD_MAX'] - O['VS_LABEL_X_GLYPH'] - O['VS_LABEL_R']
+        room = O['PL_CARD_MAX'] - O['VS_LABEL_X_GLYPH'] - O['VS_TEXT_SLACK'] - O['VS_LABEL_R']
         over = [(loc, StbText(font, 18).layout(built[loc].get(key, key))[1]) for loc in pod_i18n.LOCALES if StbText(font, 18).layout(built[loc].get(key, key))[1] > room]
         expect(not over, f'the card label {key} (after its glyph) fits its {room} px in all 13 languages ({over[:3]})')
-    for key, room, px in [(k, O['PL_CARD_MAX'] - O['VS_LABEL_X'] - O['VS_LABEL_R'], 18) for k in pod_pages.SONGS_SORT_KEYS]:
+    for key, room, px in [(k, O['PL_CARD_MAX'] - O['VS_LABEL_X'] - O['VS_TEXT_SLACK'] - O['VS_LABEL_R'], 18) for k in pod_pages.SONGS_SORT_KEYS]:
         over = [(loc, StbText(font, px).layout(built[loc].get(key, key))[1]) for loc in pod_i18n.LOCALES if StbText(font, px).layout(built[loc].get(key, key))[1] > room]
         expect(not over, f'the sort card label {key} fits its {room} px row in all 13 languages ({over[:3]})')
     small = O['SG_PILL_PX_SMALL']
