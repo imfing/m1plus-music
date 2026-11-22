@@ -115,10 +115,9 @@ static int flag(void) {
 
 static void flag_save(int on) { /* on: the kind, 0 off */
     sh.on = (unsigned char)on, sh.loaded = 1;
-    home_write_atomic(SHUFFLE_FILE, SHUFFLE_TMP,
-                      on == SHUFFLE_KIND_ALBUMS ? "2\n"
-                      : on                      ? "1\n"
-                                                : "0\n"); /* a failed save leaves the flag for this session */
+    home_write_atomic(SHUFFLE_FILE, on == SHUFFLE_KIND_ALBUMS ? "2\n"
+                                    : on ? "1\n"
+                                         : "0\n"); /* a failed save leaves the flag for this session */
 }
 
 static void drop_order(void) { /* with the payload lock held */

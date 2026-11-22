@@ -323,12 +323,12 @@ int idle_set(int choice) {
     if (choice == 0) return !*(volatile unsigned char *)COVER_MODE || idle_cover_mode(0) == 0 ? 0 : -1;
     had = access(IDLE_FILE, F_OK) == 0;
     changed = !had || dest != was;
-    if (changed && home_set_digit(IDLE_FILE, IDLE_TMP, dest, IDLE_VU) < 0) return -1;
+    if (changed && home_set_digit(IDLE_FILE, dest, IDLE_VU) < 0) return -1;
     if (!*(volatile unsigned char *)COVER_MODE && idle_cover_mode(1) != 0) {
         if (changed) {
             if (had)
                 home_set_digit(
-                    IDLE_FILE, IDLE_TMP, was,
+                    IDLE_FILE, was,
                     IDLE_VU); /* (best effort: a file that cannot be put back still reads as a destination) */
             else
                 unlink(IDLE_FILE);

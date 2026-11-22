@@ -607,7 +607,7 @@ static void np_time(void) {
 /* Settings > Now Playing > Track Position (NPPOS_FILE): "5/10" in the middle of the times row. Stock writes label_index ("%d/%d", the position + 1 and the queue size) only on a
  * track change; ours writes the same text on every tick, so a queue edit shows at once. Shown only with the setting on and a queue of two or more with the position inside it. */
 int np_pos_setting(void) { return set_read(NPPOS_FILE, 0) == '1'; }
-int np_pos_toggle(void) { return home_set_digit(NPPOS_FILE, NPPOS_TMP, !np_pos_setting(), 1); }
+int np_pos_toggle(void) { return home_set_digit(NPPOS_FILE, !np_pos_setting(), 1); }
 
 static void np_index(void) {
     int pos = mclGetPlayPos();

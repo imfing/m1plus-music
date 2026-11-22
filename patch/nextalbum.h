@@ -7,7 +7,6 @@
 
 #define NA_FILE \
     "/mnt/data/m1plus/playback-next-album" /* "1" = Next Albums, anything else or missing = Off ("2" is reserved for Auto Mix; Settings > Playback > Continue Playing) */
-#define NA_TMP "/mnt/data/m1plus/playback-next-album.tmp"
 
 #define NA_OFF 0 /* the modes of na_setting / na_set */
 #define NA_ALBUMS 1

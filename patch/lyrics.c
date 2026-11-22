@@ -843,7 +843,7 @@ int ly_size(void) {
 }
 
 /* The picker's rows: save the size atomically; the size or -1. */
-int ly_size_set(int size) { return home_set_digit(LYRSIZE_FILE, LYRSIZE_TMP, size, LY_SIZES - 1); }
+int ly_size_set(int size) { return home_set_digit(LYRSIZE_FILE, size, LY_SIZES - 1); }
 
 /* The page is in front again (np_on_foreground): a size changed in Settings is taken now. The labels' style, height and place, the probe's style and the break cache all follow the size, so
  * everything is laid out again as for new lyrics (ly_tick sees the cleared signature: the lines go back to the current one, as when the page starts). */

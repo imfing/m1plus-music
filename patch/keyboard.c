@@ -840,7 +840,7 @@ int kb_zh_setting(void) { return set_read(KBZH_FILE, 0) == '1'; }
 
 int kb_zh_toggle(void) {
     int next = !kb_zh_setting();
-    if (home_set_digit(KBZH_FILE, KBZH_TMP, next, 1) < 0) return -1;
+    if (home_set_digit(KBZH_FILE, next, 1) < 0) return -1;
     if (!next && kb_memo == L_ZH)
         kb_memo = L_EN; /* off: the next time it is turned on the keyboard starts on English again */
     return next;
@@ -851,7 +851,7 @@ int kb_fr_setting(void) { return set_read(KBFR_FILE, 0) == '1'; }
 
 int kb_fr_toggle(void) {
     int next = !kb_fr_setting();
-    if (home_set_digit(KBFR_FILE, KBFR_TMP, next, 1) < 0) return -1;
+    if (home_set_digit(KBFR_FILE, next, 1) < 0) return -1;
     if (!next && kb_memo == L_FR) kb_memo = L_EN;
     return next;
 }

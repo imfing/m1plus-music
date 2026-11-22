@@ -31,11 +31,8 @@ _Static_assert(
 #define PM_ROOT "/mnt/mmc"
 #define PM_STATE_DIR CARD_DIR "/podcasts"
 #define PM_RING_FILE PM_STATE_DIR "/resume"
-#define PM_RING_TMP PM_STATE_DIR "/resume.tmp"
 #define PM_SPEED_FILE PM_STATE_DIR "/speed"
-#define PM_SPEED_TMP PM_STATE_DIR "/speed.tmp"
 #define PM_ORDER_FILE PM_STATE_DIR "/order"
-#define PM_ORDER_TMP PM_STATE_DIR "/order.tmp"
 #define PM_DNAME 11 /* struct dirent (32-bit, MIPS o32): d_ino, d_off, d_reclen (2), d_type (1), d_name at 11 */
 #define PM_PATH 400
 #define PM_MAX_FILES 400 /* files looked at in one show folder */
@@ -1091,7 +1088,7 @@ void pc_flush(void) {
     unsigned head[2];
     if (!pm.dirty || !pm.s) return;
     head[0] = 0x31524350u, head[1] = pm.n;
-    if (m1_card_write(PM_STATE_DIR, PM_RING_FILE, PM_RING_TMP, head, 8, pm.s, pm.n * (unsigned)sizeof *pm.s) == 0)
+    if (m1_card_write(PM_STATE_DIR, PM_RING_FILE, head, 8, pm.s, pm.n * (unsigned)sizeof *pm.s) == 0)
         pm.dirty = 0; /* a failed write is tried again with the next change */
     pcs.save_ms = time_now_ms();
 }
@@ -1253,7 +1250,6 @@ static pm_tab_t pm_tabs[2] __attribute__((section(".scratch")));
 
 static unsigned pm_tab_magic(int k) { return k == PM_TAB_SPEED ? 0x31534350u : 0x314f4350u; } /* "PCS1", "PCO1" */
 static const char *pm_tab_file(int k) { return k == PM_TAB_SPEED ? PM_SPEED_FILE : PM_ORDER_FILE; }
-static const char *pm_tab_tmp(int k) { return k == PM_TAB_SPEED ? PM_SPEED_TMP : PM_ORDER_TMP; }
 
 static void pm_tab_load(int k) {
     pm_tab_t *t = &pm_tabs[k];
@@ -1299,7 +1295,7 @@ static int pm_tab_set(int k, unsigned show, unsigned value) {
         at = t->w[1] - 1;
     }
     t->w[2 + 2 * at] = show, t->w[3 + 2 * at] = value;
-    if (m1_card_write(PM_STATE_DIR, pm_tab_file(k), pm_tab_tmp(k), t->w, 8, t->w + 2, t->w[1] * 8) == 0) return 1;
+    if (m1_card_write(PM_STATE_DIR, pm_tab_file(k), t->w, 8, t->w + 2, t->w[1] * 8) == 0) return 1;
     memcpy(t->w, saved, sizeof saved); /* not saved: the old table stays */
     return 0;
 }

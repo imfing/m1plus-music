@@ -47,7 +47,7 @@ static void xf_load(void) {
 static int xf_save(int on, int sec) {
     char text[3] = {0, '\n', 0};
     text[0] = (char)((on ? 'a' : 'A') + sec - 1);
-    return home_write_atomic(XFADE_SET_FILE, XFADE_SET_TMP, text);
+    return home_write_atomic(XFADE_SET_FILE, text);
 }
 
 static int xf_write_runtime(int seconds, int keep) {
@@ -58,7 +58,7 @@ static int xf_write_runtime(int seconds, int keep) {
     r.seconds = seconds;
     r.seq = ++xf.seq;
     r.keep = keep;
-    ok = m1_save(XFADE_FILE, XFADE_TMP, 0644, &r, sizeof r);
+    ok = m1_save(XFADE_FILE, 0644, &r, sizeof r);
     if (ok) xf.last_rt = seconds, xf.last_keep = keep;
     return ok;
 }
@@ -104,14 +104,14 @@ int xfade_auto(void) {
 
 int xfade_auto_toggle(void) {
     int next = !xfade_auto();
-    if (home_write_atomic(XFADE_AUTO_FILE, XFADE_AUTO_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(XFADE_AUTO_FILE, next ? "1\n" : "0\n") != 0) return -1;
     xf.smart = (unsigned char)next;
     return next;
 }
 
 void xfade_boot(void) {
     unlink(XFADE_FILE);
-    unlink(XFADE_TMP);
+    unlink(XFADE_FILE ".tmp");
     unlink(XFOUT_FILE);
 }
 

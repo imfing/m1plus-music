@@ -780,7 +780,7 @@ static void rp_set_view(int list) {
         off - rp_top() <= 0 ? off : rp_top() + (rp.vlist ? first * LIST_ROW_H : first / GRID_COLS * GRID_PITCH);
     rp_show_level(L_LIST, 1);
     rp.seen = rp_off();
-    home_write_atomic(RD_VIEW_FILE, RD_VIEW_TMP, rp.vlist ? "0\n" : "1\n");
+    home_write_atomic(RD_VIEW_FILE, rp.vlist ? "0\n" : "1\n");
 }
 
 /* The navbar toggle: the other mode. */

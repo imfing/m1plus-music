@@ -18,199 +18,7 @@
  */
 #include "offsets.inc"
 
-/* ACT_* mirror tools/pod_pages.py. */
-enum {
-    ACT_HOME = 0,
-    ACT_PAGE = 1,
-    ACT_PLAYER = 2,
-    ACT_COVER = 3,
-    ACT_SHUFFLE = 4,
-    ACT_ARTISTS = 8,
-    ACT_GRID = 9,
-    ACT_STARTUP = 10,
-    ACT_ALBUMS = 11,
-    ACT_LANDSCAPE = 12,
-    ACT_VOLKEYS = 89,
-    ACT_SHOT = 14,
-    ACT_REBUILD = 15,
-    ACT_SHELF = 16,
-    ACT_PLAYLISTS = 17,
-    ACT_SONGS = 18,
-    ACT_DAILY = 19,
-    ACT_REGEN = 20,
-    ACT_LIST = 21,
-    ACT_IPOD = 22,
-    ACT_PODCASTS = 23,
-    ACT_CTHEME = 24,
-    ACT_SEARCH = 35,
-    ACT_KB_EN = 27,
-    ACT_KB_ZH = 28,
-    ACT_STOCK = 29,
-    ACT_THEMESET = 31,
-    ACT_INFO = 33,
-    ACT_PCSEARCH = 34,
-    ACT_PCDIR =
-        137, /* Settings > Library > Podcasts > Directory: a value row opening its picker; dimmed and inert while Podcast Discover is off (as Podcast Region) */
-    ACT_PCDIRSET = 138, /* the Podcast Directory picker's rows (arg = PCDIR_APPLE or PCDIR_INDEX) */
-    ACT_BATTPCT = 36,
-    ACT_FOLDERS = 37,
-    ACT_VREC = 38,
-    ACT_RECSET = 39,
-    ACT_VTHEME = 40,
-    ACT_VTHSET = 41,
-    ACT_CLEARCACHE = 42,
-    ACT_CCLIST = 43,
-    ACT_CLEARDUR = 44,
-    ACT_UPDATE = 45,
-    ACT_BG = 46,
-    ACT_BGSET = 47,
-    ACT_ACCENT = 48,
-    ACT_ACCENTSET = 49,
-    ACT_RADIO = 50,
-    ACT_BOOKS = 144,
-    ACT_NETAIR = 166, /* Settings > Network Services: AirPlay, a switch row (patch/netservice.c) */
-    ACT_NETDLNA = 167, /* ... DLNA */
-    ACT_NETTRANS = 168, /* ... Wi-Fi Transfer, a link row: our page, or a toast without Wi-Fi */
-    ACT_SLEEPSET = 170, /* the Sleep Timer page's rows (arg = the row: 0 Off, 1 .. 6 the times; patch/sleeptimer.c) */
-    ACT_SLEEPLEFT =
-        171, /* the Sleep Timer page's Time Left: an information row in a card shown while a timer runs (patch/sleeptimer.c st_left_text) */
-    ACT_SFDEL = 51,
-    ACT_SFOLD = 52, /* Settings Files: Unsupported Files, a count (a chevron and the list only when it is not zero) */
-    ACT_SFDELALL = 53, /* Settings Files: Delete Unsupported Files, an action row */
-    ACT_RESETALL = 54, /* Developer > Tools: Reset All Settings, an action row (a confirm, then setfiles_reset_all) */
-    ACT_REGION = 55,
-    ACT_REGIONSET = 56,
-    ACT_PEQ = 57,
-    ACT_AZRAIL = 77, /* Settings > Library > Index Rail: a switch row, on by default (patch/azlist.c azrail_toggle) */
-    ACT_AZHEAD =
-        78, /* Settings > Library > Section Headers: a switch row, on by default (patch/azlist.c azhead_toggle) */
-    ACT_LOCKSET = 88,
-    ACT_LOCKON = 79,
-    ACT_CHGLIM = 80, /* Settings > Battery: Charge Limit, a value row opening its picker */
-    ACT_CHGLIMSET = 81, /* the Charge Limit picker's rows (arg = the limit, 80 .. 100) */
-    ACT_IDLE =
-        82, /* Settings > Now Playing > Idle Display: a value row (Off, Album Cover, Cassette, Vinyl, Lyrics, VU Meter) opening its picker */
-    ACT_IDLESET = 83, /* the picker's rows (arg 0 Off, 1 Album Cover, 2 Cassette, 3 Vinyl, 4 Lyrics, 5 VU Meter) */
-    ACT_LOCKWP = 84, /* Settings > Lock Screen > Wallpaper: our picker page (patch/lockscreen.c lkwp_open) */
-    ACT_LOCKSTYLE =
-        85, /* Settings > Lock Screen > Player Style: a value row (Large Cover / Mini Player) opening its picker */
-    ACT_LOCKTIME =
-        86, /* Settings > Lock Screen > Show Time: a switch row, stock's own clock switch (patch/lockscreen.c lk_time_toggle) */
-    ACT_LOCKINFO =
-        87, /* Settings > Lock Screen > Custom Wallpaper: the instructions page (patch/relnotes.c lockinfo_open) */
-    ACT_NEXTALBUM = 90, /* Settings > Playback: Continue Playing, a value row opening its picker */
-    ACT_NASET = 91, /* the Continue Playing picker's rows (arg = NA_OFF or NA_ALBUMS) */
-    ACT_LIGHT = 97, /* Settings > Display: Screen Timeout, a value row opening its picker */
-    ACT_LIGHTSET = 98, /* the Screen Timeout picker's rows (arg = stock's backlight time index, 0 .. 4) */
-    ACT_LED = 99, /* Settings > Display: LED Light, a value row opening its picker */
-    ACT_LEDSET = 100, /* the LED Light picker's rows (arg = stock's lamp mode: 0 off, 1 green, 2 blue) */
-    ACT_LEDFOLLOW = 101, /* Settings > Display > LED Light: Follow Screen, a switch row, stock's own switch */
-    ACT_KEYLOCK = 102, /* Settings > Buttons & Power: Button Lock, a value row opening its picker */
-    ACT_KEYLOCKSET =
-        103, /* the Button Lock picker's rows (arg = 0 off, else stock's mode: 1 volume keys, 2 the other keys, 3 both) */
-    ACT_TAPWAKE = 104, /* Buttons & Power: Tap to Wake, a switch row, stock's own byte */
-    ACT_STANDBY = 105, /* Buttons & Power: Auto-Standby, a switch row, stock's own switch */
-    ACT_SHUTDOWN = 106, /* Buttons & Power: Auto-Shutdown, a value row opening its picker */
-    ACT_LYRSIZE =
-        135, /* Settings > Now Playing > Lyrics Text Size: a value row (Small, Medium, Large) opening its picker */
-    ACT_LYRSIZESET = 136, /* the picker's rows (arg 0 Small, 1 Medium, 2 Large) */
-    ACT_SHUTDOWNSET =
-        107, /* the Auto-Shutdown picker's rows (arg = stock's word: 0 off, 1 .. 4 = 1, 3, 5, 10 minutes) */
-    ACT_RGBTHEME = 140, /* the Theme picker's rows (arg = the theme 0 .. 5; patch/tracklamp.c) */
-    ACT_ROTATE = 153, /* Settings > Display: Screen Rotation, a switch row (stock's 0 / 180 degrees choices) */
-    ACT_CARMODE = 154, /* Settings > Buttons & Power: Car Mode, a switch row, stock's own byte */
-    ACT_PLAYMODE = 129, /* Settings > Playback Settings: Play Mode, a value row opening its picker */
-    ACT_PLAYMODESET =
-        130, /* the Play Mode picker's rows (arg = the mode as shown: 0 List Play, 1 Repeat Track, 2 Shuffle, 3 Repeat All) */
-    ACT_GAPLESS = 133, /* Playback Settings: Gapless, a switch row, stock's own switch */
-    ACT_MEMPLAY = 134, /* Playback Settings: Memory Playback, a value row opening its picker */
-    ACT_MEMPLAYSET = 131, /* the Memory Playback picker's rows (arg = stock's word: 0 off, 1 track, 2 location) */
-    ACT_FOLDERSKIP = 132, /* Playback Settings: Folder Skip, a switch row, stock's own switch */
-    ACT_GAIN = 114, /* Playback Settings: Gain, a value row opening its picker; dimmed and inert while Line Out is on */
-    ACT_GAINSET = 115, /* the Gain picker's rows (arg = stock's mode: 0 low, 1 high) */
-    ACT_REPLAYGAIN = 116, /* Playback Settings: ReplayGain, a value row opening its picker */
-    ACT_RGSET = 117, /* the ReplayGain picker's rows (arg = stock's word: 0 off, 1 track, 2 album) */
-    ACT_FILTERSET =
-        118, /* the Digital Filter picker's rows (arg = stock's filter 0 .. 7); the Digital Filter row is a plain link */
-    ACT_DSD = 119, /* Playback Settings: DSD Output Mode, a value row opening its picker */
-    ACT_DSDSET = 120, /* the DSD Output Mode picker's rows (arg = stock's word: 0 D2P, 1 DOP, 2 Native) */
-    ACT_DIGITAL = 121, /* Playback Settings: Digital Output, a switch row, stock's own switch */
-    ACT_USBVOL = 122, /* Playback Settings: USB Volume, a value row opening its picker */
-    ACT_USBVOLSET = 123, /* the USB Volume picker's rows (arg = stock's word: 0 fixed, 1 variable) */
-    ACT_FOLDERCOVER = 124, /* Settings > Library: Folder Album Cover, a switch row, stock's own byte */
-    ACT_MAXVOL = 125, /* Playback Settings: Max Volume, a value row opening its slider page */
-    ACT_BOOTVOL = 126, /* Playback Settings: Default Volume, a value row opening its page */
-    ACT_BALANCE = 127, /* Playback Settings: Channel Balance, a value row opening its slider page */
-    ACT_MONO = 145, /* Playback Settings: Mono Audio, a switch row, ours (patch/stereoset.c) */
-    ACT_XFEED = 146, /* Playback Settings: Crossfeed, a value row opening its picker */
-    ACT_XFEEDSET = 147, /* the Crossfeed picker's rows (arg = the level: 0 off, 1 low, 2 medium, 3 high) */
-    ACT_XFADE = 215, /* Playback Settings: Crossfade, a value row opening the Crossfade page (patch/xfadeset.c) */
-    ACT_XFADESET = 216, /* the Crossfade page's switch (xfade_on_toggle) */
-    ACT_XFADEAUTO = 217, /* Crossfade page: Keep Albums Gapless switch (smart cross-album mode) */
-    ACT_BOOTMEM = 128, /* the Default Volume page: Volume Memory, a switch row, stock's own byte */
-    ACT_AREBUILD =
-        92, /* Settings > Library: Rebuild Artist Photos, an action row (a confirm, then the request file Home's pass acts on) */
-    ACT_SUBSONIC = 93, /* the Navidrome root page (tools/pod_pages.py); ids 93 .. 95 are the Navidrome rows */
-    ACT_SCROBBLE =
-        96, /* Settings > Library > Scrobbling: a switch row, off by default (patch/scrobble.c scrobble_toggle) */
-    ACT_LB =
-        108, /* Settings > Library > Scrobbling > ListenBrainz: a value row (the account's user name) opening the ListenBrainz page */
-    ACT_SCROBUP =
-        109, /* Settings > Library > Scrobbling > Upload Scrobbles: an action row (patch/scrobpage.c lb_upload_tap) */
-    ACT_LBAUTO =
-        112, /* Settings > Library > Scrobbling > Auto Upload: a switch row, off by default (patch/scrobble.c scrobble_auto_toggle) */
-    ACT_LF =
-        113, /* Settings > Library > Scrobbling > Last.fm: a value row (the account's user name) opening the Last.fm page */
-    ACT_SCROBPAGE = 139, /* Settings > Library > Scrobbling: a value row (On or Off) opening the Scrobbling page */
-    ACT_ASPAGE = 172, /* Settings > Library > Split Artists: a value row (On or Off) opening the Split Artists page */
-    ACT_ASPLIT = 173, /* Split Artists page: the switch, off by default (patch/artsplit.c as_toggle) */
-    ACT_ASSEP0 = 174, /* ... and the separator switches, one per M1_SPLIT_* bit (as_sep_toggle) */
-    ACT_ASSEP1 = 175,
-    ACT_ASSEP2 = 176,
-    ACT_ASSEP3 = 177,
-    ACT_ASSEP4 = 178,
-    ACT_ASSEP5 = 179,
-    ACT_ASSEP6 = 180,
-    ACT_ASSEP7 = 181,
-    ACT_ASSEP8 = 182,
-    ACT_ASSEP9 = 183,
-    ACT_RGBROW =
-        143, /* Settings > Display > LED Light: Theme, a value row shown while Dynamic is chosen, opening the Theme page */
-    ACT_LANG = 150, /* Settings > General: Language, a value row (the language's own name) opening its picker */
-    ACT_LANGSET = 151, /* the Language picker's rows (arg = stock's language word 0 .. 12; patch/language.c) */
-    ACT_DTAUTO = 157, /* Settings > General > Date & Time: Set Automatically, a switch row, stock's own switch */
-    ACT_DTZONE =
-        158, /* ... Time Zone, a value row opening the zone picker (always live, whatever Set Automatically says) */
-    ACT_DTZONESET = 159, /* the zone picker's rows (arg = stock's saved zone index) */
-    ACT_DTDATE = 160, /* Date, a value row opening the Date page (dimmed while Set Automatically is on) */
-    ACT_DTTIME = 161, /* Time, a value row opening the Time page (dimmed while Set Automatically is on) */
-    ACT_DT24 = 162, /* 24-Hour Time, a switch row, stock's own switch */
-    ACT_DTFIELD = 163, /* the Date and Time pages' Year, Month, Day, Hour, Minute: value rows opening their picker */
-    ACT_DTSET = 164, /* the field pickers' rows (arg = field * 4096 + value) */
-    ACT_DTAPPLY = 165, /* Set Date (arg 0) and Set Time (arg 1): stock's set_systime, then back */
-    ACT_BTCODECSET =
-        184, /* the Bluetooth page's Audio Codec picker's rows (arg = stock's btcoding 0 .. 7; patch/btpage.c) */
-    ACT_BATTHIST = 188, /* Battery History page: the switch (patch/batthist.c) */
-    ACT_BHPAGE = 190, /* Settings > Battery: Battery History, a value row (On or Off) opening its page */
-    ACT_KB_FR = 191, /* Settings > General > Keyboards: French (AZERTY), a switch (patch/keyboard.c) */
-    ACT_NPPOS = 192, /* Settings > Now Playing: Track Position, a switch (patch/nowplaying.c) */
-    ACT_LUNOW = 193, /* Update Library: Update Now, stock's scan dialog (patch/libupdate.c) */
-    ACT_LUFOLDERS = 194, /* Update Library: Choose Folders (stock's folder page for now) */
-    ACT_LUAUTO = 195, /* Update Library: Auto Update, stock's autoscan switch */
-    ACT_SWAPKEYS = 196, /* Buttons & Power: Swap Prev / Next, a switch (patch/keyspower.c) */
-    ACT_GSPAGE = 197, /* Settings > Library > Split Genres: a value row (On or Off) opening the Split Genres page */
-    ACT_GSPLIT = 198, /* Split Genres page: the switch, off by default (patch/genresplit.c gs_toggle) */
-    ACT_GSSEP0 =
-        199, /* ... and the separator switches, 199 + the M1_SPLIT_* bit of each separator a genre splits on (GS_ALL; gs_sep_toggle) */
-    ACT_GSSEP1 = 200,
-    ACT_GSSEP2 = 201,
-    ACT_GSSEP3 = 202,
-    ACT_GSSEP7 = 206,
-    ACT_PDLABELS = 209, /* Settings > Appearance: Control Labels, a switch (patch/pulldown.c) */
-    ACT_CRRUN = 210, /* Settings > Developer > Tools > Card Script: Run Now (patch/cardrun.c) */
-    ACT_CRLOG = 212, /* ... View Log: the log page (patch/relnotes.c cardlog_open) */
-    ACT_CRSRC = 214 /* ... View Script: the card's script as a page (patch/relnotes.c cardsrc_open) */
-};
+#include "acts.h" /* ACT_* and INFO_*: generated from tools/pod_pages.py */
 
 struct pod_row {
     const char *name; /* row widget name in the asset (pod_row0, pod_row1, ...) */
@@ -234,30 +42,6 @@ struct pod_stock {
 };
 
 /* The values a Settings row shows at the right (tools/pod_pages.py STOCK_VALUES in this order, then the two of ours). */
-/* ACT_INFO's arg: where an About row's value comes from (tools/pod_pages.py INFO_*). */
-enum {
-    INFO_TAG = 0,
-    INFO_FW,
-    INFO_MODEL,
-    INFO_SN,
-    INFO_MAC,
-    INFO_IP,
-    INFO_CAP,
-    INFO_FREE,
-    INFO_CC, /* the Cache page's seven Covers values start here: homecover_stat(kind - INFO_CC) */
-    INFO_SF = INFO_CC + 7, /* the Settings Files page's 61 values: setfiles_stat(kind - INFO_SF) */
-    INFO_SFOLD = INFO_SF + 61, /* the Unsupported Files count (setfiles_old_count), above those rows */
-    INFO_DUR = INFO_SFOLD + 1, /* the Cache page's Measured Tracks: dur_stat (patch/durations.c) */
-    INFO_APHOTOS = INFO_DUR +
-        1, /* the Cache page's Artist Photos card: the photos, and the artists with none (homecover_stat 7, 8) */
-    INFO_ANONE = INFO_DUR + 2,
-    INFO_LBACCT = INFO_DUR + 3, /* the ListenBrainz page's Account row: lb_account_text (patch/scrobpage.c) */
-    INFO_LFACCT = INFO_DUR + 4, /* the Last.fm page's: lf_account_text */
-    INFO_LUSONGS = INFO_DUR + 5, /* the Update Library page's Songs and Last Updated rows (patch/libupdate.c) */
-    INFO_LUWHEN = INFO_DUR + 6,
-    INFO_CRSTATUS = INFO_DUR + 7 /* the Card Script page's Status row (patch/cardrun.c cardrun_status_text) */
-};
-
 enum {
     VK_NONE = 0,
     VK_WIFI,
@@ -444,7 +228,7 @@ int pod_confirm(const char *s) { return pod_confirm_code(s) == CONFIRM_YES; }
 
 static void rebuild_ask(void) {
     if (!pod_confirm(TR("Rebuild all covers? This may take a few minutes."))) return;
-    if (home_write_atomic(REBUILD_FILE, REBUILD_TMP, "1\n") == 0) {
+    if (home_write_atomic(REBUILD_FILE, "1\n") == 0) {
         cc_clear_bad();
         homecover_rebuild_asked();
         pod_toast(TR("Covers will rebuild on Home"));
@@ -455,7 +239,7 @@ static void rebuild_ask(void) {
 /* Settings > Library > Rebuild Artist Photos: the same dialog, then the request file (AREBUILD_FILE) Home's pass acts on (every artist is looked at again, found photos too). Rebuild Covers and this stay apart. */
 static void arebuild_ask(void) {
     if (!pod_confirm(TR("Rebuild all artist photos? This may take a few minutes."))) return;
-    if (home_write_atomic(AREBUILD_FILE, AREBUILD_TMP, "1\n") == 0) {
+    if (home_write_atomic(AREBUILD_FILE, "1\n") == 0) {
         homecover_rebuild_asked();
         pod_toast(TR("Artist photos will rebuild on Home"));
     } else

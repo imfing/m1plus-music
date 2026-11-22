@@ -290,7 +290,7 @@ static int pn_save(void) {
         pn_put(&o, end, pn.ent[i].path);
         pn_put(&o, end, "\n");
     }
-    return m1_card_write(CARD_DIR, PINS_FILE, PINS_TMP, buf, (unsigned)(o - buf), (const void *)0,
+    return m1_card_write(CARD_DIR, PINS_FILE, buf, (unsigned)(o - buf), (const void *)0,
                          0); /* -1 and nothing written while the card is out */
 }
 

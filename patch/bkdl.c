@@ -25,16 +25,6 @@
 /* ---------------------------------------------------------------------------
  * Small helpers
  */
-static int bd_cat(char *out, unsigned size, const char *s) {
-    unsigned o = strlen(out), k;
-    for (k = 0; s[k]; ++k) {
-        if (o + 1 >= size) return 0;
-        out[o++] = s[k];
-    }
-    out[o] = 0;
-    return 1;
-}
-
 /* v in decimal (at least width digits, zero padded) appended to out. */
 static int bd_catnum(char *out, unsigned size, unsigned v, unsigned width) {
     char t[12];
@@ -47,14 +37,14 @@ static int bd_catnum(char *out, unsigned size, unsigned v, unsigned width) {
         char c = t[v];
         t[v] = t[n - 1 - v], t[n - 1 - v] = c;
     }
-    return bd_cat(out, size, t);
+    return m1_cat(out, size, t);
 }
 
 /* root/a[/b] into out; 0 when it does not fit. */
 static int bd_join(char *out, unsigned size, const char *root, const char *a, const char *b) {
     out[0] = 0;
-    return bd_cat(out, size, root) && bd_cat(out, size, "/") && bd_cat(out, size, a) &&
-           (!b || (bd_cat(out, size, "/") && bd_cat(out, size, b)));
+    return m1_cat(out, size, root) && m1_cat(out, size, "/") && m1_cat(out, size, a) &&
+           (!b || (m1_cat(out, size, "/") && m1_cat(out, size, b)));
 }
 
 /* s (to its NUL) into out of size bytes, cut before a UTF-8 continuation byte. */
@@ -133,11 +123,11 @@ static void bd_part_file(unsigned i, unsigned count, const bn_part_t *p, unsigne
         bd_fat(stem, room < BK_FILE ? room : BK_FILE - 1, t);
     }
     if (!t[0] && room >= 4 + 6) {
-        bd_cat(t, sizeof t, "Part ");
+        m1_cat(t, sizeof t, "Part ");
         bd_catnum(t, sizeof t, i + 1, 0);
     }
-    if (t[0]) bd_cat(out, BK_FILE, " "), bd_cat(out, BK_FILE, t);
-    bd_cat(out, BK_FILE, ".mp3");
+    if (t[0]) m1_cat(out, BK_FILE, " "), m1_cat(out, BK_FILE, t);
+    m1_cat(out, BK_FILE, ".mp3");
 }
 
 /* ---------------------------------------------------------------------------
@@ -303,7 +293,7 @@ int bd_find(const char *id, char *dir, unsigned size) {
 /* ---------------------------------------------------------------------------
  * The folder
  */
-static int bd_put(char *buf, unsigned cap, const char *s) { return bd_cat(buf, cap, s); }
+static int bd_put(char *buf, unsigned cap, const char *s) { return m1_cat(buf, cap, s); }
 
 /* A manifest field: control bytes (a tab, a line feed) become spaces. */
 static int bd_putf(char *buf, unsigned cap, const char *s) {
@@ -317,7 +307,7 @@ static int bd_putf(char *buf, unsigned cap, const char *s) {
 }
 
 static int bd_copy_cover(const char *dirpath) {
-    char src[200], dst[BD_PATH], tmp[BD_PATH];
+    char src[200], dst[BD_PATH];
     char *data;
     unsigned n = 0;
     int ok;
@@ -326,16 +316,14 @@ static int bd_copy_cover(const char *dirpath) {
     len = strlen(src);
     if (!bd_join(dst, sizeof dst, dirpath, len > 3 && src[len - 3] == 'p' ? "cover.png" : "cover.jpg", (const char *)0))
         return 0;
-    tmp[0] = 0;
-    if (!bd_cat(tmp, sizeof tmp, dst) || !bd_cat(tmp, sizeof tmp, ".tmp")) return 0;
     data = m1_read_file(src, PN_THUMB_CAP, &n);
-    ok = data && m1_save(dst, tmp, 0644, data, n);
+    ok = data && m1_save(dst, 0644, data, n);
     free(data);
     return ok;
 }
 
 int bd_create(const char *id, const char *title, const char *author, char *dir, unsigned size) {
-    char root[BK_FILE + 20], base[BD_BASE_MAX + 1], name[BK_FILE], path[BD_PATH], mpath[BD_PATH], tmp[BD_PATH];
+    char root[BK_FILE + 20], base[BD_BASE_MAX + 1], name[BK_FILE], path[BD_PATH], mpath[BD_PATH];
     char *man;
     unsigned fm, n, k, i;
     int g, ok;
@@ -354,8 +342,8 @@ int bd_create(const char *id, const char *title, const char *author, char *dir, 
     if (!bd_fat(title, BD_BASE_MAX, base)) bd_copy(base, sizeof base, BD_DEFAULT_TITLE);
     for (k = 1; k <= 99; ++k) {
         name[0] = 0;
-        bd_cat(name, sizeof name, base);
-        if (k > 1) bd_cat(name, sizeof name, " ("), bd_catnum(name, sizeof name, k, 0), bd_cat(name, sizeof name, ")");
+        m1_cat(name, sizeof name, base);
+        if (k > 1) m1_cat(name, sizeof name, " ("), bd_catnum(name, sizeof name, k, 0), m1_cat(name, sizeof name, ")");
         if (!bd_join(path, sizeof path, root, name, (const char *)0)) return PN_STORAGE;
         if (!bd_exists(path)) break;
     }
@@ -387,10 +375,8 @@ int bd_create(const char *id, const char *title, const char *author, char *dir, 
     }
     g = PN_STORAGE;
     if (ok && bd_join(mpath, sizeof mpath, path, BD_MANIFEST, (const char *)0)) {
-        tmp[0] = 0;
-        bd_cat(tmp, sizeof tmp, mpath), bd_cat(tmp, sizeof tmp, ".tmp");
         bd_copy_cover(path); /* (the picture may be missing: the placeholder stays) */
-        if (m1_save(mpath, tmp, 0644, man, (unsigned)strlen(man))) g = PN_OK;
+        if (m1_save(mpath, 0644, man, (unsigned)strlen(man))) g = PN_OK;
     }
     free(man);
     if (g != PN_OK) { /* nothing is left: no manifest, no folder */
@@ -438,7 +424,7 @@ static void bd_unlock(void) { pthread_mutex_unlock(bq.mutex); }
 static unsigned bd_key(const char *dir) {
     char key[sizeof BK_KEY_PREFIX + BK_FILE];
     memcpy(key, BK_KEY_PREFIX, sizeof BK_KEY_PREFIX);
-    bd_cat(key, sizeof key, dir);
+    m1_cat(key, sizeof key, dir);
     return pc_hash(key);
 }
 
@@ -549,8 +535,8 @@ static int bd_fetch(bd_book_t *b, int *local) {
         if (bd_exists(path)) continue;
         bd.part = (unsigned)i;
         url[0] = 0;
-        if (!bd_cat(url, sizeof url, BN_HOST "/download/") || !bd_cat(url, sizeof url, b->id) ||
-            !bd_cat(url, sizeof url, "/")) {
+        if (!m1_cat(url, sizeof url, BN_HOST "/download/") || !m1_cat(url, sizeof url, b->id) ||
+            !m1_cat(url, sizeof url, "/")) {
             code = PN_STORAGE, *local = 1;
             break;
         }

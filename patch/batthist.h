@@ -7,10 +7,8 @@
 
 #define BH_FILE \
     "/mnt/data/m1plus/battery-history" /* "1" = on, anything else or missing = off (Settings > Battery > Battery History) */
-#define BH_TMP "/mnt/data/m1plus/battery-history.tmp"
 #define BH_DATA \
     "/mnt/data/m1plus/battery-history.bin" /* the ring: BH_HEAD + BH_BUCKETS * 8 bytes, never grows; deleted when the setting goes off */
-#define BH_DATA_TMP "/mnt/data/m1plus/battery-history.bin.tmp"
 #define BH_STATUS \
     "/sys/class/power_supply/battery/status" /* the kernel's power_supply status text: Charging, Full, Not charging, Discharging, Unknown */
 

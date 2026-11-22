@@ -5,6 +5,7 @@
 #include "offsets.inc"
 #include "stock.h"
 #include "common.h"
+#include "home.h"
 #include "utf8.h"
 #include "radio.h"
 #include "shot.h"
@@ -263,9 +264,14 @@ int m1_commit(int fd, int ok, const char *tmp, const char *path) {
     return ok;
 }
 
-int m1_save(const char *path, const char *tmp, unsigned mode, const void *data, unsigned n) {
+int m1_save_as(const char *path, const char *tmp, unsigned mode, const void *data, unsigned n) {
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, mode);
     return fd >= 0 && m1_commit(fd, m1_write_all(fd, data, n), tmp, path);
+}
+
+int m1_save(const char *path, unsigned mode, const void *data, unsigned n) {
+    char tmp[HOME_TMP_MAX];
+    return home_tmp_path(tmp, path) == 0 && m1_save_as(path, tmp, mode, data, n);
 }
 
 int m1_sync_dir(const char *dir) {
@@ -276,12 +282,13 @@ int m1_sync_dir(const char *dir) {
 }
 
 /* The one writer of the payload's card files: CARD_DIR then dir made (EEXIST is fine; a failure shows in the open), a then b (either may
- * be empty) into tmp, fsync, rename onto path, fsync of dir. 0 on success; 1 when path was replaced but the directory's fsync failed (the
+ * be empty) into path + ".tmp", fsync, rename onto path, fsync of dir. 0 on success; 1 when path was replaced but the directory's fsync failed (the
  * new bytes are there, a power cut may lose the rename); -1, path untouched, on any earlier failure or while the card is not mounted. */
-int m1_card_write(const char *dir, const char *path, const char *tmp, const void *a, unsigned na, const void *b,
-                  unsigned nb) {
+int m1_card_write(const char *dir, const char *path, const void *a, unsigned na, const void *b, unsigned nb) {
+    char tmp[HOME_TMP_MAX];
     int fd;
     if (!m1_card_mounted()) return -1; /* never write to the internal flash under the mount point */
+    if (home_tmp_path(tmp, path) != 0) return -1;
     mkdir(CARD_DIR, 0755);
     if (strcmp(dir, CARD_DIR)) mkdir(dir, 0755);
     fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -960,6 +967,17 @@ void m1_segmented(void *canvas, int view_h, int x, int y, int w, int h, int n, i
         if (len[k] > 0 && rect[1] >= 0 && rect[1] + SEG_LABEL_H <= view_h)
             canvas_draw_text_in_rect(canvas, label[k], (unsigned)len[k], rect);
     }
+}
+
+/* s appended to out (capacity size); 0 when it does not all fit, the part that fit stays. */
+int m1_cat(char *out, unsigned size, const char *s) {
+    unsigned o = strlen(out), k;
+    for (k = 0; s[k]; ++k) {
+        if (o + 1 >= size) return 0;
+        out[o++] = s[k];
+    }
+    out[o] = 0;
+    return 1;
 }
 
 unsigned m1_isqrt(unsigned v) {

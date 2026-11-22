@@ -54,9 +54,10 @@ static void ss_disk(stereo_record *r) {
     if (!ok) memset(r, 0, sizeof *r);
 }
 
+/* A fixed temp name, not m1_save: peqout_sync runs this on the status bar timer (patch/lineout.c's instruction budget). */
 static int ss_write(const stereo_record *r) {
-    int ok = m1_save(STEREO_FILE, STEREO_TMP, 0644, r, sizeof *r);
-    if (!ok && mkdir(PEQ_STATE_DIR, 0755) == 0) ok = m1_save(STEREO_FILE, STEREO_TMP, 0644, r, sizeof *r);
+    int ok = m1_save_as(STEREO_FILE, STEREO_FILE ".tmp", 0644, r, sizeof *r);
+    if (!ok && mkdir(PEQ_STATE_DIR, 0755) == 0) ok = m1_save_as(STEREO_FILE, STEREO_FILE ".tmp", 0644, r, sizeof *r);
     return ok;
 }
 
@@ -96,7 +97,7 @@ static void ss_apply(void) {
 
 int stereo_mono_toggle(void) {
     int next = !stereo_mono();
-    if (home_write_atomic(STEREO_MONO_FILE, STEREO_MONO_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(STEREO_MONO_FILE, next ? "1\n" : "0\n") != 0) return -1;
     ss.mono = (unsigned char)next;
     ss_apply();
     return next;
@@ -107,7 +108,7 @@ int stereo_crossfeed_set(int level) {
     if (level < STEREO_OFF || level >= STEREO_LEVELS) return -1;
     if (level == stereo_crossfeed()) return level;
     text[0] = (char)('0' + level);
-    if (home_write_atomic(STEREO_XFEED_FILE, STEREO_XFEED_TMP, text) != 0) return -1;
+    if (home_write_atomic(STEREO_XFEED_FILE, text) != 0) return -1;
     ss.level = (unsigned char)level;
     ss_apply();
     return level;

@@ -68,7 +68,7 @@ static int as_save(int on, unsigned mask) {
     while (mask && i < sizeof d);
     while (i) buf[k++] = d[--i];
     buf[k++] = '\n', buf[k] = 0;
-    return home_write_atomic(AS_FILE, AS_FILE ".tmp", buf) != 0 ? -1 : on;
+    return home_write_atomic(AS_FILE, buf) != 0 ? -1 : on;
 }
 
 int as_toggle(void) {

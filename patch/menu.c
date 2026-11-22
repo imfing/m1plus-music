@@ -128,7 +128,7 @@ static int mn_save(void) {
     }
     buf[k++] = '\n';
     buf[k] = 0;
-    return home_write_atomic(MENU_FILE, MENU_TMP, buf);
+    return home_write_atomic(MENU_FILE, buf);
 }
 
 static void *mn_find(void *win, const char *base, unsigned i) {

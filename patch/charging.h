@@ -7,7 +7,6 @@
 
 #define CHG_FILE \
     "/mnt/data/m1plus/battery-charge-limit" /* one character: '0'..'3' = 80, 85, 90, 95 %; anything else or missing = 100 % (no limit) */
-#define CHG_TMP "/mnt/data/m1plus/battery-charge-limit.tmp"
 #define CHG_SWITCH \
     "/sys/class/power_supply/battery/charger" /* the AXP2101 driver's charging request: "0" stops charging, "1" restores the configured current */
 

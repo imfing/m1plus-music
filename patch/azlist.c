@@ -152,12 +152,12 @@ int azhead_setting(void) { return set_read(AZHEAD_FILE, '1') != '0'; }
 
 int azrail_toggle(void) {
     int next = !azrail_setting();
-    return home_write_atomic(AZRAIL_FILE, AZRAIL_TMP, next ? "1\n" : "0\n") != 0 ? -1 : next;
+    return home_write_atomic(AZRAIL_FILE, next ? "1\n" : "0\n") != 0 ? -1 : next;
 }
 
 int azhead_toggle(void) {
     int next = !azhead_setting();
-    return home_write_atomic(AZHEAD_FILE, AZHEAD_TMP, next ? "1\n" : "0\n") != 0 ? -1 : next;
+    return home_write_atomic(AZHEAD_FILE, next ? "1\n" : "0\n") != 0 ? -1 : next;
 }
 
 int az_inset(const az_t *az) { return az_rail_on(az) ? SG_RAIL_INSET : 0; }

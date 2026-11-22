@@ -267,7 +267,7 @@ int pal_bg_mode(void) {
 int pal_bg_set(int mode) {
     if (mode < 0 || mode > 3) return -1;
     if (!pal.read) pal_load();
-    if (home_set_digit(BG_FILE, BG_TMP, mode, 3) < 0) return -1;
+    if (home_set_digit(BG_FILE, mode, 3) < 0) return -1;
     pal.mode = mode;
     if (pal_refresh()) pal_apply();
     pal_arm(); /* (an Off with no accent removes the timer at once: a new arm must not wait for the tick to end it) */
@@ -283,7 +283,7 @@ int pal_accent_saved(void) {
 int pal_accent_set(int index) {
     if (index < 0 || index >= ACC_COUNT) return -1;
     if (!pal.read) pal_load();
-    if (home_set_digit(ACCENT_FILE, ACCENT_TMP, index, ACC_COUNT - 1) < 0) return -1;
+    if (home_set_digit(ACCENT_FILE, index, ACC_COUNT - 1) < 0) return -1;
     pal.acc = index;
     if (pal_refresh()) pal_apply();
     pal_arm();

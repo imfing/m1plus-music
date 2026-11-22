@@ -8,7 +8,8 @@ import pod_pages
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
 
 DEFS = cdefs.defines(os.path.join(ROOT, 'patch', 'nextalbum.h'), strings=True)
-FILE, TMP = DEFS['NA_FILE'], DEFS['NA_TMP']
+FILE = DEFS['NA_FILE']
+TMP = FILE + '.tmp'
 KILL = '/mnt/mmc/m1plus-off'
 CMAP_MAX = cdefs.defines(os.path.join(ROOT, 'patch', 'covercache.h'), ['CC_CMAP_MAX'])['CC_CMAP_MAX']
 CARD, UNKNOWN = 0xfffffffe, 0xffffffff   # REC_ID of the All songs card and the Unknown Album row

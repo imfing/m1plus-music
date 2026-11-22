@@ -1104,7 +1104,7 @@ static int pl_on_item(void *ctx, void *e) {
         int list = which == VS_SORTS + 1;
         if (list != pl.list && pl.g.tiles) {
             pl_set_mode(list);
-            home_write_atomic(PLAYLISTS_FILE, PLAYLISTS_TMP, list ? "0\n" : "1\n");
+            home_write_atomic(PLAYLISTS_FILE, list ? "0\n" : "1\n");
         }
         return RET_OK;
     }
@@ -1112,7 +1112,7 @@ static int pl_on_item(void *ctx, void *e) {
         int rev = !pl.rev;
         char text[3];
         text[0] = rev ? 'a' : '0', text[1] = '\n', text[2] = 0;
-        if (home_write_atomic(PLAYLISTS_SORT_FILE, PLAYLISTS_SORT_TMP, text) != 0) return RET_OK;
+        if (home_write_atomic(PLAYLISTS_SORT_FILE, text) != 0) return RET_OK;
         pl.rev = rev;
         pl_reorder();
         return RET_OK;

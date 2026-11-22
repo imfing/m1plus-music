@@ -448,8 +448,8 @@ static int wp_files(void) {
             old[(unsigned)m + no] = 0;
             ours = old, no += (unsigned)m;
         }
-        if ((copy || no) && home_write_atomic(WIFINET_FILE, WIFINET_TMP, ours) != 0) goto out;
-        if (home_write_atomic(WF_CONF, WF_CONF_TMP, stock) == 0) r = 0;
+        if ((copy || no) && home_write_atomic(WIFINET_FILE, ours) != 0) goto out;
+        if (home_write_atomic(WF_CONF, stock) == 0) r = 0;
     }
 out:
     free(in);

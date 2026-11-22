@@ -947,7 +947,7 @@ int tape_theme(void) {
 }
 
 /* Choose the theme (0 Normal, 1 Chrome, 2 Metal, 3 by the track), saved atomically; the theme, or -1 (an unknown theme, or one that could not be saved: the saved one is unchanged). */
-int tape_theme_set(int theme) { return home_set_digit(TAPETHEME_FILE, TAPETHEME_TMP, theme, TP_THEME_AUTO); }
+int tape_theme_set(int theme) { return home_set_digit(TAPETHEME_FILE, theme, TP_THEME_AUTO); }
 
 /* ---------------------------------------------------------------------------
  * Open: the More dialog's Cassette Mode row. 0 once the page is up (or already open); -1 when it could not open (nothing is left of it).

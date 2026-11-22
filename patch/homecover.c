@@ -147,7 +147,7 @@ static int st_write(void) {
         unlink(STAMP_FILE);
         return 0;
     }
-    return m1_card_write(CARD_DIR, STAMP_FILE, STAMP_TMP, buf, o, (const void *)0, 0);
+    return m1_card_write(CARD_DIR, STAMP_FILE, buf, o, (const void *)0, 0);
 }
 
 /* Clear Cover Cache (1) and Clear Track Durations (2) make their part stale: the line goes. */

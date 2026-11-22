@@ -72,11 +72,8 @@ int stereo_carry_live(const stereo_carry *c, int rate); /* it would still be hea
 /* demo's side (patch/stereoset.c): the user's two settings and the effective record. The settings are ours to store (the player never reads them): the level the user chose is kept apart from the
  * record, because the record's level is 0 on Line Out and a USB DAC. */
 #define STEREO_MONO_FILE "/mnt/data/m1plus/playback-mono" /* "1" Mono Audio on; missing or anything else off */
-#define STEREO_MONO_TMP "/mnt/data/m1plus/playback-mono.tmp"
 #define STEREO_XFEED_FILE \
     "/mnt/data/m1plus/playback-crossfeed" /* "0" .. "3" (STEREO_OFF .. STEREO_HIGH); missing or anything else off */
-#define STEREO_XFEED_TMP "/mnt/data/m1plus/playback-crossfeed.tmp"
-#define STEREO_TMP STEREO_FILE ".tmp"
 
 int stereo_mono(void); /* Mono Audio as chosen: 1 or 0 */
 int stereo_mono_toggle(void); /* the new state, or -1 when it could not be saved (nothing changes) */

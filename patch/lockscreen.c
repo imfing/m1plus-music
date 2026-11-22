@@ -603,7 +603,7 @@ int lk_redirect(void) { return access(KILL_SD, F_OK) != 0 && pod_open_lock() == 
 int lk_layout(void) { return set_read(LK_LAYOUT_FILE, 0) == '1'; }
 
 /* Choose the layout (0 Large Cover, 1 Mini Player), saved atomically; the layout, or -1 (unknown, or not saved: the saved one is unchanged). It applies the next time the lock screen opens. */
-int lk_layout_set(int layout) { return home_set_digit(LK_LAYOUT_FILE, LK_LAYOUT_TMP, layout, 1); }
+int lk_layout_set(int layout) { return home_set_digit(LK_LAYOUT_FILE, layout, 1); }
 
 /* ---------------------------------------------------------------------------
  * The Wallpaper picker (Settings > Lock Screen > Wallpaper, page m1plus_lockwall; docs/modules/lockscreen.md "Wallpaper picker").

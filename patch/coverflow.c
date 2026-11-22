@@ -1197,7 +1197,7 @@ int coverflow_landscape(void) { return use_land(); }
 /* Flip it (atomic write, patch/home.c); the new state, or -1 when it could not be saved. */
 int coverflow_landscape_toggle(void) {
     int next = !use_land();
-    return home_set_digit(LANDSCAPE_FILE, LANDSCAPE_TMP, next, 1);
+    return home_set_digit(LANDSCAPE_FILE, next, 1);
 }
 
 /* The widgets for the current mode. */
@@ -1325,7 +1325,7 @@ static int on_songs(void *ctx, void *e) {
 static void position_save(unsigned key) {
     char text[16];
     snprintf(text, sizeof text, "%08x\n", key);
-    m1_card_write(CARD_DIR, POSITION_FILE, POSITION_FILE ".tmp", text, 9, (const void *)0, 0);
+    m1_card_write(CARD_DIR, POSITION_FILE, text, 9, (const void *)0, 0);
 }
 
 /* The saved key: exactly 8 hex digits and an optional newline; anything else, a missing file or the card not mounted is 0. */
@@ -1608,7 +1608,7 @@ int coverflow_volkeys(void) { return volkeys_on(); }
 
 int coverflow_volkeys_toggle(void) {
     int next = !volkeys_on();
-    return home_set_digit(VOLKEYS_FILE, VOLKEYS_TMP, next, 1);
+    return home_set_digit(VOLKEYS_FILE, next, 1);
 }
 
 static int on_volkey(void *ctx, void *e) {

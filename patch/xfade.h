@@ -17,7 +17,6 @@
 /* Runtime transition record in tmpfs (zero flash wear): demo writes it right before sending {set-gapless} (and on
  * setting changes), with the effective crossfade duration for the upcoming join (0 = gapless-only / off). */
 #define XFADE_FILE "/tmp/m1plus-xfade"
-#define XFADE_TMP "/tmp/m1plus-xfade.tmp"
 #define XFADE_MAGIC "M1XFD01" /* 8 bytes with NUL */
 #define XFADE_MAX_SEC \
     12 /* the longest duration the Crossfade page offers (tools/pod_ui.py cards_xfade: its slider is 1 .. 12) */
@@ -98,9 +97,7 @@ int xfade_process_native(xfade_dsp *x, void *audio, unsigned frames);
 /* demo's side (patch/xfadeset.c): persistent settings and preload/smart-album coordination. */
 #define XFADE_SET_FILE \
     "/mnt/data/m1plus/playback-crossfade" /* one character: 'a'..'l' = on, 1..12 s; 'A'..'L' = off, 1..12 s kept; missing or other = off, 5 s */
-#define XFADE_SET_TMP "/mnt/data/m1plus/playback-crossfade.tmp"
 #define XFADE_AUTO_FILE "/mnt/data/m1plus/playback-crossfade-auto" /* "0" always, "1"/missing smart cross-album */
-#define XFADE_AUTO_TMP "/mnt/data/m1plus/playback-crossfade-auto.tmp"
 
 int xfade_on(void); /* the Crossfade switch: 1 on, 0 off (default) */
 int xfade_on_toggle(void); /* flip the switch, saved atomically; returns the new state or -1 */

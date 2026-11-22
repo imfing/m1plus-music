@@ -350,13 +350,13 @@ int pcdir_index(void) { return pcdir_setting() == PCDIR_INDEX; }
 
 int pcdir_set(int dir) {
     if (dir != PCDIR_APPLE && dir != PCDIR_INDEX) return -1;
-    if (home_write_atomic(PCDIR_FILE, PCDIR_TMP, dir == PCDIR_INDEX ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(PCDIR_FILE, dir == PCDIR_INDEX ? "1\n" : "0\n") != 0) return -1;
     return dir;
 }
 
 int pcsearch_toggle(void) {
     int next = !pcsearch_setting();
-    if (home_write_atomic(PCSEARCH_FILE, PCSEARCH_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(PCSEARCH_FILE, next ? "1\n" : "0\n") != 0) return -1;
     return next;
 }
 

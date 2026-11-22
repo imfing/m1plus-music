@@ -70,7 +70,7 @@ static int gs_save(int on, unsigned mask) {
     while (mask && i < sizeof d);
     while (i) buf[k++] = d[--i];
     buf[k++] = '\n', buf[k] = 0;
-    return home_write_atomic(GS_FILE, GS_FILE ".tmp", buf) != 0 ? -1 : on;
+    return home_write_atomic(GS_FILE, buf) != 0 ? -1 : on;
 }
 
 int gs_toggle(void) {

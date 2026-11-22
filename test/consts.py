@@ -11,7 +11,7 @@ and the headers of MORE (patch/keyboard.h, patch/grid.h), whose defines may use 
 A row that disagrees fails, naming both sides with file:line. XFAIL marks a known MISMATCH (kept, not fixed): it is printed
 as MISMATCH and does not fail; once the two agree the XFAIL entry itself fails so it gets removed.
 SKIPPED lists literals that copy nothing in C or whose meaning differs; each has its reason.
-enum_rows adds the Settings pages' ids (ACT_*, INFO_*, the switch rows): tools/pod_pages.py against the enums and sw_tab of patch/m1plus.c.
+enum_rows checks the payload's switch table (sw_tab of patch/m1plus.c) against tools/pod_pages.py SWITCH_ACTIONS.
 """
 import ast, importlib, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -217,45 +217,16 @@ def rgb(v):
     return tuple(v)
 
 
-def c_enums(path):
-    """{name: int} of every enumerator of the anonymous enums of a C file (a value is an integer expression over earlier enumerators and offsets.inc)."""
-    text = cdefs.COMMENT.sub(lambda m: m.group(0) if m.group(0).startswith('"') else ' ', open(path, encoding='utf-8').read())
-    out = {}
-    for body in re.findall(r'^enum\s*\{([^}]*)\}\s*;', text, re.M):
-        nxt = 0
-        for item in body.split(','):
-            item = ' '.join(item.split())
-            if not item: continue
-            name, _, expr = (p.strip() for p in item.partition('='))
-            if expr: nxt = cdefs.parse(f'#define ROW {expr}\n', names=['ROW'], known={**O, **out})['ROW']
-            out[name] = nxt
-            nxt += 1
-    return out
-
-
 def enum_rows():
-    """The Settings pages' ids, written twice: tools/pod_pages.py (the asset builder) and the enums of patch/m1plus.c (the payload).
-    Every ACT_* and INFO_* of one side that the other has must be the same number; an ACT_* the payload handles must exist in
-    pod_pages; the payload's switch table (sw_tab) is pod_pages.SWITCH_ACTIONS but the Equalizer's switch, which its own page binds.
-    Returns (passed, [failure text])."""
+    """The payload's switch table (sw_tab in patch/m1plus.c) is pod_pages.SWITCH_ACTIONS but the Equalizer's switch, which its own page
+    binds. (The ids themselves are generated into acts.h from pod_pages, so they cannot drift.) Returns (passed, [failure text])."""
     import pod_pages
     src = os.path.join(ROOT, 'patch', 'm1plus.c')
-    C = c_enums(src)
-    P = {k: v for k, v in vars(pod_pages).items() if isinstance(v, int) and k.startswith(('ACT_', 'INFO_'))}
-    ok, bad = 0, []
-    for name, cv in C.items():
-        if not name.startswith(('ACT_', 'INFO_')): continue
-        if name in P:
-            if P[name] == cv: ok += 1
-            else: bad.append(f'{name}: tools/pod_pages.py {P[name]} vs patch/m1plus.c {cv}')
-        elif name.startswith('ACT_'):
-            bad.append(f'{name} = {cv} is in patch/m1plus.c but not in tools/pod_pages.py')
     tab = re.search(r'sw_tab\[\] = \{(.*?)\n\};', open(src, encoding='utf-8').read(), re.S)
-    c_sw = sorted(C[n] for n in re.findall(r'\{(ACT_\w+),', tab.group(1))) if tab else None
+    c_sw = sorted(getattr(pod_pages, n) for n in re.findall(r'\{(ACT_\w+),', tab.group(1))) if tab else None
     p_sw = sorted(a for a in pod_pages.SWITCH_ACTIONS if a != pod_pages.ACT_PEQ_SWITCH)
-    if c_sw == p_sw: ok += 1
-    else: bad.append(f'switch rows: patch/m1plus.c sw_tab {c_sw} vs tools/pod_pages.py SWITCH_ACTIONS (less ACT_PEQ_SWITCH) {p_sw}')
-    return ok, bad
+    if c_sw == p_sw: return 1, []
+    return 0, [f'switch rows: patch/m1plus.c sw_tab {c_sw} vs tools/pod_pages.py SWITCH_ACTIONS (less ACT_PEQ_SWITCH) {p_sw}']
 
 
 def main():

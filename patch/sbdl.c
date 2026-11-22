@@ -28,11 +28,9 @@
 #include "m1job.h"
 
 #define SBD_IDX SBA_DIR "/dl.idx"
-#define SBD_IDX_TMP SBA_DIR "/dl.idx.tmp"
 #define SBD_HEAD "M1PLUS-DL 1\n"
 #define SBD_Q \
     SBA_DIR "/dlq.idx" /* the waiting downloads: a manifest line a track (no file name yet), appended by an add */
-#define SBD_Q_TMP SBA_DIR "/dlq.idx.tmp"
 #define SBD_FILE 288 /* a file's path under SBA_MUSIC_DIR (artist/album/name), the NUL included */
 #define SBD_PATH 336 /* a full path, the ".part" included */
 #define SBD_PART 64 /* bytes of an artist or album folder name */
@@ -440,7 +438,7 @@ static int sbd_edit(const char *remove_id, const char *row) {
         out += rn;
         buf[out++] = '\n';
     }
-    ok = m1_card_write(SBA_DIR, SBD_IDX, SBD_IDX_TMP, buf, out, (const void *)0, 0) == 0;
+    ok = m1_card_write(SBA_DIR, SBD_IDX, buf, out, (const void *)0, 0) == 0;
     if (ok) sbd_ix_set(buf, out);
     free(buf);
     free(text);
@@ -772,7 +770,7 @@ static int sbd_q_compact(void) {
         if (!out)
             ok = unlink(SBD_Q) == 0 || access(SBD_Q, 0) != 0;
         else if (out != n)
-            ok = m1_card_write(SBA_DIR, SBD_Q, SBD_Q_TMP, buf, out, (const void *)0, 0) == 0;
+            ok = m1_card_write(SBA_DIR, SBD_Q, buf, out, (const void *)0, 0) == 0;
         else
             ok = 1;
     }

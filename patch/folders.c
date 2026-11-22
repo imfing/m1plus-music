@@ -824,7 +824,7 @@ static int fo_on_item(void *ctx, void *e) {
     if (k < 0 || k > 2 || fo_m3u()) return RET_OK;
     rev = k == fo.eff ? !fo.eff_rev : 0;
     text[0] = (char)((rev ? 'a' : '0') + k), text[1] = '\n', text[2] = 0;
-    if (home_write_atomic(FOLDERS_SORT_FILE, FOLDERS_SORT_TMP, text) != 0) return RET_OK;
+    if (home_write_atomic(FOLDERS_SORT_FILE, text) != 0) return RET_OK;
     fo.sort = k, fo.rev = rev;
     fo_load(0);
     return RET_OK;

@@ -922,8 +922,8 @@ static const char *so_title(const void *ctx, unsigned i) { return cc_str(((void 
 static void sort_migrate(void) {
     if (access(OLD_ORDER_FILE, F_OK)) return;
     if (access(ALBUMS_SORT_FILE, F_OK))
-        home_write_atomic(ALBUMS_SORT_FILE, ALBUMS_SORT_TMP, set_read(OLD_ORDER_FILE, '1') == '0' ? "0\n" : "1\n");
-    unlink(OLD_ORDER_FILE), unlink(OLD_ORDER_TMP);
+        home_write_atomic(ALBUMS_SORT_FILE, set_read(OLD_ORDER_FILE, '1') == '0' ? "0\n" : "1\n");
+    unlink(OLD_ORDER_FILE), unlink(OLD_ORDER_FILE ".tmp");
 }
 
 /* The album order (the Albums page's "..." card, ALBUMS_SORT_FILE): one character, 0 Title (our name keys, as Artist), 1 Artist, 2 Recently Added, 3 Year, or a, b, c, d for the same order in its other
@@ -956,7 +956,7 @@ int cc_sort_mode_set(int mode, int rev) {
     char s[3];
     if (mode < 0 || mode >= CC_SORT_MODES) return -1;
     s[0] = (char)((rev ? 'a' : '0') + mode), s[1] = '\n', s[2] = 0;
-    return home_write_atomic(ALBUMS_SORT_FILE, ALBUMS_SORT_TMP, s) == 0 ? mode : -1;
+    return home_write_atomic(ALBUMS_SORT_FILE, s) == 0 ? mode : -1;
 }
 
 /* Recently Added and Year need the songs: per album row (stock number) the rank of its newest song (the position of its first track in the full

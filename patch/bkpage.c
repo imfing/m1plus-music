@@ -633,27 +633,13 @@ void bk_text_utf8(void *canvas, void *style, const char *utf8, int x, int y, int
     bk_text(canvas, t, n, x, y, w, h);
 }
 
-static unsigned bk_isqrt(unsigned v) {
-    unsigned r = 0, b = 1u << 30;
-    while (b > v) b >>= 2;
-    while (b) {
-        if (v >= r + b) {
-            v -= r + b;
-            r = (r >> 1) + b;
-        } else
-            r >>= 1;
-        b >>= 2;
-    }
-    return r;
-}
-
 /* A stadium of w x h at (x, y) in colour argb: each row's ends are inset by the circle's chord, the end pixel blended by its coverage. */
 void bk_capsule(void *canvas, int x, int y, int w, int h, unsigned argb) {
     int r = h / 2, row;
     unsigned a = argb >> 24, rgb = argb & 0xffffffu;
     for (row = 0; row < h; ++row) {
         int d = 2 * row + 1 - h, e16, xi, cov16;
-        e16 = r * 16 - (int)bk_isqrt((unsigned)(4 * r * r - d * d) * 64u);
+        e16 = r * 16 - (int)m1_isqrt((unsigned)(4 * r * r - d * d) * 64u);
         xi = (e16 + 15) / 16;
         cov16 = xi * 16 - e16; /* coverage of the pixel before xi, in 1/16 */
         az_fill(canvas, x + xi, y + row, y + row + 1, w - 2 * xi, argb);

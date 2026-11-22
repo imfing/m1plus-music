@@ -335,7 +335,7 @@ static void bh_save(void) {
     if (write) bh_pack(&f), bh.dirty = 0;
     bh_unlock();
     if (!write) return;
-    m1_save(BH_DATA, BH_DATA_TMP, 0644, &f, sizeof f);
+    m1_save(BH_DATA, 0644, &f, sizeof f);
     if (bh.state != 2) unlink(BH_DATA);
 }
 
@@ -380,7 +380,7 @@ void *bh_main(void *arg) {
         bh_clear();
         bh_unlock();
         unlink(BH_DATA);
-        unlink(BH_DATA_TMP);
+        unlink(BH_DATA ".tmp");
         bh_lock();
         if (!bh_setting()) {
             bh.state = 1, bh.run = 0;
@@ -419,7 +419,7 @@ void bh_poll(void) {
 
 int bh_toggle(void) {
     int next = !bh_setting();
-    if (home_set_digit(BH_FILE, BH_TMP, next, 1) < 0) return -1;
+    if (home_set_digit(BH_FILE, next, 1) < 0) return -1;
     if (next) {
         bh.state = 2, bh.retry = 0;
         bh_start();
@@ -430,7 +430,7 @@ int bh_toggle(void) {
     bh_clear();
     bh_unlock();
     unlink(BH_DATA);
-    unlink(BH_DATA_TMP);
+    unlink(BH_DATA ".tmp");
     return 0;
 }
 

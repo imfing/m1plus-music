@@ -198,7 +198,7 @@ static int rc_save(void) {
         rc_put(&o, end, "\n");
     }
     *o = 0;
-    return m1_card_write(CARD_DIR, RECENT_FILE, RECENT_TMP, buf, (unsigned)(o - buf), (const void *)0, 0);
+    return m1_card_write(CARD_DIR, RECENT_FILE, buf, (unsigned)(o - buf), (const void *)0, 0);
 }
 
 /* s into out (size bytes with the NUL), control bytes as spaces, cut before a UTF-8 continuation byte that would be split. */
@@ -284,7 +284,7 @@ int recent_setting(void) { return set_read(SHELF_FILE, '1') != '0'; }
 
 int recent_toggle(void) {
     int next = !recent_setting();
-    return home_write_atomic(SHELF_FILE, SHELF_TMP, next ? "1\n" : "0\n") == 0 ? next : -1;
+    return home_write_atomic(SHELF_FILE, next ? "1\n" : "0\n") == 0 ? next : -1;
 }
 
 /* ---------------------------------------------------------------------------

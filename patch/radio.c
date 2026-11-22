@@ -480,7 +480,7 @@ int rd_fav_toggle(const rd_list_t *l, int i) {
     if (favs.truncated || (found < 0 && favs.n >= RD_MAX)) ok = 0;
     text =
         ok ? rd_m3u_make(&favs, -1, found, found < 0 ? l : (const rd_list_t *)0, i, -1, RD_MAX + 1, &len) : (char *)0;
-    ok = text != 0 && m1_card_write(RD_DIR, RD_FAVS, RD_FAVS_TMP, text, len, (const void *)0, 0) == 0;
+    ok = text != 0 && m1_card_write(RD_DIR, RD_FAVS, text, len, (const void *)0, 0) == 0;
     free(text);
     added = found < 0;
     rd_list_free(&favs);
@@ -512,7 +512,7 @@ static int rd_favs_put(const rd_list_t *favs, const int *order, int n, const cha
     o = (unsigned)snprintf(out, need, "#EXTM3U\n");
     for (k = 0; k < n; ++k) o += rd_row_put(out + o, need - o, favs, order[k]);
     if (name) o += (unsigned)snprintf(out + o, need - o, "#EXTINF:-1,%s\n%s\n", name, url);
-    ok = o + 2 > RD_FETCH_MAX ? -2 : m1_card_write(RD_DIR, RD_FAVS, RD_FAVS_TMP, out, o, (const void *)0, 0) >= 0;
+    ok = o + 2 > RD_FETCH_MAX ? -2 : m1_card_write(RD_DIR, RD_FAVS, out, o, (const void *)0, 0) >= 0;
     free(out);
     if (ok > 0) ++rf.serial;
     return ok;
@@ -692,7 +692,7 @@ int rd_fav_import(int *full) {
         }
     }
     rd_list_free(&f);
-    if (ok && added) ok = m1_card_write(RD_DIR, RD_FAVS, RD_FAVS_TMP, out, len, (const void *)0, 0) == 0;
+    if (ok && added) ok = m1_card_write(RD_DIR, RD_FAVS, out, len, (const void *)0, 0) == 0;
     free(out);
     free(names);
     rd_list_free(&favs);
@@ -718,13 +718,13 @@ void rd_recent_push(const rd_list_t *l, int i) {
     for (k = 0; k < old.n; ++k)
         if (!strcmp(rd_url(&old, k), rd_url(l, i))) same = k; /* the station moves to the front */
     text = rd_m3u_make(l, i, -1, &old, -1, same, RD_RECENT_MAX, &len);
-    if (text) home_write_atomic(RD_RECENT_FILE, RD_RECENT_TMP, text);
+    if (text) home_write_atomic(RD_RECENT_FILE, text);
     free(text);
     rd_list_free(&old);
 }
 
 /* Clear Recently Played: radio-recent as it is written when no station is in it (the header alone), the way rd_recent_push writes it. */
-int rd_recent_clear(void) { return home_write_atomic(RD_RECENT_FILE, RD_RECENT_TMP, "#EXTM3U\n") == 0; }
+int rd_recent_clear(void) { return home_write_atomic(RD_RECENT_FILE, "#EXTM3U\n") == 0; }
 
 int rd_last_read(rd_list_t *l) {
     int ok = rd_recent_read(l);

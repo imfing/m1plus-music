@@ -75,14 +75,26 @@ static int hm_in_set(const char *path) {
     return 1;
 }
 
-/* Temp file, fsync, rename onto the target, fsync of the directory. 0 on success. A failure of the last
+/* path + ".tmp" into out (HOME_TMP_MAX bytes): the temp name of every atomic write. 0 on success; -1 when it does not fit (never truncated). */
+int home_tmp_path(char *out, const char *path) {
+    static const char suffix[] = ".tmp";
+    unsigned n = hm_len(path), i;
+    if (n + sizeof suffix > HOME_TMP_MAX) return -1;
+    for (i = 0; i < n; i++) out[i] = path[i];
+    for (i = 0; i < sizeof suffix; i++) out[n + i] = suffix[i];
+    return 0;
+}
+
+/* path + ".tmp", fsync, rename onto path, fsync of the directory. 0 on success. A failure of the last
  * step returns -1 although the rename happened: the caller must not rely on the file (see hm_arm). A
- * file in SET_DIR makes a missing folder first. */
-int home_write_atomic(const char *path, const char *tmp, const char *data) {
+ * file in SET_DIR makes a missing folder first. -1 too for a path too long for its temp name. */
+int home_write_atomic(const char *path, const char *data) {
+    char tmp[HOME_TMP_MAX];
     unsigned n = hm_len(data);
     int in_set = hm_in_set(path);
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    int ok;
+    int fd, ok;
+    if (home_tmp_path(tmp, path) != 0) return -1;
+    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0 && in_set && hm_make_set_dir() == 0) fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) return -1;
     ok = write(fd, data, n) == (int)n && fsync(fd) == 0;
@@ -127,8 +139,8 @@ static void hm_clear_marker(void) {
  * later boot arms again until the user re-enables M1+ Music) and fall back to Shanling. If the note
  * cannot be written the marker stays, so every following boot is stock as well. */
 static void hm_record_failure(void) {
-    if (home_write_atomic(BAD_NOTE, BAD_TMP, "1\n") != 0) return;
-    home_write_atomic(START_FILE, START_TMP, "0\n");
+    if (home_write_atomic(BAD_NOTE, "1\n") != 0) return;
+    home_write_atomic(START_FILE, "0\n");
     hm_clear_marker();
     hm_log("m1plus: marker found; falling back to Shanling");
 }
@@ -170,7 +182,7 @@ static void hm_arm(void) {
         return;
     }
     if (!hs.start) hm_log("m1plus: starting in Shanling");
-    if (home_write_atomic(MARKER, MARKER_TMP, "1\n") != 0) {
+    if (home_write_atomic(MARKER, "1\n") != 0) {
         unlink(
             MARKER); /* the rename may have happened without a durable directory entry: stay stock, leave no marker (if the
                            * removal is lost too, the next boot finds the marker and falls back to Shanling: fail closed) */
@@ -400,7 +412,7 @@ int home_start(void) { return hs.start; }
 /* "Boot to M1+ Music": flip the persistent setting (takes effect at the next start). The new state, or -1. */
 int home_toggle(void) {
     int next = !hs.start;
-    if (home_write_atomic(START_FILE, START_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(START_FILE, next ? "1\n" : "0\n") != 0) return -1;
     hs.start = next;
     if (next) unlink(BAD_NOTE);
     return next;
@@ -431,9 +443,9 @@ int m1plus_home_init(void *win, void *ctx) {
 }
 
 /* A one-digit setting file: the digit v (0 .. max, max <= 9) and a newline, written atomically. v, or -1 for a v out of range or a failed write. */
-int home_set_digit(const char *file, const char *tmp, int v, int max) {
+int home_set_digit(const char *file, int v, int max) {
     char text[3];
     if (v < 0 || v > max) return -1;
     text[0] = (char)('0' + v), text[1] = '\n', text[2] = 0;
-    return home_write_atomic(file, tmp, text) == 0 ? v : -1;
+    return home_write_atomic(file, text) == 0 ? v : -1;
 }

@@ -295,7 +295,6 @@ int peq_state_load(peq_state *s) { return peq_state_load_from(PEQ_STATE, s); }
 #ifndef PEQ_PLAYER
 /* PEQ_MAGIC then the record, fsynced under path.tmp and renamed over path (demo only; peq_state_save is PEQ_STATE: the file the player reads). */
 int peq_state_save_to(const char *path, const peq_state *s) {
-    char tmp[96];
     struct {
         char magic[8];
         peq_state s;
@@ -303,13 +302,8 @@ int peq_state_save_to(const char *path, const peq_state *s) {
     if (!state_valid(s)) return -1;
     memcpy(file.magic, PEQ_MAGIC, 8);
     file.s = *s;
-    unsigned n = 0;
-    while (path[n]) ++n;
-    if (n + 5 > sizeof tmp) return -1;
-    memcpy(tmp, path, n);
-    memcpy(tmp + n, ".tmp", 5);
-    if (m1_save(path, tmp, 0644, &file, sizeof file)) return 0;
-    return mkdir(PEQ_STATE_DIR, 0755) == 0 && m1_save(path, tmp, 0644, &file, sizeof file) ? 0 : -1;
+    if (m1_save(path, 0644, &file, sizeof file)) return 0;
+    return mkdir(PEQ_STATE_DIR, 0755) == 0 && m1_save(path, 0644, &file, sizeof file) ? 0 : -1;
 }
 int peq_state_save(const peq_state *s) { return peq_state_save_to(PEQ_STATE, s); }
 #endif

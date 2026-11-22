@@ -1186,7 +1186,7 @@ static int al_on_item(void *ctx, void *e) {
         int list = k == VS_SORTS + 1;
         if (list == al.list) return RET_OK;
         al_set_mode(list);
-        home_write_atomic(ALBUMS_FILE, ALBUMS_TMP, al.list ? "0\n" : "1\n");
+        home_write_atomic(ALBUMS_FILE, al.list ? "0\n" : "1\n");
     } else if (k >= 0 && k < VS_SORTS) {
         int rev = k == al.sort ? !al.rev : 0;
         if (cc_sort_mode_set(k, rev) == k) {

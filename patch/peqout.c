@@ -56,9 +56,11 @@ static int po_read(po_rec *r) {
     return ok;
 }
 
+/* A fixed temp name, not m1_save: this runs on the status bar timer, within patch/lineout.c's instruction budget. */
 static int po_write(const po_rec *r) {
-    int ok = m1_save(PO_OUTPUT_FILE, PO_OUTPUT_FILE ".tmp", 0644, r, sizeof *r);
-    if (!ok && mkdir(PEQ_STATE_DIR, 0755) == 0) ok = m1_save(PO_OUTPUT_FILE, PO_OUTPUT_FILE ".tmp", 0644, r, sizeof *r);
+    int ok = m1_save_as(PO_OUTPUT_FILE, PO_OUTPUT_FILE ".tmp", 0644, r, sizeof *r);
+    if (!ok && mkdir(PEQ_STATE_DIR, 0755) == 0)
+        ok = m1_save_as(PO_OUTPUT_FILE, PO_OUTPUT_FILE ".tmp", 0644, r, sizeof *r);
     return ok ? 0 : -1;
 }
 

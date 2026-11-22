@@ -255,7 +255,7 @@ int dailymix_setting(void) { return set_read(DAILY_SET_FILE, '1') != '0'; }
 
 int dailymix_toggle(void) {
     int next = !dailymix_setting();
-    return home_write_atomic(DAILY_SET_FILE, DAILY_SET_TMP, next ? "1\n" : "0\n") == 0 ? next : -1;
+    return home_write_atomic(DAILY_SET_FILE, next ? "1\n" : "0\n") == 0 ? next : -1;
 }
 
 /* Regenerate Daily Mix can make a mix: the switch is on and the library was not too small (Settings dims the row otherwise). A day's first job reads the
@@ -1108,7 +1108,7 @@ static int dm_save_art(const job_t *j) {
     hdr[4] = DM_W & 255, hdr[5] = DM_W >> 8, hdr[6] = DM_H & 255, hdr[7] = DM_H >> 8;
     memcpy(hdr + 8, &j->aseed, 4);
     memcpy(hdr + 12, &ck, 4);
-    return m1_card_write(MIX_DIR, MIX_ART_FILE, MIX_ART_TMP, hdr, DM_ART_HEAD, j->px, DM_W * DM_H * 2);
+    return m1_card_write(MIX_DIR, MIX_ART_FILE, hdr, DM_ART_HEAD, j->px, DM_W * DM_H * 2);
 }
 
 /* The art file read back into the card's bitmap; 1 when it is whole and was made for the mix's art seed. */
@@ -1173,7 +1173,7 @@ static int dm_ph_commit(job_t *j) {
             dm_put(&o, end,
                    "\n"); /* (every path was checked by dm_path_ok in the copy phase: the file holds them all) */
     *o = 0;
-    if (m1_card_write(MIX_DIR, MIX_FILE, MIX_TMP, buf, (unsigned)(o - buf), (const void *)0, 0) != 0) return 0;
+    if (m1_card_write(MIX_DIR, MIX_FILE, buf, (unsigned)(o - buf), (const void *)0, 0) != 0) return 0;
     dm_save_art(
         j); /* (after the mix file: a failed mix file leaves yesterday's art file alone; a failed art file costs the next start a re-render) */
     if (!dm_load())

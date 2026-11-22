@@ -8,9 +8,8 @@
 #pragma once
 #include "covercache.h"
 
-/* The table, on the card beside the cover cache: written whole through DUR_TMP and a rename. */
+/* The table, on the card beside the cover cache: written whole through DUR_FILE ".tmp" and a rename. */
 #define DUR_FILE CARD_DIR "/durations"
-#define DUR_TMP CARD_DIR "/durations.tmp"
 #define DUR_MAX_ENTRIES 200000 /* a table of more is refused (and rebuilt) */
 
 typedef struct {

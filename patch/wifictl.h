@@ -12,7 +12,6 @@
 #define WF_CTRL_DIR \
     "/var/run/wpa_supplicant" /* ctrl_interface of the stock config; the interface's socket is WF_CTRL_DIR/wlan0 */
 #define WF_CONF "/mnt/data/wpa_supplicant.conf" /* the stock configuration (stock networks only) */
-#define WF_CONF_TMP "/mnt/data/wpa_supplicant.conf.tmp"
 #define WF_COPY \
     "/tmp/m1plus-wpa.conf" /* what wifi_connect.sh gives the newer supplicant: the stock configuration plus wifi-networks */
 #define WF_OFF_IDS \

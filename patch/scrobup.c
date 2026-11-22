@@ -12,7 +12,7 @@
  *     refused. Last.fm: one signed form a batch, its answer says which listens it ignored. A listen leaves the log once every one of those services took it or refused it
  *     for good: for the archive when one took it, set aside when all refused it. Any other answer, or the kill switch seen between two requests, ends the upload;
  *   then, once, under the lock (su_retire): the log's bytes as far as the last listen that was answered 200 or 400 (skipped lines with them) are appended to SU_SENT, those
- *     of the refused listens to SU_REJECTED, both less the comments, and the log becomes the header and what follows those bytes (SU_TMP, then a rename). The new log is
+ *     of the refused listens to SU_REJECTED, both less the comments, and the log becomes the header and what follows those bytes (SC_LOG ".tmp", then a rename). The new log is
  *     written first, so a full card fails before an archive gains anything; the archives are synced before the rename drops the lines. A listen appended meanwhile is
  *     behind those bytes, so it stays.
  * A failure of an archive or the rewrite leaves the log as it was: the listens go again with the next upload (the service drops a listen it has).
@@ -39,12 +39,9 @@
 #define SU_LB_CHECK "https://api.listenbrainz.org/1/validate-token"
 #define SU_SENT SC_LOG ".sent"
 #define SU_REJECTED SC_LOG ".rejected"
-#define SU_TMP SC_LOG ".tmp"
-#define SU_UP_TMP SC_UPLOADS ".tmp"
 #define SU_LF_URL "https://ws.audioscrobbler.com/2.0/"
 #define SU_INI \
     "/mnt/mmc/scrobble.ini" /* the accounts, on the card only: [LISTENBRAINZ] TOKEN= and USER=, [LASTFM] USER=, PASSWORD=, API_KEY= and API_SECRET= */
-#define SU_INI_TMP SU_INI ".tmp"
 #define SU_INI_ROOM 256 /* what an edit adds at most: a USER line of SU_NAME with a line end before and behind it */
 #define SU_KEYS 4 /* the most keys a section has */
 #define SU_AUTH "Authorization: Token "
@@ -597,7 +594,7 @@ static int su_retire(const su_run_t *run, char *buf) {
     }
     ok = ok && h == run->dh; /* else it is not the log that was sent: nothing of it is retired */
     pos = 0;
-    if (ok) out = open(SU_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (ok) out = open(SC_LOG ".tmp", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     ok = out >= 0 && m1_write_all(out, SC_HEADER, sizeof SC_HEADER - 1);
     while (ok && (r = read(in, buf, SU_WIN)) != 0) ok = r > 0 && m1_write_all(out, buf, (unsigned)r);
     ok = ok && fsync(out) == 0; /* a full card fails here, before an archive gains anything */
@@ -631,7 +628,7 @@ static int su_retire(const su_run_t *run, char *buf) {
             ok = close(arc[i]) == 0 && ok;
         }
     if (in >= 0) close(in);
-    if (out >= 0) ok = m1_commit(out, ok, SU_TMP, SC_LOG);
+    if (out >= 0) ok = m1_commit(out, ok, SC_LOG ".tmp", SC_LOG);
     scrobble_unlock();
     return ok;
 }
@@ -768,7 +765,7 @@ static void su_record(const su_run_t *run) {
         if (!t) return;
         for (cut = len / 2; cut < len && t[cut - 1] != '\n'; ++cut) {
         }
-        if (cut < len) m1_save(SC_UPLOADS, SU_UP_TMP, 0644, t + cut, len - cut);
+        if (cut < len) m1_save(SC_UPLOADS, 0644, t + cut, len - cut);
         free(t);
     }
 }
@@ -1033,7 +1030,7 @@ static unsigned su_splice(char *t, unsigned n, unsigned off, unsigned del, const
 /* The card's file with a valid check's user name in the ListenBrainz section, every other byte kept: the device's only write to the file (it never writes a secret, its
  * line, a section or the file: those are the user's, and so is signing out, by taking the token out of the file). USER=name (never empty): an existing USER line gets its
  * value replaced (its key, its blanks and its line end stay), a missing one is added behind the TOKEN line with the file's line ends; 0 when the section has no TOKEN line
- * (a name belongs to a token). Written as SU_INI_TMP, synced, then renamed. 1 on success; 0, and the file as it was, with no mounted card, a file that cannot be read or
+ * (a name belongs to a token). Written as SU_INI ".tmp", synced, then renamed. 1 on success; 0, and the file as it was, with no mounted card, a file that cannot be read or
  * is over SU_INI_MAX (before or after the edit: never cut), or a card that does not take it. */
 static int su_ini_set(const char *name) {
     su_ini_t r;
@@ -1051,7 +1048,7 @@ static int su_ini_set(const char *name) {
         k = (unsigned)snprintf(line, sizeof line, "%sUSER=%s%s", t[r.k[0].n - 1] != '\n' ? eol : "", name, eol);
         n = su_splice(t, n, r.k[0].n, 0, line, k);
     }
-    ok = ok && n <= SU_INI_MAX && m1_save(SU_INI, SU_INI_TMP, 0644, t, n);
+    ok = ok && n <= SU_INI_MAX && m1_save(SU_INI, 0644, t, n);
     su_ini_free(t);
     return ok;
 }

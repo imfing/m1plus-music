@@ -17,8 +17,8 @@ only the module doc of the feature you are changing. Symbols are given instead o
 | Player Crossfade decoder calls, vendor FLAC seek threshold isolation, and the kept output (driver slots `AO_SLOTS`, wrapped calls `UNINIT_CALLS`) | `patch/xfade.c`, `patch/xfsrc.c`, `tools/mod_player.py` `PINS`; [Crossfade](modules/crossfade.md) |
 | Our strings, all languages (`_t('English', zh_CN, zh_HK, ja, ko, fr, de, es, it, th, pl, ru, uk)`) | `tools/pod_i18n.py` |
 | Row icons (label to Lucide name) | `tools/mod_icons.py` `CARD_GLYPHS` |
-| Row dispatch: `ACT_*` enum (mirrors `pod_pages.py`), `on_row`, the `pod_switch` table, `open_page` (per-page binding after the window opens), `pod_open_*` | `patch/m1plus.c` |
-| Shared declarations: setting file paths (`*_FILE`, `*_TMP`), `pod_open_*` | `patch/home.h` |
+| Row dispatch: `ACT_*` / `INFO_*` (generated into `acts.h` from `pod_pages.py`), `on_row`, the `pod_switch` table, `open_page` (per-page binding after the window opens), `pod_open_*` | `patch/m1plus.c` |
+| Shared declarations: setting file paths (`*_FILE`), `pod_open_*` | `patch/home.h` |
 | Payload entry points called across files, hook functions | `patch/entries.h` |
 | Stock offsets and shared C constants | `patch/offsets.inc` |
 | Settings Files list (every persisted file) | `patch/setfiles.c` |
@@ -39,14 +39,13 @@ Precedent: Settings > Now Playing > Track Position (`git show 2ef3283a`).
 1. `tools/pod_pages.py`: new `ACT_<X> = <next free id>`, the next unused number above the
    current maximum, with a comment saying where it is used. Add it to `SWITCH_ACTIONS`, and add a
    `Row('<Label>', ACT_<X>)` to the page's `layout`. If the setting is persisted, append its file
-   name to `SETTING_FILES`, then increase `INFO_DUR` and `INFO_SFOLD` by one.
-2. `patch/m1plus.c`: the same `ACT_<X>` in the enum. Add `{ACT_<X>, <x>_setting, <x>_toggle}`
-   to the `pod_switch` table. If a setting file was added, bump `INFO_SF`/`INFO_SFOLD` and the
-   count in their comments.
-3. `patch/home.h`: `<X>_FILE` and `<X>_TMP` (`/mnt/data/m1plus/<name>`; state about library items
+   name to `SETTING_FILES`, then increase `INFO_DUR` and `INFO_SFOLD` by one. The
+   id is written only here: `tools/pod.py` generates `acts.h` for the payload.
+2. `patch/m1plus.c`: add `{ACT_<X>, <x>_setting, <x>_toggle}` to the `pod_switch` table.
+3. `patch/home.h`: `<X>_FILE` (`/mnt/data/m1plus/<name>`; state about library items
    goes on the card in `/mnt/mmc/.m1plus/`), plus the setter and getter declarations. Implement
-   them in the feature's `.c` file, writing the `.tmp` file first and then renaming it over the
-   real file.
+   them in the feature's `.c` file with `home_write_atomic` or `home_set_digit` (they write
+   `<X>_FILE.tmp` first and then rename it over the real file; no temp-path macro).
 4. `patch/setfiles.c`: add `{<X>_FILE, K_CHAR}` and bump the count in the comment.
 5. `tools/pod_i18n.py`: add `_t(...)` for the label and any note. `tools/mod_icons.py`: add the
    row icon.

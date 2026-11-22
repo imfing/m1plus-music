@@ -69,7 +69,7 @@ int scrobble_setting(void) { return sc_on(); }
 
 int scrobble_toggle(void) {
     int next = !sc_on();
-    if (home_write_atomic(SCROBBLE_FILE, SCROBBLE_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(SCROBBLE_FILE, next ? "1\n" : "0\n") != 0) return -1;
     sc.set = next ? 2 : 1;
     sc.key = 0; /* on: the next poll starts from its first look; off: the track is forgotten */
     return next;
@@ -101,7 +101,7 @@ int scrobble_auto_setting(void) { return sa_on(); }
 
 int scrobble_auto_toggle(void) {
     int next = !sa_on();
-    if (home_write_atomic(SCROBBLE_AUTO_FILE, SCROBBLE_AUTO_TMP, next ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(SCROBBLE_AUTO_FILE, next ? "1\n" : "0\n") != 0) return -1;
     sau.set = next ? 2 : 1;
     return next;
 }

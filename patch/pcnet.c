@@ -541,7 +541,7 @@ static void pn_arch_merge(const char *dir, const char *eps, unsigned n) {
  * One show
  */
 static void pn_refresh_one(const struct pn_job *j, const char *dir) {
-    char path[PN_PATH], file[PN_PATH], tmp[PN_PATH];
+    char path[PN_PATH], file[PN_PATH];
     pc_show_t s;
     pf_parser_t *p;
     char *buf, *old = (char *)0, *eps, shown[PC_TITLE];
@@ -597,8 +597,7 @@ static void pn_refresh_one(const struct pn_job *j, const char *dir) {
             n = pf_render_show(s.title, s.feed, s.image, (unsigned)time((long *)0), s.modified, s.author, s.category,
                                s.desc, txt, PN_SHOW_MAX); /* modified= stays: it is the server's, of the copy we hold */
             pn_join(file, sizeof file, path, ".show", (const char *)0);
-            pn_join(tmp, sizeof tmp, path, ".show.tmp", (const char *)0);
-            if (!m1_save(file, tmp, 0644, txt, n))
+            if (!m1_save(file, 0644, txt, n))
                 code = PN_STORAGE;
             else {
                 if (pn.part < 900) pn.part = 900;
@@ -621,8 +620,7 @@ static void pn_refresh_one(const struct pn_job *j, const char *dir) {
             n = pf_render_episodes(p, path, old, oldn, eps, PN_EPS_MAX, &fresh);
             first = s.checked == 0;
             pn_notes(path, p);
-            pn_join(tmp, sizeof tmp, path, ".episodes.tmp", (const char *)0);
-            if (!m1_save(file, tmp, 0644, eps, n) || !m1_sync_dir(path))
+            if (!m1_save(file, 0644, eps, n) || !m1_sync_dir(path))
                 code =
                     PN_STORAGE; /* (the new .episodes is on the card before .show takes the answer's Last-Modified: a power cut never pairs old episodes with a new stamp, which would 304 for good) */
             else {
@@ -631,14 +629,13 @@ static void pn_refresh_one(const struct pn_job *j, const char *dir) {
                     n); /* (the archive, when the show has one, gets the items it lacks; the refresh does not depend on it) */
                 /* the show file: the feed's title the first time (the import wrote the host), its picture url; the time of this refresh */
                 pn_join(file, sizeof file, path, ".show", (const char *)0);
-                pn_join(tmp, sizeof tmp, path, ".show.tmp", (const char *)0);
                 memcpy(shown, first && pf_title(p)[0] ? pf_title(p) : s.title, PC_TITLE);
                 n = pf_render_show(
                     shown, s.feed, pf_image(p)[0] ? pf_image(p) : s.image, (unsigned)time((long *)0),
                     modified, /* the new answer's Last-Modified; 0 (none sent) drops the key: the next request is unconditional */
                     pf_author(p)[0] ? pf_author(p) : s.author, pf_category(p)[0] ? pf_category(p) : s.category,
                     pf_summary(p)[0] ? pf_summary(p) : s.desc, eps, PN_EPS_MAX);
-                if (!m1_save(file, tmp, 0644, eps, n))
+                if (!m1_save(file, 0644, eps, n))
                     code = PN_STORAGE;
                 else {
                     if (pn.part < 900) pn.part = 900;
@@ -724,16 +721,6 @@ int pn_refresh(const char *root, const pc_show_t *shows, const int *idx, int n) 
  * 32 MB free (checked before the download and before every chunk); the finished file is renamed into the show folder. The code is our own, over demo's libcurl.
  */
 static void pn_folder(const char *url, char *out, unsigned size, char *host, unsigned hsize);
-static int pn_cat(char *out, unsigned size, const char *s) {
-    unsigned o = strlen(out), k;
-    for (k = 0; s[k]; ++k) {
-        if (o + 1 >= size) return 0;
-        out[o++] = s[k];
-    }
-    out[o] = 0;
-    return 1;
-}
-
 unsigned pn_dl_key(const char *dir, const char *file) {
     char path[PC_FILE * 2 + 2];
     if (!pn_join(path, sizeof path, dir, file, (const char *)0)) return 0;
@@ -1008,7 +995,7 @@ static int pn_dl_run(struct dx *d, const char *show, const char *name, int slot)
         !pn_join(file, sizeof file, d->dir, name, (const char *)0) || strlen(file) + sizeof(".part") > PN_DL_PATH_MAX)
         return PN_STORAGE;
     memcpy(d->part, file, strlen(file) + 1);
-    pn_cat(d->part, sizeof d->part, ".part");
+    m1_cat(d->part, sizeof d->part, ".part");
     if (!access(file, F_OK)) { /* it is on the card already: nothing to fetch, a leftover .part goes */
         unlink(d->part);
         return PN_OK;
@@ -1273,7 +1260,7 @@ static int pn_thumb_path(int i, const char *ext, char *out, unsigned size) {
     char name[24];
     pc_fmt(name, sizeof name, "/t%d.", (unsigned)i);
     out[0] = 0;
-    return pn_cat(out, size, PN_SEARCH_DIR) && pn_cat(out, size, name) && pn_cat(out, size, ext);
+    return m1_cat(out, size, PN_SEARCH_DIR) && m1_cat(out, size, name) && m1_cat(out, size, ext);
 }
 
 void pn_search_clean(void) {
@@ -1444,10 +1431,10 @@ int pn_search(const char *term) {
     pn_search_clean();
     pn.surl[0] = 0;
     if (pcdir_index()) { /* Podcast Index instead of the store: no country */
-        if (!pn_cat(pn.surl, sizeof pn.surl, PN_INDEX_SEARCH_URL) || !pn_urlenc(pn.surl, sizeof pn.surl, term))
+        if (!m1_cat(pn.surl, sizeof pn.surl, PN_INDEX_SEARCH_URL) || !pn_urlenc(pn.surl, sizeof pn.surl, term))
             return PN_MEM;
-    } else if (!pn_cat(pn.surl, sizeof pn.surl, PN_SEARCH_URL) || !pn_cat(pn.surl, sizeof pn.surl, pcregion_code()) ||
-               !pn_cat(pn.surl, sizeof pn.surl, "&term=") || !pn_urlenc(pn.surl, sizeof pn.surl, term))
+    } else if (!m1_cat(pn.surl, sizeof pn.surl, PN_SEARCH_URL) || !m1_cat(pn.surl, sizeof pn.surl, pcregion_code()) ||
+               !m1_cat(pn.surl, sizeof pn.surl, "&term=") || !pn_urlenc(pn.surl, sizeof pn.surl, term))
         return PN_MEM;
     pn.scode = PN_OK;
     pn.sstate = PN_S_QUERY;
@@ -1470,15 +1457,15 @@ static int pn_chart_url(char *out, unsigned size, const char *cc, int kind) {
     for (i = 0; i < 2 && cc[i]; ++i) c[i] = cc[i] >= 'A' && cc[i] <= 'Z' ? (char)(cc[i] + 32) : cc[i];
     c[i] = 0;
     out[0] = 0;
-    return pn_cat(out, size, PN_CHART_URL) && pn_cat(out, size, c) &&
-           pn_cat(out, size, kind ? PN_CHART_EPISODES : PN_CHART_SHOWS);
+    return m1_cat(out, size, PN_CHART_URL) && m1_cat(out, size, c) &&
+           m1_cat(out, size, kind ? PN_CHART_EPISODES : PN_CHART_SHOWS);
 }
 
 static int pn_cthumb_path(int k, int i, const char *ext, char *out, unsigned size) {
     char name[24];
     pc_fmt2(name, sizeof name, "/c%d_%d.", (unsigned)k, (unsigned)i);
     out[0] = 0;
-    return pn_cat(out, size, PN_SEARCH_DIR) && pn_cat(out, size, name) && pn_cat(out, size, ext);
+    return m1_cat(out, size, PN_SEARCH_DIR) && m1_cat(out, size, name) && m1_cat(out, size, ext);
 }
 
 /* The artwork files go and every row's artwork is untried again (the answers stay: the next job fetches the pictures once more). The page does this when it closes. */
@@ -1644,7 +1631,7 @@ static int pn_art_path(int i, const char *ext, char *out, unsigned size) {
     char name[24];
     pc_fmt(name, sizeof name, "/a%d.", (unsigned)i);
     out[0] = 0;
-    return pn_cat(out, size, PN_ART_DIR) && pn_cat(out, size, name) && pn_cat(out, size, ext);
+    return m1_cat(out, size, PN_ART_DIR) && m1_cat(out, size, name) && m1_cat(out, size, ext);
 }
 
 /* s into d (PN_ART_Q bytes): cut before a character that does not fit whole. */
@@ -1661,7 +1648,7 @@ static int pn_lyr_path(int slot, char *out, unsigned size) {
     char name[24];
     pc_fmt(name, sizeof name, "/l%d.txt", (unsigned)slot);
     out[0] = 0;
-    return pn_cat(out, size, PN_ART_DIR) && pn_cat(out, size, name);
+    return m1_cat(out, size, PN_ART_DIR) && m1_cat(out, size, name);
 }
 
 void pn_art_full_drop(void) {
@@ -1727,7 +1714,7 @@ char *pn_lyr_text(int i, unsigned *n) {
 int pn_art_full_path(int i, char *path, unsigned size) {
     if (i < 0 || i >= pn.an || pn.fidx != i + 1 || !pn.fext) return 0;
     path[0] = 0;
-    return pn_cat(path, size, PN_ART_DIR) && pn_cat(path, size, pn.fext == 2 ? "/full.png" : "/full.jpg");
+    return m1_cat(path, size, PN_ART_DIR) && m1_cat(path, size, pn.fext == 2 ? "/full.png" : "/full.jpg");
 }
 
 int pn_art_full(const char *thumb, char *out, unsigned size) {
@@ -1750,9 +1737,9 @@ int pn_art_full(const char *thumb, char *out, unsigned size) {
 static int pn_art_term(char *url, unsigned size) {
     char term[PN_ART_Q * 2 + 2];
     term[0] = 0;
-    pn_cat(term, sizeof term, pn.aq[0]);
-    if (term[0]) pn_cat(term, sizeof term, " ");
-    pn_cat(term, sizeof term, pn.aq[1][0] ? pn.aq[1] : pn.aq[2]);
+    m1_cat(term, sizeof term, pn.aq[0]);
+    if (term[0]) m1_cat(term, sizeof term, " ");
+    m1_cat(term, sizeof term, pn.aq[1][0] ? pn.aq[1] : pn.aq[2]);
     return pn_urlenc(url, size, term);
 }
 
@@ -1772,7 +1759,7 @@ static int pn_art_covers(char *buf) {
         unsigned got = 0;
         int c, m, i;
         url[0] = 0;
-        if (!pn_cat(url, PN_ART_URL, k ? PN_ART_DEEZER : PN_ART_ITUNES) || !pn_art_term(url, PN_ART_URL)) {
+        if (!m1_cat(url, PN_ART_URL, k ? PN_ART_DEEZER : PN_ART_ITUNES) || !pn_art_term(url, PN_ART_URL)) {
             if (!bad) bad = PN_MEM;
             continue;
         }
@@ -1812,7 +1799,7 @@ static int pn_has(const char *s, const char *part) {
 static int pn_artist_ask(char *url, const char *base, char *buf, unsigned *got) {
     int c;
     url[0] = 0;
-    if (!pn_cat(url, PN_ART_URL, base) || !pn_urlenc(url, PN_ART_URL, pn.aq[0])) return PN_MEM;
+    if (!m1_cat(url, PN_ART_URL, base) || !pn_urlenc(url, PN_ART_URL, pn.aq[0])) return PN_MEM;
     c = pn_fetch_json_api(url, buf, got);
     return c == PN_GONE ? PN_HTTP : c;
 }
@@ -1831,7 +1818,7 @@ static int pn_netease_take(pj_result_t *nt, int m, pj_result_t *ne) {
             if (!pass && !(key && ap_key(r->feed) == key)) continue;
             if ((!pn_starts(pic, "https://") && !pn_starts(pic, "http://")) || pn_has(pic, PN_NETEASE_BLANK)) continue;
             if (pic != r->art) memcpy(r->art, pic, PJ_ART);
-            if (!pn_cat(r->art, PJ_ART, PN_NETEASE_THUMB)) continue;
+            if (!m1_cat(r->art, PJ_ART, PN_NETEASE_THUMB)) continue;
             memcpy(&ne[n++], r, sizeof *r);
         }
     return n;
@@ -1945,7 +1932,7 @@ static int pn_lyr_add(void *ctx, const pj_lrc_t *r, const char *text) {
             return 1;
     }
     pn_art_dir();
-    if (!pn_lyr_path(slot, path, sizeof path) || !m1_save(path, PN_ART_DIR "/lyrics.tmp", 0644, text, n)) {
+    if (!pn_lyr_path(slot, path, sizeof path) || !m1_save_as(path, PN_ART_DIR "/lyrics.tmp", 0644, text, n)) {
         ++*(int *)ctx;
         return 1;
     }
@@ -1990,13 +1977,13 @@ static void pn_lyrics(char *buf) {
     pn.ln = 0;
     if (!url || !a) goto out;
     url[0] = 0;
-    if (pn_cat(url, PN_ART_URL, PN_ART_LRCLIB "get?track_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[2]) &&
-        pn_cat(url, PN_ART_URL, "&artist_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[0]) &&
-        (!pn.aq[1][0] || (pn_cat(url, PN_ART_URL, "&album_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[1])))) {
+    if (m1_cat(url, PN_ART_URL, PN_ART_LRCLIB "get?track_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[2]) &&
+        m1_cat(url, PN_ART_URL, "&artist_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[0]) &&
+        (!pn.aq[1][0] || (m1_cat(url, PN_ART_URL, "&album_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[1])))) {
         if (pn.adur) {
             char num[24];
             pc_fmt(num, sizeof num, "&duration=%d", pn.adur);
-            pn_cat(url, PN_ART_URL, num);
+            m1_cat(url, PN_ART_URL, num);
         }
         code = pn_fetch_json_api(url, buf, &got);
         if (code == PN_OK) pj_lrc_each(buf, got, PN_LRC_CAP, a, a + PN_LRC_CAP + 1, pn_lyr_add, &fail);
@@ -2005,8 +1992,8 @@ static void pn_lyrics(char *buf) {
     if (!pn.cancel &&
         (code == PN_OK || code == PN_GONE || code == PN_HTTP)) { /* (a busy get is PN_OVERLOAD at once: no search) */
         url[0] = 0;
-        if (pn_cat(url, PN_ART_URL, PN_ART_LRCLIB "search?track_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[2]) &&
-            pn_cat(url, PN_ART_URL, "&artist_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[0])) {
+        if (m1_cat(url, PN_ART_URL, PN_ART_LRCLIB "search?track_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[2]) &&
+            m1_cat(url, PN_ART_URL, "&artist_name=") && pn_urlenc(url, PN_ART_URL, pn.aq[0])) {
             code2 = pn_fetch_json_api(url, buf, &got);
             if (code2 == PN_OK) pj_lrc_each(buf, got, PN_LRC_CAP, a, a + PN_LRC_CAP + 1, pn_lyr_add, &fail);
         } else
@@ -2132,7 +2119,7 @@ static void *pn_kmain(void *arg) {
         held = 1, kind = pn.fext;
     else {
         pn_art_full_drop();
-        pn_cat(src, sizeof src, PN_ART_DIR "/pick.src");
+        m1_cat(src, sizeof src, PN_ART_DIR "/pick.src");
         if (pn_art_full(pn.ares[pn.pkidx].art, url, sizeof url) && pn_fetch_file(url, src, PN_PICK_CAP)) {
             kind = pc_pic_info(src, &w, &h, &sof);
             code = PN_NOTFEED;
@@ -2176,7 +2163,7 @@ static void *pn_kmain(void *arg) {
             char stmp[PN_PATH];
             stmp[0] = 0;
             if (data && pn_join(stmp, sizeof stmp, pn.pkdir, ".cover.tmp", (const char *)0))
-                m1_save(side, stmp, 0644, data, n);
+                m1_save_as(side, stmp, 0644, data, n);
             free(data); /* (a folder that cannot be written keeps the cache's cover: the sidecar is the extra) */
         }
         if (wrote) code = PN_OK;
@@ -2201,7 +2188,7 @@ static int pn_pick_spawn(int i, int mode, const char *dir, unsigned key0, unsign
     g = pn_guard();
     if (g) return g;
     pn.pkdir[0] = 0;
-    if (dir && !pn_cat(pn.pkdir, sizeof pn.pkdir, dir)) pn.pkdir[0] = 0;
+    if (dir && !m1_cat(pn.pkdir, sizeof pn.pkdir, dir)) pn.pkdir[0] = 0;
     pn.pkkey[0] = key0, pn.pkkey[1] = key1, pn.pkidx = i, pn.pkmode = mode;
     pn.pkstate = 1, pn.pkcode = PN_OK;
     ++pn.agen;
@@ -2224,12 +2211,9 @@ int pn_artist_pick(int i, unsigned key) {
 
 int pn_lyr_save(int i, const char *path) {
     unsigned n = 0;
-    char tmp[PN_PATH];
     char *data = pn_lyr_text(i, &n);
     int ok;
-    tmp[0] = 0;
-    ok = data && pn_cat(tmp, sizeof tmp, path) && pn_cat(tmp, sizeof tmp, ".tmp") && m1_card_mounted() &&
-         m1_save(path, tmp, 0644, data, n);
+    ok = data && m1_card_mounted() && m1_save(path, 0644, data, n);
     free(data);
     return ok;
 }
@@ -2288,10 +2272,10 @@ static void pn_pmatch(const pf_parser_t *p) {
         return;
     }
     url[0] = 0;
-    pn_cat(url, sizeof url, PN_LOOKUP_URL);
-    pn_cat(url, sizeof url, pn.pid);
-    pn_cat(url, sizeof url, "&entity=podcastEpisode&limit=20&country=");
-    pn_cat(url, sizeof url, pn.pcc);
+    m1_cat(url, sizeof url, PN_LOOKUP_URL);
+    m1_cat(url, sizeof url, pn.pid);
+    m1_cat(url, sizeof url, "&entity=podcastEpisode&limit=20&country=");
+    m1_cat(url, sizeof url, pn.pcc);
     if (pn_fetch_json(url, buf, &got) == PN_OK && (n = pj_episodes(buf, got, eps, PJ_EPS)) > 0)
         for (i = 0; i < n; ++i)
             if (!strcmp(eps[i].id, pn.peid)) {
@@ -2315,14 +2299,14 @@ static void *pn_pmain(void *arg) {
         pj_result_t *r = calloc(1, sizeof *r);
         unsigned got = 0;
         url[0] = 0;
-        pn_cat(url, sizeof url,
+        m1_cat(url, sizeof url,
                !pn.pcc[0] && pcdir_index() ? PN_INDEX_LOOKUP_URL
                                            : PN_LOOKUP_URL); /* (a chart row: the store, whatever the choice) */
-        pn_cat(url, sizeof url, pn.pid);
+        m1_cat(url, sizeof url, pn.pid);
         if (pn.pcc
                 [0]) { /* a chart row: the store the chart is of (a show of another store has no record in this one's) */
-            pn_cat(url, sizeof url, "&country=");
-            pn_cat(url, sizeof url, pn.pcc);
+            m1_cat(url, sizeof url, "&country=");
+            m1_cat(url, sizeof url, pn.pcc);
         }
         if (!buf || !r)
             code = PN_MEM;
@@ -2375,14 +2359,14 @@ static int pn_preview_start(const char *url, const char *id, const char *cc, con
     pn.pid[0] = 0;
     pn_cc_copy(pn.pcc, cc);
     pn.pfb[0] = 0;
-    if (strlen(art) < sizeof pn.pfb) pn_cat(pn.pfb, sizeof pn.pfb, art);
+    if (strlen(art) < sizeof pn.pfb) m1_cat(pn.pfb, sizeof pn.pfb, art);
     pn.peid[0] = 0;
     pn.pmatch = -1;
-    if (strlen(eid) < sizeof pn.peid) pn_cat(pn.peid, sizeof pn.peid, eid);
+    if (strlen(eid) < sizeof pn.peid) m1_cat(pn.peid, sizeof pn.peid, eid);
     if (id[0]) {
         if (strlen(id) >= sizeof pn.pid) return PN_NOTFEED;
-        pn_cat(pn.pid, sizeof pn.pid, id);
-    } else if (strlen(url) >= sizeof pn.purl || !pn_cat(pn.purl, sizeof pn.purl, url))
+        m1_cat(pn.pid, sizeof pn.pid, id);
+    } else if (strlen(url) >= sizeof pn.purl || !m1_cat(pn.purl, sizeof pn.purl, url))
         return PN_NOTFEED;
     pn.pcode = PN_OK;
     pn.pstate = 1;
@@ -2397,7 +2381,7 @@ int pn_preview_chart(const char *id, const char *cc, const char *eid) { return p
 /* ---- Subscribe */
 int pn_subscribe(const char *root, const pc_show_t *shows, int nshows, char *dir, unsigned dsize) {
     pf_parser_t *p = pn.prev;
-    char folder[PC_FILE], host[PC_FILE], path[PN_PATH], file[PN_PATH], tmp[PN_PATH], cover[PN_PATH];
+    char folder[PC_FILE], host[PC_FILE], path[PN_PATH], file[PN_PATH], cover[PN_PATH];
     char *eps;
     unsigned n, fresh = 0;
     int made = 0, ok = 0;
@@ -2422,17 +2406,14 @@ int pn_subscribe(const char *root, const pc_show_t *shows, int nshows, char *dir
     if (!pn_join(path, sizeof path, root, folder, (const char *)0) || !access(path, F_OK)) goto done;
     if (mkdir(path, 0755)) goto done;
     made = 1;
-    if (!pn_join(file, sizeof file, path, ".episodes", (const char *)0) ||
-        !pn_join(tmp, sizeof tmp, path, ".episodes.tmp", (const char *)0))
-        goto done;
+    if (!pn_join(file, sizeof file, path, ".episodes", (const char *)0)) goto done;
     n = pf_render_episodes(p, path, (const char *)0, 0, eps, PN_EPS_MAX, &fresh);
     pn_notes(path, p);
-    if (!m1_save(file, tmp, 0644, eps, n)) goto done;
+    if (!m1_save(file, 0644, eps, n)) goto done;
     pn_join(file, sizeof file, path, ".show", (const char *)0);
-    pn_join(tmp, sizeof tmp, path, ".show.tmp", (const char *)0);
     n = pf_render_show(pf_title(p)[0] ? pf_title(p) : host, pn.purl, pf_image(p), (unsigned)time((long *)0), 0,
                        pf_author(p), pf_category(p), pf_summary(p), eps, PN_EPS_MAX);
-    if (!m1_save(file, tmp, 0644, eps, n)) goto done;
+    if (!m1_save(file, 0644, eps, n)) goto done;
     if (pn_join(cover, sizeof cover, path, "cover.jpg", (const char *)0))
         rename(PN_PREVIEW_COVER, cover); /* (no picture: the next refresh fetches it) */
     ok = 1;
@@ -2451,7 +2432,7 @@ done:
     }
     if (dir) {
         dir[0] = 0;
-        pn_cat(dir, dsize, folder);
+        m1_cat(dir, dsize, folder);
     }
     pn_preview_drop();
     pn_bump();
@@ -2497,7 +2478,7 @@ enum { PN_SUB_SKIP = 0, PN_SUB_ADDED = 1, PN_SUB_FULL = 2 };
 /* One feed address (checked: http(s), shorter than PC_URL, no byte under 33; line is NUL terminated) as a subscription: the folder <host>-<hash8> with a .show (title: the name when there is one, else the host;
  * checked=0). A feed already subscribed or taken in this import is SKIP, as is a folder of that name that is already a subscription and a write that fails; with 40 shows PN_SUB_FULL. */
 static int pn_sub_one(struct pn_imp *im, char *line, const char *name) {
-    char dir[PC_FILE], host[PC_FILE], show[PN_PATH], file[PN_PATH], tmp[PN_PATH], text[PC_URL + PC_TITLE + 160];
+    char dir[PC_FILE], host[PC_FILE], show[PN_PATH], file[PN_PATH], text[PC_URL + PC_TITLE + 160];
     unsigned hash, n;
     int i, dup = 0;
     for (i = 0; i < im->nshows; ++i)
@@ -2510,12 +2491,10 @@ static int pn_sub_one(struct pn_imp *im, char *line, const char *name) {
     pn_folder(line, dir, sizeof dir, host, sizeof host);
     if (!pn_join(show, sizeof show, im->root, dir, (const char *)0)) return PN_SUB_SKIP;
     mkdir(show, 0755);
-    if (!pn_join(file, sizeof file, show, ".show", (const char *)0) ||
-        !pn_join(tmp, sizeof tmp, show, ".show.tmp", (const char *)0))
-        return PN_SUB_SKIP;
+    if (!pn_join(file, sizeof file, show, ".show", (const char *)0)) return PN_SUB_SKIP;
     if (!access(file, F_OK)) return PN_SUB_SKIP; /* a folder of this name is already a subscription */
     n = pf_render_show(name && name[0] ? name : host, line, "", 0, 0, "", "", "", text, sizeof text);
-    if (!m1_save(file, tmp, 0644, text, n)) return PN_SUB_SKIP;
+    if (!m1_save(file, 0644, text, n)) return PN_SUB_SKIP;
     im->seen[im->nseen++] = hash;
     ++im->added, ++im->subs;
     return PN_SUB_ADDED;
@@ -2595,7 +2574,7 @@ static int pn_import_opml(struct pn_imp *im, const char *path) {
         complete = 0;
     free(buf);
     if (items && complete && pn_join(to, sizeof to, path, (const char *)0, (const char *)0) &&
-        pn_cat(to, sizeof to, ".imported"))
+        m1_cat(to, sizeof to, ".imported"))
         rename(path, to);
     return 1;
 }
@@ -2632,7 +2611,7 @@ int pn_export(const char *root, const pc_show_t *shows, int nshows, int *count) 
     len = po_render(shows, order, n, text, PO_EXPORT_MAX);
     if (len && pn_join(file, sizeof file, root, PN_EXPORT_FILE, (const char *)0) &&
         pn_join(tmp, sizeof tmp, root, "." PN_EXPORT_FILE ".tmp", (const char *)0) && m1_card_mounted() &&
-        m1_save(file, tmp, 0644, text, len)) {
+        m1_save_as(file, tmp, 0644, text, len)) {
         ok = 1;
         *count = n;
     }
@@ -2644,13 +2623,12 @@ int pn_export(const char *root, const pc_show_t *shows, int nshows, int *count) 
  * description, last refresh), written atomically; the .episodes stay (the caller removes what else goes). UI thread; no worker runs a refresh of this show (the page is not refreshing).
  * 1 when written, 0 when the file could not be. */
 int pn_unsubscribe(const char *root, const pc_show_t *s) {
-    char file[PN_PATH], tmp[PN_PATH], text[PC_URL + PC_URL + 2 * PC_DESC + 320];
+    char file[PN_PATH], text[PC_URL + PC_URL + 2 * PC_DESC + 320];
     unsigned n;
-    if (!pn_join(file, sizeof file, root, s->dir, ".show") || !pn_join(tmp, sizeof tmp, root, s->dir, ".show.tmp"))
-        return 0;
+    if (!pn_join(file, sizeof file, root, s->dir, ".show")) return 0;
     n = pf_render_show(s->title, "", s->image, s->checked, s->modified, s->author, s->category, s->desc, text,
                        sizeof text);
-    return m1_save(file, tmp, 0644, text, n);
+    return m1_save(file, 0644, text, n);
 }
 
 /* Unsubscribe from a show without its page (the Subscriptions page's Unsubscribe, once for each marked show; the Show page's sheet does the same for the show open): pn_unsubscribe, then the .part files and the queued
@@ -2673,7 +2651,7 @@ int pn_unsubscribe_show(const char *root, const pc_show_t *s) {
         if (pn_join(path, sizeof path, root, s->dir, all[i].file)) {
             /* (a download that finished since the list was read is an episode on the card: it stays, and so does the show) */
             if (all[i].state != PC_LOCAL && !access(path, F_OK)) ++left;
-            if (pn_cat(path, sizeof path, ".part")) unlink(path);
+            if (m1_cat(path, sizeof path, ".part")) unlink(path);
         }
         pn_dl_clear(key);
         left += all[i].state == PC_LOCAL;
@@ -3003,7 +2981,7 @@ static void pn_eq_run(void) {
         !pn.emode) { /* the day it came, for the page's age rule (a failed write only makes the next open ask again) */
         char day[16];
         int n = snprintf(day, sizeof day, "%u\n", (unsigned)time((long *)0));
-        m1_save(PN_EQ_STAMP, PN_EQ_STAMP ".part", 0644, day, (unsigned)n);
+        m1_save_as(PN_EQ_STAMP, PN_EQ_STAMP ".part", 0644, day, (unsigned)n);
     }
     if (code || !pn.emode) unlink(part); /* (a renamed list has no part file left) */
     pn_eq_end(code ? PN_E_FAILED : PN_E_DONE, code);
@@ -3040,9 +3018,9 @@ static int pn_eq_start(int mode, const char *path, const char *stamp) {
         pn.emode = mode;
         if (mode) {
             pn.epath[0] = 0;
-            pn_cat(pn.epath, sizeof pn.epath, path);
+            m1_cat(pn.epath, sizeof pn.epath, path);
             pn.estamp[0] = 0;
-            pn_cat(pn.estamp, sizeof pn.estamp, stamp);
+            m1_cat(pn.estamp, sizeof pn.estamp, stamp);
         }
         pn.ecode = 0;
         __sync_synchronize();
@@ -3261,8 +3239,8 @@ int pn_arch_start(const char *root, const pc_show_t *s) {
     g = pn_guard();
     if (g) return g;
     pn.arroot[0] = pn.ardir[0] = 0;
-    pn_cat(pn.arroot, sizeof pn.arroot, root);
-    pn_cat(pn.ardir, sizeof pn.ardir, s->dir);
+    m1_cat(pn.arroot, sizeof pn.arroot, root);
+    m1_cat(pn.ardir, sizeof pn.ardir, s->dir);
     pn.arhash = s->hash, pn.arcode = 0, pn.arn = 0;
     if (pn.arfh == s->hash) pn.arfh = 0;
     __sync_synchronize();
@@ -3310,7 +3288,7 @@ int pnw_download(pnw_dl_t *w, const char *url, const char *path, unsigned expect
     pn_dx_init(d, w, -1);
     memcpy(d->dir, path, (unsigned)(slash - path)); /* (PN_DL_PATH_MAX is under PN_PATH; d is zeroed) */
     memcpy(d->part, path, n + 1);
-    pn_cat(d->part, sizeof d->part, ".part");
+    m1_cat(d->part, sizeof d->part, ".part");
     if (!access(path, F_OK)) {
         unlink(d->part);
         code = PN_OK;

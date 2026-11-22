@@ -320,7 +320,7 @@ static int sba_wlist(const char *path, unsigned kind, unsigned rowsize, unsigned
 static int sba_wtext(const char *path, const char *tmp, const char *text, unsigned n, unsigned mode) {
     if (!m1_card_mounted()) return SBA_STORAGE;
     mkdir(CARD_DIR, 0755);
-    return m1_save(path, tmp, mode, text, n) ? SBA_OK : SBA_STORAGE;
+    return m1_save_as(path, tmp, mode, text, n) ? SBA_OK : SBA_STORAGE;
 }
 
 /* The id (the struct's first member) of the row a walk is on. */
@@ -1107,7 +1107,7 @@ static int sba_run_cover(sba_wk_t *w, const char *cover) {
     if (w->sink->used > SBA_COVER_MAX || !sba_png_or_jpeg((const unsigned char *)w->sink->data, w->sink->used))
         return SBA_PARSE;
     if ((code = sba_stop(w)) != 0) return code;
-    if (!m1_save(path, tmp, 0644, w->sink->data, w->sink->used)) return SBA_STORAGE;
+    if (!m1_save(path, 0644, w->sink->data, w->sink->used)) return SBA_STORAGE;
     sba_cbump();
     return SBA_OK;
 }

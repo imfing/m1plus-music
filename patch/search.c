@@ -738,10 +738,7 @@ static void se_rec_prep(void) { /* the rows' texts (cut to their width when firs
 }
 
 /* The history file: the settings folder's for the library, the server's own in the Navidrome cache (SBA_DIR; it goes with the cache and is not mixed with the library's) for a source. */
-static const char *se_rec_file(int tmp) {
-    if (se.src) return tmp ? SBA_DIR "/search-history.tmp" : SBA_DIR "/search-history";
-    return tmp ? SEARCH_RECENT_TMP : SEARCH_RECENT_FILE;
-}
+static const char *se_rec_file(void) { return se.src ? SBA_DIR "/search-history" : SEARCH_RECENT_FILE; }
 
 static void se_rec_save(void) {
     char buf[SE_REC_MAX * SE_QMAX + 1];
@@ -755,7 +752,7 @@ static void se_rec_save(void) {
         buf[k++] = '\n';
     }
     buf[k] = 0;
-    home_write_atomic(se_rec_file(0), se_rec_file(1), buf);
+    home_write_atomic(se_rec_file(), buf);
 }
 
 /* The file into se.rec; anything malformed (too long, a line too long, empty or control characters, a repeat, too many lines) is no history at all. */
@@ -763,7 +760,7 @@ static void se_rec_load(void) {
     char buf[SE_REC_MAX * SE_QMAX + 2];
     int fd, n, p = 0;
     se.nrec = 0;
-    fd = open(se_rec_file(0), 0, 0);
+    fd = open(se_rec_file(), 0, 0);
     if (fd >= 0) {
         n = read(fd, buf, sizeof buf);
         close(fd);

@@ -1193,7 +1193,7 @@ static void sg_set_view(int grid) {
         rv_leave();
     else if (!rv_enter())
         return;
-    home_write_atomic(RECENTADD_VIEW_FILE, RECENTADD_VIEW_TMP, sg.rv ? "1\n" : "0\n");
+    home_write_atomic(RECENTADD_VIEW_FILE, sg.rv ? "1\n" : "0\n");
 }
 
 /* ---------------------------------------------------------------------------
@@ -1729,11 +1729,11 @@ static int sg_on_item(void *ctx, void *e) {
             sg_set_flag(sg.sort == 3 ? 4 : 3);
         } else { /* Title, File Name, Format: A-Z <-> Z-A, saved first (a save that fails changes nothing) */
             int rev = !sg.rev;
-            if (home_write_atomic(SONGS_SORT_FILE, SONGS_SORT_TMP, rev ? "a\n" : "0\n") != 0) return RET_OK;
+            if (home_write_atomic(SONGS_SORT_FILE, rev ? "a\n" : "0\n") != 0) return RET_OK;
             sg.rev = rev;
         }
     } else { /* another order, in its default direction */
-        if (sg.rev && home_write_atomic(SONGS_SORT_FILE, SONGS_SORT_TMP, "0\n") == 0) sg.rev = 0;
+        if (sg.rev && home_write_atomic(SONGS_SORT_FILE, "0\n") == 0) sg.rev = 0;
         sg_set_flag(k);
     }
     sg_load(0);

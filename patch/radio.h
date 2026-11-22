@@ -10,13 +10,10 @@
 #define RD_DIR \
     "/mnt/mmc/Radio" /* favourites.m3u (the Stations list), the user's own .m3u / .pls (read only by Import from Card) */
 #define RD_FAVS RD_DIR "/favourites.m3u"
-#define RD_FAVS_TMP RD_DIR "/favourites.m3u.tmp"
 #define RD_RECENT_FILE \
     "/mnt/data/m1plus/radio-recent" /* the last stations played, newest first, as an .m3u (settings folder) */
-#define RD_RECENT_TMP "/mnt/data/m1plus/radio-recent.tmp"
 #define RD_VIEW_FILE \
     "/mnt/data/m1plus/radio-view" /* the station lists' mode, as ALBUMS_FILE: "1" the grid, "0" the list (also when missing or garbage) */
-#define RD_VIEW_TMP "/mnt/data/m1plus/radio-view.tmp"
 #define RD_RECENT_MAX 10
 #define RD_API "https://all.api.radio-browser.info" /* the directory's round-robin name */
 #define RD_SILENT_MS 20000 /* a start hciplayer never reports playing for fails after this long */

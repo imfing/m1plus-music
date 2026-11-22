@@ -478,7 +478,7 @@ int pd_labels_setting(void) { return set_read(PDLABELS_FILE, '1') != '0'; }
 
 int pd_labels_toggle(void) {
     int next = !pd_labels_setting();
-    return home_write_atomic(PDLABELS_FILE, PDLABELS_TMP, next ? "1\n" : "0\n") != 0 ? -1 : next;
+    return home_write_atomic(PDLABELS_FILE, next ? "1\n" : "0\n") != 0 ? -1 : next;
 }
 
 static void pd_start(void *dlg) {
@@ -769,7 +769,7 @@ static int pg_save(void) {
     }
     buf[k++] = '\n';
     buf[k] = 0;
-    return home_write_atomic(PULLDOWN_FILE, PULLDOWN_TMP, buf);
+    return home_write_atomic(PULLDOWN_FILE, buf);
 }
 
 /* Arrange the rows from pg.order: y, switch image, arrow; then keep the row of tile `focus` (255: none) inside the scroll view's window and repaint (as patch/menu.c cm_layout). */

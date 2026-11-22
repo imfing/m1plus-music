@@ -80,7 +80,7 @@ static int tl_setting(void) {
 static int tl_save(int value) {
     char text[3] = {(char)('0' + value), '\n', 0};
     if (value == tl_setting()) return 0;
-    if (home_write_atomic(TL_FILE, TL_TMP, text) != 0) return -1;
+    if (home_write_atomic(TL_FILE, text) != 0) return -1;
     tl.setting = value + 1;
     return 0;
 }

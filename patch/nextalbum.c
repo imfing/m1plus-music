@@ -59,7 +59,7 @@ static void release_active(void) {
 
 int na_set(int mode) {
     if (mode != NA_OFF && mode != NA_ALBUMS) return -1;
-    if (home_write_atomic(NA_FILE, NA_TMP, mode == NA_ALBUMS ? "1\n" : "0\n") != 0) return -1;
+    if (home_write_atomic(NA_FILE, mode == NA_ALBUMS ? "1\n" : "0\n") != 0) return -1;
     na.on = mode == NA_ALBUMS, na.loaded = 1;
     if (mode == NA_OFF) { /* off: nothing continues */
         if (na.active) release_active();

@@ -152,7 +152,7 @@ int kp_swap(void) {
 }
 
 int kp_swap_toggle(void) {
-    int v = home_set_digit(SWAPKEYS_FILE, SWAPKEYS_TMP, !kp_swap(), 1);
+    int v = home_set_digit(SWAPKEYS_FILE, !kp_swap(), 1);
     if (v >= 0) __atomic_store_n(&kp_swap_state, v ? 2 : 1, __ATOMIC_RELEASE);
     return v;
 }

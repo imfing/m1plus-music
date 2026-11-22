@@ -639,14 +639,12 @@ static int sbn_fixed_equal(const char *field, unsigned cap, const char *value) {
 
 static int sbn_resume_save(const sbn_sink_t *sink, const char *path) {
     sbn_resume_t meta;
-    char tmp[360];
-    if (sbn_len(sink->identity) >= sizeof meta.identity || snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp)
-        return 0;
+    if (sbn_len(sink->identity) >= sizeof meta.identity) return 0;
     memset(&meta, 0, sizeof meta);
     memcpy(meta.magic, "SBRES1\0\0", sizeof meta.magic);
     memcpy(meta.identity, sink->identity, sbn_len(sink->identity));
     memcpy(meta.etag, sink->head.etag, sbn_len(sink->head.etag));
-    return m1_save(path, tmp, 0600, &meta, sizeof meta);
+    return m1_save(path, 0600, &meta, sizeof meta);
 }
 
 /* The saved ETag for this identity into etag (128 bytes); 1 when there is a valid record. */

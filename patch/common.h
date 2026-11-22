@@ -21,9 +21,11 @@ unsigned m1_url_decode(char *out, unsigned size, const char *in, unsigned n);
 char *m1_read_file(const char *path, unsigned cap, unsigned *n);
 /* The end of an atomic write: fd (the open tmp; ok: all of it was written) fsynced and closed, tmp renamed onto path. 1 on success; any failure removes tmp. */
 int m1_commit(int fd, int ok, const char *tmp, const char *path);
-/* data (n bytes) into path atomically: written to tmp (created with mode), then m1_commit. 1 on success; a failure leaves no temp file (the directory is not fsynced:
- * m1_card_write does that for the card's own files). */
-int m1_save(const char *path, const char *tmp, unsigned mode, const void *data, unsigned n);
+/* data (n bytes) into path atomically: written to path + ".tmp" (created with mode), then m1_commit. 1 on success; a failure (a path too long for its temp name too) leaves no
+ * temp file (the directory is not fsynced: m1_card_write does that for the card's own files). */
+int m1_save(const char *path, unsigned mode, const void *data, unsigned n);
+/* m1_save through a temp file of the caller's choosing, for a name that is not path + ".tmp". */
+int m1_save_as(const char *path, const char *tmp, unsigned mode, const void *data, unsigned n);
 /* fsync of a directory, so the renames in it survive a power cut. 1 on success. */
 int m1_sync_dir(const char *dir);
 int m1_screen_lit(void); /* stock backlight state */
@@ -65,10 +67,9 @@ const char *const *m1_artist_split_exceptions(void);
 int m1_artist_split(const char *field, m1_artist_span *out, int max, const m1_split_opts *opts);
 int m1_card_mounted(
     void); /* the SD card is mounted (statfs: /mnt/mmc is another file system than /mnt); never write under /mnt/mmc otherwise */
-/* a (na bytes) then b (nb) into path in dir (CARD_DIR or a folder in it) on the card, atomically (tmp, fsync, rename, fsync of dir);
+/* a (na bytes) then b (nb) into path in dir (CARD_DIR or a folder in it) on the card, atomically (path + ".tmp", fsync, rename, fsync of dir);
  * the folders made first. 0 on success; 1 replaced but the directory's fsync failed; -1 path untouched (as with the card not mounted). */
-int m1_card_write(const char *dir, const char *path, const char *tmp, const void *a, unsigned na, const void *b,
-                  unsigned nb);
+int m1_card_write(const char *dir, const char *path, const void *a, unsigned na, const void *b, unsigned nb);
 /* write() all n bytes of data to fd; 1 on success, 0 on a failed or empty write. */
 int m1_write_all(int fd, const void *data, unsigned n);
 #define M1_CA \
@@ -200,5 +201,6 @@ static inline __attribute__((always_inline)) unsigned m1_mix(unsigned v, unsigne
 }
 /* The integer square root of v (the largest s with s * s <= v). */
 unsigned m1_isqrt(unsigned v);
+int m1_cat(char *out, unsigned size, const char *s);
 /* A bitmap of ours from the asset `name` of win, w x h as the image is stored, as RGBA8888 whatever order the decoder gave (premultiplied when pm). NULL when it cannot be loaded or has another size. */
 void *m1_asset_rgba(void *win, const char *name, unsigned w, unsigned h, int pm);

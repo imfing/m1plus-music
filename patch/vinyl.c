@@ -915,13 +915,13 @@ static int vn_recolour(const unsigned char (*st)[3]) {
 int vinyl_theme(void) { return set_read(VINYLTHEME_FILE, 0) == '1'; }
 
 /* Choose the theme (0 Graphite, 1 Snow), saved atomically; the theme, or -1 (unknown, or not saved: the saved one is unchanged). */
-int vinyl_theme_set(int theme) { return home_set_digit(VINYLTHEME_FILE, VINYLTHEME_TMP, theme, VN_THEMES - 1); }
+int vinyl_theme_set(int theme) { return home_set_digit(VINYLTHEME_FILE, theme, VN_THEMES - 1); }
 
 /* The saved colour: '1' Cover (an optional newline), anything else or no file Black; reading never writes. */
 int vinyl_record(void) { return set_read(VINYLREC_FILE, 0) == '1'; }
 
 /* Choose the colour (0 Black, 1 Cover), saved atomically; the colour, or -1 (unknown, or not saved: the saved one is unchanged). */
-int vinyl_record_set(int rec) { return home_set_digit(VINYLREC_FILE, VINYLREC_TMP, rec, VN_RECS - 1); }
+int vinyl_record_set(int rec) { return home_set_digit(VINYLREC_FILE, rec, VN_RECS - 1); }
 
 /* The Cover colour: the record tinted from the decoded cover (vn.cover, VN_LAB_PX square). The mean colour of each cell of a 16 x 16 grid; the chroma-weighted mean of the cells whose chroma
  * (max - min) is at least the grid's mean; its saturation clamped to 170 .. 235 and its value to 125 .. 190 (the hue kept); then the ramp (tools/vinyl_art.py cover_tint_px and tint_stops are the

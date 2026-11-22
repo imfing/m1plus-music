@@ -131,7 +131,7 @@ static void lu_record(void) {
     for (i = 0; t; t /= 10) dig[i++] = (char)('0' + t % 10);
     while (i) buf[o++] = dig[--i];
     buf[o++] = '\n';
-    m1_card_write(LU_DIR, LU_FILE, LU_FILE ".tmp", buf, o, (const void *)0, 0);
+    m1_card_write(LU_DIR, LU_FILE, buf, o, (const void *)0, 0);
 }
 
 /* The two stock call sites of toolsDatabaseCommit (scanAllMusicFile 0x4e9e70, scanSpecFolder 0x4e9f9c). Stock's own commit drops sqlite3_exec("COMMIT;")'s result, so the COMMIT is run here, as stock

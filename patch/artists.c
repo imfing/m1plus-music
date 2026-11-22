@@ -724,10 +724,10 @@ static void ar_load(int keep) {
 }
 
 /* The page's saved order: artists-sort, genres-sort or composers-sort, one character: '0' Name A-Z (the default and any other content), 'a' Name Z-A. */
-static const char *ar_sort_file(int tmp) {
-    return ar.cls == CLASS_GENRES      ? (tmp ? GENRES_SORT_TMP : GENRES_SORT_FILE)
-           : ar.cls == CLASS_COMPOSERS ? (tmp ? COMPOSERS_SORT_TMP : COMPOSERS_SORT_FILE)
-                                       : (tmp ? ARTISTS_SORT_TMP : ARTISTS_SORT_FILE);
+static const char *ar_sort_file(void) {
+    return ar.cls == CLASS_GENRES      ? GENRES_SORT_FILE
+           : ar.cls == CLASS_COMPOSERS ? COMPOSERS_SORT_FILE
+                                       : ARTISTS_SORT_FILE;
 }
 
 static void ar_card(int on) { vs_menu(&ar.vs, on, 0, ar.rev, !ar.src && *(volatile int *)ARTIST_TYPE == 1); }
@@ -786,7 +786,7 @@ static int ar_on_item(void *ctx, void *e) {
         ar_set_type(k == VS_SORTS + 1);
     } else if (k == 0) {
         int rev = !ar.rev;
-        if (home_write_atomic(ar_sort_file(0), ar_sort_file(1), rev ? "a\n" : "0\n") == 0) {
+        if (home_write_atomic(ar_sort_file(), rev ? "a\n" : "0\n") == 0) {
             ar.rev = rev;
             ar_load(0);
         }
@@ -876,7 +876,7 @@ static int ar_open_page(int home, const lib_src_t *src) {
         ar.rm_label = widget_lookup(ar.win, "rm_label2", 1);
         ar.rm_icon = widget_lookup(ar.win, "rm_icon2", 1);
     }
-    ar.rev = set_read(ar_sort_file(0), '0') == 'a';
+    ar.rev = set_read(ar_sort_file(), '0') == 'a';
     az_make_disc(&ar.al);
     ar.chev = m1_make_chevron();
     ar.noscroll = grid_scroll_bind(ar.sv, ar_on_scroll, ar.title, &ar.title_on);

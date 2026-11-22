@@ -22,16 +22,6 @@
 /* ---------------------------------------------------------------------------
  * The query
  */
-static int bn_cat(char *out, unsigned size, const char *s) {
-    unsigned o = strlen(out), k;
-    for (k = 0; s[k]; ++k) {
-        if (o + 1 >= size) return 0;
-        out[o++] = s[k];
-    }
-    out[o] = 0;
-    return 1;
-}
-
 static int bn_special(unsigned c) {
     return c < 0x20 || c == 0x7f || c == ' ' || c == '+' || c == '-' || c == '&' || c == '|' || c == '!' || c == '(' ||
            c == ')' || c == '{' || c == '}' || c == '[' || c == ']' || c == '^' || c == '"' || c == '~' || c == '*' ||
@@ -92,17 +82,17 @@ int bn_query_url(const char *term, char *out, unsigned size) {
     int search = bn_clean_term(term, clean, sizeof clean) > 0;
     q[0] = 0;
     if (search) {
-        if (!bn_cat(q, sizeof q, "collection:librivoxaudio AND (title:(") || !bn_cat(q, sizeof q, clean) ||
-            !bn_cat(q, sizeof q, ") OR creator:(") || !bn_cat(q, sizeof q, clean) || !bn_cat(q, sizeof q, "))"))
+        if (!m1_cat(q, sizeof q, "collection:librivoxaudio AND (title:(") || !m1_cat(q, sizeof q, clean) ||
+            !m1_cat(q, sizeof q, ") OR creator:(") || !m1_cat(q, sizeof q, clean) || !m1_cat(q, sizeof q, "))"))
             return -1;
     } else
-        bn_cat(q, sizeof q, "collection:librivoxaudio");
+        m1_cat(q, sizeof q, "collection:librivoxaudio");
     out[0] = 0;
-    if (!bn_cat(out, size, BN_HOST BN_SEARCH_URL)) return -1;
+    if (!m1_cat(out, size, BN_HOST BN_SEARCH_URL)) return -1;
     used = m1_urlenc(out, size, (unsigned)strlen(out), q);
     if (!used) return -1;
     out[used] = 0;
-    if (!bn_cat(out, size, BN_SEARCH_TAIL)) return -1;
+    if (!m1_cat(out, size, BN_SEARCH_TAIL)) return -1;
     return search;
 }
 
@@ -403,7 +393,7 @@ static int bn_tpath(int set, int i, const char *ext, char *out, unsigned size) {
     char name[24];
     pc_fmt(name, sizeof name, set ? "/s%d." : "/p%d.", (unsigned)i);
     out[0] = 0;
-    return bn_cat(out, size, BN_DIR) && bn_cat(out, size, name) && bn_cat(out, size, ext);
+    return m1_cat(out, size, BN_DIR) && m1_cat(out, size, name) && m1_cat(out, size, ext);
 }
 
 static void bn_unthumb(int set) {
@@ -447,12 +437,12 @@ static int bn_picture(const char *id, const char *src, const char *dstbase, int 
     unsigned w, h, sof;
     int kind;
     url[0] = 0;
-    if (!bn_cat(url, sizeof url, BN_HOST "/services/img/") || !bn_cat(url, sizeof url, id)) return 0;
+    if (!m1_cat(url, sizeof url, BN_HOST "/services/img/") || !m1_cat(url, sizeof url, id)) return 0;
     if (pnw_file(url, src, PN_THUMB_CAP) != PN_OK) return 0;
     kind = pc_pic_info(src, &w, &h, &sof);
     dst[0] = 0;
-    if (kind && pc_cover_ok(src) && bn_cat(dst, sizeof dst, dstbase) &&
-        bn_cat(dst, sizeof dst, kind == 2 ? "png" : "jpg") && !rename(src, dst)) {
+    if (kind && pc_cover_ok(src) && m1_cat(dst, sizeof dst, dstbase) &&
+        m1_cat(dst, sizeof dst, kind == 2 ? "png" : "jpg") && !rename(src, dst)) {
         *ext = kind;
         return 1;
     }
@@ -566,7 +556,7 @@ int bn_thumbs(void) {
 /* ---- The preview */
 static int bn_pcov_path(int ext, char *out, unsigned size) {
     out[0] = 0;
-    return bn_cat(out, size, BN_DIR) && bn_cat(out, size, ext == 2 ? "/preview.png" : "/preview.jpg");
+    return m1_cat(out, size, BN_DIR) && m1_cat(out, size, ext == 2 ? "/preview.png" : "/preview.jpg");
 }
 
 int bn_preview_state(void) { return bn.pstate; }
@@ -606,8 +596,8 @@ static void *bn_pmain(void *arg) {
     (void)arg;
     url[0] = 0;
     parts = calloc(BK_MAX_PARTS, sizeof(bn_part_t));
-    if (parts && bn_cat(url, sizeof url, BN_HOST "/metadata/") && bn_cat(url, sizeof url, bn.pid) &&
-        bn_cat(url, sizeof url, "/files")) {
+    if (parts && m1_cat(url, sizeof url, BN_HOST "/metadata/") && m1_cat(url, sizeof url, bn.pid) &&
+        m1_cat(url, sizeof url, "/files")) {
         code = pnw_file(url, BN_FILES_PATH, BN_FILES_CAP);
         if (code == PN_OK) {
             n = bn_scan_files(BN_FILES_PATH, parts, BK_MAX_PARTS, &complete, &more);
@@ -618,8 +608,8 @@ static void *bn_pmain(void *arg) {
     if (pnw_cancelled()) code = PN_CANCELLED;
     if (code == PN_OK) { /* the picture: a failure leaves the page its placeholder */
         src[0] = base[0] = 0;
-        bn_cat(src, sizeof src, BN_DIR "/preview.src");
-        bn_cat(base, sizeof base, BN_DIR "/preview.");
+        m1_cat(src, sizeof src, BN_DIR "/preview.src");
+        m1_cat(base, sizeof base, BN_DIR "/preview.");
         if (bn_picture(bn.pid, src, base, &ext)) bn.pcov = ext;
         if (pnw_cancelled()) code = PN_CANCELLED;
     }

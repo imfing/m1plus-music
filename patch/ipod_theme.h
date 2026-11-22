@@ -2,7 +2,6 @@
 #pragma once
 
 #define IP_THEME_FILE "/mnt/data/m1plus/pod-appearance"
-#define IP_THEME_TMP "/mnt/data/m1plus/pod-appearance.tmp"
 
 struct ip_theme_palette {
     unsigned bg, fg, sub, np_text, body, pane, rule;

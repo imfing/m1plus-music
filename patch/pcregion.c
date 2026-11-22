@@ -76,7 +76,7 @@ int pcregion_set(int row) {
         return 0;
     }
     text[0] = rg_codes[row - 1][0], text[1] = rg_codes[row - 1][1], text[2] = '\n', text[3] = 0;
-    return home_write_atomic(PCREGION_FILE, PCREGION_TMP, text) == 0 ? row : -1;
+    return home_write_atomic(PCREGION_FILE, text) == 0 ? row : -1;
 }
 
 const char *pcregion_name(const char *code) {

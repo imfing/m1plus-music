@@ -3,7 +3,6 @@
 #pragma once
 
 #define TL_FILE "/mnt/data/m1plus/led-dynamic" /* "0" or missing: off; "1" .. "6": on, the theme below + 1 */
-#define TL_TMP "/mnt/data/m1plus/led-dynamic.tmp"
 #define TL_LAMP "/sys/class/led_ktd2026/led_config_rgb" /* the lamp: the decimal number red << 16 | green << 8 | blue */
 #define TL_UAC "/sys/class/uac2/uac2_samprate" /* USB DAC mode: the rate the host chose */
 

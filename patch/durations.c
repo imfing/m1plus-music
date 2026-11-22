@@ -97,7 +97,8 @@ static unsigned dur_clears __attribute__((section(".scratch")));
 unsigned dur_epoch(void) { return dur_clears; }
 
 void dur_clear(void) {
-    if (m1_card_mounted()) unlink(DUR_FILE), unlink(DUR_TMP); /* (never touch the mount point while the card is out) */
+    if (m1_card_mounted())
+        unlink(DUR_FILE), unlink(DUR_FILE ".tmp"); /* (never touch the mount point while the card is out) */
     ++dur_clears;
     free(ln.seen);
     ln.seen = (unsigned char *)0;
@@ -182,8 +183,8 @@ static int dur_write(void) {
     h[0] = DUR_MAGIC, h[1] = ln.n,
     h[2] = dur_sum(
         ln.tab,
-        ln.n); /* (m1_card_write: CARD_DIR made, DUR_TMP, fsync, rename; -1 and nothing written while the card is out) */
-    return m1_card_write(CARD_DIR, DUR_FILE, DUR_TMP, h, DUR_HDR, ln.tab, ln.n * (unsigned)sizeof *ln.tab);
+        ln.n); /* (m1_card_write: CARD_DIR made, DUR_FILE ".tmp", fsync, rename; -1 and nothing written while the card is out) */
+    return m1_card_write(CARD_DIR, DUR_FILE, h, DUR_HDR, ln.tab, ln.n * (unsigned)sizeof *ln.tab);
 }
 
 /* Shell sort by key (stable enough: equal keys are one file measured twice, with one answer). */

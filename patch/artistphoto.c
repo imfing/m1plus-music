@@ -290,8 +290,7 @@ int ap_lib_save(void) {
          ++i) /* compacted in place: the order does not matter, the reader makes its own table */
         if (ap.pur[i].h) ap.pur[n++] = ap.pur[i];
     hdr[0] = AP_PUR_MAGIC, hdr[1] = n, hdr[2] = ap_pur_sum(ap.pur, n);
-    if (m1_card_write(AP_DIR, AP_PUR_FILE, AP_PUR_FILE ".tmp", hdr, sizeof hdr, ap.pur, n * sizeof *ap.pur) == 0)
-        return 1;
+    if (m1_card_write(AP_DIR, AP_PUR_FILE, hdr, sizeof hdr, ap.pur, n * sizeof *ap.pur) == 0) return 1;
     ap_lib_drop();
     return 0;
 }
@@ -453,14 +452,14 @@ static int ap_empty_marker(unsigned key) {
 
 /* .src: where the photo came from (the path, its size and modification time), so a later check can tell a changed or removed file. */
 static void ap_write_src(unsigned key, const char *src) {
-    char p[72], t[72], b[AP_PATH + 80];
+    char p[72], b[AP_PATH + 80];
     unsigned st[40], n;
     memset(st, 0, sizeof st);
     if (__xstat(3, src, st)) return;
     n = (unsigned)snprintf(b, sizeof b, "m1plus artist 1\nsrc: %s\nsize: %u\nmtime: %u\nend\n", src, st[0x30 / 4],
                            st[0x40 / 4]);
-    ap_path(p, key, ".src"), ap_path(t, key, ".src.tmp");
-    m1_save(p, t, 0644, b, n);
+    ap_path(p, key, ".src");
+    m1_save(p, 0644, b, n);
 }
 
 /* The source picture at both sizes, each a square (cropped by pv_square), made from one decode of it (the 44 px file from the 168 px one), then published under ap_mutex. pick 0, an automatic build: refused when
@@ -523,7 +522,7 @@ static int ap_make(const char *src, unsigned key, int pick) {
             if (!had)
                 unlink(p168);
             else
-                m1_save(p168, old, 0644, keep, (unsigned)osz);
+                m1_save_as(p168, old, 0644, keep, (unsigned)osz);
         }
     }
     free(keep);

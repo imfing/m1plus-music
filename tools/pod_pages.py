@@ -3,7 +3,7 @@
 
 One source of truth, consumed by both:
   tools/pod_ui.py   builds the ui/*.bin assets (widget trees)
-  tools/pod.py      emits the C row/page tables into stock.h for patch/m1plus.c
+  tools/pod.py      emits the C row/page tables (pages.h) and the ACT_*/INFO_* ids (acts.h) for patch/m1plus.c
 
 Keeping the rows here means the asset a page shows and the action the payload takes on a tap can
 never drift apart: the row's widget name, its label and its handler all come from one record.
@@ -777,7 +777,7 @@ ABOUT_PAGE = Page('m1plus_about', 'm1plus_about_page', 'About', layout=[
 
 # Settings > Developer > Cache (patch/homecover.c, docs/modules/homecover.md "Cache page"): the Covers card holds the cache folder's counts (INFO_CC_*: homecover_stat reads each, an ellipsis until counted), the build's Status and Clear Cover Cache;
 # the Track Durations card holds Measured Tracks (INFO_DUR: dur_stat, patch/durations.c) and Clear Track Durations.
-INFO_CC_ALBUMS, INFO_CC_COVERS, INFO_CC_NOART, INFO_CC_MISSING, INFO_CC_OLD, INFO_CC_SIZE, INFO_CC_STATUS = range(8, 15)   # (patch/m1plus.c INFO_CC = 8 + the index homecover_stat takes)
+INFO_CC_ALBUMS, INFO_CC_COVERS, INFO_CC_NOART, INFO_CC_MISSING, INFO_CC_OLD, INFO_CC_SIZE, INFO_CC_STATUS = range(8, 15)   # (acts.h also names INFO_CC = INFO_CC_ALBUMS: 8 + the index homecover_stat takes)
 INFO_DUR = INFO_CC_STATUS + 63  # patch/m1plus.c INFO_DUR = INFO_SFOLD + 1 (asserted below the Settings Files kinds)
 INFO_APHOTOS, INFO_ANONE = INFO_DUR + 1, INFO_DUR + 2   # patch/m1plus.c: the Artist Photos card's counts (homecover_stat 7, 8)
 INFO_LBACCT = INFO_DUR + 3   # patch/m1plus.c: the ListenBrainz page's Account row (patch/scrobpage.c lb_account_text)
@@ -823,8 +823,8 @@ RETIRED_FILES = ('/mnt/data/m1plus-albums', '/mnt/data/m1plus-playlists', '/mnt/
 FOLDER_LABEL = 'm1plus/'
 INFO_SF = INFO_CC_STATUS + 1   # patch/m1plus.c INFO_SF = INFO_CC + 7; row k reads setfiles_stat(k): 4 guard files, the folder, the settings
 INFO_SFOLD = INFO_SF + 61      # patch/m1plus.c: the Unsupported Files count (setfiles_old_count), above the setting rows
-assert len(GUARD_FILES) + 1 + len(SETTING_FILES) <= INFO_SFOLD - INFO_SF, 'the Settings Files rows reach INFO_SFOLD: raise it here and in patch/m1plus.c'
-assert INFO_DUR == INFO_SFOLD + 1, 'INFO_DUR must follow INFO_SFOLD (patch/m1plus.c)'
+assert len(GUARD_FILES) + 1 + len(SETTING_FILES) <= INFO_SFOLD - INFO_SF, 'the Settings Files rows reach INFO_SFOLD: raise it here'
+assert INFO_DUR == INFO_SFOLD + 1, 'INFO_DUR must follow INFO_SFOLD'
 FILES_PAGE_INDEX = page_index('m1plus_files')
 FILES_PAGE = Page('m1plus_files', 'm1plus_files_page', 'Settings Files', layout=(
     [Row(f, ACT_INFO, INFO_SF + k) for k, f in enumerate(GUARD_FILES)] + [GAP, Row(FOLDER_LABEL, ACT_INFO, INFO_SF + 4)]

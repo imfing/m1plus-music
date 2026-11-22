@@ -13,156 +13,107 @@
 #define MB_BLUR_OFF \
     "/mnt/mmc/m1plus-noblur" /* the mini player bar's backdrop blur (patch/minibar.c, experimental) is off while this exists on the card */
 #define MARKER "/mnt/data/m1plus-run" /* exists from "boot attempt armed" until it has proven itself */
-#define MARKER_TMP "/mnt/data/m1plus-run.tmp"
 #define BAD_NOTE "/mnt/data/m1plus-bad" /* written when a marker was found at boot */
-#define BAD_TMP "/mnt/data/m1plus-bad.tmp"
 #define START_FILE "/mnt/data/m1plus-start" /* "1" = start in M1+ Music (default when missing), "0" = Shanling */
-#define START_TMP "/mnt/data/m1plus-start.tmp"
 #define ALBUMS_FILE \
     "/mnt/data/m1plus/albums-view" /* "1" = the Albums grid (default when missing, ALBUMS_DEFAULT_GRID), "0" = the list mode of the same page */
-#define ALBUMS_TMP "/mnt/data/m1plus/albums-view.tmp"
 #define ALBUMS_SORT_FILE \
     "/mnt/data/m1plus/albums-sort" /* the Albums page's order (its "..." card): "0" Title, "1" Artist, "2" Recently Added, "3" Year, or "a" .. "d" for the same order in its other direction; missing or anything else is Artist (cc_sort_mode, cc_sort_rev) */
-#define ALBUMS_SORT_TMP "/mnt/data/m1plus/albums-sort.tmp"
 #define ARTISTS_SORT_FILE \
     "/mnt/data/m1plus/artists-sort" /* the Artists page's order (its "..." card): "a" Name Z-A; missing or anything else Name A-Z (patch/artists.c) */
-#define ARTISTS_SORT_TMP "/mnt/data/m1plus/artists-sort.tmp"
 #define GENRES_SORT_FILE "/mnt/data/m1plus/genres-sort" /* the same for the Genres page */
-#define GENRES_SORT_TMP "/mnt/data/m1plus/genres-sort.tmp"
 #define COMPOSERS_SORT_FILE "/mnt/data/m1plus/composers-sort" /* and the Composers page */
-#define COMPOSERS_SORT_TMP "/mnt/data/m1plus/composers-sort.tmp"
 #define SONGS_SORT_FILE \
     "/mnt/data/m1plus/songs-sort-rev" /* the Songs page's direction of its Title, File Name and Format orders (its Sort card): "a" Z-A; missing or anything else A-Z (patch/songs.c); the order itself is the stock sort_flag */
-#define SONGS_SORT_TMP "/mnt/data/m1plus/songs-sort-rev.tmp"
 #define FOLDERS_SORT_FILE \
     "/mnt/data/m1plus/folders-sort" /* the Folders page's order (its "..." card, every level): "0" Name, "1" Date Modified, "2" Type, or "a" "b" "c" for the same order reversed (Z-A, Oldest First); missing or anything else Name A-Z (patch/folders.c) */
-#define FOLDERS_SORT_TMP "/mnt/data/m1plus/folders-sort.tmp"
 #define PLAYLISTS_FILE \
     "/mnt/data/m1plus/playlists-view" /* the Playlists page's mode, as ALBUMS_FILE: "1" the grid (default), "0" the list */
-#define PLAYLISTS_TMP "/mnt/data/m1plus/playlists-view.tmp"
 #define PLAYLISTS_SORT_FILE \
     "/mnt/data/m1plus/playlists-sort" /* the Playlists page's name order (its "..." card): "a" Z-A; missing or anything else A-Z (patch/playlists.c) */
-#define PLAYLISTS_SORT_TMP "/mnt/data/m1plus/playlists-sort.tmp"
 #define RECENTADD_VIEW_FILE \
     "/mnt/data/m1plus/recently-added-view" /* Recently Added on the Songs page: "1" the albums grid, anything else (missing too) the songs (docs/modules/recent-albums.md) */
-#define RECENTADD_VIEW_TMP "/mnt/data/m1plus/recently-added-view.tmp"
 #define LANDSCAPE_FILE \
     "/mnt/data/m1plus/coverflow-landscape" /* "1" = Cover Flow opens in landscape, anything else portrait (the default) */
-#define LANDSCAPE_TMP "/mnt/data/m1plus/coverflow-landscape.tmp"
 #define VOLKEYS_FILE \
     "/mnt/data/m1plus/coverflow-volume-keys" /* "1" = the volume keys step Cover Flow, anything else or missing off (the default) */
-#define VOLKEYS_TMP "/mnt/data/m1plus/coverflow-volume-keys.tmp"
 #define OLD_ORDER_FILE \
     "/mnt/data/m1plus/album-order" /* the retired Settings > Library > Album Order ("0" Title, else Artist): cc_sort_mode moves it into ALBUMS_SORT_FILE once and deletes it */
-#define OLD_ORDER_TMP "/mnt/data/m1plus/album-order.tmp"
 #define TAPETHEME_FILE \
     "/mnt/data/m1plus/cassette-theme" /* the Cassette Mode theme: "0" = Normal, "1" = Chrome, "2" = Metal, "3" = Auto, by the track's quality (each with an optional newline), anything else or missing = Auto (the default) */
-#define TAPETHEME_TMP "/mnt/data/m1plus/cassette-theme.tmp"
 #define IDLE_FILE \
     "/mnt/data/m1plus/nowplaying-idle" /* where Now Playing's timed view goes: "1" Cassette, "2" Vinyl (each with an optional newline), anything else or missing = Album Cover (the default; docs/modules/bigcover.md "Idle view") */
-#define IDLE_TMP "/mnt/data/m1plus/nowplaying-idle.tmp"
 #define LYRSIZE_FILE \
     "/mnt/data/m1plus/nowplaying-lyrics-size" /* the lyrics page's text size: "0" Small (22 px), "1" Medium (26), "2" Large (30; also a missing or invalid file); docs/modules/lyrics.md "Text size" */
-#define LYRSIZE_TMP "/mnt/data/m1plus/nowplaying-lyrics-size.tmp"
 #define NPPOS_FILE \
     "/mnt/data/m1plus/nowplaying-position" /* "1" = Now Playing shows the queue position (5/10) between the times, anything else or missing off (the default); docs/modules/nowplaying.md */
-#define NPPOS_TMP "/mnt/data/m1plus/nowplaying-position.tmp"
 #define SWAPKEYS_FILE \
     "/mnt/data/m1plus/buttons-swap" /* "1" = the previous and next buttons are swapped, anything else or missing off (the default); docs/modules/keyspower.md */
-#define SWAPKEYS_TMP "/mnt/data/m1plus/buttons-swap.tmp"
 #define VINYLREC_FILE \
     "/mnt/data/m1plus/vinyl-record" /* Vinyl Mode's record colour: "1" Cover (with an optional newline), anything else or missing = Black (the default) */
-#define VINYLREC_TMP "/mnt/data/m1plus/vinyl-record.tmp"
 #define VINYLTHEME_FILE \
     "/mnt/data/m1plus/vinyl-base" /* Vinyl Mode's plinth theme: "1" Snow (with an optional newline), anything else or missing = Graphite (the default) */
-#define VINYLTHEME_TMP "/mnt/data/m1plus/vinyl-base.tmp"
 #define BG_FILE \
     "/mnt/data/m1plus/appearance-background" /* the background (patch/palette.c): "1" = Tinted, "2" = Light, "3" = Light Auto (07:00 - 18:59; Light is not in the picker), each with an optional newline, anything else or missing = Black (the default) */
-#define BG_TMP "/mnt/data/m1plus/appearance-background.tmp"
 #define LK_LAYOUT_FILE \
     "/mnt/data/m1plus/lockscreen-layout" /* the lock screen layout (patch/lockscreen.c): "1" mini player, anything else or missing = the large cover (the default) */
-#define LK_LAYOUT_TMP "/mnt/data/m1plus/lockscreen-layout.tmp"
 #define ACCENT_FILE \
     "/mnt/data/m1plus/appearance-accent" /* the accent (patch/palette.c): one digit, the index 0 Neutral (default) .. 6 Champagne, with an optional newline; anything else or missing = Neutral */
-#define ACCENT_TMP "/mnt/data/m1plus/appearance-accent.tmp"
 #define AZRAIL_FILE \
     "/mnt/data/m1plus/appearance-index-rail" /* Index Rail (patch/azlist.c): "1" = the A-Z rail and its bubble on the A-Z lists, "0" = off, anything else or missing = on (the default) */
-#define AZRAIL_TMP "/mnt/data/m1plus/appearance-index-rail.tmp"
 #define AZHEAD_FILE \
     "/mnt/data/m1plus/appearance-headers" /* Section Headers (patch/azlist.c): "0" = no section letters and no pinned header, anything else or missing = on (the default) */
-#define AZHEAD_TMP "/mnt/data/m1plus/appearance-headers.tmp"
 #define MENU_FILE \
     "/mnt/data/m1plus/home-menu" /* the menu's visible items in order, one digit (item id) each (patch/menu.c); missing or invalid = the defaults */
-#define MENU_TMP "/mnt/data/m1plus/home-menu.tmp"
 #define PULLDOWN_FILE \
     "/mnt/data/m1plus/pulldown-tiles" /* the pull-down's tiles: the shown ones' ids in order, optionally '-' and the hidden ones (patch/pulldown.c); missing or invalid = all eight in stock order */
-#define PULLDOWN_TMP "/mnt/data/m1plus/pulldown-tiles.tmp"
 #define PDLABELS_FILE \
     "/mnt/data/m1plus/pulldown-labels" /* Control Labels (patch/pulldown.c): "0" = hide the pull-down's tile captions, anything else or missing = shown (the default) */
-#define PDLABELS_TMP "/mnt/data/m1plus/pulldown-labels.tmp"
 #define RECENT_FILE \
     CARD_DIR \
     "/recently-played" /* the albums played last, most recent first (patch/recent.c): on the card, like the keys and paths it holds; missing, malformed or no card = none */
-#define RECENT_TMP CARD_DIR "/recently-played.tmp"
 #define PINS_FILE \
     CARD_DIR \
     "/home-pins" /* the albums, playlists and songs pinned at the top of Home, newest first (patch/pins.c): on the card, like the keys and paths it holds; missing, malformed or no card = none */
-#define PINS_TMP CARD_DIR "/home-pins.tmp"
 #define SEARCH_RECENT_FILE \
     "/mnt/data/m1plus/search-history" /* the last searches, newest first, one UTF-8 line each (patch/search.c); missing or malformed = none */
-#define SEARCH_RECENT_TMP "/mnt/data/m1plus/search-history.tmp"
 #define SHELF_FILE \
     "/mnt/data/m1plus/home-recent-albums" /* the Recently Played shelf: "0" = off, anything else or missing = on (Settings > Home Screen) */
-#define SHELF_TMP "/mnt/data/m1plus/home-recent-albums.tmp"
 #define DAILY_SET_FILE \
     "/mnt/data/m1plus/home-daily-mix" /* the Daily Mix card: "0" = off, anything else or missing = on (Settings > Home Screen) */
-#define DAILY_SET_TMP "/mnt/data/m1plus/home-daily-mix.tmp"
 #define SHUFFLE_FILE \
     "/mnt/data/m1plus/playback-shuffle" /* Shuffle (patch/shuffle.c): "1" = songs, "2" = albums, anything else or missing = off; stock's play mode is never 2 */
-#define SHUFFLE_TMP "/mnt/data/m1plus/playback-shuffle.tmp"
 #define REBUILD_FILE \
     "/mnt/data/m1plus/covers-rebuild" /* exists while a Settings > Library > Rebuild Covers is requested; Home's cover build (patch/homecover.c) does it and removes it when done */
-#define REBUILD_TMP "/mnt/data/m1plus/covers-rebuild.tmp"
 #define AREBUILD_FILE \
     "/mnt/data/m1plus/artists-rebuild" /* exists while a rebuild of the artist photos is requested (Settings > Library > Rebuild Artist Photos writes it); Home's build (patch/homecover.c) checks every artist again and removes it when done */
-#define AREBUILD_TMP "/mnt/data/m1plus/artists-rebuild.tmp"
 #define STAMP_FILE \
     CARD_DIR \
     "/cache-stamp" /* what the library was when Home's last pass finished: "covers <albums> <hash>" and "tracks <albums> <hash>" lines (patch/homecover.c); on the card, like the cache it describes */
-#define STAMP_TMP CARD_DIR "/cache-stamp.tmp"
 #define KBZH_FILE \
     "/mnt/data/m1plus/keyboard-pinyin" /* the on-screen keyboard's Chinese (Pinyin) layer: "1" = on, anything else or missing = off (Settings > General > Keyboards; patch/keyboard.c) */
-#define KBZH_TMP "/mnt/data/m1plus/keyboard-pinyin.tmp"
 #define KBFR_FILE \
     "/mnt/data/m1plus/keyboard-french" /* the French (AZERTY) layer: "1" = on, anything else or missing = off (Settings > General > Keyboards; patch/keyboard.c) */
-#define KBFR_TMP "/mnt/data/m1plus/keyboard-french.tmp"
 #define PCSEARCH_FILE \
     "/mnt/data/m1plus/podcast-online-search" /* Podcast Discover: "0" = off, anything else or missing = on (Settings > Library > Podcasts; patch/podcasts.c) */
-#define PCSEARCH_TMP "/mnt/data/m1plus/podcast-online-search.tmp"
 #define PCDIR_FILE \
     "/mnt/data/m1plus/podcast-directory" /* Podcast Directory: "1" = Podcast Index, anything else or missing = Apple Podcasts (Settings > Library > Podcasts; patch/podcasts.c) */
-#define PCDIR_TMP "/mnt/data/m1plus/podcast-directory.tmp"
 #define WIFINET_FILE \
     "/mnt/data/m1plus/wifi-networks" /* the saved networks a stock 2.9 supplicant cannot read (WPA3, Enhanced Open, Enterprise): network={} blocks the Wi-Fi page writes (patch/wifipage.c) and /usr/bin/wifi_connect.sh adds to the copy of the configuration only the newer supplicant reads */
-#define WIFINET_TMP "/mnt/data/m1plus/wifi-networks.tmp"
 #define SCROBBLE_FILE \
     "/mnt/data/m1plus/scrobbling" /* the scrobble log: "1" = on, anything else or missing = off (Settings > Library; patch/scrobble.c) */
-#define SCROBBLE_TMP "/mnt/data/m1plus/scrobbling.tmp"
 #define SCROBBLE_AUTO_FILE \
     "/mnt/data/m1plus/scrobble-auto" /* Settings > Library > Scrobbling > Auto Upload: "1" = on, anything else or missing = off (patch/scrobble.c sa_*) */
-#define SCROBBLE_AUTO_TMP "/mnt/data/m1plus/scrobble-auto.tmp"
 #define MIX_DIR \
     CARD_DIR \
     "/daily-mix" /* the Daily Mix's own folder inside the card folder (CARD_DIR, patch/covercache.h); made by the writer */
 #define MIX_FILE \
     MIX_DIR \
     "/tracks" /* the card's Daily Mix: day, seed, tones, names, the songs' card paths (patch/dailymix.c; tools/pod_mix.py is the model) */
-#define MIX_TMP MIX_DIR "/tracks.tmp"
 #define MIX_ART_FILE MIX_DIR "/art" /* its card art, 296 x 220 RGB565 with a checksummed header */
-#define MIX_ART_TMP MIX_DIR "/art.tmp"
 #define DATA_DIR "/mnt/data"
 #define SET_DIR \
-    "/mnt/data/m1plus" /* the feature settings above; the guard files (KILL_DATA to START_TMP) stay in DATA_DIR */
+    "/mnt/data/m1plus" /* the feature settings above; the guard files (KILL_DATA to START_FILE ".tmp") stay in DATA_DIR */
 #define LOG_ENABLE "/mnt/mmc/m1plus-log" /* opt-in: an empty file on the card turns the log on */
 #define LOG_FILE "/mnt/mmc/m1plus.log"
 
@@ -182,9 +133,13 @@ extern void home_boot(void *win);
 extern int home_off(void);
 /* patch/fontregion.c: the CJK forms of the UI language (default.ttf's regional cmaps), from the boot guard */
 extern void fr_boot(void);
-extern int home_write_atomic(const char *path, const char *tmp,
-                             const char *data); /* temp, fsync, rename, directory fsync; 0 = done */
-extern int home_set_digit(const char *file, const char *tmp, int v,
+#define HOME_TMP_MAX 416 /* a path of up to 411 bytes (the longest stack paths are 400) plus ".tmp" and the NUL */
+extern int
+home_tmp_path(char *out,
+              const char *path); /* path + ".tmp" into out (HOME_TMP_MAX bytes); 0, or -1 when it does not fit */
+extern int home_write_atomic(const char *path,
+                             const char *data); /* path + ".tmp", fsync, rename, directory fsync; 0 = done */
+extern int home_set_digit(const char *file, int v,
                           int max); /* "v\n" atomically for 0 <= v <= max <= 9: v, or -1 (out of range, not written) */
 extern int set_read(const char *path, int def); /* a one-character setting file: "x" or "x\n" gives x, else def */
 extern void home_menu_opened(void *win, int settings, int entry);

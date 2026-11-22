@@ -6,7 +6,6 @@
 
 #define PCREGION_FILE \
     "/mnt/data/m1plus/podcast-region" /* Settings > Library > Podcast Region: the storefront's two capital letters and a line feed; missing or anything else = Automatic */
-#define PCREGION_TMP "/mnt/data/m1plus/podcast-region.tmp"
 #define PCREGION_FALLBACK "US" /* where Automatic ends up when nothing names a place, and what a chart falls back to */
 
 /* The storefront in use: the saved one, else the one Automatic infers (the UI language's country, for English and Spanish the Settings time zone's, else US). Two capital letters (a static string). */

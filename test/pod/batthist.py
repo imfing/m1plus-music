@@ -9,7 +9,8 @@ import pod_settings as ST
 
 DEFS = cdefs.defines(os.path.join(ROOT, 'patch', 'batthist.h'), strings=True)
 BDEFS = cdefs.defines(os.path.join(ROOT, 'patch', 'battery.h'), strings=True)
-FILE, DATA, TMP, DTMP, STATUS, GAUGE = DEFS['BH_FILE'], DEFS['BH_DATA'], DEFS['BH_TMP'], DEFS['BH_DATA_TMP'], DEFS['BH_STATUS'], BDEFS['BP_GAUGE']
+FILE, DATA, STATUS, GAUGE = DEFS['BH_FILE'], DEFS['BH_DATA'], DEFS['BH_STATUS'], BDEFS['BP_GAUGE']
+TMP, DTMP = FILE + '.tmp', DATA + '.tmp'
 N, SECS, KILL = DEFS['BH_BUCKETS'], DEFS['BH_SECS'], '/mnt/mmc/m1plus-off'
 GAP, CHG = DEFS['BH_F_GAP'], DEFS['BH_F_CHG']
 NONE = DEFS['BH_NONE']
