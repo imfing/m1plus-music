@@ -7,7 +7,7 @@ import cdefs
 
 DEFS = cdefs.defines(os.path.join(ROOT, 'patch', 'tracklamp.h'), strings=True)
 FILE, LAMP, UAC, KILL = DEFS['TL_FILE'], DEFS['TL_LAMP'], DEFS['TL_UAC'], '/mnt/mmc/m1plus-off'
-POLL, FAST, FADE, PAUSE, GONE, LEVEL = (DEFS[k] for k in ('TL_POLL_MS', 'TL_FAST_MS', 'TL_FADE_MS', 'TL_PAUSE_MS', 'TL_GONE', 'TL_LEVEL'))
+POLL, IDLE, FAST, FADE, PAUSE, GONE, LEVEL = (DEFS[k] for k in ('TL_POLL_MS', 'TL_IDLE_MS', 'TL_FAST_MS', 'TL_FADE_MS', 'TL_PAUSE_MS', 'TL_GONE', 'TL_LEVEL'))
 REFERENCE, BREATHE, HEARTBEAT, LIGHTHOUSE, CANDLE, OCEAN = range(6)
 STATE, LED, FOLLOW, LIT = pod.DATA['ATMOSPHERE_RGB_STATE'][0], pod.DATA['LED_MODE'][0], pod.DATA['LED_FOLLOW'][0], pod.DATA['BACKLIGHT_STATUS'][0]
 EXT, PMU, USBSTATE, USBFLAG = (pod.DATA[k][0] for k in ('POWER_EXT', 'PMUCHARGE_STATUS', 'POWER_USBSTATE', 'POWER_FLAG'))
@@ -223,7 +223,8 @@ def pause_tests(ctx):
     expect(not w and m.timer[0] == POLL, f'then it holds, at the slow pace ({w}, {m.timer})')
     w = run(m, PAUSE)
     expect(w == [(0, 0, 0)] and lamp(m) == (0, 0, 0), f'{PAUSE} ms after the pause the lamp is let go ({w})')
-    expect(not run(m, 2000), 'and stays so while paused')
+    w = run(m, 5000)
+    expect(not w and m.timer[0] == IDLE and names(m).count('access') <= 5000 // IDLE + 1, f'and stays so while paused, the player asked every {IDLE} ms ({m.timer})')
     m.status = 2
     expect(run(m, 2 * POLL) == [(11, 2, 4)], 'play again: the colour is back')
     m.status = 3; run(m, POLL + 200); m.status = 2
@@ -302,9 +303,9 @@ def pause_tests(ctx):
             on(m)
             w = run(m, POLL)
             expect(w[-1:] == [(0, 0, 0)] and lamp(m) == (0, 0, 0), f'{what}, theme {theme}: the lamp is let go at the next poll ({w[-1:]})')
-            expect(not run(m, 2000) and m.periods in ([], [POLL]), 'no write while it lasts, the timer at the slow pace')
+            expect(not run(m, 2000) and m.periods in ([], [IDLE]), 'no write while it lasts, the timer at the idle pace')
             off(m)
-            w = run(m, 2 * POLL)
+            w = run(m, 2 * POLL if on is dark else IDLE + POLL)   # (the screen coming on asks at once; the others wait for the idle tick)
             expect(w and w[0] != (0, 0, 0), f'it ends: the theme is back ({w[:1]})')
     m = machine(); m.u.mem_write(FOLLOW, b'\1')
     expect(run(m, 1000) == [(11, 2, 4)], 'Follow Screen with the screen lit: the colour shows')

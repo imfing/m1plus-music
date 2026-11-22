@@ -77,7 +77,7 @@ static struct {
     int snapped; /* offmap is current */
     int nscan, nknown, n, nsec;
     wf_status st;
-    unsigned timer, tick, sig;
+    unsigned timer, tick, sig, period; /* period: the timer's pace (WP_TICK_MS, POD_DARK_MS while the screen is off) */
     int on; /* Wi-Fi as the page shows it */
     int alive; /* the supplicant answered the last command */
     int caps; /* GET_CAPABILITY key_mgmt was read since the supplicant answered */
@@ -1308,10 +1308,16 @@ static int wp_on_switch(void *ctx, void *e) {
 }
 
 static int wp_tick(const void *timer) {
-    int on;
+    int on, dark;
+    unsigned want;
     (void)timer;
     if (!wp.win) return RET_OK;
     if (wp.modal) return RET_REPEAT; /* a stock dialog is up: the main loop runs under it, nothing here changes */
+    /* The screen off with no join to follow: no scan, no supplicant query, no spinner, at the slow pace; the first lit tick catches up. */
+    dark = !m1_screen_lit() && wp.want_id < 0 && wp.crow < 0;
+    want = dark ? POD_DARK_MS : WP_TICK_MS;
+    if (wp.timer && want != wp.period && timer_modify(wp.timer, want) == RET_OK) wp.period = want;
+    if (dark) return RET_REPEAT;
     wp.tick++;
     if (wp.pop_info &&
         !wk.win) { /* the password page joined a network that the info page offered: the info page goes too */
@@ -1481,6 +1487,7 @@ int wifipage_open(void) {
     }
     wp_spinner();
     wp.timer = timer_add(wp_tick, (void *)0, WP_TICK_MS);
+    wp.period = WP_TICK_MS;
     if (!wp.timer) {
         navigator_back();
         return -1;

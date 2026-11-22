@@ -177,8 +177,8 @@ hooks two pinned calls — MPlayer's `mp_msg("\nICY Info: %s\n", ...)` (`0x4be4d
 
 ### What the tick reads
 
-`rd_poll` is the engine's own 500 ms timer, alive only while a station is connecting, playing or
-paused. It holds standby and auto power-off (paused lets the player sleep, as paused music does)
+`rd_poll` is the engine's own 500 ms timer (2 s, `RD_DARK_MS`, while the screen is off, so an end is
+read up to 2 s late), alive only while a station is connecting, playing or paused. It holds standby and auto power-off (paused lets the player sleep, as paused music does)
 and reconciles with stock rather than trusting its own state. It reads hciplayer's running flag,
 its socket (gone or changed means hciplayer restarted), stock's play status (stopped, playing,
 paused) and whether hciplayer answers `playing`. The first 1.5 s after a start are not read.

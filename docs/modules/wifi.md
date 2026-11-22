@@ -120,6 +120,8 @@ missing supplicant after at most 1.5 s):
   connected). No manual refresh. While a joining row shows and no scan of ours runs, each poll also reads
   `SCAN_RESULTS` (a read, not a scan), so an auto-joined network gets its bars. Rows are laid out again
   only when what they show changed.
+- **Screen off.** With the screen dark and no join under way the tick does nothing (no query, no scan, no
+  spinner) and slows to 1 s (`POD_DARK_MS`); the first lit tick catches up. A join keeps the normal pace.
 - **Names.** `wf_unescape` decodes the supplicant's printf escapes; `SET_NETWORK ssid` sends hex, so any
   name joins.
 - **Security** from the scan flags (`wf_security`):

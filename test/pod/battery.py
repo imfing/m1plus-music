@@ -415,5 +415,17 @@ def run(ctx):
            f'off then on: the bar refresh and the paint, then toolSetBackLight with the same argument ({m.names()})')
     m.call(PSYMS['bp_light_on'], 5, count=200000)
     expect(m.names() == ['toolSetBackLight'], f'a second on paints nothing ({m.names()})')
+    # the screen off: the tick still sets stock's capacity (and runs the Charge Limit) but looks up and writes no label; the first lit tick shows the new number
+    m = lm(); tick(m)
+    m.call(PSYMS['bp_light_off'], 0, count=200000); m.screen(0)
+    m.fs[GAUGE] = b'86\n'
+    cap = tick(m)
+    expect(cap == 86 and power(m) == 86 and not texts(m) and not vis_calls(m) and 'widget_lookup' not in m.names(), f'dark: capacity 86, no label work ({m.names()})')
+    m.screen(1); tick(m)
+    expect(texts(m) == [(m.widgets[LABEL], '86'), (m.widgets[LABEL_DD], '86')], f'lit by another path (no bp_light_on): the labels follow on the next tick ({texts(m)})')
+    m.call(PSYMS['bp_light_off'], 0, count=200000); m.screen(0)
+    m.call(PSYMS['bp_light_on'], 5, count=200000); m.fs[GAUGE] = b'85\n'
+    tick(m)
+    expect(texts(m) == [(m.widgets[LABEL], '85'), (m.widgets[LABEL_DD], '85')], f'after bp_light_on the tick (show_sysbar_face\'s, with the byte still 0) shows the labels ({texts(m)})')
     m = lm(kill=True); m.call(PSYMS['bp_light_off'], 0, count=200000); m.call(PSYMS['bp_light_on'], 5, count=200000)
     expect(m.names() == ['access', 'toolSetBackLight'] and ('toolSetBackLight', 5) in m.calls, f'with the kill switch present no paint ({m.names()})')

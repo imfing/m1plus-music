@@ -390,6 +390,17 @@ def poll_tests(ctx):
     poll(m)
     expect(m.s32(DACOFF) == -1, 'a DAC stock powered off (-1) is left for the next start to power on')
     expect(m.call(PSYMS['rd_tick'], a0=0, count=40000000) == 8, 'the timer repeats while a station plays')
+    expect(not any(c[0] == 'timer_modify' for c in m.calls), 'the screen lit: the timer keeps the poll\'s pace')
+    m.screen(0)
+    paces = []
+    for _ in range(3):
+        m.clock += 2000
+        expect(m.call(PSYMS['rd_tick'], a0=0, count=40000000) == 8, 'dark: the timer repeats')
+        paces += [c[2] for c in m.calls if c[0] == 'timer_modify']
+    m.screen(1); m.clock += 2000
+    m.call(PSYMS['rd_tick'], a0=0, count=40000000)
+    paces += [c[2] for c in m.calls if c[0] == 'timer_modify']
+    expect(paces == [2000, 500] and state(m) == ST['PLAYING'], f'the screen off: one change to 2 s, on again: back to 500 ms ({paces})')
     for k in range(40):   # a long healthy stream
         m.clock += 500; poll(m)
     expect(state(m) == ST['PLAYING'] and not stops(m), 'a stream that keeps playing stays playing')

@@ -165,6 +165,8 @@ int bp_capacity(void) {
         /* stock picks bar_lowpower only for power_capacity <= 0, and only when it reaches that test (not on the charging / full pictures: show_sysbar_face 0x54510c..0x54514c) */
         *(int *)POWER_CAPACITY = cap = !bp_external() && (pct <= BP_LOW || cap <= 0) ? 0 : pct;
     }
+    if (bp.dark && !*(volatile unsigned char *)BACKLIGHT_STATUS)
+        return cap; /* the screen is off: no lookups, no labels (the wake repaint's call below shows them before the backlight comes on) */
     bar = *(void **)SYSTEM_BAR;
     bp_face(bar, BP_NAMES(), pct, chg);
     wm = window_manager();
@@ -181,12 +183,13 @@ int bp_capacity(void) {
  * changed asks its group to lay out again) and window_manager_paint, so the first frame the panel shows is a fresh one. A screen_action(1)
  * while lit paints nothing. The kill switch present: toolSetBackLight only. */
 int bp_light_on(int level) {
-    if (bp.dark && access(KILL_SD, F_OK) != 0) {
+    int dark = bp.dark;
+    bp.dark = 0; /* (first: bp_capacity skips the faces while it is set) */
+    if (dark && access(KILL_SD, F_OK) != 0) {
         void *wm = window_manager();
         show_sysbar_face(0);
         if (wm) widget_invalidate_force(wm, (void *)0), window_manager_check_and_layout(wm), window_manager_paint(wm);
     }
-    bp.dark = 0;
     return toolSetBackLight(level);
 }
 

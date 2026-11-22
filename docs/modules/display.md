@@ -80,7 +80,9 @@ shows the playing track's sample rate as a colour.
 - **Kill switch:** the card's kill switch makes the lamp stock's again.
 
 The timer polls every 250 ms (`TL_POLL_MS`) and runs every 50 ms (`TL_FAST_MS`) while a theme other
-than Reference plays or during the pause fade. What it shows, in order: the radio and a dark screen with Follow Screen on (stock's lamp),
+than Reference plays or during the pause fade. While the lamp is stock's (nothing plays, the radio, a dark
+screen with Follow Screen on) it polls every second (`TL_IDLE_MS`); the hook swaps in a 250 ms timer as
+soon as a track starts or the screen comes on. What it shows, in order: the radio and a dark screen with Follow Screen on (stock's lamp),
 USB DAC mode (the host's rate), else the player's rate. A DSD stream counts as its rate divided by
 16, so DSD64 shows as 176.4 kHz.
 

@@ -20,6 +20,8 @@
 #include "i18n.h"
 
 #define S(p, off) (*(const char **)((const char *)(p) + (off)))
+#define XF_CHECK_MS \
+    500 /* the preload window is looked at this far apart while a track plays (the idle pass runs far more often) */
 
 static struct {
     unsigned char loaded, on, sec, smart;
@@ -28,6 +30,9 @@ static struct {
     int last_pos; /* last playing queue index we saw (resets forced_gapless on track change) */
     int last_rt; /* last runtime seconds written to XFADE_FILE (-1 = unknown) */
     int last_keep; /* and its keep flag */
+    int check_pos; /* the queue index + 1 the preload window was last looked at for (0 none) ... */
+    unsigned check_at; /* ... and when (time_now_ms) */
+    int check_keep; /* what that look found the coming join to be (transition_music) */
 } xf __attribute__((section(".scratch")));
 
 static void xf_load(void) {
@@ -230,31 +235,41 @@ int xfade_auto_change(void) {
         xf.forced_gapless = 0;
         return r;
     }
-    /* Case 2: Playing a local track with Crossfade enabled and no preload sent yet (preload == 0). */
+    /* Case 2: Playing a local track with Crossfade enabled and no preload sent yet (preload == 0). The play time (a locked copy of two words, which
+     * stock's mclAutoChange reads on every pass too) is read on every pass; the queue records are looked at XF_CHECK_MS apart while the track is
+     * further from its end than the longest fade's window (sec + 5 s), and on every pass inside it or on another track. A seek into the last
+     * seconds is so seen before stock's own preload (about 5 s before the end) opens without the fade's duration. Between two looks the last keep
+     * stands. */
     if (sec > 0 && running && preload == 0 && mclGetPlayStatus() == 2) {
-        pt = mclGetPlayType();
-        if (pt != 2 && pt != 0xf0 && pt != 0xf1) { /* not DLNA / stream modes stock skips */
-            q = *(void **)PLAY_QUEUE;
-            mode = mclGetPlayMode();
-            next_i = q ? next_index(q, pos, mode) : -1;
-            void *cur = next_i >= 0 ? deque_at(q, (unsigned)pos) : 0;
-            void *nxt = next_i >= 0 ? deque_at(q, (unsigned)next_i) : 0;
-            keep = transition_music(cur, nxt);
-            if (keep && mclGetPlayTime(&cur_s, &total_s) && total_s >= 10 && cur_s >= 0 && cur_s < total_s) {
-                eff = transition_seconds(cur, nxt, total_s);
-                if (eff > 0 && total_s - cur_s <= eff + 5) {
-                    xf_write_runtime(eff, 1);
-                    saved_gap = *(volatile unsigned char *)MCL_GAPLESS;
-                    if (!saved_gap) *(volatile unsigned char *)MCL_GAPLESS = 1;
-                    mcl_gapless_preload();
-                    if (!saved_gap) {
-                        *(volatile unsigned char *)MCL_GAPLESS = 0;
-                        if (*(volatile int *)MCL_PRELOAD == 1) xf.forced_gapless = 1;
+        unsigned now = (unsigned)time_now_ms();
+        int timed = mclGetPlayTime(&cur_s, &total_s) && total_s >= 10 && cur_s >= 0 && cur_s < total_s;
+        if (xf.check_pos != pos + 1 || now - xf.check_at >= XF_CHECK_MS || (timed && total_s - cur_s <= sec + 5)) {
+            xf.check_pos = pos + 1, xf.check_at = now, xf.check_keep = 0;
+            pt = mclGetPlayType();
+            if (pt != 2 && pt != 0xf0 && pt != 0xf1) { /* not DLNA / stream modes stock skips */
+                q = *(void **)PLAY_QUEUE;
+                mode = mclGetPlayMode();
+                next_i = q ? next_index(q, pos, mode) : -1;
+                void *cur = next_i >= 0 ? deque_at(q, (unsigned)pos) : 0;
+                void *nxt = next_i >= 0 ? deque_at(q, (unsigned)next_i) : 0;
+                xf.check_keep = keep = transition_music(cur, nxt);
+                if (keep && timed) {
+                    eff = transition_seconds(cur, nxt, total_s);
+                    if (eff > 0 && total_s - cur_s <= eff + 5) {
+                        xf_write_runtime(eff, 1);
+                        saved_gap = *(volatile unsigned char *)MCL_GAPLESS;
+                        if (!saved_gap) *(volatile unsigned char *)MCL_GAPLESS = 1;
+                        mcl_gapless_preload();
+                        if (!saved_gap) {
+                            *(volatile unsigned char *)MCL_GAPLESS = 0;
+                            if (*(volatile int *)MCL_PRELOAD == 1) xf.forced_gapless = 1;
+                        }
+                        return mclAutoChange();
                     }
-                    return mclAutoChange();
                 }
             }
         }
+        keep = xf.check_keep;
     }
     /* No active preload: clear any stale runtime duration so short, excluded or same-album tracks never inherit one.
      * The record still says whether the coming join is between two music tracks (keep). */

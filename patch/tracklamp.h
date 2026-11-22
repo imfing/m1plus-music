@@ -17,6 +17,8 @@
 
 #define TL_LEVEL 17 /* a channel's brightest level (0x11, the level stock uses for its red) */
 #define TL_POLL_MS 250 /* the player is asked this far apart; the timer's pace while nothing moves */
+#define TL_IDLE_MS \
+    1000 /* the pace while the lamp is stock's (nothing plays, Follow Screen dark, the radio); a start or a wake asks at once */
 #define TL_FAST_MS 50 /* the timer's pace while a theme or the pause fade moves */
 #define TL_FADE_MS 500 /* a pause: down to a fifth in this time ... */
 #define TL_PAUSE_MS 2500 /* ... and the lamp is let go this long after the pause */

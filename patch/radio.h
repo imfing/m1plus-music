@@ -21,6 +21,7 @@
 #define RD_STEADY_MS 60000 /* a stream that played this long earns a new restart */
 #define RD_GRACE_MS 1500 /* after a start stock's flags are not read yet */
 #define RD_POLL_MS 500
+#define RD_DARK_MS 2000 /* the engine's pace while the screen is off (an end is read up to this late) */
 #define RD_NOTFILE \
     "/tmp/notfile" /* hciplayer touches these when a stream does not open (stock's home timer reads them, hook 37) */
 #define RD_NOTSUPPORT "/tmp/notsupport"

@@ -896,6 +896,29 @@ def demo_tests(ctx):
     call_c(m, 'xfade_auto_change')
     expect(read_rt(m)[2] == 1, 'an unchanged record is not written again (its sequence number stays)')
 
+    # The queue records are looked at 500 ms apart far from the end (the idle pass runs far more often); the play time is read on every pass, and
+    # inside the longest window (sec + 5 s), on another track or after a seek there, the records are looked at at once
+    reads = lambda m: sum(m.deque_reads.values())
+    m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, play_time=(100, 200))
+    n = reads(m)
+    expect(n and read_rt(m)[1:] == (0, 1, 1), f'the first pass looks: not in the window yet, keep 1 ({read_rt(m)})')
+    m.play_time = (150, 200); m.clock += 100; m.calls = []; m.auto_seen = []
+    call_c(m, 'xfade_auto_change')
+    expect(reads(m) == n and any(c[0] == 'mclGetPlayTime' for c in m.calls) and not any(c[0] == 'mcl_gapless_preload' for c in m.calls) and read_rt(m)[1:] == (0, 1, 1)
+           and m.auto_seen == [1], 'a pass 100 ms later, 50 s from the end: the play time read, no record looked at, the record stands, stock\'s mclAutoChange runs')
+    m.play_time = (196, 200); m.clock += 100; m.calls = []
+    call_c(m, 'xfade_auto_change')
+    expect(reads(m) > n and ('mcl_gapless_preload', 1) in m.calls and read_rt(m)[1] == 5 and m.word(pod.DATA['MCL_PRELOAD'][0]) == 1,
+           'a seek to 4 s before the end 100 ms after the last look: looked at at once, 5 s written and the preload open before stock\'s own')
+    m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, play_time=(100, 200))
+    n = reads(m); m.play_time = (150, 200); m.clock += 500
+    call_c(m, 'xfade_auto_change')
+    expect(reads(m) > n, '500 ms after the last look: looked at again')
+    m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, play_time=(100, 200), mode=3)
+    n = reads(m); m.play_pos = 1
+    call_c(m, 'xfade_auto_change')
+    expect(reads(m) > n, 'another track: looked at in the same millisecond')
+
     # Same-album with smart OFF (Always): crossfades!
     m, r = run_auto({'album': 'Same', 'path': '/mnt/mmc/1.flac'}, {'album': 'Same', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=0, play_time=(190, 200))
     expect(read_rt(m)[:2] == (b'M1XFD01\0', 5) and ('mcl_gapless_preload', 1) in m.calls,

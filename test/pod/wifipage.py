@@ -1815,6 +1815,25 @@ def timer_tests(ctx):
     m.supp.log = []
     m.tick(60)
     expect('SCAN' not in m.cmds(), 'no scan while the supplicant is connecting')
+    # the screen off: no scan, no supplicant query, the slow pace (POD_DARK_MS); lit again: the tick's pace and the queries are back
+    m = page(); opened(m); m.tick(16)
+    m.screen(0); m.supp.log = []
+    m.tick(1)
+    mods = [c[2] for c in m.calls if c[0] == 'timer_modify']
+    m.tick(99)
+    mods += [c[2] for c in m.calls if c[0] == 'timer_modify']
+    expect(not m.cmds() and mods == [1000], f'the screen off: no supplicant command in 100 ticks, the timer slowed to 1 s once ({m.cmds()[:4]}, {mods})')
+    m.screen(1)
+    m.tick(1)
+    mods = [c[2] for c in m.calls if c[0] == 'timer_modify']
+    m.tick(48)
+    expect(mods == [250] and 'STATUS' in m.cmds() and 'SCAN' in m.cmds(), f'lit again: back to 250 ms, the status read and the idle scan due ({mods})')
+    m = page(); opened(m); m.tick(16)
+    m.supp.state, m.supp.cur, m.supp.ip = 'ASSOCIATING', 0, None
+    m.tick(4)
+    m.screen(0); m.supp.log = []
+    m.tick(8)
+    expect(m.cmds().count('STATUS') == 2, 'a join under way is still followed with the screen off')
     # the connecting row's spinner keeps turning with no scan, one frame per tick (also after the initial scan of an automatic connection)
     def spin_run(m, n):
         out = []

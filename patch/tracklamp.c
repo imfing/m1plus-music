@@ -3,7 +3,7 @@
  *
  * Opt in: with the setting off the hook is one cached compare. With it on the hook only keeps one timer of ours alive; the timer asks the player
  * TL_POLL_MS apart (the status, the track's format, the kill switch, Follow Screen, the radio, USB DAC mode) and draws the theme's frame on every
- * tick: TL_FAST_MS apart while a theme moves, TL_POLL_MS apart otherwise. The lamp file is written only when a level changes (18 levels a channel).
+ * tick: TL_FAST_MS apart while a theme moves, TL_IDLE_MS apart while the lamp is stock's, TL_POLL_MS apart otherwise. The lamp file is written only when a level changes (18 levels a channel).
  * No audio samples or playback controls are read or changed.
  */
 #include "offsets.inc"
@@ -25,6 +25,7 @@ static struct {
     int setting; /* 0 unread, else the saved character - '0' + 1 (1 off, 2 .. TL_THEMES + 1 a theme) */
     int active; /* the lamp shows a colour of ours */
     int mode, gone;
+    int cue; /* the hook's last look: 1 playing, 2 the screen lit (a new bit cuts the idle wait short) */
     unsigned timer, period, poll_at, pause_at, last, elapsed;
     unsigned mix; /* the rate's colour in the theme's palette, 0xRRGGBB, each channel 0 .. 100 */
     unsigned random, flame, warm; /* Candle's walk */
@@ -313,6 +314,7 @@ static void tl_draw(unsigned now) {
 }
 
 static unsigned tl_period(unsigned now) {
+    if (tl.mode == TL_NONE) return tl.active ? TL_POLL_MS : TL_IDLE_MS; /* (active: a release is still owed) */
     if (tl.mode == TL_PLAY) return tl_setting() - 1 == TL_REFERENCE ? TL_POLL_MS : TL_FAST_MS;
     return tl.mode == TL_PAUSE && now - tl.pause_at < TL_FADE_MS ? TL_FAST_MS : TL_POLL_MS;
 }
@@ -341,10 +343,15 @@ static int tl_tick(const void *timer) {
 }
 
 /* The hook (tools/pod.py FORMAT_LAMP_SITE): stock's mclGetPlayStatus in on_wm_idle_status, an idle handler the main loop runs on every pass.
- * Stock's answer is returned unchanged. */
+ * Stock's answer is returned unchanged. A timer at the idle pace is replaced by one at the poll's pace as soon as a track starts or the screen comes on,
+ * so the lamp does not wait up to TL_IDLE_MS. */
 int tl_play_status(void) {
-    int status = mclGetPlayStatus();
-    if ((tl_setting() || tl.active) && !tl.timer) { /* (tl.active with the setting off: a release is still owed) */
+    int status = mclGetPlayStatus(), cue;
+    if (!tl_setting() && !tl.active) return status; /* (tl.active with the setting off: a release is still owed) */
+    cue = (status == 2) | m1_screen_lit() << 1;
+    if (tl.timer && tl.period == TL_IDLE_MS && (cue & ~tl.cue)) m1_timer_stop(&tl.timer);
+    tl.cue = cue;
+    if (!tl.timer) {
         tl.last = (unsigned)time_now_ms();
         tl.poll_at = tl.last - TL_POLL_MS; /* the first tick asks the player */
         tl.period = TL_POLL_MS;

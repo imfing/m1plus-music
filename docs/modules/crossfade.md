@@ -133,7 +133,12 @@ establish that concurrent preloaded demuxing works for every format.
 - **Early preload:** stock `mclAutoChange` only triggers gapless preload ~5 s before EOF, which is
   too late for a long crossfade. When Crossfade is enabled and `total - cur <= eff + 5`,
   `xfade_auto_change()` writes `eff` (with `keep = 1`) to `/tmp/m1plus-xfade` and calls stock
-  `mcl_gapless_preload` (`0x5d0ea4`, pinned in `XFADE_PINS`).
+  `mcl_gapless_preload` (`0x5d0ea4`, pinned in `XFADE_PINS`). The play time (a locked copy of two words,
+  which stock's `mclAutoChange` also reads on every pass) is read on every idle pass. The queue records are
+  looked at every 500 ms (`XF_CHECK_MS`) while the track is further from its end than `sec + 5` s, and on
+  every pass inside that window or on another track, so a seek into the last seconds is seen before stock's
+  own preload (about 5 s before the end) opens without the duration. Between two looks the last `keep`
+  stands.
 - **Gapless-off bridge:** if the user's Gapless setting (`MCL_GAPLESS`, `0xa0ab89`) is off while
   Crossfade is on, `xfade_auto_change()` temporarily sets `MCL_GAPLESS = 1` across
   `mcl_gapless_preload()` (and across the seamless `mclNextSong(1)` handoff inside `mclAutoChange`

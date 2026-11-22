@@ -68,12 +68,15 @@ The framebuffer is blanked while the screen is dark (`disable_fb`), so what the 
 reaches the panel. Two call-site hooks in stock's `screen_action` (`0x4e71a4`, every backlight
 change: the idle timeout, the power key) repaint on wake. The `jalr toolSetBackLight` words at `0x4e71cc`
 (on) and `0x4e71fc` (off) become `jal bp_light_on` / `jal bp_light_off`. Off sets a flag (`bp.dark`)
-and calls `toolSetBackLight`. On, when the flag is set and `/mnt/mmc/m1plus-off` is absent, first runs
+and calls `toolSetBackLight`. On clears the flag; when it was set and `/mnt/mmc/m1plus-off` is absent, it first runs
 `show_sysbar_face(0)` (the bar's own timer call, so the labels follow), then marks the whole window
 manager dirty (`widget_invalidate_force`), lays it out and paints it as the main loop does
 (`window_manager_check_and_layout`, then `window_manager_paint`; a label whose width changed has asked
-its group to lay out again), clears the flag and
+its group to lay out again), then
 calls `toolSetBackLight` with the same argument. So the first frame the panel shows is a fresh one.
+While the flag is set and the backlight byte is `0`, `bp_capacity` still sets stock's capacity and
+runs the Charge Limit, Battery History and scrobble ticks, but skips the three faces (no lookups, no
+labels); since `bp_light_on` clears the flag first, its `show_sysbar_face(0)` draws them.
 **Cost:** about 34 ms on a wake (measured on the device), nothing while the screen stays lit (the
 flag is clear, so a second on paints nothing). With the kill switch present both hooks are a plain
 `toolSetBackLight` call.

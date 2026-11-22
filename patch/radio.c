@@ -741,6 +741,7 @@ static struct {
     rd_list_t list;
     char error[72];
     int owns; /* after the error text: the tests poke the words before it by offset */
+    unsigned period; /* the engine timer's pace: RD_POLL_MS, or RD_DARK_MS while the screen is off */
 } rd __attribute__((section(".scratch")));
 
 /* Live ICY stream metadata (docs/modules/radio.md): hciplayer's read-only tap writes ICY_FILE while marked wanted.
@@ -1254,8 +1255,11 @@ void rd_poll(void) {
     if (ev >= 0) rd_apply(ev);
 }
 
+/* RD_POLL_MS apart while the screen is lit, RD_DARK_MS apart while it is off (each poll reads the ICY file and asks hciplayer). */
 static int rd_tick(const void *unused) {
+    unsigned want = m1_screen_lit() ? RD_POLL_MS : RD_DARK_MS;
     (void)unused;
+    if (rd.timer && want != rd.period && timer_modify(rd.timer, want) == RET_OK) rd.period = want;
     rd_poll();
     if (rd_running()) return RET_REPEAT;
     rd.timer = 0;
@@ -1293,6 +1297,7 @@ int rd_play(const rd_list_t *l, int i) {
     if (rd.state != RD_CONNECTING) return 0;
     rd.owns = 1;
     rd.timer = timer_add(rd_tick, (void *)0, RD_POLL_MS);
+    rd.period = RD_POLL_MS;
     rd_recent_push(&rd.list, rd.at);
     return 1;
 }
