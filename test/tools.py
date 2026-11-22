@@ -192,6 +192,31 @@ def workflow_tests():
         expect('reused screenshot number preserves both images', pull_shots.import_shot(bmp, out) and len(list(out.glob('*.png'))) == 2)
 
 
+def icon_fetch_tests():
+    """mod_icons --fetch only adds: a committed SVG keeps its bytes, one no table uses stays, a missing used one is written."""
+    import mod_icons
+    with tempfile.TemporaryDirectory() as td:
+        tgz = io.BytesIO()
+        with tarfile.open(fileobj=tgz, mode='w:gz') as t:
+            for n, d in (('package/icons/kept.svg', b'<svg>tarball</svg>'), ('package/icons/new.svg', b'<svg>new</svg>')):
+                ti = tarfile.TarInfo(n); ti.size = len(d); t.addfile(ti, io.BytesIO(d))
+        svg = os.path.join(td, 'svg'); os.makedirs(svg)
+        for n, d in (('kept.svg', b'<svg>hand-edited</svg>'), ('unused.svg', b'<svg>unused</svg>')):
+            open(os.path.join(svg, n), 'wb').write(d)
+        files = [(os.path.join(svg, n + '.svg'), f'package/icons/{n}.svg', req) for n, req in (('kept', True), ('new', True), ('absent', False))]
+        tgz.seek(0)
+        with tarfile.open(fileobj=tgz) as t: added = mod_icons.fetch_missing(t, files)
+        read = lambda n: open(os.path.join(svg, n), 'rb').read()
+        expect('icon fetch writes only the missing used SVG', added == [os.path.join(svg, 'new.svg')] and read('new.svg') == b'<svg>new</svg>')
+        expect('icon fetch keeps a committed SVG byte for byte and never deletes one', read('kept.svg') == b'<svg>hand-edited</svg>'
+               and read('unused.svg') == b'<svg>unused</svg>' and sorted(os.listdir(svg)) == ['kept.svg', 'new.svg', 'unused.svg'])
+        tgz.seek(0)
+        with tarfile.open(fileobj=tgz) as t:
+            try: mod_icons.fetch_missing(t, [(os.path.join(svg, 'typo.svg'), 'package/icons/typo.svg', True)]); refused = False
+            except SystemExit: refused = True
+        expect('icon fetch refuses a required glyph the tarball lacks', refused and not os.path.exists(os.path.join(svg, 'typo.svg')))
+
+
 def main():
     expect('good package verifies', problems() == [])
     expect('manifest-only archive rejected', problems(files={}) != [])
@@ -287,6 +312,7 @@ def main():
         try: autotime.apply(img, ident); refused = False
         except ValueError: refused = True
         expect(f'autotime refuses a changed byte at {a:#x} and writes nothing', refused and bytes(img) == before)
+    icon_fetch_tests()
     workflow_tests()
     print(f'{ok} passed, {fail} failed')
     sys.exit(1 if fail else 0)

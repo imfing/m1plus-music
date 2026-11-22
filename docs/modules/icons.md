@@ -9,7 +9,9 @@ deterministic.
 - `--generate` re-renders the PNGs (`rsvg-convert` + Pillow).
 - `--pins` writes the stock SHA-256 pins (`tools/mod_icons_pins.txt`).
 - `--check [WORKDIR]` verifies pins, size and mode.
-- `--fetch TGZ` copies the used SVGs out of a pinned npm tarball (parsed as data: whitelisted tags and attributes).
+- `--fetch TGZ` adds the used SVGs the folder lacks from a pinned npm tarball (parsed as data: whitelisted tags and
+  attributes). It never overwrites or deletes a committed SVG: some are hand-edited (`podcast`) or kept as drawing
+  references (`gallery-horizontal`). Wire the glyph into a table first, then fetch and `--generate`.
 
 Text badges are drawn with Pillow, so a regenerate on another Pillow/FreeType can shift their pixels; commit only
 the PNGs you meant to change.

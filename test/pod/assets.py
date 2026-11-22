@@ -144,6 +144,8 @@ def run(ctx):
            all(os.path.isfile(os.path.join(mod_icons.LUCIDE_SVG, n + '.svg')) for n in lucide) and
            not any(os.path.isfile(os.path.join(mod_icons.CUSTOM, n + '.svg')) for n in lucide),
            f'the set is Lucide ({len(lucide)} committed SVGs) with three Tabler glyphs; no custom SVG shadows a Lucide name')
+    extra = sorted({f[:-4] for f in os.listdir(mod_icons.LUCIDE_SVG)} - set(lucide))
+    expect(extra == ['gallery-horizontal'], f'every committed Lucide SVG is used, but gallery-horizontal, the drawing custom coverflow follows ({extra})')
     expect(os.path.isfile(os.path.join(mod_icons.LUCIDE, 'LICENSE')) and mod_icons.HOME_GLYPH == 38 and mod_icons.DISC_SW == 1.75
            and (mod_icons.BARE_PX, mod_icons.BARE_SW) == (24, 2.0) and mod_icons.POD_ICON == 24 and mod_icons.POD_TEXT_X == 56 == mod_icons.HAIR_X,
            'Home discs: Lucide at stroke 1.75, glyph canvas 38 px on the 66 px discs; list icons bare: 24 px canvas, stroke 2.0 px, title and hairline from x 56')

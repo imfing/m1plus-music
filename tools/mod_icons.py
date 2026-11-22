@@ -29,8 +29,8 @@ rsvg-convert and Pillow).
 
 Usage: mod_icons.py SRC_WORKDIR OUT_WORKDIR     (OUT == SRC edits in place; a build.py step)
        mod_icons.py --generate                  rebuild assets/icons/png from the svg sources
-       mod_icons.py --fetch TGZ                 copy the used SVGs + LICENSE out of a lucide-static or @tabler/icons
-                                                tarball (SHA-256 pinned; parsed as data, nothing is executed)
+       mod_icons.py --fetch TGZ                 add the used SVGs the folders lack (+ LICENSE) from a lucide-static or @tabler/icons
+                                                tarball (SHA-256 pinned; parsed as data, nothing is executed); never overwrites or deletes
        mod_icons.py --check [WORKDIR]           verify the asset PNGs (+ a work tree) against the stock pins
 """
 import argparse, hashlib, io, math, os, re, shutil, stat, subprocess, sys, tarfile
@@ -1898,28 +1898,36 @@ def cmd_generate():
         else: im.save(os.path.join(PNG, n + '.png'), optimize=True)
     print(f'{len(files)} PNGs, {sum(os.path.getsize(os.path.join(PNG, f)) for f in os.listdir(PNG))} bytes -> {PNG}')
 
+def fetch_missing(t, files):
+    """Copy each (dst, member, required) out of tarfile t whose dst does not exist yet; returns the dsts written.
+    Never overwrites or deletes: committed SVGs may be hand-edited (podcast) or used outside the tables
+    (gallery-horizontal, the drawing custom coverflow follows), and a rebuild from used_glyphs() would lose them."""
+    added = []
+    for dst, member, required in files:
+        if os.path.exists(dst): continue
+        try: m = t.getmember(member)
+        except KeyError:
+            if required: sys.exit(f'{member}: not in the tarball')
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, 'wb') as f: f.write(t.extractfile(m).read())
+        added.append(dst)
+    return added
+
 def cmd_fetch(tgz):
+    """Add the used SVGs the folders lack (+ LICENSE); the committed files stay as they are."""
     data = open(tgz, 'rb').read(); h = sha256(data)
     lucide, tabler = used_glyphs()
     if h == LUCIDE_SHA:
-        shutil.rmtree(LUCIDE_SVG, ignore_errors=True); os.makedirs(LUCIDE_SVG)
-        with tarfile.open(fileobj=io.BytesIO(data)) as t:
-            for n in lucide: open(os.path.join(LUCIDE_SVG, n + '.svg'), 'wb').write(t.extractfile(f'package/icons/{n}.svg').read())
-            open(os.path.join(LUCIDE, 'LICENSE'), 'wb').write(t.extractfile('package/LICENSE').read())
-        print('lucide svg sources:', len(os.listdir(LUCIDE_SVG)))
+        files = [(os.path.join(LUCIDE_SVG, n + '.svg'), f'package/icons/{n}.svg', True) for n in lucide]
+        files.append((os.path.join(LUCIDE, 'LICENSE'), 'package/LICENSE', True))
     elif h == TGZ_SHA:
-        shutil.rmtree(SVG, ignore_errors=True)
-        with tarfile.open(fileobj=io.BytesIO(data)) as t:
-            for style in ('outline', 'filled'):
-                os.makedirs(os.path.join(SVG, style), exist_ok=True)
-                for n in tabler:
-                    try: m = t.getmember(f'package/icons/{style}/{n}.svg')
-                    except KeyError:
-                        assert style == 'filled', f'missing outline glyph {n}'; continue
-                    open(os.path.join(SVG, style, n + '.svg'), 'wb').write(t.extractfile(m).read())
-            open(os.path.join(ASSET, 'LICENSE'), 'wb').write(t.extractfile('package/LICENSE').read())
-        print('tabler svg sources:', {s: len(os.listdir(os.path.join(SVG, s))) for s in ('outline', 'filled')})
+        files = [(os.path.join(SVG, style, n + '.svg'), f'package/icons/{style}/{n}.svg', style == 'outline')
+                 for style in ('outline', 'filled') for n in tabler]
+        files.append((os.path.join(ASSET, 'LICENSE'), 'package/LICENSE', True))
     else: sys.exit('tarball SHA-256 mismatch (pinned: lucide-static 1.61.0 or @tabler/icons 3.49.0)')
+    with tarfile.open(fileobj=io.BytesIO(data)) as t: added = fetch_missing(t, files)
+    print('added:', ', '.join(os.path.relpath(p, ROOT) for p in added) or 'nothing (every used SVG is committed)')
 
 def check_assets(stock_dir, work_dir=None):
     """Asset PNGs against the stock files: same size and mode; pins match; optional work tree check."""
