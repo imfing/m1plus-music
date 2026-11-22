@@ -72,6 +72,7 @@ AZ_WIDGETS = ('label_hdr', 'label_rail', 'label_rail_on', 'sg_rail', 'sg_bubble'
 def albums_machine(n=30, az=False, cls=Machine, **world):
     """A machine (cls) with the page's widgets (see albums_world) and the page as widget structs, for widget_to_local. az: the list mode's section letters, rail and bubble exist too."""
     m = cls()
+    m.nav_asset = ui_asset('m1plus_albums')
     albums_world(m, n, **world)
     if az:
         for w in AZ_WIDGETS: Machine.widget(m, w)

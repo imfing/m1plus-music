@@ -156,6 +156,7 @@ class PM:
 
     def __new__(cls, lists, albums=8, missing=(), other_artist=(), window=0x20001000):
         m = LabelMachine()
+        m.nav_asset = ui_asset('m1plus_playlists')
         m.fs[SORT_FILE] = b'0\n'
         m.load_image = 0
         for w in ('btn_return', 'btn_backtoplayer', 'label_row_title', 'label_row_sub', 'view_grid', 'label_status', 'label_grid_title', 'label_grid_sub', 'label_title', 'pl_title', 'img_nb_fade', 'btn_selall', 'pl_bar', 'pl_del', 'btn_plactions', 'pl_spin') + CARD_WIDGETS: Machine.widget(m, w)

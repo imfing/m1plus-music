@@ -1582,6 +1582,7 @@ class Machine:
     confirm_answer = None     # what the stock confirm dialog returns when a test wants a value other than Yes / No (the Songs delete's 0x14)
     mem_geometry = False      # widget_move / widget_resize also write the widget_t (stock widget_to_local reads it)
     COUNT = False             # count from the start (count()); otherwise call() has no step limit
+    nav_asset = None          # a page's built ui/*.bin: every call() then ends with its navbar's glass capsule whole (capsule_breaks)
 
     def call(self, addr, a0=0, a1=0, count=20000, a2=0, a3=0):
         self.calls = []
@@ -1593,6 +1594,9 @@ class Machine:
         self.limit = count   # enforced by _block: emu_start's own count hooks every instruction (~10x slower)
         self.u.emu_start(addr, RET)   # uncounted: no step limit; a runaway is check.py's per-test timeout
         assert self.u.reg_read(UC_MIPS_REG_PC) == RET, 'did not return to sentinel'
+        if self.nav_asset:
+            broken = capsule_breaks(self, self.nav_asset)
+            assert not broken, f'a glass capsule piece with a cut side and no piece beside it (a "|)" pill): {broken}'
         return self.u.reg_read(UC_MIPS_REG_V0)
 
     FIRE_WIN = None   # fire()'s default widget (None: the machine's window)
@@ -1984,6 +1988,42 @@ def touch_misses(m, asset, names):
     return out
 
 
+# The glass navbar pieces (tools/mod_icons.py, docs/modules/navbar.md) by image: which sides are cut (a slice of one capsule) and need a piece beside them.
+# A lone disc (ah_nav_np, ah_nav_back, ...) has none and is not listed.
+CAPSULE_CUT = {'left': (False, True), 'middle': (True, True), 'right': (True, False)}
+
+
+@functools.lru_cache(maxsize=None)
+def _navbar_buttons(path):
+    import mod_icons
+    pos = {**mod_icons.NAV_VIEW_POS, mod_icons.AH_NAV_RIGHT: 'right'}
+    nb = awtk_ui.parse(open(path, 'rb').read()).find('navigationbar_view')
+    return pos, tuple((c.name, c.x, c.w, c.get('visible') != 'false', c.get('style:normal:icon')) for c in (nb.children if nb else ()) if c.name)
+
+
+def ui_asset(name):
+    """The built ui/<name>.bin path, for Machine.nav_asset (None before init())."""
+    return os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui', name + '.bin') if WORK else None
+
+
+def capsule_breaks(m, asset):
+    """[(button, icon, side)] for the visible navbar buttons of the page (its built ui/*.bin) whose glass piece is cut on `side` with no visible piece flush against it that is cut
+    on the facing side: a capsule shown in part (a lone right cap is a "|)" pill). Placement, visibility and icon are the payload's (widget_move, widget_set_visible, grid_icons)."""
+    pos, buttons = _navbar_buttons(asset)
+    shown = []
+    for name, x, w, vis, icon in buttons:
+        h = m.widgets.get(name)
+        if h is not None:
+            x, w = m.props.get((h, 'x'), x), m.props.get((h, 'w'), w)
+            vis, icon = bool(m.props.get((h, 'visible'), vis)), m.props.get((h, 'style:normal:icon'), icon)
+        if vis and icon in pos: shown.append((name, icon, x, w, CAPSULE_CUT[pos[icon]]))
+    out = []
+    for name, icon, x, w, (cut_l, cut_r) in shown:
+        if cut_l and not any(o[2] + o[3] == x and o[4][1] for o in shown): out.append((name, icon, 'left'))
+        if cut_r and not any(o[2] == x + w and o[4][0] for o in shown): out.append((name, icon, 'right'))
+    return out
+
+
 def cover_page_tree(m, asset, runtime=True):
     """The Cover Flow page as the window manager sees it: the built asset, the runtime
     slide_menu and touch layer in view_covers, and every visibility/sensitivity the payload set."""
@@ -2199,6 +2239,7 @@ def artists_machine(artists=('Miles Davis', 'Nina Simone', 'Unknown Artist'), co
     otherwise that window will not open and the tap falls back to Cover Flow on the artist, which
     the Cover Flow tests of this module drive."""
     m = cover_machine(albums=0, cls=cls)
+    m.nav_asset = ui_asset('m1plus_artists')
     m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the rail tests of this page (the switch defaults on)
     for n in AR_WIDGETS: m.widget(n)
     if albums_page:

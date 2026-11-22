@@ -946,7 +946,8 @@ SCREEN_Y0 = 30 + 50
 ROW_ROOT, ROW_LIST, TOP, VIEW_H = 52, 64, 60, O['GRID_VIEW_H']
 SC_YOFF = O['SC_YOFF']
 PAGE_WIDGETS = ('view_grid', 'btn_return', 'btn_backtoplayer', 'btn_search', 'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'img_nb_fade', 'label_grid_title', 'label_grid_sub', 'label_hdr', 'label_rail', 'label_rail_on',
-                'sg_rail', 'sg_bubble', 'sg_bubble_letter', 'rd_credit', 'kb_field', 'radio_listview', 'btn_radioview', 'btn_more', 'rd_sh_scrim', 'rd_sh_card', 'vs_scrim', 'vs_card', 'vs_hair', 'btn_selall', 'rd_bar', 'rd_del')
+                'sg_rail', 'sg_bubble', 'sg_bubble_letter', 'rd_credit', 'kb_field', 'radio_listview', 'btn_radioview', 'btn_more', 'rd_sh_scrim', 'rd_sh_card', 'vs_scrim', 'vs_card', 'vs_hair', 'btn_selall', 'rd_bar', 'rd_del',
+                'rd_capsule', 'rd_add_card', 'rd_add_hair', 'rd_add_v0', 'rd_add_v1', 'rd_add_h0', 'rd_add_h1', 'rd_add_hit0', 'rd_add_hit1')
 PAGE_WIDGETS += tuple(f'rd_sh_remove{h}' for h in ('', '_hr')) + tuple(f'vs_item{i}' for i in range(10)) + tuple(f'vs_label{i}' for i in range(10)) + tuple(f'vs_tick{i}' for i in range(6)) + tuple(f'vs_sub{i}' for i in range(4)) + tuple(f'vs_glyph{i}' for i in range(4, 10))
 ICONS = ('pod_ic_rd_stations', 'pod_ic_rd_top', 'pod_ic_rd_country', 'pod_ic_rd_genre', 'pod_ic_nowplaying', 'pod_ic_recent', 'pod_ic_rd_browser')
 NP_WIDGETS = ('rn_art', 'rn_art_ic', 'btn_return', 'btn_play', 'btn_prev', 'btn_next', 'btn_fav', 'rn_title', 'rn_artist', 'rn_station', 'rn_info', 'rn_elapsed', 'rn_live', 'rn_more', 'rd_sh_scrim', 'rd_sh_card', 'rd_sh_add', 'rd_sh_add_ic', 'rd_sh_add_tx', 'rd_sh_add_hr', 'rd_sh_info', 'rd_sh_info_hr')
@@ -962,6 +963,7 @@ def page_machine(window=0x20001000, view=b'1\n'):
     if view is not None: m.fs[VIEW] = view
     m.window = window
     m.windows['m1plus_radionp'] = NP_WIN
+    m.nav_asset = os.path.join(UI_DIR, 'm1plus_radio.bin')   # every call ends with the navbar's capsule whole (harness capsule_breaks)
     m.load_image = 0
     KB.keyboard_machine(m)   # the keyboard's pad, strip and field widgets with their geometry (keyboard_attach finds them by name)
     for w in PAGE_WIDGETS: Machine.widget(m, w)
@@ -977,6 +979,7 @@ def page_machine(window=0x20001000, view=b'1\n'):
     m.widgets['radio_scrollview'] = sv
     for off, v in ((4, 0), (8, 320), (0xc, VIEW_H), (0x44, sv)): m.setword(view + off, v)
     m.setword(m.widgets['label_title'] + 8, 156); m.setword(m.widgets['sg_title'] + 8, 296)
+    for n in ('rd_add_v0', 'rd_add_v1'): m.setword(m.widgets[n] + 8, 272)   # Add by URL's row values: the asset's width (az_fit cuts to it)
     m.mem_geometry, m.live_scroll = True, frozenset({sv})
     m.sv, m.view = sv, view
     m.widgets['radio_listview'] = lv
@@ -1068,10 +1071,25 @@ def asset_tests(ctx):
     expect((cr.x, cr.w, cr.h) == (0, 296, 20) and cr.get('style:normal:font_size') == '14' and cr.get('style:normal:text_color') == '#AAAAAA' and cr.get('style:normal:text_align_h') == 'left'
            and pod_i18n.shown_english(cr) == 'Stations from radio-browser.info' and cr in f('view_grid').children, "the credit: a small grey caption inside the content view, so it scrolls with the rows")
     expect(f('kb_field').y == 56 and all(f(n) is not None for n in ('kb_pad', 'kb_strip', 'kb_stem', 'kb_pop', 'kb_text', 'kb_hint', 'kb_caret', 'kb_clear', 'kb_go')), "the search page's field and pad are in the asset, the field under the navbar")
-    fld, se = f('kb_field'), awtk_ui.parse(open(os.path.join(UI_DIR, 'm1plus_search.bin'), 'rb').read()).find('kb_field')
-    expect((fld.x, fld.h, fld.get('style:normal:round_radius'), fld.get('style:normal:bg_color')) == (se.x, se.h, se.get('style:normal:round_radius'), se.get('style:normal:bg_color'))
-           and fld.x + fld.w == 320 - se.x and fld.y >= 50 and f('kb_clear').x + f('kb_clear').w == fld.w and f('kb_text').x + f('kb_text').w <= f('kb_clear').x and f('kb_hint').w == f('kb_text').w,
-           "Radio's search field is the Search page's (x, height, radius, colour) and runs the page's width (margin each side, no round X beside it), under the 50 px navbar; the clear button ends it and the text stops short of it")
+    fld, cap, se_root = f('kb_field'), f('rd_capsule'), awtk_ui.parse(open(os.path.join(UI_DIR, 'm1plus_search.bin'), 'rb').read())
+    se = se_root.find('kb_field')
+    expect((cap.x, cap.y, cap.h, cap.get('style:normal:round_radius'), cap.get('style:normal:bg_color')) == (se.x, fld.y, se.h, se.get('style:normal:round_radius'), se.get('style:normal:bg_color'))
+           and cap.x + cap.w == 320 - se.x and cap.y >= 50 and f('kb_mag') in cap.children and (f('kb_mag').x, f('kb_mag').y) == (se_root.find('kb_mag').x, se_root.find('kb_mag').y),
+           "Radio's search capsule (rd_capsule) is the Search page's field (x, height, radius, colour, magnifier) and runs the page's width (margin each side, no round X beside it), under the 50 px navbar")
+    expect(fld.get('style:normal:bg_color') == '#00000000' and fld.get('style:normal:round_radius') is None and f('kb_mag') not in fld.children and (f('kb_text').x, f('kb_hint').x) == (0, 0)
+           and (fld.x, fld.y, fld.h) == (cap.x + se_root.find('kb_text').x, cap.y, cap.h) and fld.x + fld.w == cap.x + cap.w
+           and f('kb_clear').x + f('kb_clear').w == fld.w and f('kb_clear').w == se_root.find('kb_clear').w,
+           "kb_field has no fill and no magnifier: over the capsule its text starts where the Search page's does, the clear button ends it at the capsule's end")
+    nl = awtk_ui.parse(open(os.path.join(UI_DIR, 'm1plus_ndlogin.bin'), 'rb').read())
+    card, hair = f('rd_add_card'), f('rd_add_hair')
+    expect((card.x, card.y, card.w, card.h, card.get('style:normal:bg_color'), card.get('style:normal:round_radius')) == (nl.find('nl_card').x, nl.find('nl_card').y, nl.find('nl_card').w, 96, nl.find('nl_card').get('style:normal:bg_color'), nl.find('nl_card').get('style:normal:round_radius'))
+           and (hair.x, hair.y, hair.w) == (nl.find('nl_hair0').x, nl.find('nl_hair0').y, nl.find('nl_hair0').w)
+           and all((f(f'rd_add_{k}{i}').x, f(f'rd_add_{k}{i}').y, f(f'rd_add_{k}{i}').h) == (nl.find(f'nl_{k}{i}').x, nl.find(f'nl_{k}{i}').y, 48) for k in 'vh' for i in (0, 1))
+           and [pod_i18n.shown_english(f(f'rd_add_h{i}')) for i in (0, 1)] == ['Stream URL', 'Station Name']
+           and all(f(n).get('visible') == 'false' and f(n).get('sensitive') == 'false' for n in ('rd_capsule', 'rd_add_card', 'rd_add_hair', 'rd_add_v0', 'rd_add_h1', 'rd_add_hit0', 'rd_add_hit1')),
+           "Add by URL's card is the Sign In page's (card, hairline, rows' value and grey name at its places), two rows named Stream URL and Station Name; all hidden and insensitive at rest")
+    names_ = [c.name for c in root.children]
+    expect(names_.index('rd_capsule') < names_.index('rd_add_card') < names_.index('rd_add_hit1') < names_.index('kb_field'), 'the capsule and the card under the field (it takes the touches on its row), the row buttons under it too')
     names_ = [c.name for c in root.children]
     expect(names_.index('radio_listview') < names_.index('kb_field') and names_.index('rd_sh_card') > names_.index('kb_field') and names_[-2:] == ['rd_sh_scrim', 'rd_sh_card'] and names_.index('vs_card') > names_.index('kb_field') and f('rd_sh_add') is None
            and f('rd_sh_remove') is not None and f('rd_sh_scrim').get('visible') == 'false' and f('rd_sh_card').get('visible') == 'false' and f('vs_card').get('visible') == 'false', 'the pad lies over the list; the "..." card and the long press sheet (Remove) are last, above everything, hidden; a station is added to Stations from Now Playing')
@@ -1486,6 +1504,7 @@ def search_tests(ctx):
     expect = ctx.expect
     m = opened(); m.answer = TOP_CSV.encode(); sites = sites_of(m)
     calls = click_search(m)
+    expect(m.props.get((m.widgets['kb_caret'], 'x')) == 0, f"the search field's caret at its text origin x 0 (the magnifier is rd_capsule's, not inside the field) ({m.props.get((m.widgets['kb_caret'], 'x'))})")
     expect(('window_open', 'm1plus_keyboard') not in calls and vis(m, 'kb_field') == (1, 1) and vis(m, 'btn_search') == (0, 0) and vis(m, 'sg_title')[0] == 0 and text_of(m, 'label_title') == 'Search Stations'
            and vis(m, 'label_title')[0] == 1, 'the magnifier: the search page in this page, the field under the navbar, no separate window')
     expect(m.props[(m.lv, 'h')] == 400 - 180 and m.props[(m.sv, 'h')] == 400 - 180 and grid_titles(m) == [], 'the list stops above the pad; no rows yet')
@@ -1879,6 +1898,14 @@ def manage_tests(ctx, shown):
     m = stations(); click(m, 'btn_more'); click(m, 'vs_item8')
     expect(vis(m, 'kb_field')[0] == 1 and vis(m, 'view_grid')[0] == 0 and text_of(m, 'label_title') == 'Add by URL' and kbtext(m) == 'http://' and vis(m, 'kb_go')[1] == 0,
            f'Add by URL: the field and pad over no rows, the field starts at the scheme, Next dimmed ({kbtext(m)!r})')
+    P_ = lambda n, k: m.props.get((m.widgets[n], k))
+    expect(P_('btn_backtoplayer', 'style:normal:icon') == 'ah_nav_np' and vis(m, 'btn_more')[0] == 0 and vis(m, 'btn_search')[0] == 0 and vis(m, 'btn_radioview')[0] == 0,
+           'Add by URL: Search, "..." and the toggle gone, Now Playing is the glass disc alone (not a lone right cap)')
+    expect(vis(m, 'rd_capsule')[0] == 0 and vis(m, 'rd_add_card') == (1, 1) and vis(m, 'rd_add_hair')[0] == 1 and (P_('kb_field', 'x'), P_('kb_field', 'y'), P_('kb_field', 'w')) == (24, 62, 281)
+           and P_('kb_clear', 'x') == 281 - 36 and vis(m, 'rd_add_h1')[0] == 1 and vis(m, 'rd_add_v1')[0] == 0 and vis(m, 'rd_add_h0')[0] == 0 and vis(m, 'rd_add_v0')[0] == 0,
+           "the Sign In card, no search capsule: the field on the Stream URL row (x 24, centred in it, the clear button centred on x 287), the Station Name row's grey name")
+    cx = P_('kb_caret', 'x')
+    expect(cx == 46, f"the caret right after 'http://' (45 px) from the field's text origin x 0, not 36 further right as the Search page's origin would put it ({cx})")
     for bad in ('ftp://x.example/', 'http://', 'http:///x', 'http://a b', 'http://:80', 'http://?x', 'http://a.example/x|y', 'http://a.example/}', 'http://listener@/stream', 'http://[::1/x', 'http://[]/'):
         typed(m, bad)
         expect(vis(m, 'kb_go')[1] == 0, f'{bad!r}: no stream address, Next stays dimmed')
@@ -1886,6 +1913,25 @@ def manage_tests(ctx, shown):
     expect(vis(m, 'kb_go')[1] == 1, 'an http(s) address: Next works')
     go(m)
     expect(kbtext(m) == 'stream.example.com' and vis(m, 'kb_go')[1] == 1, f'Next: the name, the host to start with ({kbtext(m)!r})')
+    expect((P_('kb_field', 'x'), P_('kb_field', 'y')) == (24, 110) and vis(m, 'rd_add_v0')[0] == 1 and text_of(m, 'rd_add_v0').startswith('https://stream.example.com') and vis(m, 'rd_add_h0')[0] == 0
+           and vis(m, 'rd_add_v1')[0] == 0 and vis(m, 'rd_add_h1')[0] == 0 and P_('btn_backtoplayer', 'style:normal:icon') == 'ah_nav_np',
+           'the field on the Station Name row, the Stream URL row shows the address (cut to its row with an ellipsis, as on Sign In)')
+    typed(m, 'Mine'); click(m, 'rd_add_hit0')
+    expect(kbtext(m) == 'https://stream.example.com:8000/live' and (P_('kb_field', 'x'), P_('kb_field', 'y')) == (24, 62) and text_of(m, 'rd_add_v1') == 'Mine' and vis(m, 'rd_add_v1')[0] == 1,
+           f'a tap on the Stream URL row: back to the address, the typed name shown on its row ({kbtext(m)!r})')
+    click(m, 'rd_add_hit1')
+    expect(kbtext(m) == 'Mine' and P_('kb_field', 'y') == 110, f'a tap on the Station Name row goes on as Next, the typed name kept ({kbtext(m)!r})')
+    click(m, 'rd_add_hit0'); typed(m, 'ftp://x/'); click(m, 'rd_add_hit1')
+    expect(P_('kb_field', 'y') == 62 and kbtext(m) == 'ftp://x/', 'no address that can be one: the Station Name row does not take the field')
+    typed(m, 'https://stream.example.com:8000/live'); go(m); typed(m, 'stream.example.com')
+    click(m, 'rd_add_hit0'); typed(m, 'http://other.example/x'); go(m)
+    expect(kbtext(m) == 'other.example', f'a name left as the old host follows the new address ({kbtext(m)!r})')
+    click(m, 'rd_add_hit0'); typed(m, 'https://stream.example.com:8000/live'); go(m)
+    long_url = 'https://stream.example.com/' + 'p' * 171   # 198 bytes: past KB_PASS_MAX, within KB_MAX_LONG
+    m3 = stations(); click(m3, 'btn_more'); click(m3, 'vs_item8'); typed(m3, long_url); go(m3); click(m3, 'rd_add_hit0')
+    expect(kbtext(m3) == long_url, f'back on Stream URL, a long address comes back whole ({len(kbtext(m3))} of {len(long_url)} bytes)')
+    go(m3); typed(m3, 'Long'); go(m3)
+    expect(m3.fs[FAVS].endswith(row('Long', long_url)), 'and Done saves it whole')
     for url, host in (('http://user:pw@radio.example:8000/x', 'radio.example'), ('http://[2001:db8::1]:8000/live', '2001:db8::1')):
         m2 = stations(); click(m2, 'btn_more'); click(m2, 'vs_item8'); typed(m2, url)
         expect(vis(m2, 'kb_go')[1] == 1, f'{url!r}: Next works'); go(m2)
@@ -1903,6 +1949,12 @@ def manage_tests(ctx, shown):
     before = m.fs[FAVS]
     click(m, 'btn_more'); click(m, 'vs_item8'); typed(m, 'http://new.example/'); m.calls.clear(); click(m, 'btn_return')
     expect(m.fs[FAVS] == before and vis(m, 'kb_field')[0] == 0 and rows_text(m)[-1] == 'My FM' and ('navigator_back',) not in m.calls, 'Back leaves Add by URL: nothing written, the list back')
+    P_ = lambda n, k: m.props.get((m.widgets[n], k))
+    expect(all(vis(m, n)[0] == 0 for n in ('rd_add_card', 'rd_add_hair', 'rd_add_v0', 'rd_add_hit0', 'rd_add_hit1', 'rd_capsule')) and (P_('kb_field', 'x'), P_('kb_field', 'y'), P_('kb_field', 'w')) == (48, 56, 260)
+           and P_('kb_clear', 'x') == 260 - 36 and vis(m, 'btn_more')[0] == 1 and P_('btn_backtoplayer', 'style:normal:icon') == 'ah_nav_play',
+           'the card gone, the field back over the search capsule, the "..." and Now Playing one capsule again')
+    click(m, 'btn_more'); click(m, 'vs_item8')
+    expect(kbtext(m) == 'http://' and vis(m, 'rd_add_h1')[0] == 1, 'Add by URL again starts empty: the scheme, no name')
     # ---- a long press on a My Stations row: Remove from My Stations
     holds = lambda m: [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['rm_on_hold']]
     m = stations(); m.calls.clear()

@@ -127,6 +127,7 @@ class FM(SG.SongsMachine):
 
 def folder_machine(window=0x20001000, usb=False):
     m = FM()
+    m.nav_asset = ui_asset('m1plus_folders')
     m.mtimes, m.statx_paths, m.copy_queue = {}, [], True
     m.u.hook_add(UC_HOOK_INTR, m._statx)
     m.window = window

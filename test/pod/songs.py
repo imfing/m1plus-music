@@ -139,6 +139,7 @@ def songs_machine(songs, sort=0, albums=(), cached=True, window=0x20001000, big=
     """The page's widgets as widget structs (window > list_view > scroll_view > view_grid, and the rail, for demo's own widget_to_local), the library's songs
     [(title, artist, album, initial)], and a cover file for every album (those in cover_missing excepted)."""
     m = SongsMachine()
+    m.nav_asset = ui_asset('m1plus_songs')
     m.fs[AZRAIL_FILE] = b'1\n'   # Index Rail on: the rail tests below (the switch defaults on)
     m.window = window
     m.load_image = 0
@@ -2220,6 +2221,7 @@ def src_tests(ctx):
     m.top_main = m.window
     src = fake_source(m, {LS_SONGS: src_records(m, src_titles(30))}, caps=2, complete={LS_SONGS: 1})
     m.call(PSYMS['songs_open_src'], a0=src, a1=LS_SONGS, a2=m.cstr('Songs'), count=900000000); settle(m)
+    m.nav_asset = None   # the page over it shares this machine's widgets with the page below: the below page's Search stays visible next to the new page's plain Now Playing disc
     row = make_song(m, 'Artist 0', 'Artist 0', 'Artist 0', rid=-9, path='nd://ar9'); m.present.discard('nd://ar9')
     m.calls = []
     r = m.call(PSYMS['songs_open_src_in'], a0=src, a1=LS_SONGS, a2=row, a3=m.cstr('Artist 0'), count=900000000)

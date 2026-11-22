@@ -2916,10 +2916,45 @@ LP_PILL_RGB, LP_PILL_DOWN_RGB, LP_PILL_DIM_RGB = '#E5E5EA', '#C7C7CC', '#98989D'
 
 RD_FIELD_W = SCREEN_W - 2 * PS.SE_FIELD_X   # the Radio search field's width (patch/radiopage.c RP_TEXT_W is its text's)
 RD_TEXT_W = RD_FIELD_W - PS.SE_TEXT_X - PS.SE_CLEAR_W
+# Add by URL (patch/radiopage.c rp_entry): the Sign In page's card (tools/pod_ndserver.py build_login), two 48 px rows (Stream URL, Station Name) under the navbar. The
+# search capsule's fill and magnifier are rd_capsule; kb_field itself has no fill and its text at x 0, so the payload moves it between the capsule (x 48, after the
+# magnifier) and a card row (x 24, 6 px down: the 36 px field centred in the 48 px row) without the keyboard's text origin changing.
+RD_ADD_Y, RD_ADD_ROW, RD_ADD_X, RD_ADD_VAL_W, RD_ADD_TW = 56, 48, 24, 272, 232   # patch/radiopage.c RP_ADD_Y, RP_ADD_ROW, RP_ADD_X, -, RP_ADD_TW
+RD_ADD_ROWS = ('Stream URL', 'Station Name')
+RD_KB_X, RD_KB_W = PS.SE_FIELD_X + PS.SE_TEXT_X, RD_FIELD_W - PS.SE_TEXT_X   # the field over the capsule (patch/radiopage.c RP_KB_X, RP_KB_W)
 RD_CREDIT_PX = 14   # the credit line's size (patch/radiopage.c RP_CREDIT_PX)
 RD_SHEET_ROWS = (('add', 'pod_ic_rd_add', 'Add to My Stations', False, False), ('info', 'rm_ic_info', 'Station Info', False, False))   # Radio Now Playing's sheet: two rows, the first's glyph and label swapped for Remove from My Stations by the payload (patch/radionp.c)
 RS_SHEET_ROWS = (('remove', 'pod_ic_trash_red', 'Remove from My Stations', False, True),)   # the sheet (patch/radiopage.c): a long press on a My Stations row, Remove from My Stations
 RS_CARD_ACTS, RS_CARD_GLYPHS = ('Select', 'Sort by Name', 'Add by URL', 'Import from Card'), ('pod_ic_vsselect', 'pod_ic_vsorder', 'pod_ic_vslink', 'pod_ic_vsimport')   # the stations' "..." card's four actions (slots 6..9; Recently Played retexts slot 9 to Clear Recently Played, red, as the last row)
+
+
+def radio_field_widgets():
+    """The Radio page's two fields on one kb_field, in paint order: the search capsule (rd_capsule: the Search page's fill, radius and magnifier, the page's width, a tap on it brings the pad
+    back), Add by URL's card (rd_add_card, its hairline, each row's value rd_add_v<i> and grey name rd_add_h<i>, a button a row rd_add_hit<i>), then kb_field over both: no fill, text at x 0,
+    the Search page's clear button at its right end. All hidden; patch/radiopage.c shows one set and moves the field onto it."""
+    cap = kb_view('rd_capsule', PS.SE_FIELD_X, RD_ADD_Y, RD_FIELD_W, PS.SE_FIELD_H, PS.FIELD_RGB, PS.SE_FIELD_R)
+    cap.children.append(Widget('image', PS.SE_MAG_X, (PS.SE_FIELD_H - PK.FIELD_MAG) // 2, PK.FIELD_MAG, PK.FIELD_MAG, [('name', 'kb_mag'), ('image', 'qk_mag'), ('draw_type', 'center'), ('sensitive', 'false')]))
+    out = [hidden(cap)]
+    n = len(RD_ADD_ROWS)
+    out.append(hidden(kb_view('rd_add_card', _ST.CM, RD_ADD_Y, _ST.CARD_W, n * RD_ADD_ROW, _ST.CARD_RGB, _ST.CARD_R)))
+    hair = Widget('view', RD_ADD_X, RD_ADD_Y + RD_ADD_ROW - 1, _ST.CM + _ST.CARD_W - RD_ADD_X, 1, [('name', 'rd_add_hair'), ('sensitive', 'false')])
+    for st in STATES: styled(hair, (st,), 'bg_color', _ST.CARD_HAIR_RGB)
+    out.append(hidden(hair))
+    for i, english in enumerate(RD_ADD_ROWS):
+        for name, colour, key in ((f'rd_add_v{i}', PK.KB_INK, None), (f'rd_add_h{i}', PK.KB_GREY, english)):
+            lab = label(name, RD_ADD_X, RD_ADD_Y + i * RD_ADD_ROW, RD_ADD_VAL_W, RD_ADD_ROW, '', PS.FIELD_PX, colour, 'left')
+            if key: lab.set(*pod_i18n.text_prop(key))
+            lab.set('sensitive', 'false')
+            styled(lab, ('normal',), 'text_align_v', 'middle')
+            out.append(hidden(lab))
+    for i in range(n):
+        out.append(hidden(Widget('button', _ST.CM, RD_ADD_Y + i * RD_ADD_ROW, _ST.CARD_W, RD_ADD_ROW, [('name', f'rd_add_hit{i}'), ('enable', 'true'), ('style', 'img_btn_style')])))
+    tw = max(RD_TEXT_W, RD_ADD_TW)   # the labels hold either field's text room (the keyboard fits the text to the room it is given)
+    field = text_field(RD_KB_X, RD_ADD_Y, RD_KB_W, PS.SE_FIELD_H, '#00000000', 0, 0, tw, PS.FIELD_PX, PS.FIELD_HINT, PS.FIELD_INK, PS.SE_CARET_Y,
+                       RD_KB_W - PS.SE_CLEAR_W, PS.SE_CLEAR_W, sensitive=True)
+    hidden(field); field.set('sensitive', 'false')
+    out.append(field)
+    return out
 
 
 def build_radio_page(page):
@@ -2965,9 +3000,8 @@ def build_radio_page(page):
                                    ('label_grid_title', GRID_ALBUM_PX, INK_RGB), ('label_grid_sub', GRID_ARTIST_PX, SUB_RGB)))   # the row and the Albums grid's text styles (never shown)
     root.children.extend(azlist_labels())   # the countries' A-Z list (patch/azlist.c): the header letter, the rail letters
     root.children.extend(azlist_rail())
-    field = search_field_widget(56, RD_FIELD_W, RD_TEXT_W)   # the search page's field and pad (keyboard_attach): hidden until the magnifier is tapped; no round X beside it here (the Search page's 250 leaves room for one): it runs the page's width, the Search page's margin each side
-    hidden(field); field.set('sensitive', 'false')
-    root.children.append(field)
+    root.children += radio_field_widgets()
+
     root.children += keyboard_pad_widgets()
     root.children.append(select_bar('rd_bar', [('rd_del', 'one')]))   # My Stations' select mode: one Delete pill (the Playlists page's)
     root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=RS_CARD_ACTS, act_glyphs=RS_CARD_GLYPHS))   # the "..." card (My Stations: the four actions, Grid, List; Recently Played: Grid, List, Clear Recently Played)

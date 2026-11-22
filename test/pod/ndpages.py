@@ -790,6 +790,7 @@ def root_opened(conf=True, fresh=False, caps=None, files=None, **kw):
     """The root page open over a card with the PR's conf file (or none). fresh: a finished sync of 5 minutes ago (nothing is due)."""
     m = SB.machine(conf=conf)
     m.window = WIN
+    m.nav_asset = ui_asset('m1plus_ndroot')
     for k, v in kw.items(): setattr(m, k, v)
     m.widgets['pod_scrollview'] = m.alloc(0x100)   # (a scroll_view: its yoffset is read at SC_YOFF)
     for n in ROOT_NAMES: Machine.widget(m, n)   # noqa: F821

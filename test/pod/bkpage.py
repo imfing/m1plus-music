@@ -74,6 +74,7 @@ def card(m, ring=None):
 
 def machine(ring=None, cardf=None):
     m = PCP.page_machine(lambda mm: (card(mm, ring), cardf(mm) if cardf else None), BKM.BM)
+    m.nav_asset = ui_asset('m1plus_books')
     for n in WIDGETS: m.widget(n)
     m.widgets['books_scrollview'] = m.sv
     m.images['ah_wave'] = (12, 12, b''.join(struct.pack('<I', 0xff0000ee if 4 <= x < 7 else 0xff000000) for y in range(12) for x in range(12)))   # the album page's marker, as the image manager gives it

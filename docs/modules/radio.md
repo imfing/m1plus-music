@@ -72,7 +72,14 @@ One window with the Folders page's structure (glass navbar, large title, rows in
   (`m1_card_write` 1) counts as written. A list read again (Now Playing's sheet changed the file) ends the mode.
 - **Sort by Name** rewrites the file in `cc_name_cmp` order (stable, info kept). A file already in
   order is not written.
-- **Add by URL** reuses the search field and pad (`keyboard_refocus`). First the address: the Sign In
+- **Add by URL** is the Sign In page's card ([subsonic](subsonic.md)): two 48 px rows, Stream URL and
+  Station Name, under a navbar with Now Playing as the lone disc. The page's one `kb_field` has no fill
+  and its text at x 0; the search capsule's fill and magnifier are `rd_capsule` under it, and
+  `rp_field_at` moves the field onto the capsule (x 48) or onto a card row (x 24, 6 px down), with its
+  clear button at its right end (`keyboard_refocus` sets the text room). The row not typed in shows
+  its value (`rd_add_v<i>`, cut with an ellipsis) or its grey name (`rd_add_h<i>`). A tap on the name
+  row goes on as Next; a tap on the address row goes back to it, keeping the typed name. A name
+  left as the old host follows a new address. First the address: the Sign In
   page's field (English, no capitals, starts at `http://`, up to `KB_MAX_LONG` bytes). Next is dimmed
   until it is an address `rd_play` takes (`rd_playable`: `http://` or `https://`, no `|` or `}`)
   with a host (after any `user@`; `[v6]` in brackets) and no space; `rp_url_host` parses it once for

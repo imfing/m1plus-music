@@ -76,19 +76,30 @@ static const int RP_ROW_ICON[RR_N] = {RI_NOW, RI_STATIONS, RI_RECENT, RI_BROWSER
 enum { SH_REMOVE, SH_N };
 static const char *const RP_SH_ID[SH_N] = {"remove"};
 #define RP_SCHEME "http://" /* what an empty Add by URL address starts as, and what its clear button leaves */
+#define RP_KB_X \
+    48 /* the field over the search capsule: after its magnifier (tools/pod_ui.py RD_KB_X, RD_KB_W; the capsule is rd_capsule) */
+#define RP_KB_W 260
+#define RP_ADD_Y 56 /* Add by URL's card: the Sign In page's, two 48 px rows (tools/pod_ui.py RD_ADD_*) */
+#define RP_ADD_ROW 48
+#define RP_ADD_X 24 /* the field on a row: its left edge, 6 px down (the 36 px field centred in the row) */
+#define RP_ADD_DY 6
+#define RP_ADD_FIELD_W 281 /* its clear button centred on x 287, the Sign In page's trailing column */
+#define RP_ADD_TW 232 /* the text room of a row (the Sign In page's NL_TW) */
 
 #define P(w, off) (*(void **)((char *)(w) + (off)))
 
 static struct {
     void *win, *view, *sv, *lv, *status, *title, *big, *fade, *back, *np, *find, *st_title, *st_sub, *st_gtitle,
         *st_gsub, *credit, *field, *view_btn, *more, *sh_scrim, *sh_card, *btn_selall, *bar, *del;
+    void *capsule, *add_card, *add_hair, *add_v[2], *add_h[2],
+        *add_hit[2]; /* the search capsule; Add by URL's card, its rows' values, names and buttons */
     void *sh[SH_N], *sh_hr[SH_N]; /* the sheet's row and its hairline */
     vs_t vs; /* the "..." card (patch/viewsort.c) */
     void *chev, *ic[RI_N];
     m1_sel_t ms; /* My Stations' select mode (patch/selmode.c) */
     int select, entry,
         hold; /* the select mode is on; Add by URL's step (1 the address, 2 the name); the row a long press holds */
-    char add_url[KB_MAX_LONG + 1];
+    char add_url[KB_MAX_LONG + 1], add_name[KB_MAX + 1]; /* Add by URL: the address, the name typed (empty: the host) */
     az_t al; /* the countries' sections, rail and pinned header */
     grid_t g; /* the text ring of the rows and the stations' tiles */
     int level, from, nrows, note, loading, genre, press, down, title_on, noscroll, favs, sheet;
@@ -384,7 +395,7 @@ static void rp_size(void) {
 
 /* The view toggle is for the station lists (rows in view, no caption); it shows the other mode's glyph. */
 static int rp_toggle_on(void) {
-    return rp.level == L_LIST && rp.nrows && !rp.note &&
+    return !rp.entry && rp.level == L_LIST && rp.nrows && !rp.note &&
            (rp.search || !rp.local); /* (My Stations and Recently Played keep the view in the "..." card) */
 }
 
@@ -392,10 +403,10 @@ static int rp_toggle_on(void) {
  * on the 214 slot (the left cap, the Artists page's capsule; the view is in its card). Without the toggle the left cap takes the 214 slot; on the search page Search is gone and the toggle
  * (the left cap piece) takes 214 beside Now Playing, or Now Playing is the glass disc alone. */
 static int rp_find_on(void) {
-    return !rp.search && (rp.level == L_DIR || rp.level == L_PICK || (rp.level == L_LIST && !rp.local));
+    return !rp.search && !rp.entry && (rp.level == L_DIR || rp.level == L_PICK || (rp.level == L_LIST && !rp.local));
 }
 static int rp_more_on(void) {
-    return !rp.search && rp.level == L_LIST && rp.local;
+    return !rp.search && !rp.entry && rp.level == L_LIST && rp.local;
 } /* My Stations and Recently Played (also with their caption) */
 
 static void rp_nav(void) {
@@ -709,6 +720,7 @@ static void rp_search_enter(void) {
     rd_list_move(&rp.keep, &rp.list); /* the search results replace the list: the level's own stays here for Back */
     rp.search_from = rp.level, rp.search = 1, rp.local = 0;
     keyboard_set_text("");
+    m1_show(rp.capsule, 1);
     m1_show(rp.field, 1);
     keyboard_show(1);
     rp_search_layout();
@@ -721,6 +733,7 @@ static void rp_search_leave(void) {
     rp_timer_off();
     rp.search = 0, rp.loading = 0, rp.retry = 0;
     keyboard_show(0);
+    m1_show(rp.capsule, 0);
     m1_show(rp.field, 0);
     rp_search_layout();
     rd_list_move(&rp.list, &rp.keep); /* the level it began on, exactly as it was */
@@ -924,8 +937,9 @@ static int rp_on_delete(void *ctx, void *e) {
 }
 
 /* ---------------------------------------------------------------------------
- * Add by URL: the search page's field and pad take the address (Next), then the station's name (Done, the address's host to start with); the station is appended to My Stations.
- * Back leaves it with nothing written.
+ * Add by URL: the Sign In page's card (patch/ndserver.c): two rows, Stream URL and Station Name, the field and pad on the row being typed, the other row showing its value or, empty, its
+ * grey name. The address first (Next), then the name (Done, the address's host to start with); a tap on the other row goes there (the name row only with an address that can be one). The
+ * station is appended to My Stations. Back leaves it with nothing written.
  */
 static void rp_on_add_text(const char *text);
 static void rp_on_add_go(void);
@@ -957,41 +971,70 @@ static int rp_url_ok(const char *s) {
            rp_url_host(s, (char *)0, 0) > 0;
 }
 
+/* The field on the search capsule (row < 0, after its magnifier) or on row `row` of Add by URL's card: the text origin stays x 0 in the field, its clear button at its right end. */
+static void rp_field_at(int row) {
+    void *clear = widget_lookup(rp.field, "kb_clear", 1);
+    int w = row < 0 ? RP_KB_W : RP_ADD_FIELD_W;
+    widget_move(rp.field, row < 0 ? RP_KB_X : RP_ADD_X, RP_ADD_Y + (row < 0 ? 0 : row * RP_ADD_ROW + RP_ADD_DY));
+    widget_resize(rp.field, w, SE_FIELD_H);
+    if (clear) widget_move(clear, w - SE_CLEAR_W, 0);
+}
+
+/* Add by URL's card shown or hidden; shown, the row not typed in shows its value or its grey name. */
+static void rp_add_card(int on) {
+    int i;
+    m1_show(rp.add_card, on);
+    m1_show(rp.add_hair, on);
+    for (i = 0; i < 2; ++i) {
+        const char *t = i ? rp.add_name : rp.add_url;
+        int other = on && i != rp.entry - 1;
+        m1_show(rp.add_hit[i], on);
+        m1_show(rp.add_v[i], other && t[0]);
+        m1_show(rp.add_h[i], other && !t[0]);
+        if (other && t[0]) az_fit(rp.add_v[i], t);
+    }
+}
+
 static void rp_entry(int step) {
     char host[KB_MAX + 1];
+    const char *name = rp.add_name;
     rp.entry = step;
     m1_show(rp.view, 0);
     m1_show(rp.status, 0);
     m1_show(rp.credit, 0);
-    m1_show(rp.more, 0);
-    m1_show(rp.find, 0);
-    m1_show(rp.view_btn, 0);
+    m1_show(rp.capsule, 0);
     widget_set_prop_int(rp.sv, "yoffset", 0);
     widget_set_prop_int(rp.sv, "virtual_h", GRID_VIEW_H);
     az_fit(rp.title, TR("Add by URL"));
     widget_set_visible(rp.big, 0, 0);
     rp.title_on = -1;
     rp_title_update();
-    if (step ==
-        1) { /* the Sign In page's address field (patch/ndserver.c): English only, no capitals, the scheme to type after */
-        keyboard_refocus(TR("Stream URL"), RP_TEXT_W, KB_PASSWORD, RP_SCHEME, rp_on_add_text, rp_on_add_go);
+    rp_nav(); /* Search, "..." and the toggle go: Now Playing is the glass disc alone */
+    if (step == 1) { /* the Sign In page's address field: English only, no capitals, the scheme to type after */
+        keyboard_refocus(TR("Stream URL"), RP_ADD_TW, KB_PASSWORD, RP_SCHEME, rp_on_add_text, rp_on_add_go);
         keyboard_set_mask(0);
         keyboard_set_clear(RP_SCHEME);
         keyboard_set_max(KB_MAX_LONG);
+        if (rp.add_url[0])
+            keyboard_set_text(rp.add_url); /* (after the limit: refocus cuts what it loads to KB_PASS_MAX) */
     } else {
-        rp_url_host(rp.add_url, host, sizeof host);
-        keyboard_refocus(TR("Station Name"), RP_TEXT_W, 0, host, rp_on_add_text, rp_on_add_go);
+        if (!name[0]) rp_url_host(rp.add_url, host, sizeof host), name = host;
+        keyboard_refocus(TR("Station Name"), RP_ADD_TW, 0, name, rp_on_add_text, rp_on_add_go);
     }
+    rp_field_at(step - 1);
+    rp_add_card(1);
     m1_show(rp.field, 1);
     keyboard_show(1);
     rp_search_layout();
     rp_on_add_text(keyboard_text());
 }
 
-/* The field back to the search's, the pad hidden, the My Stations level read again (keep: where it was). */
+/* The field back to the search's, the card and the pad hidden, the My Stations level read again (keep: where it was). */
 static void rp_entry_leave(void) {
     if (!rp.entry) return;
     rp.entry = 0;
+    rp_add_card(0);
+    rp_field_at(-1);
     keyboard_refocus(TR("Search Stations"), RP_TEXT_W, 0, "", rp_on_text, rp_on_go);
     keyboard_set_go("Search", 1);
     keyboard_show(0);
@@ -1010,6 +1053,11 @@ static void rp_on_add_go(void) {
     int r;
     if (rp.entry == 1) {
         if (!rp_url_ok(text)) return;
+        if (strcmp(rp.add_url, text)) { /* another address: a name not typed follows its host */
+            char host[KB_MAX + 1];
+            rp_url_host(rp.add_url, host, sizeof host);
+            if (!strcmp(rp.add_name, host)) rp.add_name[0] = 0;
+        }
         snprintf(rp.add_url, sizeof rp.add_url, "%s", text);
         rp_entry(2);
         return;
@@ -1107,7 +1155,24 @@ static void rp_do_addurl(void) {
     if (!rp.view || !rp_more_on() || !rp.favs || !rp.field) return;
     if (!rp.note) rp.sel[L_LIST] = rp_off();
     rp.note = 0;
+    rp.add_url[0] = rp.add_name[0] = 0;
     rp_entry(1);
+}
+
+/* A tap on a row of Add by URL's card: the row typed in brings the pad back; the name row goes on as Next does; the address row goes back to it, the name kept. */
+static int rp_on_add_hit(void *ctx, void *e) {
+    int row = (int)(long)ctx;
+    (void)e;
+    if (!rp.entry) return RET_OK;
+    if (row == rp.entry - 1) {
+        if (!keyboard_shown()) keyboard_show(1), rp_search_layout();
+    } else if (row)
+        rp_on_add_go();
+    else {
+        snprintf(rp.add_name, sizeof rp.add_name, "%s", keyboard_text());
+        rp_entry(1);
+    }
+    return RET_OK;
 }
 
 /* The long press's Remove from My Stations: that one station out of the file. */
@@ -1395,6 +1460,19 @@ int radio_open(void) {
     rp.lv = widget_lookup(rp.win, "radio_listview", 1);
     rp.credit = widget_lookup(rp.win, "rd_credit", 1);
     rp.field = widget_lookup(rp.win, "kb_field", 1);
+    rp.capsule = widget_lookup(rp.win, "rd_capsule", 1);
+    rp.add_card = widget_lookup(rp.win, "rd_add_card", 1);
+    rp.add_hair = widget_lookup(rp.win, "rd_add_hair", 1);
+    for (i = 0; i < 2; ++i) {
+        char n[16];
+        snprintf(n, sizeof n, "rd_add_v%d", i);
+        rp.add_v[i] = widget_lookup(rp.win, n, 1);
+        snprintf(n, sizeof n, "rd_add_h%d", i);
+        rp.add_h[i] = widget_lookup(rp.win, n, 1);
+        snprintf(n, sizeof n, "rd_add_hit%d", i);
+        rp.add_hit[i] = m1_bind(rp.win, n, rp_on_add_hit, (void *)(long)i);
+        if (!rp.add_v[i] || !rp.add_h[i] || !rp.add_hit[i]) sh_ok = 0;
+    }
     rp.status = widget_lookup(rp.win, "label_status", 1);
     rp.st_title = widget_lookup(rp.win, "label_row_title", 1);
     rp.st_sub = widget_lookup(rp.win, "label_row_sub", 1);
@@ -1404,8 +1482,8 @@ int radio_open(void) {
     az_prefs(&rp.al);
     az_ok = az_bind(&rp.al, rp.win);
     if (!rp.back || !rp.np || !rp.find || !rp.view_btn || !rp.more || !rp.sh_scrim || !rp.sh_card || !sh_ok || !rp.lv ||
-        !rp.credit || !rp.field || !rp.title || !rp.big || !rp.view || !rp.sv || !rp.status || !rp.st_title ||
-        !rp.st_sub || !rp.st_gtitle || !rp.st_gsub || !az_ok) {
+        !rp.credit || !rp.field || !rp.capsule || !rp.add_card || !rp.add_hair || !rp.title || !rp.big || !rp.view ||
+        !rp.sv || !rp.status || !rp.st_title || !rp.st_sub || !rp.st_gtitle || !rp.st_gsub || !az_ok) {
         navigator_back(); /* an asset that is not ours */
         return -2;
     }
@@ -1427,8 +1505,8 @@ int radio_open(void) {
     rp.vlist = set_read(RD_VIEW_FILE, '0') != '1'; /* the list unless the file says the grid */
     rp.dir = 1;
     widget_on(rp.field, EVT_POINTER_UP, rp_on_field, (void *)0);
-    if (keyboard_attach(rp.win, TR("Search Stations"), SE_TEXT_X, RP_TEXT_W, SE_CARET_Y, 0, rp_on_text, rp_on_go) !=
-        0) {
+    widget_on(rp.capsule, EVT_POINTER_UP, rp_on_field, (void *)0); /* (the magnifier's end of the capsule) */
+    if (keyboard_attach(rp.win, TR("Search Stations"), 0, RP_TEXT_W, SE_CARET_Y, 0, rp_on_text, rp_on_go) != 0) {
         navigator_back(); /* an asset that is not ours, or a keyboard already up */
         return -2;
     }

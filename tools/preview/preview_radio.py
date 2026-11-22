@@ -172,14 +172,16 @@ def field_tree(s, name):
 
 
 def draw_field(s, im, root, y_off, text, caret=True, hint='Search'):
-    """A search field from a built page (kb_field, its magnifier, hint or text, caret and clear button; the Search page's drawing, preview_search.draw_top) at window y f.y + y_off."""
+    """A search field from a built page (kb_field, its magnifier, hint or text, caret and clear button; the Search page's drawing, preview_search.draw_top) at window y f.y + y_off. Radio's
+    capsule (fill and magnifier) is rd_capsule, under a kb_field with no fill whose text starts at its x 0."""
     f = root.find('kb_field'); y = f.y + y_off
+    cap = root.find('rd_capsule') or f
     mag, clear, caret_n = root.find('kb_mag'), root.find('kb_clear'), root.find('kb_caret')
     rgb = PKV.rgb
-    def paint(d, k): d.rounded_rectangle(k(f.x, y, f.x + f.w, y + f.h), radius=PSE.D['SE_FIELD_R'] * PKV.SS, fill=rgb(root.find('kb_field').get('style:normal:bg_color')) + (255,))
+    def paint(d, k): d.rounded_rectangle(k(cap.x, y, cap.x + cap.w, y + cap.h), radius=PSE.D['SE_FIELD_R'] * PKV.SS, fill=rgb(cap.get('style:normal:bg_color')) + (255,))
     im.alpha_composite(PKV.layer(paint))
-    im.alpha_composite(s.img(mag.get('image')), (f.x + mag.x + (mag.w - 16) // 2, y + mag.y))
-    tx, ty = f.x + PSE.D['SE_TEXT_X'], y + f.h / 2
+    im.alpha_composite(s.img(mag.get('image')), (cap.x + mag.x + (mag.w - 16) // 2, y + mag.y))
+    tx, ty = f.x + root.find('kb_text').x, y + f.h / 2
     room = root.find('kb_text').w
     if text:
         shown = text
@@ -198,8 +200,46 @@ def search_screen(s, kb, root, results, keyboard):
     page = list_page(s, 'Search', TOP_SEARCH, True) if results else new_page(s, 'Search', big=False)
     if not results: navbar(s, page, 'Search', True, None)
     draw_field(s, page, root, 0, 'jazz fm' if results else 'jazz', caret=keyboard)
+    s.text(page, 58, 25, PS.fit(s, PS.tr(s, 'Search Stations'), 22, 214 - 58), 22)   # the small title, shown on the search page, ends at the glass (patch/radiopage.c rp_nav: x 214)
     scr.alpha_composite(page, (0, PKV.BAR))
     if keyboard: PKV.keyboard(kb, scr, 'abc', None)
+    return scr
+
+
+def addurl_screen(s, kb, root, step, url, name):
+    """Add by URL (patch/radiopage.c rp_entry): the navbar with Now Playing as the lone disc, the Sign In card (Stream URL, Station Name), the field on row step - 1, the other row's value
+    or grey name, the keyboard (Next on the address, Done on the name)."""
+    by = {w.name: w for w in root.walk() if w.name}
+    scr = Image.new('RGBA', (W, PKV.H), (0, 0, 0, 255)); PI.status_bar(s, scr)
+    page = new_page(s, 'Add by URL', big=False)
+    d = ImageDraw.Draw(page); d.rectangle((0, 0, W - 1, NAV - 1), fill=(0, 0, 0))
+    PS.glass(s, page, 'ah_nav_back', 7, 44); PS.glass(s, page, 'ah_nav_np', 260, 60)
+    s.text(page, 58, 25, PS.tr(s, 'Add by URL'), 22)
+    c, h = by['rd_add_card'], by['rd_add_hair']
+    def paint(d, k):
+        d.rounded_rectangle(k(c.x, c.y, c.x + c.w, c.y + c.h), radius=int(c.get('style:normal:round_radius')) * PKV.SS, fill=PKV.rgb(c.get('style:normal:bg_color')) + (255,))
+        d.rectangle(k(h.x, h.y, h.x + h.w, h.y + h.h), fill=PKV.rgb(h.get('style:normal:bg_color')) + (255,))
+    page.alpha_composite(PKV.layer(paint))
+    def fitted(t, room, tail):
+        while s.font.width(t, PSE.FIELD_PX) > room and len(t) > 1: t = t[1:] if tail else t[:-2] + '…'
+        return t
+    car, cl = by['kb_caret'], by['kb_clear']
+    for i, (text, room) in enumerate(((url, pod_ui.RD_ADD_VAL_W), (name, pod_ui.RD_ADD_VAL_W))):
+        v = by[f'rd_add_v{i}']; y = v.y + v.h / 2
+        if i == step - 1:
+            t = fitted(text, pod_ui.RD_ADD_TW, True)
+            if text: s.text(page, v.x, y, t, PSE.FIELD_PX, (255,) * 3)
+            else: s.text(page, v.x, y, PS.tr(s, pod_ui.RD_ADD_ROWS[i]), PSE.FIELD_PX, PKV.rgb(by[f'rd_add_h{i}'].get('style:normal:text_color')))
+            cx = v.x + (s.font.width(t, PSE.FIELD_PX) + 1 if text else 0)
+            cy = v.y + (v.h - pod_ui.PS.SE_FIELD_H) // 2 + car.y   # the 36 px field centred in the row (patch/radiopage.c RP_ADD_DY)
+            ImageDraw.Draw(page).rectangle((cx, cy, cx + car.w - 1, cy + car.h - 1), fill=(255,) * 3)
+            if text and text != 'http://':
+                g = s.img(cl.get('style:normal:icon')); fw = pod_ui.trail_field_w(v.x)
+                page.alpha_composite(g, (v.x + fw - cl.w + (cl.w - g.width) // 2, int(y - g.height / 2)))
+        elif text: s.text(page, v.x, y, fitted(text, room, False), PSE.FIELD_PX, (255,) * 3)
+        else: s.text(page, v.x, y, PS.tr(s, pod_ui.RD_ADD_ROWS[i]), PSE.FIELD_PX, PKV.rgb(by[f'rd_add_h{i}'].get('style:normal:text_color')))
+    scr.alpha_composite(page, (0, PKV.BAR))
+    PKV.keyboard(kb, scr, 'abc', None, go=('Next' if step == 1 else 'Done', step == 1 and url == 'http://'))
     return scr
 
 
@@ -230,7 +270,9 @@ def main():
     kb, root = PKV.Page(s), field_tree(s, 'm1plus_radio')
     panels += [('Radio search: keyboard up (field 296 wide)', search_screen(s, kb, root, False, True).crop((0, PKV.BAR, W, PKV.BAR + 450))),
                ('Radio search: results (toggle + Now Playing)', search_screen(s, kb, root, True, False).crop((0, PKV.BAR, W, PKV.BAR + 450))),
-               ('Library Search (for comparison)', library_search_screen(s, kb).crop((0, PKV.BAR, W, PKV.BAR + 450)))]
+               ('Library Search (for comparison)', library_search_screen(s, kb).crop((0, PKV.BAR, W, PKV.BAR + 450))),
+               ('Add by URL: the address', addurl_screen(s, kb, root, 1, 'https://stream.example.com/live', '').crop((0, PKV.BAR, W, PKV.BAR + 450))),
+               ('Add by URL: the name', addurl_screen(s, kb, root, 2, 'https://stream.example.com:8000/live.mp3', 'stream.example.com').crop((0, PKV.BAR, W, PKV.BAR + 450)))]
     pad, lab = 12, 20
     sheet = Image.new('RGB', (len(panels) * (320 + pad) + pad, 450 + lab + 2 * pad), (0x2A, 0x2A, 0x2A)); d = ImageDraw.Draw(sheet)
     for i, (title, im) in enumerate(panels):

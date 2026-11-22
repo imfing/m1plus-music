@@ -143,6 +143,8 @@ Precedent: `tools/mod_bluealsa.py` (one byte in `/usr/bin/bluealsa`) and `tools/
 
 ## Collateral to expect
 
+- A page with a glass navbar capsule: set `m.nav_asset` to its built `ui/*.bin` in the page's test
+  machine (precedent `test/pod/radio.py` `page_machine`). Every call then checks the capsule is whole.
 - Adding a top-level icon PNG prefix: add the prefix to `NEW_IMAGES` in `test/pod/navbars.py`.
 - Changing what stock `ui/*.bin` contains changes `test/navbars-stock.sha256`. Regenerate it
   only when the change is intended.

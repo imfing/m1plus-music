@@ -165,6 +165,7 @@ UI = os.path.join('rootfs', 'release/assets/default/raw/ui')
 def page_machine(rows, extra=(), hdrs=True):
     """A machine whose window has the navbar buttons, the stock list and `rows` pod_row widgets (and `extra` names)."""
     m = Machine()
+    m.nav_asset = ui_asset('m1plus_extras')
     names = ['btn_return', 'btn_backtoplayer', 'pod_scrollview'] + [f'pod_row{i}' for i in range(rows)] + list(extra) + (HDRS if hdrs else [])
     m.widgets = {n: 0x30000000 + 0x100 * i for i, n in enumerate(names)}
     m.widgets['pod_scrollview'] = m.alloc(0x180)   # the payload looks at the scroll_view's vtable word and paint hook (zeros: not a list_view's)

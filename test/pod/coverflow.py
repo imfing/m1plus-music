@@ -681,6 +681,7 @@ def land_machine(albums=5, saved=None, **kw):
     window, every widget_move / widget_resize written to the widget_t too, and the touch layer's parent chain in
     emulated memory for the stock widget_to_local (the window under the 30 px status bar)."""
     m = cover_machine(albums=albums, **kw)
+    m.nav_asset = ui_asset('m1plus_cover')
     m.load_image = 0
     m.mem_geometry = True
     cover_rects(m)

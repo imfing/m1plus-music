@@ -727,6 +727,7 @@ def atlas_image(name='pc_atlas'):
 
 def page_machine(card=page_card, cls=None):
     m = (cls or PM)()
+    m.nav_asset = ui_asset('m1plus_podcasts')
     if card: card(m)
     for n in PG_WIDGETS: m.widget(n)
     win, lv, sv, view = m.alloc(0x80), m.widgets['podcasts_listview'], m.alloc(0x180), m.widgets['view_grid']
