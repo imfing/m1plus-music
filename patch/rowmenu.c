@@ -460,13 +460,17 @@ void rowmenu_free(rowmenu_t *rm) {
     memset(rm, 0, sizeof *rm);
 }
 
-void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int y, int row_h, int view_h) {
+void rowmenu_paint_bmp(void *canvas, void *bmp, int right, int flush, int y, int row_h, int view_h) {
     int cy = y + (row_h - 1 - RM_DOTS_PX) / 2, top = cy < 0 ? -cy : 0,
         bottom = cy + RM_DOTS_PX > view_h ? view_h - cy : RM_DOTS_PX, src[4], dst[4];
-    if (!rm->on || !rm->dots || bottom <= top) return;
+    if (!bmp || bottom <= top) return;
     src[0] = 0, src[1] = top, src[2] = RM_DOTS_PX, src[3] = bottom - top;
     dst[0] = rm_glyph_x(right, flush), dst[1] = cy + top, dst[2] = RM_DOTS_PX, dst[3] = bottom - top;
-    canvas_draw_image(canvas, rm->dots, src, dst);
+    canvas_draw_image(canvas, bmp, src, dst);
+}
+
+void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int y, int row_h, int view_h) {
+    if (rm->on) rowmenu_paint_bmp(canvas, rm->dots, right, flush, y, row_h, view_h);
 }
 
 /* The third row's words and glyph: Add to Playlist for the stock library; for a source Download, Cancel Download (waiting or running) or Remove Download (on the card). */

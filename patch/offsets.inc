@@ -1073,6 +1073,17 @@
 #define PH_PILL_Y 220           /* the Play pill and Shuffle disc as drawn, 16 px under the name's box (no count line: the count is the list's footer); the rows start SG_TOP - SG_PILL_Y - SG_PILL_H = 12 px under them */
 #define PH_BTN_Y 218            /* PH_PILL_Y - (AH_BTN_H - AH_PILL_H) / 2: their 44 px buttons' top (the pill and the disc are drawn centred in them) */
 #define PH_TOP 272              /* PH_PILL_Y + SG_PILL_H + 12: where the rows start (SG_TOP is 104 under the large title) */
+#define PH_EDIT_UP 52           /* a stock playlist's Edit mode (patch/songs.c): the pills are hidden and the rows start this much higher (the pills' band: PH_TOP - PH_BTN_Y - 2) */
+#define SG_HANDLE_X 262         /* Edit mode's reorder handle (patch/songs.c, docs/modules/songs.md "Reorder"): its touch zone is x 262 .. 310 (SG_HANDLE_W wide) and the row text ends at its left edge; the hairline still runs to LIST_HAIR_END */
+#define SG_HANDLE_W 48
+#define SG_HANDLE_CX 286        /* the glyph's centre: sg_handle, a 20 px square (three bars 20 px wide, 6 px apart), centred on the row */
+#define SG_HANDLE_PX 20
+#define SG_ADD_TILE_RGB 0xff2e2c2cu /* an empty stock playlist's Add Songs tile (patch/songs.c sg_paint_add): #2C2C2E as a color_t word, LIST_ART px, LIST_R corners; the notes (sg_addnote, SG_HANDLE_RGB) and the white badge (sg_addbadge) over it */
+#define SG_HANDLE_RGB 0x00938e8eu /* #8E8E93 as the bitmap's colour word (A<<24 | B<<16 | G<<8 | R; the alpha is the glyph's coverage) */
+#define SG_FLOAT_BG 0xff262424u /* the lifted row's background, #242426 as a color_t word (B, G, R order as LIST_PRESS) */
+#define SG_EDGE 40              /* a finger this close to the list's top or to the select bar's top scrolls the list while a row is lifted */
+#define SG_EDGE_STEP 8          /* px per tick */
+#define SG_EDGE_MS 30           /* the tick */
 #define PH_SHIFT 96             /* an artist's page with no photo (patch/albums.c, docs/modules/albums.md): the circle's room, AL_PHOTO_Y + AL_PHOTO_D, is taken out - the name (AL_NAME_Y), the pills (AL_HEAD_PILL_Y), the rows (AL_HEAD_END) and the small title's AL_HEAD_COLLAPSE all move up by it and nothing else changes: the name at y 14, the pills at y 52 (SG_PILL_Y), the block ending at AL_PILLS_END */
 #define PH_COLLAPSE 204        /* the navbar shows the small title once the name's box (its bottom, y 204) has scrolled away */
 #define SG_FOOT_H 52            /* the song count under the last row ("25 songs"): this much content, the text box SG_FOOT_GAP below the row, SG_FOOT_TEXT_H high, from x SG_HDR_X */

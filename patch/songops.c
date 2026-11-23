@@ -24,6 +24,14 @@ int so_selection(unsigned count, const unsigned char *sel) {
     return 1;
 }
 
+int so_add_row(int cls, void *list, unsigned count, unsigned row, int playlist) {
+    if (!*(void **)SEL_VEC || row >= count) return 0;
+    select_recordinit((int)count);
+    set_selectindex((int)row);
+    batch_add_file(cls, CLASS_PLAYLISTS, list, *(void **)SEL_VEC, playlist);
+    return 1;
+}
+
 /* The stock confirm dialog: modal, the button pressed is the result. */
 static void so_ask(const char *text, int kind, int *answer) {
     struct {
@@ -227,6 +235,36 @@ int so_rename_pl(int id, const char *name) {
     o = so_quoted(o + sizeof mid - 1, name);
     snprintf(tail, sizeof tail, " where id=%d and id<=%d", id, PL_MAX);
     memcpy(o, tail, strlen(tail) + 1);
+    ok = toolsUpdateDbTable(STOCK_DB_PATH, sql) == 1;
+    free(sql);
+    return ok;
+}
+
+int so_reorder_rows(int playlist, const int *ids, unsigned n, unsigned from, unsigned to) {
+    unsigned i, k;
+    char *sql, *o;
+    int ok;
+    if (!ids || n < 2 || from >= n || to >= n || from == to || playlist < 0 || playlist > PL_MAX || ids[0] <= PL_MAX)
+        return 0;
+    for (i = 1; i < n; ++i)
+        if (ids[i] <= ids[i - 1]) return 0;
+    /* Stock's scan insert keeps a transaction open on the shared handle (DB_TX rows since its BEGIN, committed every 100): no reorder then, so ours does not ride in the scan's
+     * transaction. The word is only a preference: the worker may BEGIN right after it is read, which the one call below covers. */
+    if (*(volatile int *)DB_TX > 0) return 0;
+    sql = calloc(64 + n * 160, 1);
+    if (!sql) return 0;
+    /* One sqlite3_exec (toolsUpdateDbTable) for the whole move: the connection is serialized (THREADSAFE=1, sqlite3_open), so another thread's statement cannot run inside it.
+     * SAVEPOINT, not BEGIN: it never fails for a transaction already open (alone it begins one and RELEASE commits; inside the scan's it nests and RELEASE leaves the rows to its COMMIT).
+     * A failed statement makes toolsUpdateDbTable close the handle, which rolls ours back; a refused BEGIN was the failure that could happen, and it is gone. */
+    memcpy(sql, "SAVEPOINT so_reorder;", 21);
+    o = sql + 21;
+    for (i = 0; i < n; ++i)
+        o += snprintf(o, 80, "update playlist set id=-%d where id=%d and cd_num=%d;", ids[i], ids[i], playlist);
+    for (i = 0; i < n; ++i) { /* the row at old index i takes the id of the slot it lands in */
+        k = i == from ? to : from < to && i > from && i <= to ? i - 1 : to < from && i >= to && i < from ? i + 1 : i;
+        o += snprintf(o, 80, "update playlist set id=%d where id=-%d;", ids[k], ids[i]);
+    }
+    memcpy(o, "RELEASE so_reorder;", 20);
     ok = toolsUpdateDbTable(STOCK_DB_PATH, sql) == 1;
     free(sql);
     return ok;

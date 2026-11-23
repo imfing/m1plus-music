@@ -981,6 +981,17 @@ def stock_tests(ctx):
     expect([c[0] for c in order] == ['loadLocalClassList', 'createPlayListItem', 'loadLocalClassList'] and order[0][1] == order[2][1] == O['CLASS_PLAYLISTS']
            and ('createPlayListItem', 'Mix', len(lists)) in m.calls and 'stock_resume' not in m.names(),
            f'Done: the stock list is read, createPlayListItem(stock list, name) makes the playlist, the page reads again ({[c[0] for c in order]})')
+    expect(('timer_add', PSYMS['pl_new_fire'], 400) in m.calls and ('window_open', 'm1plus_songs') not in m.calls,
+           f'the new playlist\'s page waits for the keyboard to go (a timer) ({[c for c in m.calls if c[0] == "timer_add"]}, {PSYMS["pl_new_fire"]:#x})')
+    m.calls = []; m.top_main = 0
+    m.call(PSYMS['pl_new_fire'], a0=0, count=400000000)
+    expect(('window_open', 'm1plus_songs') not in m.calls, 'nothing opens while another window is in front (the keyboard still closing)')
+    m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)   # (the spent timer: a second Done can arm it again)
+    m.calls = []; m.top_main = m.window
+    m.call(PSYMS['pl_new_fire'], a0=0, count=400000000)
+    expect(('window_open', 'm1plus_songs') in m.calls,
+           f'then the new playlist\'s page opens (the empty page and its Add Songs row: test/pod/songs.py add_songs_tests) ({[c for c in m.calls if c[0] == "window_open"]})')
+    m.call(PSYMS['sg_on_destroy'], count=4000000)
     for ret, key in ((-1, 'msg_playlistfull'), (-2, 'msg_playlistexist')):
         m.create_ret = ret; m.calls = []
         m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)

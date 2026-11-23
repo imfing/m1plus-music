@@ -170,6 +170,26 @@ static struct {
     rowmenu_t rm; /* the rows' "..." menu (patch/rowmenu.c) */
     int tend; /* the text end the tiles were last fitted for (without select mode): a list read again with another one drops them */
     int down_more; /* the press began in a row's "..." zone */
+    int down_name; /* Edit mode: the press began on the header's name (a tap renames) */
+    int pick; /* the Add Songs page (docs/modules/songs.md "Add Songs"): the library over a playlist's Edit page; a tap adds the song to playlist pk_id */
+    int pk_id; /* the playlist the picked songs go to */
+    unsigned *pk_h; /* the playlist's songs (and those added here) as two FNV words of the path each, pk_n pairs */
+    unsigned pk_n;
+    void *pk_add, *pk_done; /* the marks as bitmaps (sg_padd white, sg_pdone grey): alpha the coverage */
+    int addrow; /* an empty stock playlist: its header and one Add Songs row (the tile, the text), no pills, no footer, no "No songs" (sg_load) */
+    int add_down; /* the press began on the Add Songs row (drawn pressed) */
+    void *add_note,
+        *add_badge; /* the Add Songs tile's masks as bitmaps (sg_addnote grey, sg_addbadge white); 0: no Add Songs row */
+    int reread; /* the page was under an Add Songs page: its fg handler reads the list again (Edit mode kept) */
+    int fg_due; /* the page was put back from sg_under and its fg handler has not run since (sg_on_put_back runs it) */
+    void *
+        handle; /* Edit mode's reorder handle (sg_handle) as a bitmap: alpha the coverage, colour SG_HANDLE_RGB; 0: no handles, no reorder */
+    int lift; /* Edit mode: the row lifted by its handle, + 1 (0: none) */
+    int lslot, lgrab, lfy,
+        lslide; /* the lift: the slot the row would land in, the finger's offset on the row's top, the finger's y in the window (the list's top 0), the list's yslidable before */
+    unsigned edge_timer; /* the lift's auto-scroll near the list's top or the select bar */
+    void *hpencil, *edel,
+        *eplus; /* Edit mode: the grey pencil after the name (sg_hpencil), the bar's Delete and + (sg_edel, sg_eplus) */
     const lib_src_t *
         src; /* a non-stock library source (songs_open_src), or 0: every stock path above is then unchanged; sg.list is the source's own copy (deque_destroy) */
     int split; /* an artist's songs from the artist split (patch/artsplit.c): the list is built from the library's songs, not the stock query; sg.name is the artist, sg.pl_id 1 for the Unknown Artist row */
@@ -197,6 +217,19 @@ static void *sg_under __attribute__((section(
 
 static int sg_off(void) { return grid_sv_off(sg.sv); }
 static void sg_redraw(void) { grid_sv_redraw(sg.sv); }
+
+/* A lifted row (Edit mode's reorder, docs/modules/songs.md "Reorder") is let go: the auto-scroll timer is removed, the touch released and the list slides again. Safe to call at any time. */
+static void sg_lift_end(int repaint) {
+    if (!sg.lift) return;
+    sg.lift = 0;
+    m1_timer_stop(&sg.edge_timer);
+    if (m1_lift_sv == sg.sv) m1_lift_sv = (void *)0;
+    if (sg.sv) {
+        widget_ungrab(sg.sv, sg.view);
+        widget_set_prop_int(sg.sv, "yslidable", sg.lslide);
+    }
+    if (repaint) sg_redraw();
+}
 
 /* The text of a record: its title, else its file name. */
 static const char *sg_name(void *rec) {
@@ -260,7 +293,7 @@ static int sg_recent(void) {
     return sg.cls == CLASS_RECENTADD;
 } /* Recently Added: its card also holds the Albums / Songs rows (the songs or the newest albums) */
 static int sg_searches(void) {
-    return !sg_genre() && !sg_artist() && !sg_artist_songs() && !sg_playlist() && sg.btn_search &&
+    return !sg.pick && !sg_genre() && !sg_artist() && !sg_artist_songs() && !sg_playlist() && sg.btn_search &&
            (ls_caps(sg.src) &
             LS_CAP_SEARCH); /* (sg_artist: a composer's songs too, which sg_artist_songs leaves out) */
 } /* a list with the Search button (a genre's songs: the stock navbar has none; an artist's: Cover Flow has its place; a playlist's: no Search inside a playlist; a source without the control: none) */
@@ -268,6 +301,10 @@ static int sg_selects(void) { return (ls_caps(sg.src) & LS_CAP_SELECT) != 0; }
 static int sg_cleans(void) {
     return sg.cls == CLASS_PLAYLIST_SONGS && !sg.src;
 } /* a stock playlist's songs: the card has Clean Up Playlist under Select (a source's playlist is the server's: nothing to clean) */
+/* A stock playlist's Edit mode: select mode with the pills gone, the rows higher, the name tappable and the bar's Delete | + (docs/modules/songs.md "A playlist's header"). */
+static int sg_edit(void) { return sg.select && sg.head && sg_cleans(); }
+/* Edit mode's reorder handles (docs/modules/songs.md "Reorder"): at the right of every row of a plain list (a playlist has no sections); the row text ends at their zone. */
+static int sg_handles(void) { return sg_edit() && sg.handle && !sg.al.nsec && sg.count; }
 static int sg_direct(void) {
     return !sg_lib() && !sg_recent() && !sg_cleans();
 } /* a list whose "..." card would hold Select alone: the navbar has the Select button instead (btn_select), no card */
@@ -275,6 +312,7 @@ static int sg_mid(void) {
     return !sg_direct() || sg_selects();
 } /* the capsule has its "..." (or Select) piece; a source's direct list without Select has none */
 static int sg_title_end(void) {
+    if (sg.pick) return NAV_VIEW_X + NAV_VIEW_W; /* (Done and the title alone: no capsule, no Now Playing) */
     if ((sg_artist() && sg.btn_cf) || sg_searches()) return sg_mid() ? NAV_CF_X : NAV_VIEW_X;
     if (sg.src && !sg_selects())
         return NAV_VIEW_X + NAV_VIEW_W; /* no button at all: the title runs to Now Playing (260) */
@@ -286,8 +324,8 @@ static unsigned sg_offers(void) {
     if (sg_lib()) return VS_WITH_SELECT | VS_ALL_SORTS;
     if (sg_recent()) return VS_WITH_VIEWS | (sg.rv ? 0 : VS_WITH_SELECT);
     if (sg_cleans())
-        return VS_WITH_SELECT | VS_SELECT_FIRST | VS_WITH_SEARCH | VS_WITH_ACT2 |
-               VS_WITH_ACT3; /* a playlist: Select, Rename (slot 6, below Select), Clean Up Playlist (slot 8), Pin / Unpin Playlist (slot 9) */
+        return VS_WITH_SELECT | VS_WITH_ACT2 |
+               VS_WITH_ACT3; /* a playlist: Edit (the Select row, sg_edit_row), Clean Up Playlist (slot 8), Pin / Unpin Playlist (slot 9) */
     return VS_WITH_SELECT;
 }
 
@@ -335,7 +373,7 @@ static int sg_pad(void) {
     return sg.select ? SG_BAR_H : 0;
 } /* the bar covers the window's last SG_BAR_H rows: the list scrolls clear of it */
 static int sg_rows_end(void) { return az_rows_end(&sg.al); } /* the content y under the last row: the song count */
-static int sg_content(void) { return sg_rows_end() + SG_FOOT_H + sg_pad(); }
+static int sg_content(void) { return sg_rows_end() + (sg.addrow ? ROW : 0) + SG_FOOT_H + sg_pad(); }
 static int sg_max_scroll(void) { return az_max_scroll(&sg.al); }
 static int sg_row_from(int y) { return az_row_from(&sg.al, y); }
 static int sg_at(int y) {
@@ -365,8 +403,51 @@ static int sg_more_right(void) { return RM_MORE_RIGHT - az_inset(&sg.al); }
 static int sg_edge(void) {
     return rowmenu_on(&sg.rm) ? rowmenu_text_end(sg_more_right(), az_inset(&sg.al) > 0) : az_end(&sg.al);
 }
-static int sg_more(void) { return !sg.select && rowmenu_on(&sg.rm); }
-static int sg_text_end(void) { return sg.select ? az_end(&sg.al) : sg_edge(); }
+static int sg_more(void) { return !sg.select && !sg.pick && rowmenu_on(&sg.rm); }
+static int sg_text_end(void) { return sg.select ? (sg_handles() ? SG_HANDLE_X : az_end(&sg.al)) : sg_edge(); }
+
+/* Edit mode's handle as a bitmap, as the rows' "..." is made (patch/rowmenu.c rm_make_dots): the image sg_handle is white on transparent (cc_decode flattens it over black: the red channel is the coverage),
+ * the bitmap's alpha is that coverage and its colour SG_HANDLE_RGB. 0 when it cannot be made. */
+static void *sg_make_bmp(const char *image, unsigned size, unsigned rgb) {
+    unsigned *px, i;
+    void *b = bitmap_create_ex(size, size, size * 4, BITMAP_RGBA8888);
+    int ok;
+    if (!b) return b;
+    px = (unsigned *)bitmap_lock_buffer_for_write(b);
+    if (!px || bitmap_get_line_length(b) != size * 4) {
+        if (px) bitmap_unlock_buffer(b);
+        bitmap_destroy(b);
+        return (void *)0;
+    }
+    ok = cc_decode(sg.win, image, 1, size, 1, px);
+    for (i = 0; ok && i < size * size; ++i) px[i] = (px[i] & 0xff) << 24 | rgb;
+    bitmap_unlock_buffer(b);
+    if (!ok) {
+        bitmap_destroy(b);
+        return (void *)0;
+    }
+    return b;
+}
+static void *sg_make_handle(void) { return sg_make_bmp("sg_handle", SG_HANDLE_PX, SG_HANDLE_RGB); }
+
+/* Add Songs: a song's path and its CUE span (REC_CUE_START / REC_CUE_END: a CUE image's tracks share one path; stock's duplicate check also compares them) as two FNV words (the
+ * playlist's songs are kept as these, not as strings). */
+#define SG_PK_SEED 2166136261u
+static void sg_pk_hash(void *rec, unsigned h[2]) {
+    const char *p = cc_str(rec, REC_PATH);
+    unsigned cue = (unsigned)I(rec, REC_CUE_START) * 0x9e3779b1u ^ (unsigned)I(rec, REC_CUE_END);
+    h[0] = m1_fnv(SG_PK_SEED ^ cue, p);
+    h[1] = m1_fnv(h[0] ^ 0x9e3779b9u ^ cue, p);
+}
+
+/* The song is in the playlist (or was added here). */
+static int sg_pk_has(void *rec) {
+    unsigned h[2], i;
+    sg_pk_hash(rec, h);
+    for (i = 0; i < sg.pk_n; ++i)
+        if (sg.pk_h[2 * i] == h[0] && sg.pk_h[2 * i + 1] == h[1]) return 1;
+    return 0;
+}
 
 /* The tile of song a, made from the stock record (the caller has checked sg_valid). */
 static void sg_prep(tile_t *t, int a) {
@@ -496,6 +577,42 @@ static int rv_cell_at(int x, int y) {
  * Paint: the rows, the headers and the pinned header, in one EVT_AFTER_PAINT of the content view. Coordinates are the window's (its top is 0): the scroll_view has
  * moved the canvas up by yoffset, which the paint adds back (CANVAS_OY) for its duration, as the Albums page does.
  */
+/* A lifted row (Edit mode's reorder): the slot it is over has the others closed up around it. Row r is shown at the position sg_vrow(r) (the lifted row's own is the slot, drawn empty). */
+static int sg_vrow(int r) {
+    int l = sg.lift - 1, s = sg.lslot;
+    if (!sg.lift || r == l) return r;
+    if (l < s && r > l && r <= s) return r - 1;
+    if (s < l && r >= s && r < l) return r + 1;
+    return r;
+}
+
+/* The reorder handle of the row whose top is at window y: the bitmap centred at SG_HANDLE_CX on the row, clipped to the window as the rows' "..." is. */
+static void sg_handle_paint(void *canvas, int y) {
+    int cy = y + (ROW - 1 - SG_HANDLE_PX) / 2, top = cy < 0 ? -cy : 0,
+        bottom = cy + SG_HANDLE_PX > GRID_VIEW_H ? GRID_VIEW_H - cy : SG_HANDLE_PX, src[4], dst[4];
+    if (!sg_handles() || bottom <= top) return;
+    src[0] = 0, src[1] = top, src[2] = SG_HANDLE_PX, src[3] = bottom - top;
+    dst[0] = SG_HANDLE_CX - SG_HANDLE_PX / 2, dst[1] = cy + top, dst[2] = SG_HANDLE_PX, dst[3] = bottom - top;
+    canvas_draw_image(canvas, sg.handle, src, dst);
+}
+
+/* The lifted row, over everything the rows drew: the lighter background, its marks, cover, texts and handle at the finger (sg.lfy - sg.lgrab). No shadow: the list is black around it. */
+static void sg_paint_float(void *canvas, int tx, int room) {
+    int r = sg.lift - 1, y = sg.lfy - sg.lgrab, pass;
+    tile_t *t;
+    if (r < 0 || r >= (int)sg.count) return;
+    t = sg_tile(r);
+    az_fill(canvas, 0, y, y + ROW - 1, SG_W, SG_FLOAT_BG);
+    m1_sel_paint(&sg.sel, canvas, r, y, ROW, SG_W, LIST_ART_X + (SG_SEL_COL - 6 - SG_MARK) / 2, GRID_VIEW_H);
+    grid_blit(canvas, &sg.g, t, sg_art_x(), y + LIST_ART_Y, GRID_VIEW_H);
+    for (pass = 0; pass < 2; ++pass) {
+        widget_prepare_text_style(pass ? sg.st_sub : sg.st_title, canvas);
+        grid_text(canvas, t, pass, tx, y + (pass ? LIST_SUB_Y : LIST_TITLE_Y), room, pass ? LIST_SUB_H : LIST_TITLE_H,
+                  0);
+    }
+    sg_handle_paint(canvas, y);
+}
+
 static void sg_paint_rows(void *canvas) {
     int r0, r1, r, off = sg_off(), tx = sg_tx(), hair = az_end(&sg.al) - tx, room = sg_text_end() - tx, pass;
     ls_row_t xr[32]; /* a source's row extras, read once per paint (src only; at most 32 rows are in view) */
@@ -505,13 +622,19 @@ static void sg_paint_rows(void *canvas) {
         grid_tile_t *h = grid_find(&sg.hg, 0);
         if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
     }
-    if (sg.head && !sg.wait)
+    if (sg.head && !sg.wait && !sg_edit())
         m1_pill_paint(&sg.pill, canvas, PH_BTN_Y + sg.tsh - off); /* a playlist's Play pill text, over its picture */
     sg_span(&r0, &r1);
     if (sg.src && r1 - r0 > 31) r1 = r0 + 31;
+    if (sg.lift) { /* (a row may be shown one position beside where it is) */
+        if (r0 > 0) --r0;
+        if (r1 < (int)sg.count - 1) ++r1;
+    }
     for (r = r0; r <= r1; ++r) {
-        tile_t *t = sg_tile(r);
-        int y = sg_row_y(r) - off;
+        tile_t *t;
+        int y = sg_row_y(sg_vrow(r)) - off;
+        if (sg.lift == r + 1) continue; /* (its slot stays empty) */
+        t = sg_tile(r);
         if (sg.src) {
             sg.src->row(sg.src, deque_at(sg.list, (unsigned)r), &xr[r - r0]);
             if (sg.st_dim && sg.st_subdim && xr[r - r0].offline) dim |= 1u << (r - r0);
@@ -520,7 +643,12 @@ static void sg_paint_rows(void *canvas) {
         m1_sel_paint(&sg.sel, canvas, r, y, ROW, SG_W, LIST_ART_X + (SG_SEL_COL - 6 - SG_MARK) / 2, GRID_VIEW_H);
         grid_blit(canvas, &sg.g, t, sg_art_x(), y + LIST_ART_Y, GRID_VIEW_H);
         az_fill(canvas, tx, y + ROW - 1, y + ROW, hair, LIST_HAIR);
-        if (sg_more()) rowmenu_paint(canvas, &sg.rm, sg_more_right(), az_inset(&sg.al) > 0, y, ROW, GRID_VIEW_H);
+        if (sg_more())
+            rowmenu_paint(canvas, &sg.rm, sg_more_right(), az_inset(&sg.al) > 0, y, ROW, GRID_VIEW_H);
+        else if (sg.pick)
+            rowmenu_paint_bmp(canvas, sg_pk_has(deque_at(sg.list, (unsigned)r)) ? sg.pk_done : sg.pk_add,
+                              sg_more_right(), az_inset(&sg.al) > 0, y, ROW, GRID_VIEW_H);
+        sg_handle_paint(canvas, y);
     }
     for (
         pass = 0; pass < (sg.src ? 4 : 2);
@@ -531,7 +659,8 @@ static void sg_paint_rows(void *canvas) {
                                               : sg.st_subdim,
                                   canvas);
         for (r = r0; r <= r1; ++r) {
-            int y = sg_row_y(r) - off, sub = pass & 1, pre = 0;
+            int y = sg_row_y(sg_vrow(r)) - off, sub = pass & 1, pre = 0;
+            if (sg.lift == r + 1) continue;
             if (sg.src && (int)(dim >> (r - r0) & 1) != pass >> 1) continue;
             if (sub && sg.src) { /* the grey line: the marks first, then the artist */
                 ls_row_t *x = &xr[r - r0];
@@ -551,6 +680,35 @@ static void sg_paint_rows(void *canvas) {
         }
     }
     az_paint_heads(&sg.al, canvas); /* the section letters, then over everything the pinned band and its letter */
+    if (sg.lift) sg_paint_float(canvas, tx, room);
+}
+
+/* A LIST_ART px mask of the Add Songs tile at (LIST_ART_X, y), cut at the view's edges. */
+static void sg_add_blit(void *canvas, void *bmp, int y) {
+    int top = y < 0 ? -y : 0, bottom = y + LIST_ART > GRID_VIEW_H ? GRID_VIEW_H - y : LIST_ART, src[4], dst[4];
+    if (bottom <= top) return;
+    src[0] = 0, src[1] = top, src[2] = LIST_ART, src[3] = bottom - top;
+    dst[0] = LIST_ART_X, dst[1] = y + top, dst[2] = LIST_ART, dst[3] = bottom - top;
+    canvas_draw_image(canvas, bmp, src, dst);
+}
+
+/* An empty stock playlist (docs/modules/songs.md "Add Songs"): the header's mosaic, then where the first row would be the Add Songs row: the tile (a SG_ADD_TILE_RGB square, the grey notes,
+ * the white badge) and "Add Songs" in the title style, centred on the row; no hairline. A press fills it as a row's. */
+static void sg_paint_add(void *canvas) {
+    int off = sg_off(), y = sg.al.top - off, rect[4];
+    const unsigned *text = widget_get_text(sg.status);
+    unsigned n = 0;
+    grid_tile_t *h = grid_find(&sg.hg, 0);
+    if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
+    if (sg.add_down) az_fill(canvas, 0, y, y + ROW - 1, SG_W, LIST_PRESS);
+    m1_capsule(canvas, GRID_VIEW_H, LIST_ART_X, y + LIST_ART_Y, LIST_ART, LIST_ART, LIST_R, SG_ADD_TILE_RGB);
+    sg_add_blit(canvas, sg.add_note, y + LIST_ART_Y);
+    sg_add_blit(canvas, sg.add_badge, y + LIST_ART_Y);
+    while (text && text[n]) ++n;
+    rect[0] = LIST_TEXT_X, rect[1] = y + (ROW - 1 - LIST_TITLE_H) / 2, rect[2] = SG_W - LIST_TEXT_X - SG_HDR_X,
+    rect[3] = LIST_TITLE_H;
+    widget_prepare_text_style(sg.st_title, canvas);
+    if (n && rect[1] >= 0 && rect[1] + LIST_TITLE_H <= GRID_VIEW_H) canvas_draw_text_in_rect(canvas, text, n, rect);
 }
 
 static int sg_on_paint(void *ctx, void *e) {
@@ -565,7 +723,13 @@ static int sg_on_paint(void *ctx, void *e) {
         }
         return RET_OK;
     }
-    if (!canvas || !sg.view || !sg.g.tiles || !sg.count) return RET_OK;
+    if (!canvas || !sg.view || !sg.g.tiles || (!sg.count && !sg.addrow)) return RET_OK;
+    if (sg.addrow) { /* (no list to check: an empty playlist reads none) */
+        I(canvas, CANVAS_OY) += off;
+        sg_paint_add(canvas);
+        I(canvas, CANVAS_OY) -= off;
+        return RET_OK;
+    }
     if (!sg_valid()) { /* another query replaced the stock list: nothing of it is read; the page reads it again when it is on top */
         if (!sg.stale_timer) sg.stale_timer = timer_add(sg_on_stale, (void *)0, 100);
         return RET_OK;
@@ -674,7 +838,7 @@ static int sg_on_load(const void *unused) {
  * The navbar's title: the large title is in the content; once it has scrolled away the navbar shows the small one
  */
 static void sg_title_update(void) {
-    int on = sg.noscroll || sg.select || (sg.head && !sg.count && !sg.wait) ||
+    int on = sg.noscroll || sg.select || sg.pick || (sg.head && !sg.count && !sg.wait) ||
              m1_title_gone(sg_off(), sg.head ? PH_COLLAPSE + sg.tsh : 0);
     m1_title_set(sg.title, &sg.title_on, on);
     /* The navbar's fade (an insensitive image, built hidden) is for rows passing under the bar: shown while the list is scrolled, hidden at rest, where
@@ -852,6 +1016,8 @@ static void sg_head_prep(void) {
     } else
         nk = sg.count ? grid_mosaic_keys(sg.list, sg.albums, key, (int *)0) : 0;
     t = grid_tile(&sg.hg, 0, 0, 0, &fresh);
+    if (sg_edit() && !fresh && t->art)
+        return; /* Edit keeps the tile until Done (sg_select): no new mosaic per move, remove or add */
     for (i = 0, same = !fresh && t->nq == (nk > 1 && !sg.htmp ? 1 : nk) && t->art; i < 4; ++i)
         same = same && t->qkey[i] == key[i];
     if (!same) {
@@ -863,13 +1029,57 @@ static void sg_head_prep(void) {
     }
 }
 
+/* Where the rows start: under the pills (PH_TOP), PH_EDIT_UP higher where the pills are gone (Edit mode, the Add Songs row of an empty playlist). */
+static void sg_top(void) {
+    if (sg.head) sg.al.top = PH_TOP + sg.tsh - (sg_edit() || sg.addrow ? PH_EDIT_UP : 0);
+}
+
+/* Edit mode's grey pencil: 16 px, 8 px after the name's last line, centred on it; hidden outside Edit. */
+#define SG_PENCIL 16
+#define SG_PENCIL_GAP 8
+static void sg_pencil(void) {
+    int on = sg_edit() && sg.hpencil;
+    if (!sg.hpencil) return;
+    if (on) {
+        void *last = sg.tsh ? sg.hname2 : sg.hname;
+        const unsigned *t = widget_get_text(last);
+        int w = t && *t ? m1_text_w(last, t) : 0, x;
+        if (w > PH_NAME_W) w = PH_NAME_W;
+        x = PH_NAME_X + (PH_NAME_W + w) / 2 + SG_PENCIL_GAP;
+        if (x + SG_PENCIL > SG_W - 2) x = SG_W - 2 - SG_PENCIL;
+        widget_move(sg.hpencil, x, PH_NAME_Y + sg.tsh + (PH_NAME_H - SG_PENCIL) / 2);
+    }
+    widget_set_visible(sg.hpencil, on, 0);
+}
+
+/* Edit mode's bottom bar: Delete | + over the list's Add | Delete (hidden and insensitive then). Delete is dim until a row is marked, + is always on. Runs after m1_sel_head, which sets the two stock pills. */
+static void sg_bar_edit(void) {
+    int on = sg_edit() && sg.edel && sg.eplus, any = sg.sel.nsel != 0;
+    if (sg.edel) {
+        m1_show(sg.edel, on);
+        m1_show(sg.eplus, on);
+    }
+    if (!on) return;
+    m1_show(sg.btn_add, 0);
+    m1_show(sg.btn_del, 0);
+    widget_set_prop_int(sg.edel, "enable", any);
+    widget_set_sensitive(sg.edel, any);
+}
+
 static void sg_head(
     void) { /* the navbar's title: the select mode's (patch/selmode.c), else "Songs" or the list's name, cut to its room with an ellipsis */
     if (!sg.select) {
+        if (sg.pick) { /* Add Songs: "Add to <the playlist>" */
+            char t[0x140];
+            wk_subst(t, sizeof t, TR("Add to %s"), sg.name);
+            az_fit(sg.title, t);
+            return;
+        }
         az_fit(sg.title, sg_lib() ? TR("Songs") : sg_name_text());
         return;
     }
     m1_sel_head(&sg.sel);
+    sg_bar_edit();
 }
 
 /* The rail's widget: centred on the list the select bar leaves (docs/modules/songs.md). */
@@ -925,6 +1135,7 @@ static void sg_load(int keep) {
                 (song_t
                      *)0; /* (the library is big: its old index is not held beside the new one, and it is read again only when it changed) */
     m1_timer_stop(&sg.more_timer);
+    sg_lift_end(0);
     sg_build_end();
     rowmenu_close(&sg.rm); /* (a menu's row is an index of the list that is read again) */
     sg.idx = (song_t *)0, sg.list = sg.first = (void *)0, sg.count = 0, m1_sel_reset(&sg.sel, 0), sg.al.count = 0,
@@ -1006,17 +1217,21 @@ static void sg_load(int keep) {
         grid_drop(&sg.g);
     sg_head_prep();
     if (!same) grid_placeholder(&sg.g);
+    sg.addrow = sg.head && !sg.count && !sg.wait && !list && sg.add_note && sg.add_badge && sg_cleans();
+    sg_top();
+    if (sg.head) sg_pills(); /* (the Add Songs row has none) */
     m1_show(
         sg.view,
-        sg.count != 0 || sg.wait ||
-            !sg.head); /* (a list still loading, or an empty one without a header: the title block, the spinner or the status line under it) */
+        sg.count != 0 || sg.wait || !sg.head ||
+            sg.addrow); /* (a list still loading, or an empty one without a header: the title block, the spinner or the status line under it) */
     if (!sg.head) ls_room(sg.status, (void *)0, LS_ROOM_NAV + SG_TITLE_H);
-    m1_show(sg.status, sg.count == 0 && !(sg.wait && sg.spin));
+    m1_show(sg.status, sg.count == 0 && !(sg.wait && sg.spin) && !sg.addrow);
     if (sg.foot)
-        widget_set_visible(sg.foot, !sg.rv && !sg.wait && !sg.part,
+        widget_set_visible(sg.foot, !sg.rv && !sg.wait && !sg.part && !sg.addrow,
                            0); /* (no count while a paged list is still growing) */
-    if (!sg.count)
-        widget_set_tr_text(sg.status, list       ? "Not enough memory"
+    if (!sg.count) /* (the hidden label holds the Add Songs row's text: sg_paint_add draws it) */
+        widget_set_tr_text(sg.status, sg.addrow  ? "Add Songs"
+                                      : list     ? "Not enough memory"
                                       : sg_lib() ? "Update Library first"
                                                  : ls_empty_key(st, "No songs"));
     sg_spinner(sg.wait && sg.spin);
@@ -1078,12 +1293,14 @@ static int sg_on_stale(const void *unused) {
 /* The Play / Shuffle buttons: the library's two flat pills, or a playlist's header disc and pill (album page style); the set not in use is hidden AND insensitive, the
  * albums view (rv) has neither, and in select mode the shown ones stay in the content, dead. */
 static void sg_pills(void) {
-    int lib = !sg.rv && !sg.head && !sg.wait,
+    int lib = !sg.rv && !sg.head && !sg.wait && !sg.pick, /* (the Add Songs page has no pills) */
         hd = !sg.rv && sg.head && !sg.wait; /* (a source's rows still on their way: neither set) */
     widget_set_visible(sg.btn_play, lib, 0);
     widget_set_visible(sg.btn_shuffle, lib, 0);
     widget_set_sensitive(sg.btn_play, lib && !sg.select);
     widget_set_sensitive(sg.btn_shuffle, lib && !sg.select);
+    hd = hd && !sg_edit() &&
+         !sg.addrow; /* (Edit mode and the Add Songs row: hidden and insensitive, the rows take their band) */
     widget_set_visible(sg.hd_play, hd, 0);
     widget_set_visible(sg.hd_shuffle, hd, 0);
     widget_set_sensitive(sg.hd_play, hd && !sg.select);
@@ -1245,6 +1462,7 @@ static void sg_select(int on) {
     int i;
     void *nav[2];
     if (on == sg.select) return;
+    sg_lift_end(0);
     sg.select = on;
     sg.press = sg.down = 0;
     nav[0] = sg.btn_more, nav[1] = sg.np;
@@ -1253,6 +1471,17 @@ static void sg_select(int on) {
     if (sg.btn_search) m1_show(sg.btn_search, !on && sg_searches());
     sg_pills(); /* the pills stay in the content, dim and dead (the library's) or dead (a playlist's) */
     m1_sel_enter(&sg.sel, on, sg_title_end());
+    if (sg_edit()) grid_icons(sg.back, "ah_nav_done", "ah_nav_done_down"); /* the check: Done */
+    if (!on && sg.head && sg.hg.tiles && sg_valid())
+        sg_head_prep(), sg_kick(); /* Done: the mosaic from the first albums now, if they changed */
+    if (!on && sg.edel) { /* the stock bar's Add and Delete again, Edit's pair away */
+        m1_show(sg.edel, 0);
+        m1_show(sg.eplus, 0);
+        m1_show(sg.btn_add, 1);
+        m1_show(sg.btn_del, 1);
+    }
+    sg_top();
+    sg_pencil();
     sg.title_on = -1;
     sg_head();
     sg_title_update();
@@ -1311,11 +1540,16 @@ static int sg_remove_marked(void) {
 
 /* Delete and Add run the stock code on the stock selection vector (patch/songops.c), filled from the page's marks at that moment. */
 static int sg_on_delete(void *ctx, void *e) {
+    int edit = sg_edit();
     (void)ctx;
     (void)e;
     if (!sg.select || sg.src) return RET_OK; /* (a source's tracks are not deleted from here) */
     if (sg_cleans() ? sg_remove_marked()
                     : so_delete(sg_op_cls(), sg.list, sg.count, sg.sel.bits, sg.sel.nsel, sg_valid())) {
+        if (edit) { /* a playlist's Edit mode stays: the list read again, no marks (an empty playlist is still there, and + still works) */
+            sg_load(1);
+            return RET_OK;
+        }
         sg_select(0);
         sg_load(1);
     }
@@ -1333,6 +1567,68 @@ static int sg_on_add(void *ctx, void *e) {
         sg_select(0);
         sg_load(1);
     }
+    return RET_OK;
+}
+
+static int sg_open_page(int cls, int pl_id, const char *key, const char *name, const lib_src_t *src, int which,
+                        void *scope);
+static void sg_edit_reload(void);
+static unsigned *sg_pick_h __attribute__((
+    section(".scratch"))); /* sg_add_songs: the playlist's songs for the page about to open (it takes them) */
+static unsigned sg_pick_n __attribute__((section(".scratch")));
+static int sg_pick_id __attribute__((section(".scratch"))), sg_pick_next __attribute__((section(".scratch")));
+
+/* Edit mode's +: the Add Songs page (the library, sg.pick) over this one. The playlist's songs are collected first (by path); the page below is read again when it comes back (sg.reread). A page that
+ * is already over another (a playlist reached through Search) opens nothing. */
+static void sg_add_songs(void) {
+    char nm[sizeof sg.name];
+    unsigned i, n;
+    unsigned *h;
+    if (!sg.view || sg_under) return;
+    if (sg.count && !sg_valid()) sg_edit_reload();
+    n = sg.list ? sg.count : 0;
+    h = calloc(2 * (n + 1), sizeof *h);
+    if (!h) return;
+    for (i = 0; i < n; ++i) sg_pk_hash(deque_at(sg.list, i), &h[2 * i]);
+    memcpy(nm, sg.name, sizeof nm);
+    sg_pick_h = h, sg_pick_n = n, sg_pick_id = sg.pl_id, sg_pick_next = 1;
+    if (sg_open_page(CLASS_ALL_SONGS, 0, (const char *)0, nm, (const lib_src_t *)0, 0, (void *)0) == -1 || sg_pick_next)
+        free(sg_pick_h), sg_pick_h = (unsigned *)0,
+                         sg_pick_next = 0; /* (a page that did not open: the page below is as it was) */
+}
+
+/* A tap on row a of the Add Songs page: the song goes to the end of the playlist at once, as the stock picker adds it (so_add_row), and its mark turns to the tick; a song already in it does
+ * nothing. A list another page replaced is read again first. */
+static void sg_pick_tap(int a) {
+    unsigned h[2], *g;
+    void *rec;
+    if (a < 0 || a >= (int)sg.count) return;
+    if (!sg_valid()) {
+        sg_load(1);
+        return;
+    }
+    rec = deque_at(sg.list, (unsigned)a);
+    if (sg_pk_has(rec)) return;
+    if (!so_add_row(CLASS_ALL_SONGS, sg.list, sg.count, (unsigned)a, sg.pk_id)) {
+        pod_toast(TR("msg_addfailed"));
+        return;
+    }
+    sg_pk_hash(rec, h);
+    g = calloc(2 * (sg.pk_n + 1), sizeof *g);
+    if (g) {
+        memcpy(g, sg.pk_h, 2 * sg.pk_n * sizeof *g);
+        g[2 * sg.pk_n] = h[0], g[2 * sg.pk_n + 1] = h[1];
+        free(sg.pk_h);
+        sg.pk_h = g, ++sg.pk_n;
+    }
+    pod_toast(TR("msg_addplaylistsuccess"));
+    sg_redraw();
+}
+
+static int sg_on_eplus(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (sg_edit()) sg_add_songs();
     return RET_OK;
 }
 
@@ -1442,16 +1738,167 @@ static void rv_on_hold(int a) {
     rowmenu_open_album(&sg.rm, a, pins_has_album(cc_str(rv_rec(a), REC_ALBUM)), rv_sheet);
 }
 
+/* ---------------------------------------------------------------------------
+ * Edit mode's reorder (docs/modules/songs.md "Reorder"): a press in a row's handle zone lifts the row at once; it follows the finger, the others close up around its slot (sg_vrow), a finger near the
+ * list's top or the select bar scrolls the list on a timer; the release writes the new order (so_reorder_rows) when the slot changed.
+ */
+static void sg_edit_reload(void);
+
+static int sg_in_handle(void *e) {
+    int pt[2];
+    if (!sg_handles() || !e) return 0;
+    grid_ev_local(sg.view, e, pt);
+    return pt[0] >= SG_HANDLE_X && pt[0] < SG_HANDLE_X + SG_HANDLE_W;
+}
+
+/* The slot the lifted row's middle is over (clamped to the list). */
+static void sg_lift_slot(void) {
+    int s = sg.lfy - sg.lgrab + sg_off() + ROW / 2 - sg.al.top;
+    s = s < 0 ? 0 : s / ROW;
+    if (s > (int)sg.count - 1) s = (int)sg.count - 1;
+    sg.lslot = s;
+}
+
+/* Which way the finger asks the list to scroll: -1 near the top, 1 near the select bar, 0 else; and where one tick takes the list (the offset when it is at an end). */
+static int sg_edge_dir(void) { return sg.lfy < SG_EDGE ? -1 : sg.lfy >= GRID_VIEW_H - SG_BAR_H - SG_EDGE ? 1 : 0; }
+static int sg_edge_to(int d) {
+    int to = sg_off() + d * SG_EDGE_STEP;
+    return to < 0 ? 0 : to > sg_max_scroll() ? sg_max_scroll() : to;
+}
+
+static int sg_on_edge(const void *unused) {
+    int d = sg.lift ? sg_edge_dir() : 0, to = sg_edge_to(d);
+    (void)unused;
+    if (!d ||
+        to ==
+            sg_off()) { /* not near an edge or at the end of the list: the timer ends (a move near the edge starts it again) */
+        sg.edge_timer = 0;
+        return RET_OK;
+    }
+    widget_set_prop_int(sg.sv, "yoffset", to);
+    sg_lift_slot();
+    sg_redraw();
+    return RET_REPEAT;
+}
+
+static void sg_edge_arm(void) {
+    int d = sg_edge_dir();
+    if (sg.edge_timer || !sg.lift || !d || sg_edge_to(d) == sg_off()) return;
+    sg.edge_timer = timer_add(sg_on_edge, (void *)0, SG_EDGE_MS);
+}
+
+/* The press on row a's handle: the row lifts (drawn at the finger, its slot empty), the touch is grabbed at the list and the list's sliding goes off (m1_lift_sv keeps it off, patch/scroll.c). */
+static void sg_lift_start(int a, void *e) {
+    int pt[2];
+    grid_ev_local(sg.view, e, pt);
+    sg.lift = a + 1, sg.lslot = a, sg.lgrab = pt[1] - sg_row_y(a), sg.lfy = pt[1] - sg_off();
+    sg.lslide = widget_get_prop_int(sg.sv, "yslidable", 1);
+    widget_set_prop_int(sg.sv, "yslidable", 0);
+    m1_lift_sv = sg.sv;
+    widget_grab(sg.sv,
+                sg.view); /* (stock refuses it when the list has another grab: the sliding is off all the same) */
+    sg_redraw();
+}
+
+static void sg_lift_follow(void *e) {
+    int pt[2];
+    grid_ev_local(sg.view, e, pt);
+    sg.lfy = pt[1] - sg_off();
+    sg_lift_slot();
+    sg_redraw();
+}
+
+/* The marks follow the moved row: its bit goes from `from` to `to`, the rows between shift by one. */
+static void sg_move_marks(int from, int to) {
+    unsigned char *b = sg.sel.bits;
+    int i, step = to > from ? 1 : -1, keep;
+    if (!b) return;
+#define SG_BIT(i) ((b[(i) >> 3] >> ((i) & 7)) & 1)
+#define SG_SETBIT(i, v) (b[(i) >> 3] = (unsigned char)((b[(i) >> 3] & ~(1 << ((i) & 7))) | ((v) << ((i) & 7))))
+    keep = SG_BIT(from);
+    for (i = from; i != to; i += step) SG_SETBIT(i, SG_BIT(i + step));
+    SG_SETBIT(to, keep);
+#undef SG_BIT
+#undef SG_SETBIT
+}
+
+/* Row `from` dropped on slot `to`: the rows of that range take their ids in the new order (so_reorder_rows), then the list is read again with Edit mode, its marks (moved with the row) and its place. A write that
+ * did not run says so and changes nothing: the list in memory is as it was, so the row is back where it was. */
+static void sg_reorder(int from, int to) {
+    int lo = from < to ? from : to, hi = from < to ? to : from, i, ok = 0;
+    unsigned n = (unsigned)(hi - lo + 1);
+    int *ids;
+    if (!sg_valid()) { /* (another page's query replaced the list: it is read again, nothing is written) */
+        sg_edit_reload();
+        return;
+    }
+    ids = calloc(n, sizeof *ids);
+    if (ids) {
+        ok = 1;
+        for (i = lo; i <= hi; ++i) {
+            void *rec = deque_at(sg.list, (unsigned)i);
+            ids[i - lo] = I(rec, REC_ID);
+            if (I(rec, REC_DISC) != sg.pl_id) ok = 0;
+        }
+        ok = ok && so_reorder_rows(sg.pl_id, ids, n, (unsigned)(from - lo), (unsigned)(to - lo));
+        free(ids);
+    }
+    if (!ok) {
+        pod_toast(TR("Can't reorder playlist"));
+        return;
+    }
+    sg_move_marks(from, to);
+    sg_edit_reload();
+}
+
+/* The release of a lift: the slot under it (the release's own point when it has one), the lift over, then the move. */
+static void sg_lift_drop(void *e) {
+    int from = sg.lift - 1, to;
+    if (e && sg.view) sg_lift_follow(e);
+    to = sg.lslot;
+    sg_lift_end(1);
+    if (to != from) sg_reorder(from, to);
+}
+
 static int sg_on_move(void *ctx, void *e) {
     (void)ctx;
-    if (sg.down && e) rowmenu_hold_move(&sg.tap, e);
+    if (sg.lift && e) {
+        sg_lift_follow(e);
+        sg_edge_arm();
+    } else if (sg.down && e)
+        rowmenu_hold_move(&sg.tap, e);
     return RET_OK;
+}
+
+static void sg_rename(void);
+
+/* Edit mode: the press or release is on the header's name (its lines' band, the full width). */
+static int sg_in_name(void *e) {
+    int pt[2];
+    if (!sg_edit() || !e) return 0;
+    grid_ev_local(sg.view, e, pt);
+    return pt[1] >= PH_NAME_Y - 4 && pt[1] < PH_NAME_Y + sg.tsh + PH_NAME_H + 4;
+}
+
+/* The press or release is on the Add Songs row (the full width). */
+static int sg_in_add(void *e) {
+    int pt[2];
+    if (!sg.addrow || !e || !sg.view) return 0;
+    grid_ev_local(sg.view, e, pt);
+    return pt[1] >= sg.al.top && pt[1] < sg.al.top + ROW;
 }
 
 static int sg_on_down(void *ctx, void *e) {
     int a;
     (void)ctx;
     sg.down = sg.down_more = 0;
+    sg.down_name = sg_in_name(e);
+    if (sg.down_name) m1_tap_at(&sg.tap, e);
+    if (sg_in_add(e)) {
+        sg.add_down = 1, m1_tap_at(&sg.tap, e);
+        sg_redraw();
+        return RET_OK;
+    }
     if (sg.rv) { /* the album grid: no press fill */
         int pt[2];
         if (!e || !sg.view) return RET_OK;
@@ -1465,6 +1912,10 @@ static int sg_on_down(void *ctx, void *e) {
     a = sg_item_of(e);
     sg.down_act = !sg.select && sg_on_act(e);
     if (sg.down_act) a = -1; /* (the pinned header lies over a row: the press is the button's) */
+    if (a >= 0 && sg_in_handle(e)) { /* Edit mode: the handle lifts the row at once */
+        sg_lift_start(a, e);
+        return RET_OK;
+    }
     sg.down = a + 1, m1_tap_at(&sg.tap, e);
     sg.down_more = a >= 0 && sg_in_zone(e);
     if (!sg.select && !sg.down_more) grid_set_press(&sg.press, a + 1, sg.sv);
@@ -1473,8 +1924,25 @@ static int sg_on_down(void *ctx, void *e) {
 }
 
 static int sg_on_up(void *ctx, void *e) {
-    int a = sg.down - 1, more = sg.down_more, act = sg.down_act;
+    int a = sg.down - 1, more = sg.down_more, act = sg.down_act, name = sg.down_name;
     (void)ctx;
+    sg.down_name = 0;
+    if (sg.lift) {
+        sg.down = sg.down_more = sg.down_act = 0;
+        sg_lift_drop(e);
+        return RET_OK;
+    }
+    if (name && e && sg.view && m1_tap_near(&sg.tap, e) && sg_in_name(e)) { /* Edit mode: a tap on the name renames */
+        sg.down = sg.down_more = sg.down_act = 0;
+        sg_rename();
+        return RET_OK;
+    }
+    if (sg.add_down) { /* the Add Songs row: a tap opens the Add Songs page */
+        sg.add_down = 0;
+        sg_redraw();
+        if (e && m1_tap_near(&sg.tap, e) && sg_in_add(e)) sg_add_songs();
+        return RET_OK;
+    }
     rowmenu_hold_stop();
     sg.down = sg.down_more = sg.down_act = 0;
     grid_set_press(&sg.press, 0, sg.sv);
@@ -1493,7 +1961,9 @@ static int sg_on_up(void *ctx, void *e) {
         return RET_OK;
     }
     if (m1_tap_near(&sg.tap, e) && sg_item_of(e) == a) {
-        if (sg.select)
+        if (sg.pick)
+            sg_pick_tap(a);
+        else if (sg.select)
             sg_toggle(a);
         else if (more) {
             if (sg_in_zone(e)) sg_open_menu(a); /* (a press that began on the "..." and ended off it does nothing) */
@@ -1507,7 +1977,9 @@ static int sg_on_abort(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     rowmenu_hold_stop();
-    sg.down = sg.down_more = sg.down_act = 0;
+    sg.down = sg.down_more = sg.down_act = sg.down_name = 0;
+    if (sg.add_down) sg.add_down = 0, sg_redraw();
+    sg_lift_end(1); /* (an abort puts the row back: nothing is written) */
     grid_set_press(&sg.press, 0, sg.sv);
     return RET_OK;
 }
@@ -1540,9 +2012,16 @@ static void sg_pin_row(void) {
         widget_set_prop_str(sg.vs.glyph[VS_ACT3 - VS_SORTS], "image", pinned ? "pod_ic_vsunpin" : "pod_ic_vspin");
 }
 
+/* A playlist's first row is Edit: the Select row with the pencil glyph (set before the card is fitted). */
+static void sg_edit_row(void) {
+    if (sg.vs.label[VS_SELECT]) widget_set_tr_text(sg.vs.label[VS_SELECT], "Edit");
+    if (sg.vs.glyph[VS_SELECT - VS_SORTS])
+        widget_set_prop_str(sg.vs.glyph[VS_SELECT - VS_SORTS], "image", "pod_ic_vsrename");
+}
+
 static void sg_menu(int on) {
     sg.menu = on;
-    if (on && sg_cleans()) sg_pin_row();
+    if (on && sg_cleans()) sg_edit_row(), sg_pin_row();
     vs_menu(&sg.vs, on, sg.sort > 3 ? 3 : sg.sort, sg.sort == 4 || sg_flipped(),
             !sg.rv); /* (Recently Added's Albums row is ticked in the albums view) */
 }
@@ -1632,11 +2111,12 @@ static void sg_clean(void) {
 /* A playlist header's name in one or two lines (the album page's title, m1_wrap2) and what sits under it: the pills and the rows AH_TITLE_LH lower while it takes two. */
 static void sg_name_place(void) {
     sg.tsh = m1_wrap2(sg.hname, sg.hname2, sg_name_text(), PH_NAME_W) ? AH_TITLE_LH : 0;
-    sg.al.top = PH_TOP + sg.tsh;
+    sg_top();
     widget_move(sg.hd_play, AH_PLAY_X, PH_BTN_Y + sg.tsh);
     widget_move(sg.hd_shuffle, AH_SHUF_X, PH_BTN_Y + sg.tsh);
     widget_set_visible(sg.hname2, sg.tsh != 0, 0);
     m1_pill_place(&sg.pill, PH_BTN_Y + sg.tsh);
+    sg_pencil();
 }
 
 /* Rename Playlist (the card's row on a stock playlist; docs/modules/playlists.md "Rename Playlist"): our keyboard as New Playlist opens it (pl_create), the current name in the field. The keyboard is not
@@ -1666,6 +2146,22 @@ static int sg_pl_taken(int id, const char *name) {
     return 0;
 }
 
+/* The list read again with Edit mode and its marks kept (the rows did not change; sg_load drops the marks with the old list). */
+static void sg_edit_reload(void) {
+    unsigned n = sg.count, nsel = sg.sel.nsel;
+    unsigned bytes = (n + 7) / 8;
+    unsigned char *keep = sg.select && sg.sel.bits && n ? calloc(bytes, 1) : (unsigned char *)0;
+    if (keep) memcpy(keep, sg.sel.bits, bytes);
+    sg_load(1);
+    if (keep && sg.count == n && sg.sel.bits) {
+        memcpy(sg.sel.bits, keep, bytes);
+        sg.sel.nsel = nsel;
+        sg_head();
+        sg_redraw();
+    }
+    free(keep);
+}
+
 /* Done: an unchanged name does nothing; another playlist's name is stock's "already exists" message; else one statement renames the header row (so_rename_pl). Then the page's name, its header
  * (one or two lines), the small title, stock's nagvation_title when it held the old name, and a Home pin of this playlist (pins_rename_playlist) follow; the Playlists page reads its list again when it is
  * back in front (the database changed). A statement that did not run changes nothing and says so. */
@@ -1691,12 +2187,12 @@ static void sg_renamed(const char *name) {
     sg_head();
     if (sg.head) {
         sg_name_place();
-        sg_load(1); /* (the rows start lower or higher with a name of the other number of lines) */
+        sg_edit_reload(); /* (the rows start lower or higher with a name of the other number of lines) */
     }
 }
 
 static void sg_rename(void) {
-    if (!sg_cleans() || !sg.view || sg.select) return;
+    if (!sg_cleans() || !sg.view) return;
     sg_rn_id = sg.pl_id, sg_rn_on = 1;
     if (keyboard_open(TR("Rename Playlist"), TR("msg_newplaylists"), sg.name, sg_renamed, (kb_cancel_fn)0, KB_DONE) < 0)
         sg_rn_on = 0;
@@ -1722,10 +2218,6 @@ static int sg_on_item(void *ctx, void *e) {
     int k = (int)(long)ctx, cur = sg.sort > 3 ? 3 : sg.sort;
     (void)e;
     sg_menu(0);
-    if (k == VS_SEARCH) { /* a playlist's Rename (the Songs asset's slot 6; no other list offers it) */
-        sg_rename();
-        return RET_OK;
-    }
     if (k == VS_ACT2) { /* a playlist's Clean Up Playlist */
         sg_clean();
         return RET_OK;
@@ -1734,8 +2226,9 @@ static int sg_on_item(void *ctx, void *e) {
         sg_pin();
         return RET_OK;
     }
-    if (k == VS_SELECT) { /* the old Select button: select mode (an empty list has nothing to select) */
-        if (sg.view && sg.count && !sg.rv) sg_select(1);
+    if (k ==
+        VS_SELECT) { /* the old Select button (a stock playlist's Edit): select mode (an empty list has nothing to select) */
+        if (sg.view && (sg.count || sg_cleans()) && !sg.rv) sg_select(1);
         return RET_OK;
     }
     if (k == VS_SORTS || k == VS_SORTS + 1) { /* Recently Added's View group */
@@ -1786,8 +2279,14 @@ static int sg_changes(void) { return sg.cls == CLASS_FAV || sg.cls == CLASS_RECE
 static int sg_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    sg.fg_due = 0;
     if (!sg.view || !sg.g.tiles) return RET_OK;
-    if (sg.picker) { /* back from the stock playlist picker: its title and class put back, the add done (it changed the records it added), select mode over */
+    if (sg.reread) { /* back from the Add Songs page: the playlist read again (the songs added), Edit mode (if on) and the place kept */
+        sg.reread = 0;
+        *(int *)G_CLASS_TYPE = sg.cls;
+        sg_edit_reload();
+    } else if (
+        sg.picker) { /* back from the stock playlist picker: its title and class put back, the add done (it changed the records it added), select mode over */
         sg.picker = 0;
         *(int *)G_CLASS_TYPE = sg.cls;
         memcpy((void *)NAV_TITLE, sg.title_save, sizeof sg.title_save);
@@ -1809,6 +2308,14 @@ static int sg_on_fg(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The page below is put back from sg_under in the top page's destroy handler, and the window manager may send the page below its foreground event before that (the event
+ * then went to the top page's state): the fg handler runs here when it has not run since, so the Add Songs page's songs show and the timers start again either way. */
+static int sg_on_put_back(const void *unused) {
+    (void)unused;
+    if (sg.fg_due && sg.win) sg_on_fg((void *)0, (void *)0);
+    return RET_OK;
+}
+
 static int sg_on_bg(void *ctx, void *e) {
     az_rail_end(&sg.al);
     rowmenu_close(&sg.rm);
@@ -1818,6 +2325,13 @@ static int sg_on_bg(void *ctx, void *e) {
 static int sg_on_destroy(void *ctx, void *e) {
     (void)ctx;
     (void)e;
+    sg_lift_end(0);
+    if (sg.handle) bitmap_destroy(sg.handle);
+    if (sg.pk_add) bitmap_destroy(sg.pk_add);
+    if (sg.pk_done) bitmap_destroy(sg.pk_done);
+    if (sg.add_note) bitmap_destroy(sg.add_note);
+    if (sg.add_badge) bitmap_destroy(sg.add_badge);
+    free(sg.pk_h);
     m1_timer_stop(&sg.more_timer);
     m1_timer_stop(&sg.stale_timer);
     m1_timer_stop(&sg.gen_timer);
@@ -1837,7 +2351,13 @@ static int sg_on_destroy(void *ctx, void *e) {
     free(sg.idx);
     rowmenu_free(&sg.rm);
     memset(&sg, 0, sizeof sg);
-    if (sg_under) memcpy(&sg, sg_under, sizeof sg), free(sg_under), sg_under = (void *)0;
+    if (sg_under) {
+        memcpy(&sg, sg_under, sizeof sg), free(sg_under), sg_under = (void *)0;
+        sg.reread =
+            sg.head; /* (a playlist's page under an Add Songs page, in Edit or from its Add Songs row: its songs may have changed) */
+        sg.fg_due = 1;
+        timer_add(sg_on_put_back, (void *)0, 0);
+    }
     return RET_OK;
 }
 
@@ -1871,13 +2391,17 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
     if (scope && !(scope_d = so_row_deque(scope)))
         return -1; /* (before the stack: a failure leaves the page below as it is) */
     /* a page is open already: a playlist's page, or a source's list of a row (an artist's All Songs reached through Search from the source's Songs page), goes over it (sg_stack); anything else does not open */
-    if (sg.win && ((cls != CLASS_PLAYLIST_SONGS && !(src && scope)) || sg_stack() == -1)) {
+    if (sg.win && ((cls != CLASS_PLAYLIST_SONGS && !(src && scope) && !sg_pick_next) || sg_stack() == -1)) {
         if (scope_d) deque_destroy(scope_d);
         return -1;
     }
     memset(&sg, 0, sizeof sg);
     sg.cls = cls, sg.pl_id = pl_id, sg.key = key;
     sg.src = src, sg.which = which, sg.scope_d = scope_d;
+    if (sg_pick_next) { /* Add Songs: the playlist's id, name (sg.name) and songs, taken from sg_add_songs */
+        sg.pick = 1, sg.pk_id = sg_pick_id, sg.pk_h = sg_pick_h, sg.pk_n = sg_pick_n;
+        sg_pick_h = (unsigned *)0, sg_pick_next = 0;
+    }
     sg.split = sg_split_next, sg_split_next = 0;
     sg.gsplit = gs_split_next, gs_split_next = 0;
     if (sg_artist())
@@ -1889,6 +2413,7 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
     sg.win = window_open("m1plus_songs");
     if (!sg.win) {
         if (sg.scope_d) deque_destroy(sg.scope_d), sg.scope_d = (void *)0;
+        free(sg.pk_h);
         if (sg_under)
             memcpy(&sg, sg_under, sizeof sg), free(sg_under),
                 sg_under = (void *)0; /* the page below is the open one again */
@@ -1912,6 +2437,9 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
     sg.pill.ptext = widget_lookup(sg.win, "sg_play_text", 1);
     sg.btn_add = m1_bind(sg.win, "sg_add", sg_on_add, (void *)0);
     sg.btn_del = m1_bind(sg.win, "sg_del", sg_on_delete, (void *)0);
+    sg.edel = m1_bind(sg.win, "sg_edel", sg_on_delete, (void *)0); /* optional: a playlist's Edit bar (Delete | +) */
+    sg.eplus = m1_bind(sg.win, "sg_eplus", sg_on_eplus, (void *)0);
+    sg.hpencil = widget_lookup(sg.win, "sg_hpencil", 1);
     sg.title = widget_lookup(sg.win, "label_title", 1);
     sg.fade = widget_lookup(sg.win, "img_nb_fade", 1); /* optional */
     sg.view = widget_lookup(sg.win, "view_grid", 1);
@@ -1970,10 +2498,8 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
           sg.btn_cf)) { /* no piece on the capsule's left: Now Playing is the plain disc, as on a bar with no buttons */
         grid_icons(sg.np, "ah_nav_np", "ah_nav_np_down");
     }
-    if (!sg_lib()) { /* a list: the titles are the list's */
-        grid_title_end(sg.title, sg_title_end());
-        az_fit(sg.big, sg_name_text());
-    }
+    if (!sg_lib() || sg.pick) grid_title_end(sg.title, sg_title_end()); /* a list: the titles are the list's */
+    if (!sg_lib()) az_fit(sg.big, sg_name_text());
     /* A playlist's header (docs/modules/songs.md): the mosaic tile (the Playlists page's, patch/grid.c) and the name under it (the count is the footer under the last row,
      * as Apple Music's), the pills and the rows lower, the large title gone. Without the label, the tile or the quadrant buffer the page keeps its plain look (the large title). */
     if (sg_playlist() && sg.hname && sg.hname2) {
@@ -1982,6 +2508,12 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
             if (sg.src) sg.hg.url = sbs_cover_url;
             grid_placeholder(&sg.hg);
             sg.head = 1;
+            if (sg_cleans()) {
+                sg.handle = sg_make_handle(); /* (without it Edit has no handles) */
+                sg.add_note = sg_make_bmp("sg_addnote", LIST_ART,
+                                          SG_HANDLE_RGB); /* (without both an empty playlist says "No songs") */
+                sg.add_badge = sg_make_bmp("sg_addbadge", LIST_ART, 0x00ffffffu);
+            }
             m1_show(sg.big, 0);
             widget_set_visible(sg.hname, 1, 0); /* (insensitive labels: shown, never a touch target) */
             sg_name_place();
@@ -1991,6 +2523,18 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
     if (!sg.head) {
         m1_centre_pill(sg.btn_play, SG_PILL_W);
         m1_centre_pill(sg.btn_shuffle, SG_PILL_W);
+    }
+    if (sg.pick) { /* Add Songs: the check where Back is, no buttons and no large title, the rows start under the navbar */
+        m1_show(sg.btn_more, 0);
+        m1_show(sg.btn_select, 0);
+        m1_show(sg.np, 0);
+        if (sg.btn_cf) m1_show(sg.btn_cf, 0);
+        if (sg.btn_search) m1_show(sg.btn_search, 0);
+        m1_show(sg.big, 0);
+        grid_icons(sg.back, "ah_nav_done", "ah_nav_done_down");
+        sg.al.top = 0;
+        sg.pk_add = sg_make_bmp("sg_padd", RM_DOTS_PX, 0x00ffffffu);
+        sg.pk_done = sg_make_bmp("sg_pdone", RM_DOTS_PX, SG_HANDLE_RGB);
     }
     sg_pills();
     az_make_disc(&sg.al);

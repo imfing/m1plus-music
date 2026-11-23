@@ -46,6 +46,7 @@
 #include "albums.h"
 #include "coverflow.h"
 #include "pins.h"
+#include "scroll.h"
 
 #define PN_MAGIC "M1P1\n"
 #define PN_MAGIC_LEN 5
@@ -1217,15 +1218,13 @@ static void pn_scroll(int on) {
         widget_set_prop_int(pn.sv, "yslidable", pn.slide);
 }
 
-/* The list a tile is lifted in, for the list gesture hook (patch/scroll.c): yslidable off at the hold does not last, the sheet showing or hiding lays the window out again and stock's list_view
- * layouter turns it back on each time (scroll_view_set_yslidable(sv, 1), 0x60b1e4), so the hook turns it off again before every pointer event of the lift reaches the list. */
-void *pins_lift_sv __attribute__((section(".scratch")));
+/* (m1_lift_sv, set at a lift and cleared at its end, is the list gesture hook's: patch/scroll.c.) */
 
 /* The lift is over (release, abort, window away): the touch is let go, the list slides again. */
 static void pn_lift_end(int repaint) {
     if (!pn.lift) return;
     pn.lift = pn.drag = 0;
-    pins_lift_sv = (void *)0;
+    m1_lift_sv = (void *)0;
     widget_ungrab(pn.sv ? pn.sv : pn.win, pn.sec);
     pn_scroll(1);
     if (repaint) widget_invalidate_force(pn.sec, (void *)0);
@@ -1321,7 +1320,7 @@ static void pn_open_sheet(int row) {
     }
 }
 
-/* The press has been held RM_LONG_MS: the sheet opens at once, the tile lifts (drawn larger) and takes the touch (widget_grab on the list); the list stops sliding (pn_scroll, and pins_lift_sv keeps it so). A drag
+/* The press has been held RM_LONG_MS: the sheet opens at once, the tile lifts (drawn larger) and takes the touch (widget_grab on the list); the list stops sliding (pn_scroll, and m1_lift_sv keeps it so). A drag
  * of SC_DRAG_PX closes the sheet and reorders; a release where it was leaves the sheet open. Without the list's scroll_view there is no lift: the sheet opens at once. */
 static void pn_on_hold(int row) {
     pn.down = 0;
@@ -1331,7 +1330,7 @@ static void pn_on_hold(int row) {
         return;
     }
     pn.lift = row + 1, pn.drag = 0, pn.slot = row;
-    pins_lift_sv = pn.sv;
+    m1_lift_sv = pn.sv;
     pn.fx = pn_x(row) + PIN_COVER / 2, pn.fy = pn_y(row) + PIN_COVER / 2;
     widget_grab(
         pn.sv,

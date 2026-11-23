@@ -142,28 +142,31 @@ def head_shift(s, title):
     return O['AH_TITLE_LH'] if len(wrap2(s, title, 22, O['PH_NAME_W'])) > 1 else 0
 
 
-def content(s, covers_on=True, select=None, title=None, head=False):
+def content(s, covers_on=True, select=None, title=None, head=False, edit=False, pick=None):
     """The whole list as one tall image (window x, content y): title, pills, headers, rows. select: the set of marked titles in select mode (a mark column; the pills dim).
     title: a list's title (no sections), else the library's "Songs"."""
     tsh = head_shift(s, title) if head else 0
-    items, heads, end = build_items(title is None, O['PH_TOP'] + tsh if head else TOP)
+    items, heads, end = build_items(title is None, O['PH_TOP'] + tsh - (O['PH_EDIT_UP'] if edit else 0) if head else 0 if pick is not None else TOP)   # (Add Songs: the rows start under the navbar)
     im = Image.new('RGBA', (W, end + O['SG_FOOT_H'] + 20), (0, 0, 0, 255)); d = ImageDraw.Draw(im)
     if head:   # a playlist's header: the mosaic (the Playlists page's tile, PH_COVER px, 10 px corners), the name 22 px centred under it (patch/songs.c; the count is the footer only)
         im.alpha_composite(PI.mosaic([PI.ALBUMS[i][2] for i in (0, 1, 2, 3)], O['PH_COVER'], O['PH_COVER_R']), (O['PH_COVER_X'], O['PH_COVER_Y']))
-        for i, line in enumerate(wrap2(s, title, 22, O['PH_NAME_W'])): s.text(im, W / 2, O['PH_NAME_Y'] + i * O['AH_TITLE_LH'] + O['PH_NAME_H'] / 2, line, 22, anchor='m')
-    else: s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, fit(s, title, 32, O['SG_TITLE_W']) if title else tr(s, 'Songs'), 32)
+        lines = wrap2(s, title, 22, O['PH_NAME_W'])
+        for i, line in enumerate(lines): s.text(im, W / 2, O['PH_NAME_Y'] + i * O['AH_TITLE_LH'] + O['PH_NAME_H'] / 2, line, 22, anchor='m')
+        if edit: im.alpha_composite(s.img('sg_pencil'), (int(W / 2 + s.font.width(lines[-1], 22) / 2 + 8), O['PH_NAME_Y'] + tsh + (O['PH_NAME_H'] - 16) // 2))   # Edit: the grey pencil after the name (patch/songs.c sg_pencil)
+    elif pick is None: s.text(im, O['SG_TITLE_X'], O['SG_TITLE_H'] / 2, fit(s, title, 32, O['SG_TITLE_W']) if title else tr(s, 'Songs'), 32)
     n = sum(1 for it in items if it[0] == 'r')   # the song count under the last row (patch/songs.c sg_foot_text: the key by n == 1, the number where %d is)
     foot = tuple(int(pod_ui.SG_FOOT_RGB[i:i + 2], 16) for i in (1, 3, 5))
     count = tr(s, '%d song' if n == 1 else '%d songs').replace('%d', str(n))
     s.text(im, O['SG_HDR_X'], end + O['SG_FOOT_GAP'] + O['SG_FOOT_TEXT_H'] / 2, count, O['SG_FOOT_PX'], foot)
     if head:
-        play_header(s, im, O['PH_PILL_Y'] + tsh)
-    else:
+        if not edit: play_header(s, im, O['PH_PILL_Y'] + tsh)
+    elif pick is None:
         for i, (label, g) in enumerate((('Play', 'sg_play'), ('Shuffle', 'sg_shuffle'))):
             pill(s, im, (O['SG_PILL_X0'], O['SG_PILL_X1'])[i], PILL_Y, tr(s, label), s.img(g), PILL_RGB if select is None else BAND)
     shift = SEL_COL if select is not None else 0
     tx = TEXT_X + shift
     more, title_none = dots(s), title is None   # (the library has the rail: the "..." sits left of it)
+    handle = Image.new('RGBA', (O['SG_HANDLE_PX'],) * 2, (0x8E, 0x8E, 0x93, 0)); handle.putalpha(M.handle_image().getchannel('A'))
     on, off = s.img('selected'), s.img('unselect')
     if ACC:   # patch/common.c m1_make_mark: the selected mark's lightness scales the accent (white goes to it, the black tick stays)
         on = on.copy(); on.putdata([(((ACC[0] * p[0] + 127) // 255, (ACC[1] * p[0] + 127) // 255, (ACC[2] * p[0] + 127) // 255, p[3])) for p in on.getdata()])
@@ -173,9 +176,14 @@ def content(s, covers_on=True, select=None, title=None, head=False):
         title, artist, ci = v[:3]
         right = more_right(title_none)
         end = TEXT_END if title_none else O['LIST_HAIR_END']   # (without the rail the rows run to the list-row spec's end)
-        room = end - tx if select is not None else dots_x(right, title_none) + INK_X - INK_GAP - tx   # (select mode has no "...": the text ends at the hairline's end again)
+        room = (O['SG_HANDLE_X'] if edit else end) - tx if select is not None else dots_x(right, title_none) + INK_X - INK_GAP - tx   # (select mode has no "...": the text ends at the hairline's end again)
         d.rectangle((tx, y + ROW_H - 1, end - 1, y + ROW_H - 1), fill=HAIR)
-        if select is None: im.alpha_composite(more, (dots_x(right, title_none), y + (ROW_H - 1 - DOTS_PX) // 2))
+        if pick is not None:   # Add Songs: a white plus, or the grey tick for a song the playlist has (the baked sg_padd / sg_pdone, patch/songs.c sg_make_bmp)
+            mk = s.img('sg_padd').copy() if title not in pick else Image.new('RGBA', (DOTS_PX,) * 2, (0x8E, 0x8E, 0x93, 0))
+            if title in pick: mk.putalpha(s.img('sg_pdone').getchannel('A'))
+            im.alpha_composite(mk, (dots_x(right, title_none), y + (ROW_H - 1 - DOTS_PX) // 2))
+        elif select is None: im.alpha_composite(more, (dots_x(right, title_none), y + (ROW_H - 1 - DOTS_PX) // 2))
+        if edit: im.alpha_composite(handle, (O['SG_HANDLE_CX'] - O['SG_HANDLE_PX'] // 2, y + (ROW_H - 1 - O['SG_HANDLE_PX']) // 2))   # Edit: the reorder handle (the baked sg_handle, #8E8E93)
         if select is not None:
             mk = on if title in select else off
             im.alpha_composite(mk, (ART_X + (SEL_COL - 6 - mk.width) // 2, y + (ROW_H - mk.height) // 2))
@@ -246,10 +254,14 @@ def selbar(s, im, win_h, pieces, on=True):
     for k, n in enumerate(pieces): im.alpha_composite(f['sg_bar_' + n + ('' if on else '_off')], (x + k * slot, y))
 
 
-def navbar(s, im, scroll, select, title=None, artist=False, search=True, direct=False):
+def navbar(s, im, scroll, select, title=None, artist=False, search=True, direct=False, edit=False, pick=None):
     d = ImageDraw.Draw(im); d.rectangle((0, 0, W - 1, NAV - 1), fill=(0, 0, 0))
+    if pick is not None:   # Add Songs: the check where Back is, "Add to <name>" (cut to the room before Now Playing's place), nothing else
+        glass(s, im, 'ah_nav_done', 7, 44)
+        s.text(im, O['NAV_TITLE_X'], 25, fit(s, tr(s, 'Add to %s').replace('%s', pick[1]), PI.title_px(s.tree), O['NAV_VIEW_X'] + O['NAV_VIEW_W'] - O['NAV_TITLE_X']), PI.title_px(s.tree))
+        return
     if select is not None:    # select mode: the x (glass disc) where Back was, "N Selected" from x 58, Select All at the right
-        glass(s, im, 'ah_nav_close', 7, 44)
+        glass(s, im, 'ah_nav_done' if edit else 'ah_nav_close', 7, 44)   # (Edit: the check)
         s.text(im, O['NAV_TITLE_X'], 25, s.strings.get('%d Selected', '%d Selected').replace('%d', str(len(select))), PI.title_px(s.tree))
         selall(s, im, tr(s, 'Select All'))
         return
@@ -306,10 +318,10 @@ def row_menu(s, im, keys=('Pin Song', 'Add to Playlist', 'Favorite', 'Get Info',
     return 0, y, W, h
 
 
-def page(s, covers=True, scroll=0, touched=None, select=None, menu=False, order=None, letters=None, title=None, head=False, row_menu_at=False, artist=False, search=True, direct=False):
+def page(s, covers=True, scroll=0, touched=None, select=None, menu=False, order=None, letters=None, title=None, head=False, row_menu_at=False, artist=False, search=True, direct=False, edit=False, pick=None):
     tsh = head_shift(s, title) if head else 0
-    items, heads, end = build_items(title is None, O['PH_TOP'] + tsh if head else TOP)
-    tall, _ = content(s, covers, select, title, head)
+    items, heads, end = build_items(title is None, O['PH_TOP'] + tsh - (O['PH_EDIT_UP'] if edit else 0) if head else 0 if pick is not None else TOP)
+    tall, _ = content(s, covers, select, title, head, edit, pick[0] if pick else None)
     im = Image.new('RGBA', (W, WIN), (0, 0, 0, 255))
     pad = BAR_H if select is not None else 0
     scroll = max(0, min(scroll, end + O['SG_FOOT_H'] + pad - (WIN - NAV)))       # the list ends with the song count at the window's foot (the bar's room added in select mode)
@@ -323,10 +335,13 @@ def page(s, covers=True, scroll=0, touched=None, select=None, menu=False, order=
         if push < 0:    # a header that is not wholly inside the window has no letter (patch/songs.c sg_letter_text)
             ImageDraw.Draw(band).rectangle((0, 0, 60, HDR_H - 1), fill=(0, 0, 0))
         im.alpha_composite(band.crop((0, -push, W, HDR_H)), (0, NAV))
-    navbar(s, im, scroll - (O['PH_COLLAPSE'] + tsh - O['SG_COLLAPSE'] if head else 0), select, title, artist, search, direct)   # (a playlist's header collapses the title at PH_COLLAPSE)
+    navbar(s, im, scroll - (O['PH_COLLAPSE'] + tsh - O['SG_COLLAPSE'] if head else 0), select, title, artist, search, direct, edit, pick)   # (a playlist's header collapses the title at PH_COLLAPSE)
     if title is None: rail(s, im, letters or [h[1] for h in items if h[0] == 'h'], touched, WIN - NAV - pad)   # (a list has no rail)
     if select is not None:    # the bar: Add to Playlist, Delete (the stock multi-select's add and delete), flat pills
-        selbar(s, im, WIN, ('add', 'del'), bool(select))
+        if edit:   # a playlist's Edit: Delete (dim until a row is marked) | + (patch/songs.c sg_bar_edit)
+            f = M.selbar_images(); x = (W - 2 * M.SELBAR_SLOT) // 2; y = WIN - BAR_H + (BAR_H - M.GLASS_H) // 2
+            im.alpha_composite(f['sg_bar_edel' + ('' if select else '_off')], (x, y)); im.alpha_composite(f['sg_bar_eplus'], (x + M.SELBAR_SLOT, y))
+        else: selbar(s, im, WIN, ('add', 'del'), bool(select))
     if menu: sort_card(s, im, *(order or (0, False)), kind='library' if menu is True else menu)
     if row_menu_at: row_menu(s, im, fav_on=row_menu_at == 'fav')
     if touched:
@@ -338,6 +353,24 @@ def page(s, covers=True, scroll=0, touched=None, select=None, menu=False, order=
         im.paste(Image.new('RGBA', (BUBBLE, BUBBLE), (0x3A, 0x3A, 0x3A, 255)), (x, y), mask.resize((BUBBLE, BUBBLE), Image.LANCZOS))
         im.paste(Image.new('RGBA', (BUBBLE, BUBBLE), (0x26, 0x26, 0x26, 255)), (x, y), inner.resize((BUBBLE, BUBBLE), Image.LANCZOS))
         s.text(im, x + BUBBLE / 2, y + BUBBLE / 2, touched, 56, anchor='m')
+    return im
+
+
+def empty_page(s, title):
+    """An empty stock playlist (patch/songs.c sg_paint_add): the header (the placeholder disc as its mosaic, the name), then where the pills were (PH_EDIT_UP higher) one Add Songs row: the
+    SG_ADD_TILE_RGB tile with the grey notes and the white badge, "Add Songs" in the title style centred on the row; no pills, no footer, no "No songs"."""
+    im = Image.new('RGBA', (W, WIN), (0, 0, 0, 255))
+    tall = Image.new('RGBA', (W, WIN - NAV), (0, 0, 0, 255))
+    tall.alpha_composite(PI.mosaic([], O['PH_COVER'], O['PH_COVER_R']), (O['PH_COVER_X'], O['PH_COVER_Y']))
+    for i, line in enumerate(wrap2(s, title, 22, O['PH_NAME_W'])): s.text(tall, W / 2, O['PH_NAME_Y'] + i * O['AH_TITLE_LH'] + O['PH_NAME_H'] / 2, line, 22, anchor='m')
+    y = O['PH_TOP'] + head_shift(s, title) - O['PH_EDIT_UP']
+    c = O['SG_ADD_TILE_RGB']; round_rect(tall, ART_X, y + ART_Y, ART, ART, O['LIST_R'], (c & 255, c >> 8 & 255, c >> 16 & 255))
+    h = O['SG_HANDLE_RGB']; note, badge = M.add_tile_images()
+    g = Image.new('RGBA', note.size, (h & 255, h >> 8 & 255, h >> 16 & 255, 0)); g.putalpha(note.getchannel('A'))
+    tall.alpha_composite(g, (ART_X, y + ART_Y)); tall.alpha_composite(badge, (ART_X, y + ART_Y))
+    s.text(tall, TEXT_X, y + (ROW_H - 1) / 2, tr(s, 'Add Songs'), 20)
+    im.alpha_composite(tall, (0, NAV))
+    navbar(s, im, -10 ** 6, None, title, False, False, True)
     return im
 
 
@@ -357,6 +390,9 @@ def main():
               ('End of the list: Y (a CJK title by pinyin), the song count', page(s, scroll=10 ** 6)),
               ('Favorites: Search | Select | Now Playing', page(s, title=tr(s, 'Favorites'), direct=True)),
               ('A playlist: the header', page(s, title='Late Night Drive: Songs for the Long Way Home', head=True, search=False, direct=True)),
+              ('A playlist in Edit: the check, the pencil, the handles, Delete | +', page(s, title='Late Night Drive', head=True, search=False, direct=True, select={'Creep'}, edit=True)),
+              ('Add Songs (Edit\'s +): the check, "Add to ...", a plus or a tick on every row, the rail', page(s, letters=ALL_LETTERS, pick=({'Creep', '春よ、来い'}, 'Late Night Drive'))),
+              ('An empty playlist (just made): the header and the Add Songs row', empty_page(s, 'Late Night Drive')),
               ('A playlist, past the name', page(s, scroll=260, title='Late Night Drive: Songs for the Long Way Home', head=True, search=False, direct=True)),
               ('A playlist\'s end: the song count', page(s, scroll=10 ** 6, title='Late Night Drive: Songs for the Long Way Home', head=True, search=False, direct=True)),
               ('A genre\'s songs, scrolled: Select | Now Playing (no card)', page(s, scroll=200, title='Alternative & Punk', search=False, direct=True)),

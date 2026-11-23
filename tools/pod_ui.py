@@ -1394,7 +1394,8 @@ def build_songs_page(page):
     pills, ptext = play_header(o['PH_BTN_Y'])
     grid.children = [title, hname, hname2, sg_pill('btn_play', o['SG_PILL_X0'], o['SG_PILL_Y'], 'Play', 'sg_play', down=SG_PILL_PRESS_RGB),
                      sg_pill('btn_shuffle', o['SG_PILL_X1'], o['SG_PILL_Y'], 'Shuffle', 'sg_shuffle', down=SG_PILL_PRESS_RGB), *pills, foot,
-                     hidden(wf_image('sg_spin', (SCREEN_W - WF_SPIN_PX) // 2, room_y(WF_SPIN_PX, NAVBAR_H + o['SG_TITLE_H']) - NAVBAR_H, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default'))]   # a source's loading spinner (the payload places, shows and turns it)
+                     hidden(wf_image('sg_spin', (SCREEN_W - WF_SPIN_PX) // 2, room_y(WF_SPIN_PX, NAVBAR_H + o['SG_TITLE_H']) - NAVBAR_H, WF_SPIN_PX, WF_SPIN_PX, 'wf_spin0', 'default')),
+                     hidden(wf_image('sg_hpencil', 0, o['PH_NAME_Y'], 16, 16, 'sg_pencil', 'default'))]   # a source's loading spinner (the payload places, shows and turns it)
     root.children.append(ptext)
     sv.children.append(grid)
     root.children.append(lv)
@@ -1405,7 +1406,12 @@ def build_songs_page(page):
                                    ('label_grid_title', GRID_ALBUM_PX, INK_RGB), ('label_grid_sub', GRID_ARTIST_PX, SUB_RGB)))   # the last two: Recently Added's album grid
     root.children.extend(azlist_labels())
     root.children.extend(azlist_rail())
-    root.children.append(select_bar('sg_bar', [('sg_add', 'add'), ('sg_del', 'del')]))
+    songs_bar = select_bar('sg_bar', [('sg_add', 'add'), ('sg_del', 'del')])
+    for n, piece, x in (('sg_edel', 'edel', 0), ('sg_eplus', 'eplus', SB_SLOT_W)):   # a stock playlist's Edit mode: Delete | + over Add | Delete (patch/songs.c sg_bar_edit), hidden and insensitive until then
+        b = hidden(Widget('button', x, 0, SB_SLOT_W, SB_BTN_H, [('name', n), ('enable', 'true'), ('style', 'img_btn_style')]))
+        for st in STATES: styled(b, (st,), 'icon', f'sg_bar_{piece}_down' if st == 'pressed' else f'sg_bar_{piece}_off' if st == 'disable' else f'sg_bar_{piece}')
+        songs_bar.children.append(b)
+    root.children.append(songs_bar)
     root.children.extend(view_sort_card(sort_keys=pod_pages.SONGS_SORT_KEYS, view_keys=('Albums', 'Songs'), act_keys=('Rename', 'Select', 'Clean Up', 'Pin Playlist'),
                                         act_glyphs=('pod_ic_vsrename', 'pod_ic_vsselect', 'pod_ic_vsclean', 'pod_ic_vspin')))   # above the list, the rail and the select bar (the "..." card: Select, a playlist's Rename (slot 6, packed under Select: VS_SELECT_FIRST), Clean Up Playlist (slot 8) and Pin Playlist / Unpin Playlist (slot 9), Albums / Songs on Recently Added, the four sort rows of the library; vs_bind hides what a list does not offer; Search is the navbar button)
     root.children.extend(row_menu())   # last: above everything (the track rows' "..." menu, patch/rowmenu.c)

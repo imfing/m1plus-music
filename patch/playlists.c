@@ -154,6 +154,13 @@ static struct {
     void *stash;
     void *star; /* the Favourites row's glyph: a 24 px white star, alpha bitmap */
 } pick __attribute__((section(".scratch")));
+
+/* A playlist just made on the Playlists page (not the picker): its page opens once the keyboard has gone (pl_new_later). */
+static struct {
+    int id;
+    unsigned timer;
+    char name[0x100];
+} pl_new __attribute__((section(".scratch")));
 static int pl_v(void) { return pick.on ? 2 : 0; } /* the rows before the playlists: New playlist, Favourites */
 /* The stock playlist (index in the copy of the stock list) shown at display position k, after the picker's rows. */
 static unsigned pl_slot(unsigned k) { return pl.ord ? pl.ord[k] : k; }
@@ -810,6 +817,7 @@ static int pl_item_of(void *e) {
 static void pl_create(void);
 static void pl_pick_add(int id);
 static void pl_pick_later(int id);
+static void pl_new_later(int id, const char *name);
 
 /* A tap on a source's playlist: its Songs page; if that page does not open, the playlist plays in order (the tap of a row). */
 static void pl_open_src(void *rec) {
@@ -1038,6 +1046,7 @@ static void pl_named(const char *name) {
         return;
     }
     if (pl.win && pl.view) pl_load();
+    if (r >= 0 && pl.win && !pl_v()) pl_new_later(r, name);
 }
 
 /* The picker's add (patch/picker.c: batch_add_file, the message), then the page closes as the stock picker's handler closes its window (window_close on the row's window). */
@@ -1062,6 +1071,22 @@ static void pl_pick_later(int id) {
     pick.id = id;
     pick.timer = timer_add(pl_pick_fire, (void *)0, PL_PICK_MS);
     if (!pick.timer) pl_pick_add(id); /* no timer: now */
+}
+
+/* The new playlist's own page (empty: its Add Songs row, patch/songs.c), as a tap on its row opens it; PL_PICK_MS after the keyboard's Done, for the reason pl_pick_later waits.
+ * Nothing when the Playlists page is not the front window by then. */
+static int pl_new_fire(const void *unused) {
+    (void)unused;
+    pl_new.timer = 0;
+    if (pl.win && m1_is_top(pl.win)) songs_open_playlist(pl_new.id, pl_new.name);
+    return RET_OK;
+}
+
+static void pl_new_later(int id, const char *name) {
+    if (pl_new.timer) return;
+    pl_new.id = id;
+    snprintf(pl_new.name, sizeof pl_new.name, "%s", name);
+    pl_new.timer = timer_add(pl_new_fire, (void *)0, PL_PICK_MS);
 }
 
 static void pl_create(void) {
@@ -1285,6 +1310,7 @@ static int pl_on_destroy(void *ctx, void *e) {
     free(pl.tmp);
     memset(&pl, 0, sizeof pl);
     m1_timer_stop(&pick.timer);
+    m1_timer_stop(&pl_new.timer);
     if (pick.star) bitmap_destroy(pick.star);
     pick.star = (void *)0;
     if (pick.on) { /* the picker's page: its copies freed, the page below it (if there was one) as it was */

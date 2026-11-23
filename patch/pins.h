@@ -57,6 +57,3 @@ int pins_unpin_artist(const char *name);
 /* The Home menu's long press sheet (Play, Shuffle, Play Next, Play After, Pin Album / Unpin Album) for an album that is not a pin: the Recently Played shelf's tile (patch/recent.c). `ckey` is its cover key, `path` a track of it (""
  * for none). 1 when the sheet opened; 0 when there is none (the pins are not up on the window, the menu is not in front, a sheet is open or the strings do not fit the file). */
 int pins_album_sheet(const char *album, unsigned ckey, const char *path);
-
-/* The scroll_view a tile of the Home grid is lifted in (held, maybe dragged), 0 when none: the list gesture hook keeps that list from sliding (patch/scroll.c). */
-extern void *pins_lift_sv;

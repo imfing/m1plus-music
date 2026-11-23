@@ -1183,6 +1183,7 @@ def name_tests(ctx):
     expect(f == (10, 58, 300, 36) and cl == (264, 0) and card == (0, 0) and cap[0] == 1 and fld[1] == 1, f'a search entry keeps the capsule and the old field geometry ({rowgeo(mn)})')
     m0 = opened()
     expect(said(m0, 'kb_go') is None and not [c for c in m0.calls if c[0] == 'widget_set_tr_text' and c[1] == m0.widgets['kb_go']], 'without KB_DONE the action key is the asset\'s Search')
+    expect(shown(m, 'btn_backtoplayer') == (0, 0) and shown(m0, 'btn_backtoplayer') == (1, 1), f'a name entry hides Now Playing (hidden and insensitive), a search entry keeps it ({shown(m, "btn_backtoplayer")}, {shown(m0, "btn_backtoplayer")})')
     m.calls = []
     press(m, 'kb_go')
     expect(shown(m, 'kb_go') == (1, 1) and not made(m) and ('navigator_back',) not in m.calls, 'Done with an empty field does nothing and the keyboard stays')

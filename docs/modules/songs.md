@@ -70,12 +70,13 @@ the glass of its row count).
 | Songs (library) | Select, hairline, Title, File Name, Format, Recently Added | `vs_glass5` |
 | Recently Added, songs view | Select, hairline, Albums, Songs (ticked) | `vs_glass3` |
 | Recently Added, albums view | Albums (ticked), Songs; Select goes (`vs_offer` repacks) | `vs_glass2` |
-| a stock playlist | Select, Rename, Clean Up, Pin Playlist ([playlists](playlists.md) "Rename Playlist", "Clean Up Playlist") | `vs_glass4` |
+| a stock playlist | Edit, Clean Up, Pin Playlist ([playlists](playlists.md) "Rename Playlist", "Clean Up Playlist") | `vs_glass3` |
 | Favorites, Recently Played, Most Played, Hi-Res, a genre, an artist, a server playlist | no card: the Select button | - |
 
 **Select** is a Tabler `circle-check` glyph (`pod_ic_vsselect`); it works only with songs listed and
-not in Recently Added's albums view. On a stock playlist Rename is the asset's slot 6 (`VS_SEARCH`,
-Lucide `pencil`, `pod_ic_vsrename`), packed under Select by `VS_SELECT_FIRST`. Albums / Songs switch to a newest-first Albums grid
+not in Recently Added's albums view. On a stock playlist the row is **Edit**: the same Select row
+(`VS_SELECT`, relabelled and given the Lucide `pencil` glyph `pod_ic_vsrename` by `sg_edit_row`
+when the card opens), which enters Edit mode (below). Albums / Songs switch to a newest-first Albums grid
 ([recent-albums](recent-albums.md)).
 
 **Sort** (library only): **Title, File Name, Format, Recently Added** (`SONGS_SORT_KEYS`), a tick on
@@ -198,8 +199,10 @@ page's years). `songs_play_artist(artist, SO_IN_ORDER / SO_SHUFFLE)` plays that 
 pills would.
 
 Only one Songs page lives in `sg`. The exception is a playlist, or a source's row list, opened from
-Search over a Songs page: `sg_stack` ends the page below's timers and cover build, moves its state
-to the heap (`sg_under`) and starts `sg` empty; `sg_on_destroy` puts it back. One level only.
+Search over a Songs page, and Add Songs over a playlist's page: `sg_stack` ends the page below's timers and cover build, moves its state
+to the heap (`sg_under`) and starts `sg` empty; `sg_on_destroy` puts it back. The window manager can send the
+page below its foreground event before that destroy, so the put-back also arms a 0 ms timer (`sg_on_put_back`) that
+runs the fg handler unless it ran since. One level only.
 
 What a list is:
 
@@ -276,7 +279,7 @@ only (Apple shows an "Updated" line there, which needs a change time we do not h
 | mosaic | `PH_COVER` 160 px at x `PH_COVER_X` 80, y `PH_COVER_Y` 8; corners `PH_COVER_R` 10 |
 | name | `sg_hname`, x `PH_NAME_X` 17, 286 wide, y `PH_NAME_Y` 182, 22 px white centred; a wider name takes a second line `sg_hname2` `AH_TITLE_LH` (26) px lower (`m1_wrap2`, the album page's title), line 2 cut with `...`, and the pills, the spinner, the rows and `PH_COLLAPSE` move down 26 px (`sg.tsh`) |
 | disc and pill | `hd_shuffle` / `hd_play` 44 px at `AH_SHUF_X` 42 / `AH_PLAY_X` 96, drawn at y `PH_PILL_Y` 220, buttons at `PH_BTN_Y` 218; glyph `sg_glyph` is insensitive over the pill; text painted from hidden `sg_play_text` (18 px `#141414`, `m1_pill_place` / `m1_pill_paint`) |
-| rows | from `PH_TOP` 272 |
+| rows | from `PH_TOP` 272 (`PH_TOP - PH_EDIT_UP` 52 in Edit mode; `sg_top`) |
 | collapse | the small title shows from `PH_COLLAPSE` 204 (`m1_title_gone(off, PH_COLLAPSE)`) |
 
 **The mosaic is the Playlists page's code.** `grid_mosaic_keys` (`patch/grid.c`) picks the first
@@ -285,9 +288,21 @@ the library album's); `grid_mosaic` composes the tile ([playlists](playlists.md)
 own one-tile `grid_t` (`sg.hg`) and a quadrant buffer (`sg.htmp`, 25.6 KB). The loader (`sg_on_load`,
 16 ms) makes the mosaic **first**, one cover a tick, only while the header is in view. The keys come
 from the list just read, so no extra query. `sg_head_prep` remakes the tile only when the four keys
-changed. No tile ring or no `sg_hname` / `sg_hname2` in the asset gives the plain look. A tap on the header opens
-nothing, and neither does the pinned band over scrolled rows (`az_pin_hit`). An empty playlist says
-"No songs" and shows no header.
+changed. In Edit mode it keeps the tile it has (a move, a remove or an add reads the list
+again), and leaving Edit (`sg_select`, Done) checks the keys once. No tile ring or no `sg_hname` / `sg_hname2` in the asset gives the plain look. A tap on the header opens
+nothing, and neither does the pinned band over scrolled rows (`az_pin_hit`). An empty playlist
+without the Add Songs row says "No songs" and shows no header.
+
+**An empty stock playlist's Add Songs row (`sg.addrow`, `sg_paint_add`).** A stock playlist
+(`sg_cleans`) with no songs keeps its header (the placeholder mosaic, the name) and, in place of the
+pills, the footer and "No songs", paints one row at `PH_TOP - PH_EDIT_UP` (`sg_top`): a `LIST_ART` px
+`SG_ADD_TILE_RGB` (#2C2C2E) square with `LIST_R` corners (`m1_capsule`), the `sg_addnote` mask in
+`SG_HANDLE_RGB` grey and the white `sg_addbadge` mask over it (`tools/mod_icons.py`
+`add_tile_images`), and "Add Songs" in the title style centred on the row; its text is held by the
+hidden `label_status`. No hairline. A press fills it `LIST_PRESS`; a tap (`sg_in_add`) opens the Add
+Songs page as Edit's **+** does (`sg_add_songs`), in or out of Edit. Without the two masks the page
+says "No songs" as before. A new playlist made on the Playlists page opens here
+([playlists](playlists.md)).
 
 **Two sets of buttons, one shown (`sg_pills`).** The asset carries the library's flat `btn_play` /
 `btn_shuffle` and the header's `hd_shuffle` / `hd_play` + `sg_glyph`, built hidden and insensitive.
@@ -295,6 +310,79 @@ nothing, and neither does the pinned band over scrolled rows (`az_pin_hit`). An 
 `visible`): the flat pills without a header, the disc and pill with one, neither in Recently Added's
 albums view. In select mode the shown set stays and goes insensitive. Both sets use the same Play /
 Shuffle handlers.
+
+**Edit mode (a stock playlist, `sg_edit`: select mode with a header and `sg_cleans`).** The card's
+Edit row runs `sg_select(1)` (marks, Select All, "N Selected"), plus:
+
+- The navbar's close disc shows a check (`ah_nav_done`, Lucide `check`, swapped in after
+  `m1_sel_enter` sets the x); it leaves the mode like the x.
+- `hd_shuffle`, `hd_play` and `sg_glyph` are hidden and insensitive (`sg_pills`), the Play pill text
+  is not painted, and the rows start `PH_EDIT_UP` 52 higher (`sg_top`, with the pills' band gone;
+  the scroll offset is clamped by `sg_select`).
+- A tap on the name's band (`sg_in_name`, y `PH_NAME_Y` - 4 to the name's bottom + 4, full width)
+  opens the rename keyboard (`sg_rename`; [playlists](playlists.md) "Rename Playlist"). `sg_pencil`
+  places the hidden image `sg_hpencil` (16 px grey `#8E8E93`, `sg_pencil`) 8 px after the name's
+  last line, centred on it, and shows it only in Edit. A rename reads the list again through
+  `sg_edit_reload`, which keeps Edit mode and the marks.
+- The bottom bar shows Delete (red trash, left, `sg_edel`) and + (right, `sg_eplus`, 16 px glyph)
+  instead of Add / Delete, which are hidden and insensitive (`sg_bar_edit`). Delete is dim until a
+  row is marked and removes the marked songs from this playlist ([playlists](playlists.md)
+  "Remove from Playlist"). After the confirm the list is read again and Edit stays on, with no
+  marks, also when the playlist is left empty. + opens Add Songs (below).
+- Edit is allowed on an empty playlist: no handles, Delete dim, + works.
+- Every action commits at once; there is no save or cancel.
+
+**Add Songs (Edit's +, the empty playlist's Add Songs row; `sg_pick`).** `sg_add_songs` collects the playlist's songs as two FNV words of
+each path and CUE span (`sg_pk_hash`, `m1_fnv` over `REC_PATH` seeded with `REC_CUE_START` /
+`REC_CUE_END`: a CUE image's tracks share one path, and stock's duplicate check compares the times
+too; no strings are kept), then opens the library (`CLASS_ALL_SONGS`, the
+same rows, sort and A-Z rail as `songs_open`) over the playlist page with `sg_open_page` and
+`sg_pick_next`, stacked by `sg_stack`. A playlist page that is already over another page (reached
+through Search) opens nothing. The page differs in these ways:
+
+- The navbar has the check disc (`ah_nav_done`) where Back is and the title "Add to <name>"
+  (`wk_subst` on the key, cut with an ellipsis to its room, `NAV_VIEW_X + NAV_VIEW_W`); the large title,
+  Play / Shuffle, "...", Search, Cover Flow and Now Playing are hidden and insensitive; the rows start
+  right under the navbar (`al.top` 0). The check closes the page.
+- Each row's "..." is a 24 px mark in its place (`rowmenu_paint_bmp`): a white `circle-plus`
+  (`sg_padd`) or, when the song (its path and CUE span) is in the playlist (`sg_pk_has`), a grey `#8E8E93` `circle-check`
+  (`sg_pdone`); both baked in `tools/mod_icons.py` and made into bitmaps by `sg_make_bmp`.
+- A tap on a row (`sg_pick_tap`) adds that song at once with the stock engine (`so_add_row`: the
+  vector holds the row alone, `batch_add_file(class, CLASS_PLAYLISTS, list, vector, id)`, which
+  appends and skips duplicates), turns the mark to the tick (the hash is added) and toasts
+  `msg_addplaylistsuccess`. A ticked row does nothing, no tap opens Now Playing, a long press does
+  nothing (`sg_more` is off, so no row sheet).
+- On close `sg_on_destroy` restores the playlist page below and sets `reread`; its foreground handler
+  reads the list again (`sg_edit_reload`: Edit if on, offset and, if the count is unchanged, the marks),
+  so the new songs are at the end and an empty page's Add Songs row gives way to them.
+
+**Reorder (Edit mode, `sg_handles`).** Every row has a handle at the right: the baked image `sg_handle`
+(`tools/mod_icons.py` `handle_image`: three rounded bars 20 px wide, 6 px apart, in a 20 px square) made
+into a bitmap by `sg_make_handle` (alpha = coverage, colour `SG_HANDLE_RGB` #8E8E93, as the rows' "...")
+and blitted by `sg_handle_paint`, centred at x `SG_HANDLE_CX` 286 on the row. The touch zone is x
+`SG_HANDLE_X` 262 .. 310; the row text ends at 262 (`sg_text_end`), the hairline still at
+`LIST_HAIR_END`. Without the bitmap, or on a list with sections, there are no handles and no reorder.
+
+- **Lift.** A press in the zone (`sg_on_down` → `sg_lift_start`) lifts that row at once, with no hold:
+  the touch is grabbed at the list (`widget_grab(sv, view)`), the list's `yslidable` is turned off and
+  `m1_lift_sv` (patch/scroll.c, shared with the Home pins' lift, [gestures](gestures.md)) names the
+  list so the gesture hook clears `yslidable` again before each pointer event. A press elsewhere on the
+  row is today's (marks the row). `sg_lift_end` gives all of it back on release, abort, select mode
+  ending (`sg_select`), a list read again (`sg_load`), the window leaving the front and the page's end.
+- **Drag.** The row is painted last (`sg_paint_float`) at the finger minus where on the row it was
+  taken, on `SG_FLOAT_BG` (#242426), with its cover, texts, mark and handle; there is no shadow (the list
+  is black around it). Its slot (`sg_lift_slot`: the row whose band holds the floating row's middle)
+  is empty and the rows between close up one position (`sg_vrow`; the paint widens its row span by one).
+- **Edge scroll.** A finger within `SG_EDGE` 40 px of the list's top, or of the select bar's top, starts
+  a timer (`sg_edge_arm`, `SG_EDGE_MS` 30) that scrolls `SG_EDGE_STEP` 8 px per tick and recomputes the
+  slot (`sg_on_edge`). It ends by itself at an end of the list or away from the edge (a move re-arms
+  it) and is removed by `sg_lift_end`.
+- **Drop** (`sg_lift_drop`, `sg_reorder`). The slot under the release point; if it changed, the rows
+  of the range take their ids in the new order (`so_reorder_rows`, [playlists](playlists.md)
+  "Reorder"), the marks move with their rows (`sg_move_marks`) and the list is read again with the
+  offset, Edit and the marks (`sg_edit_reload`). A write that did not run toasts "Can't reorder
+  playlist" and leaves the list as it was, the row back in its place. No change writes nothing.
+- The lifted row's cover shows the placeholder if the auto-scroll took its tile out of the cover ring.
 
 ## The data
 

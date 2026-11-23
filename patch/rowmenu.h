@@ -133,6 +133,8 @@ void rowmenu_hold_move(const m1_tap_t *t, void *e);
 /* The "..." of a row whose top is at y (the page's paint coordinates) in the zone whose right edge is `right`, cut to [0, view_h) like the chevrons. `flush` 0: centred in the
  * zone; `flush` 1: its bitmap's right edge on `right` (the Songs page beside the A-Z rail). */
 void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int y, int row_h, int view_h);
+/* The same for a bitmap of the "..."'s size (RM_DOTS_PX square) in its place (the Add Songs page's marks, patch/songs.c). */
+void rowmenu_paint_bmp(void *canvas, void *bmp, int right, int flush, int y, int row_h, int view_h);
 
 /* Opens the sheet for the row `row` whose record is `rec`; `add` is the page's Add to Playlist; src is the row's library source (NULL or &lib_stock: the card's library).
  * 1 when the menu is open, 0 when it cannot be (no "...", no memory). The five rows: Play Next, Play After (the source's queue record through upnext_add; an undownloaded DSD row asks

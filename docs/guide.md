@@ -73,6 +73,8 @@ On Songs, Folders, Playlists, Podcasts or an album, choose **Select** (on an alb
 **Select All** (top right) marks everything. The icons in the pill at the bottom act on the marked items:
 add to a playlist, or delete (the trash can; in a playlist it removes the songs from that playlist only). They stay dim until something is marked. Tap **×** to leave.
 
+In a playlist, open **…** and choose **Edit** instead: the Shuffle and Play buttons make way, the bar shows delete and **+**, and tapping the playlist's name (the pencil beside it) renames it. Press the three-bar handle at the right of a song to lift it, then drag it to a new place (near the top or the bottom edge the list scrolls by itself); the order is saved when you let go. A new playlist opens straight away with an **Add Songs** row; tap it to fill the playlist. Tap **+** to add songs: the library opens with a plus beside every song (a grey check for songs already in the playlist), and one tap adds a song at the end; the check mark at the top left comes back to the playlist. Tap the check mark at the top left when you are done.
+
 ## Control playback
 
 ![Now Playing, lyrics and an album](screenshots/playback.jpg)

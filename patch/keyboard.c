@@ -1354,7 +1354,10 @@ int keyboard_open(const char *title, const char *placeholder, const char *initia
     if (flags & KB_DONE) kb_name_row();
     widget_on(kb.win, EVT_DESTROY, kb_on_destroy, kb.win);
     m1_bind(kb.win, "btn_return", kb_on_back, (void *)0);
-    m1_bind(kb.win, "btn_backtoplayer", m1_on_player, (void *)0);
+    m1_show(
+        m1_bind(kb.win, "btn_backtoplayer", m1_on_player, (void *)0),
+        !(flags &
+          KB_DONE)); /* a name entry has no Now Playing button: its Done key ends it, nothing at the top right leaves it */
     if (title && title[0]) widget_set_text_utf8(kb.title, title);
     if (flags & KB_DONE) widget_set_tr_text(kb.go, "Done");
     return 0;

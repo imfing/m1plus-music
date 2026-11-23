@@ -966,11 +966,26 @@ class Machine:
             u_ = re.fullmatch(r"update playlist set fileurl='((?:[^']|'')*)' where id=(\d+)", sql)
             n_ = re.fullmatch(r"update playlist set filename='((?:[^']|'')*)',name='((?:[^']|'')*)' where id=(\d+) and id<=100", sql)   # Rename Playlist: the header row's two name columns
             ret = 1 if (u_ or n_) and not self.__dict__.get('update_fails') else 0xffffffff
-            if ret == 1 and n_:
+            if sql.startswith('SAVEPOINT so_reorder;update playlist set id=-') and sql.endswith(';RELEASE so_reorder;'):   # Edit mode's reorder (so_reorder_rows, one call): every statement runs, then the playlist's rows are in id order again (stock's query has no ORDER BY)
+                ret = 0xffffffff if self.__dict__.get('update_fails') else 1
+                pl = None
+                for st in sql[21:-19].split(';')[:-1]:
+                    a_ = re.fullmatch(r"update playlist set id=-(\d+) where id=(\d+) and cd_num=(\d+)", st)
+                    c_ = re.fullmatch(r"update playlist set id=(\d+) where id=-(\d+)", st)
+                    assert a_ or c_, st
+                    if ret != 1: break
+                    if a_: pl, old, new = int(a_.group(3)), int(a_.group(2)), -int(a_.group(1))
+                    else: pl, old, new = None, -int(c_.group(2)), int(c_.group(1))
+                    for k, rows in self.playlist_songs.items():
+                        for r in rows:
+                            if self.word(r + O['REC_ID']) == old & 0xffffffff and (pl is None or pl == k): self.setword(r + O['REC_ID'], new & 0xffffffff)
+                if ret == 1:
+                    for k, rows in self.playlist_songs.items(): rows.sort(key=lambda r: (lambda v: v - (1 << 32) if v >= 1 << 31 else v)(self.word(r + O['REC_ID'])))
+            elif ret == 1 and n_:
                 for r in self.playlists:
                     if self.word(r + O['REC_DISC']) == int(n_.group(3)):
                         self.setword(r + O['REC_NAME'], self.cstr(n_.group(1).replace("''", "'"))); self.setword(r + O['REC_TITLE'], self.cstr(n_.group(2).replace("''", "'")))
-            elif ret == 1:
+            elif ret == 1 and u_:
                 for rows in self.playlist_songs.values():
                     for r in rows:
                         if self.word(r + O['REC_ID']) == int(u_.group(2)): self.setword(r + O['REC_PATH'], self.cstr(u_.group(1).replace("''", "'")))

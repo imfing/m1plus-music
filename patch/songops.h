@@ -30,6 +30,9 @@ void *so_row_deque(void *rec);
 /* The stock selection vector filled from the bitset: select_recordinit(count), set_selectindex(i) for each marked row. 0 when there is no vector. */
 int so_selection(unsigned count, const unsigned char *sel);
 
+/* One row of the stock list `list` (count rows, class cls) added to playlist `playlist` as the stock picker adds: the vector holds that row alone, batch_add_file appends it (a song the playlist has is skipped). 0 when there is no vector. */
+int so_add_row(int cls, void *list, unsigned count, unsigned row, int playlist);
+
 /* The Delete button (the stock handler's sequence, @0x527f48): nothing marked is a message; the confirm dialog (the library only, or the files too); batch_delete_file(cls, list,
  * the selection); the message. 0: nothing was deleted (nothing marked, or the dialog said no); 1: deleted; -1: the selection could not be made (valid 0: the stock list is not
  * the page's any more). The caller leaves select mode and reads the list again for 1 and -1. */
@@ -59,6 +62,13 @@ unsigned so_clean(void *list, unsigned count, const unsigned char *sel);
 unsigned so_remove_ids(const int *ids, unsigned n);
 /* Rename Playlist: the playlist `id` (1..PL_MAX) gets `name` (not empty; quotes doubled) in both name columns of its header row through toolsUpdateDbTable. 1 when the statement ran. */
 int so_rename_pl(int id, const char *name);
+
+/* Reorder (a stock playlist's Edit mode, docs/modules/playlists.md "Reorder"): stock reads a playlist's songs by `id` order, so the order is the ids'. ids[0..n-1] are the row ids (REC_ID) of the displayed
+ * rows of one range, strictly ascending and over PL_MAX; the row at index `from` of it moves to index `to`. The n ids stay where they are, the rows take them in the new order: one transaction through
+ * toolsUpdateDbTable (each row to -its own id, with cd_num = playlist, then to its new id; negative ids are never used). Nothing is sent while stock's scan holds a transaction on the shared handle (DB_TX
+ * above 0); else one call: SAVEPOINT, the updates, RELEASE (never refused for an open transaction; the serialized connection runs it whole). 1 when it ran; 0 when it did not (a bad argument,
+ * no memory, a scan's transaction, a statement that failed: the handle's close rolled ours back) and nothing changed. The list in memory is not changed (the caller reads it again). */
+int so_reorder_rows(int playlist, const int *ids, unsigned n, unsigned from, unsigned to);
 
 /* The Add button: our picker (patch/picker.h) over the page, or where it cannot open the stock one (@0x5280c0: playlist_page with PICKER_ADD | cls). Either adds the selection to the playlist that is tapped and closes
  * itself. title_save (0x200 bytes) takes nagvation_title, which the picker may overwrite; *picker is set before the picker opens. 0: nothing marked; 1: the picker is open;

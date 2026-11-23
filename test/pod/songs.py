@@ -16,7 +16,7 @@ UI = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/ui/m1plus_songs.bi
 ALL = O['CLASS_ALL_SONGS']
 TEXT_X, TEXT_END, SEL = O['LIST_TEXT_X'], O['LIST_HAIR_END'] - O['SG_RAIL_INSET'], O['SG_SEL_COL']   # (the rail is on in these tests: the rows give up SG_RAIL_INSET)
 RAIL_X, RAIL_W = O['SG_RAIL_X'], O['SG_RAIL_W']
-WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_spin', 'sg_hname', 'sg_hname2', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del',
+WIDGETS = ('btn_coverflow', 'btn_search', 'view_grid', 'sg_rail', 'sg_foot', 'sg_spin', 'sg_hname', 'sg_hname2', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_select', 'btn_selall', 'btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'sg_glyph', 'sg_play_text', 'sg_add', 'sg_del', 'sg_edel', 'sg_eplus', 'sg_hpencil',
            'label_title', 'sg_title', 'label_status', 'label_row_title', 'label_row_sub', 'label_row_dim', 'label_row_subdim', 'label_hdr', 'label_rail', 'label_rail_on', 'sg_bubble', 'sg_bubble_letter', 'sg_bar',
            *VS_WIDGETS, 'vs_item8', 'vs_label8', 'vs_glyph8', 'vs_item9', 'vs_label9', 'vs_glyph9')   # (slots 8 and 9: a playlist's Clean Up Playlist and Pin / Unpin Playlist rows, only in this asset and the Playlists page's)
 
@@ -398,7 +398,7 @@ def asset_tests(ctx):
            and sv.children == [grid] and grid.type == 'view', 'the body is the library lists\' structure: list_view > scroll_view > one content view, with the stock mobile scroll bar')
     kids = {c.name: c for c in grid.children}
     hn = kids['sg_hname']
-    expect(list(kids) == ['sg_title', 'sg_hname', 'sg_hname2', 'btn_play', 'btn_shuffle', 'hd_shuffle', 'hd_play', 'sg_glyph', 'sg_foot', 'sg_spin'] and kids['sg_title'].get('style:normal:font_size') == '32' and kids['sg_title'].get('sensitive') == 'false'
+    expect(list(kids) == ['sg_title', 'sg_hname', 'sg_hname2', 'btn_play', 'btn_shuffle', 'hd_shuffle', 'hd_play', 'sg_glyph', 'sg_foot', 'sg_spin', 'sg_hpencil'] and kids['sg_title'].get('style:normal:font_size') == '32' and kids['sg_title'].get('sensitive') == 'false'
            and kids['sg_title'].get('style:normal:text_color') == '#FFFFFF' and (kids['sg_title'].x, kids['sg_title'].y, kids['sg_title'].h) == (12, 0, 52),
            'the content view holds the large title (32 px white, x 12, insensitive), the playlist header\'s name, the library\'s two flat pills, the playlist header\'s Shuffle disc, Play pill and glyph and the song count (no count in the header: the footer is the one)')
     expect(hn.type == 'label' and hn.get('visible') == 'false' and hn.get('sensitive') == 'false' and hn.get('style:normal:text_align_h') == 'center'
@@ -451,10 +451,14 @@ def asset_tests(ctx):
            and f('label_hdr').get('style:normal:font_size') == '20', 'the rail letters are 12 px #EEEEEC (black on the disc), the headers 20 px')
     barw = f('sg_bar')
     expect((barw.x, barw.y, barw.w, barw.h) == (100, 397, 120, 42) and barw.get('style:normal:bg_color') == '#00000000' and tree.find('sg_bar_line') is None
-           and [(c.name, c.x, c.y, c.w, c.h) for c in barw.children if c.type == 'button'] == [('sg_add', 0, 0, 60, 42), ('sg_del', 60, 0, 60, 42)]
+           and [(c.name, c.x, c.y, c.w, c.h) for c in barw.children if c.type == 'button'] == [('sg_add', 0, 0, 60, 42), ('sg_del', 60, 0, 60, 42), ('sg_edel', 0, 0, 60, 42), ('sg_eplus', 60, 0, 60, 42)]
            and f('sg_add').get('style:normal:icon') == 'sg_bar_add' and f('sg_add').get('style:pressed:icon') == 'sg_bar_add_down' and f('sg_add').get('style:disable:icon') == 'sg_bar_add_off'
            and f('sg_del').get('style:normal:icon') == 'sg_bar_del' and f('sg_del').get('style:disable:icon') == 'sg_bar_del_off' and not any(c.get('text') for c in barw.children),
-           'the select bar: no background, ONE 120 x 42 glass capsule centred in the 64 px foot, of two icon-only 60 px buttons (Add to Playlist, Delete) with normal, pressed and dimmed images')
+           'the select bar: no background, ONE 120 x 42 glass capsule centred in the 64 px foot, of two icon-only 60 px buttons (Add to Playlist, Delete) with normal, pressed and dimmed images, and a playlist\'s Edit pair over them')
+    expect(f('sg_edel').get('style:normal:icon') == 'sg_bar_edel' and f('sg_edel').get('style:disable:icon') == 'sg_bar_edel_off' and f('sg_eplus').get('style:normal:icon') == 'sg_bar_eplus'
+           and f('sg_eplus').get('style:pressed:icon') == 'sg_bar_eplus_down' and f('sg_edel').get('visible') == 'false' and f('sg_eplus').get('visible') == 'false'
+           and f('sg_hpencil').get('image') == 'sg_pencil' and (f('sg_hpencil').w, f('sg_hpencil').h) == (16, 16) and f('sg_hpencil').get('visible') == 'false' and f('sg_hpencil').get('sensitive') == 'false',
+           'Edit: Delete and + start hidden, the pencil is a hidden 16 px image')
     card, scrim = f('vs_card'), f('vs_scrim')
     items = {i: f(f'vs_item{i}') for i in range(7)}
     expect((card.x, card.y, card.w, card.h) == (O['PL_CARD_RIGHT'] - O['PL_CARD_MAX'], O['PL_CARD_Y'], O['PL_CARD_MAX'], 7 * 50) and card.get('visible') == 'false'
@@ -1596,8 +1600,8 @@ def lists_tests(ctx):
     calls = click(m, 'hd_shuffle')
     expect(('mclSetPlayMode', 2) in calls and any(c[0] == 'navigator_to_with_context' and c[1] == 'playing_page' for c in calls), 'the header\'s Shuffle disc plays it in the stock Shuffle mode')
     pick(m, 'select')
-    expect(vis(m, 'hd_play')[0] == 1 and vis(m, 'hd_shuffle')[0] == 1 and vis(m, 'hd_play')[1] != 1 and vis(m, 'hd_shuffle')[1] != 1 and vis(m, 'sg_glyph')[0] == 1
-           and vis(m, 'btn_play') == (0, 0) and vis(m, 'btn_shuffle') == (0, 0), 'select mode: the disc and the pill stay, dead; the flat pills stay hidden and insensitive')
+    expect(vis(m, 'hd_play') == (0, 0) and vis(m, 'hd_shuffle') == (0, 0) and vis(m, 'sg_glyph')[0] == 0
+           and vis(m, 'btn_play') == (0, 0) and vis(m, 'btn_shuffle') == (0, 0), 'a stock playlist\'s select mode is Edit: the header pills are hidden and dead, the flat pills stay hidden and insensitive')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
     expect(sum(1 for c in m.calls if c[0] == 'bitmap_destroy') >= 3, 'closing frees the header\'s bitmaps with the others')
     # one album: its cover full size; none with a cache file: the placeholder disc; no memory for a quadrant: the first cover
@@ -2556,11 +2560,11 @@ def clean_tests(ctx):
     m = page()
     m.click('btn_more', count=900000000)
     card = m.widgets['vs_card']
-    expect(vis(m, 'vs_card') == (1, 1) and [vis(m, f'vs_item{i}') for i in range(10)] == [(0, 0)] * 6 + [(1, 1)] * 4
-           and all(m.props.get((card, f'style:{st}:bg_image')) == 'vs_glass4' for st in ('normal', 'pressed', 'over'))
-           and ('widget_move', m.widgets['vs_item7'], 0, 0) in m.calls and ('widget_move', m.widgets['vs_item6'], 0, 50) in m.calls
-           and ('widget_move', m.widgets['vs_item8'], 0, 100) in m.calls and ('widget_move', m.widgets['vs_item9'], 0, 150) in m.calls,
-           'a playlist\'s card: Select, Rename, Clean Up, then Pin Playlist, four rows in vs_glass4')
+    expect(vis(m, 'vs_card') == (1, 1) and [vis(m, f'vs_item{i}') for i in range(10)] == [(0, 0)] * 7 + [(1, 1)] * 3
+           and all(m.props.get((card, f'style:{st}:bg_image')) == 'vs_glass3' for st in ('normal', 'pressed', 'over'))
+           and ('widget_move', m.widgets['vs_item7'], 0, 0) in m.calls and ('widget_move', m.widgets['vs_item8'], 0, 50) in m.calls and ('widget_move', m.widgets['vs_item9'], 0, 100) in m.calls
+           and ('widget_set_tr_text', m.widgets['vs_label7'], 'Edit') in m.calls and m.props.get((m.widgets['vs_glyph7'], 'image')) == 'pod_ic_vsrename',
+           'a playlist\'s card: Edit (the Select row, the pencil), Clean Up, Pin Playlist, three rows in vs_glass3, no Rename')
     m.click('vs_scrim', count=900000000)
     expect(vis(m, 'vs_card') == (0, 0), 'the scrim closes it')
     m.call(PSYMS['sg_on_destroy'], count=4000000)
@@ -2750,6 +2754,8 @@ def edit_tests(ctx):
         """Playlist 7 'Road' with rows of the first n songs (cd_num 7), playlist 3 'Other' holding the same songs; the menu's widgets; optionally a Home pin of playlist 7."""
         m = list_machine(titles)
         RM.with_menu(m, 0)
+        import mod_icons
+        m.images['sg_handle'] = (O['SG_HANDLE_PX'],) * 2 + (b''.join(struct.pack('<4B', c, c, c, 255) for c in mod_icons.handle_image().getchannel('A').tobytes()),)   # cc_decode's flattened view: the red channel is the coverage
 
         def row(i, r, pl, p):
             rec = m.record(album=f'Album {i % 5}', artist=f'Artist {i % 5}', path=p, title=titles[i], name=f'{i + 1}.flac', rid=r)
@@ -2812,8 +2818,8 @@ def edit_tests(ctx):
     sheet(m, 1)
     expect(vis(m, 'rm_item6') == (0, 0) and vis(m, 'rm_item5') == (1, 1) and m.props.get((card(m), 'style:normal:bg_image')) == 'pc_sheet6', 'Favorites: no Remove from Playlist, six rows as before')
 
-    # select mode: the trash asks, then the marked rows leave by id; never the stock delete, never a file
-    lay = Layout(['A'] * 5, sections=False, top=O['PH_TOP'])
+    # select mode (Edit): the trash asks, then the marked rows leave by id; never the stock delete, never a file
+    lay = Layout(['A'] * 5, sections=False, top=O['PH_TOP'] - O['PH_EDIT_UP'])
     m = page()
     m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); settle(m)
     for i in (1, 3): tap(m, 150, lay.row_y(i) + 30)
@@ -2827,7 +2833,8 @@ def edit_tests(ctx):
     expect(gone_ids(calls) == [rid(1), rid(3)] and said(calls) == ['Removed from Playlist'] and not any(c[0] in ('batch_delete_file', 'select_recordinit', 'remove', 'unlink') for c in calls)
            and not any(c[0] == 'confirm' and c[1] == 'msg_delsong' for c in calls) and len(m.playlist_songs[3]) == 5,
            f'Yes: rows 1 and 3 by their ids, no batch_delete_file, no file, the other playlist untouched ({gone_ids(calls)})')
-    expect(not is_shown(m, 'sg_bar') and m.wtext[m.widgets['sg_foot']] == '3 songs', 'select mode ends and the list is read again')
+    expect(vis(m, 'sg_bar') == (1, 1) and m.wtext[m.widgets['sg_foot']] == '3 songs' and vis(m, 'sg_edel') == (1, 0) and vis(m, 'hd_play') == (0, 0) and m.wtext[m.widgets['label_title']] != '2 Selected',
+           'Delete in Edit stays in Edit: the list is read again, no marks, Delete dim')
     m = page()
     m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); settle(m)
     tap(m, 150, lay.row_y(0) + 30)
@@ -2841,11 +2848,17 @@ def edit_tests(ctx):
     m.click('sg_del', count=900000000)
     expect(any(c[0] == 'batch_delete_file' for c in m.calls) and not gone_ids(m.calls), 'Favorites\' trash is still the stock delete')
 
-    # Rename: the card's row (slot 6) opens our keyboard on the current name
+    # Rename: a tap on the name in Edit opens our keyboard on the current name; outside Edit a tap there does nothing
     m = page()
-    m.click('btn_more', count=900000000); m.calls = []
-    m.click('vs_item6', count=900000000)
-    expect(('window_open', 'm1plus_keyboard') in m.calls and vis(m, 'vs_card') == (0, 0), 'Rename closes the card and opens our keyboard')
+    m.calls = []
+    tap(m, 160, O['PH_NAME_Y'] + 10)
+    expect(('window_open', 'm1plus_keyboard') not in m.calls, 'outside Edit a tap on the name does nothing')
+    m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); settle(m); m.calls = []
+    tap(m, 160, O['PH_NAME_Y'] + 10)
+    expect(('window_open', 'm1plus_keyboard') in m.calls, 'in Edit a tap on the name opens our keyboard')
+    m.calls = []
+    tap(m, 160, O['PH_TOP'] + 200)
+    expect(('window_open', 'm1plus_keyboard') not in m.calls, 'a tap below the name does not')
     rn = lambda m, s, pid=7: (m.setword(PSYMS['sg_rn_id'], pid), m.setword(PSYMS['sg_rn_on'], 1), m.call(PSYMS['sg_renamed'], a0=m.cstr(s), count=900000000))
     upd = lambda calls: [c[2] for c in calls if c[0] == 'toolsUpdateDbTable' and c[1] == DB]
     m.calls = []; rn(m, 'Road')
@@ -2883,8 +2896,411 @@ def edit_tests(ctx):
     m = page()
     m.calls = []; rn(m, 'W' * 60)
     expect(vis(m, 'sg_hname2')[0] == 1 and ('widget_move', m.widgets['hd_play'], O['AH_PLAY_X'], O['PH_BTN_Y'] + O['AH_TITLE_LH']) in m.calls, 'a long new name wraps to two lines: the pills go down a line')
-    expect(all(k in pod_i18n.TEXT and set(pod_i18n.TEXT[k]) == set(pod_i18n.LOCALES) for k in ('Remove from Playlist', 'Removed from Playlist', 'Remove %d song from this playlist?',
-           'Remove %d songs from this playlist?', "Can't remove from playlist", 'Rename', 'Rename Playlist', "Can't rename playlist")), 'the new texts exist in the 13 languages')
+    # Edit: the done check, no pills, rows PH_EDIT_UP higher, the pencil, Delete | +, marks kept across a rename
+    elay = Layout(['A'] * 5, sections=False, top=O['PH_TOP'] - O['PH_EDIT_UP'])
+    m = page()
+    blits, _, _, _ = settle(m)
+    cov0 = [b[2][1] for b in blits if b[2][2] == O['LIST_ART']]
+    m.click('btn_more', count=900000000)
+    expect(all(('widget_set_tr_text', m.widgets['vs_label7'], 'Edit') in m.calls for _ in (0,)) and vis(m, 'vs_item6') == (0, 0), 'the card: Edit on the Select row, no Rename row')
+    m.click('vs_item7', count=900000000)
+    moves = [c for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets['sg_hpencil']]
+    blits, _, _, _ = settle(m)
+    back = m.widgets['btn_return']
+    expect(m.props[(back, 'style:normal:icon')] == 'ah_nav_done' and m.props[(back, 'style:pressed:icon')] == 'ah_nav_done_down', 'Edit: the close disc shows the check')
+    expect(vis(m, 'hd_play') == (0, 0) and vis(m, 'hd_shuffle') == (0, 0) and vis(m, 'sg_glyph')[0] == 0, 'Edit: the header pills are hidden and insensitive')
+    cov1 = [b[2][1] for b in blits if b[2][2] == O['LIST_ART']]
+    expect(cov0 and cov1 and cov1[0] == cov0[0] - O['PH_EDIT_UP'], f'the rows start PH_EDIT_UP higher ({cov0[:1]} -> {cov1[:1]})')
+    expect(vis(m, 'sg_hpencil')[0] == 1 and any(c[2] >= O['PH_NAME_X'] + O['PH_NAME_W'] // 2 and c[3] == O['PH_NAME_Y'] + 3 for c in moves),
+           'the pencil shows after the name, centred on its line')
+    expect(vis(m, 'sg_edel') == (1, 0) and vis(m, 'sg_eplus') == (1, 1) and vis(m, 'sg_add') == (0, 0) and vis(m, 'sg_del') == (0, 0), 'the bar: Delete (dim, dead) and + replace Add and Delete')
+    tap(m, 150, elay.row_y(1) + 30); tap(m, 150, elay.row_y(3) + 30)
+    expect(vis(m, 'sg_edel') == (1, 1) and m.wtext[m.widgets['label_title']] == '2 Selected', 'two marks: Delete lights up')
+    m.calls = []; rn(m, 'Trip')
+    blits, _, _, _ = settle(m)
+    expect(vis(m, 'sg_bar') == (1, 1) and m.wtext[m.widgets['label_title']] == '2 Selected' and vis(m, 'sg_edel') == (1, 1) and vis(m, 'hd_play') == (0, 0)
+           and m.wtext[m.widgets['sg_hname']] == 'Trip', 'a rename keeps Edit mode and its marks')
+    m.click('btn_return', count=900000000); settle(m)
+    expect(not is_shown(m, 'sg_bar') and vis(m, 'hd_play') == (1, 1) and vis(m, 'sg_hpencil')[0] == 0 and not is_shown(m, 'sg_edel') and m.props[(back, 'style:normal:icon')] == 'ah_nav_back',
+           'Done leaves Edit: the pills, the back chevron and the old bar return, the pencil goes')
+    m = list_machine(titles, O['CLASS_FAV']); m.call(PSYMS['songs_open_list'], a0=O['HOME_FAV'], count=900000000); settle(m)
+    m.click('btn_more', count=900000000)
+    expect(m.props[(m.widgets['btn_return'], 'style:normal:icon')] == 'ah_nav_close' and vis(m, 'sg_edel') != (1, 1) and vis(m, 'sg_add')[0] == 1 and vis(m, 'sg_hpencil')[0] == 0, 'other lists keep today\'s Select (the x, Add and Delete)')
+    drag_checks(ctx, page, elay, said, asked, gone_ids, rid, upd)
+    expect(all(k in pod_i18n.TEXT and set(pod_i18n.TEXT[k]) == set(pod_i18n.LOCALES) for k in ("Can't reorder playlist", 'Remove from Playlist', 'Removed from Playlist', 'Remove %d song from this playlist?',
+           'Remove %d songs from this playlist?', "Can't remove from playlist", 'Rename', 'Rename Playlist', "Can't rename playlist", 'Edit')), 'the new texts exist in the 13 languages')
 
 
-SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests, clean_tests, edit_tests, src_tests, src_marks_tests, src_ring_accent_tests, src_dsd_tests, src_dlqueue_tests]   # tools/check.py runs each as its own task
+def add_songs_tests(ctx):
+    """Edit's + opens Add Songs (docs/modules/songs.md "Add Songs"; patch/songs.c sg_add_songs / sg_pick_tap / sg_pk_has, patch/songops.c so_add_row, patch/rowmenu.c rowmenu_paint_bmp): the library over the playlist page with
+    the check disc, "Add to <name>", no pills, buttons or Now Playing, the marks by path, a tap adds one song with the stock engine, a tick does nothing, Done reads the playlist again in Edit; an empty playlist."""
+    expect = ctx.expect
+    import mod_icons
+    pls = O['CLASS_PLAYLIST_SONGS']
+    titles = ['Alpha', 'Bravo', 'Delta', 'Echo', 'Kilo', 'Mike', 'Yankee', 'Zed']
+    lay = Layout(letters_of(titles), top=0)
+    px = O['RM_DOTS_PX']
+    said = lambda calls: [c[1] for c in calls if c[0] == 'toast']
+    adds = lambda calls: [c for c in calls if c[0] == 'batch_add_file']
+
+    def page(n=3, pid=7, name='Road', edit=True):
+        m = list_machine(titles)
+        m.images['sg_handle'] = (O['SG_HANDLE_PX'],) * 2 + (b''.join(struct.pack('<4B', c, c, c, 255) for c in mod_icons.handle_image().getchannel('A').tobytes()),)
+        si = mod_icons.songs_images()
+        for k in ('sg_padd', 'sg_pdone'):
+            m.images[k] = (px, px, b''.join(struct.pack('<4B', c, c, c, 255) for c in si[k].getchannel('A').tobytes()))   # (the red channel is the coverage)
+        for k in mod_icons.SG_ADD:
+            m.images[k] = (O['LIST_ART'],) * 2 + (b''.join(struct.pack('<4B', c, c, c, 255) for c in si[k].getchannel('A').tobytes()),)
+
+        def row(i, r):
+            rec = m.record(album=f'Album {i % 5}', artist=f'Artist {i % 5}', path=f'/mnt/mmc/m/{i + 1}.flac', title=titles[i], name=f'{i + 1}.flac', rid=r)
+            m.setword(rec + O['REC_DISC'], pid)
+            return rec
+        m.row = row
+        m.playlist_songs = {pid: [row(i, 201 + i) for i in range(n)]}
+        h = m.record(path='', title=name, name=name, rid=pid); m.setword(h + O['REC_DISC'], pid); m.setword(h + O['REC_TYPE'], 4)
+        m.playlists.append(h)
+        m.present.add('/tmp/mmc_add'); m.card_mounted = True
+        assert m.call(PSYMS['songs_open_playlist'], a0=pid, a1=m.cstr(name), count=900000000) == 0
+        settle(m)
+        m.u.mem_write(NAV_TITLE, name.encode() + b'\0')
+        if not edit: return m
+        m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); settle(m)
+        m.calls = []
+        return m
+
+    def scan(m):
+        """The whole list through the window: (blits by content y, row titles by content y), the offset put back."""
+        vh = m.props.get((m.sv, 'virtual_h'), 0) or VIEW_H
+        marks, names = {}, {}
+        for off in range(0, max(vh - VIEW_H, 0) + 200, 200):
+            scroll_to(m, off); blits, texts, styles, _ = paint(m)
+            for b in blits:
+                if b[2][2] == px and b[2][3] == px and b[0] in m.bitmaps and b[2][0] == O['RM_MORE_RIGHT_RAIL'] - px:
+                    data, w, h = m.bitmaps[b[0]]
+                    rgb = struct.unpack('<I', bytes(m.u.mem_read(data + 4 * (px * (px // 2) + px // 2), 4)))[0] & 0xffffff
+                    marks[b[2][1] + off] = 'add' if rgb == 0xffffff else 'done' if rgb == O['SG_HANDLE_RGB'] else hex(rgb)
+            for (t, (x, y, w, h)), st in zip(texts, styles):
+                if st == 'label_row_title': names[y + off] = t
+        scroll_to(m, 0)
+        return [marks[y] for y in sorted(marks)], [names[y] for y in sorted(names)]
+    marks = lambda m: scan(m)[0]
+
+    # + opens the library over the playlist page: the check, the title, no pills, buttons or Now Playing, the large title gone, the rail kept, the rows under the navbar
+    m = page()
+    m.click('sg_eplus', count=900000000)
+    opened = ('window_open', 'm1plus_songs') in m.calls
+    settle(m)
+    back = m.widgets['btn_return']
+    expect(opened and m.word(PSYMS['sg_under']) != 0, 'the + opens the Songs page over the playlist page (its state set aside)')
+    expect(m.props[(back, 'style:normal:icon')] == 'ah_nav_done' and m.wtext[m.widgets['label_title']] == 'Add to Road', f'the check disc where Back is, the title "Add to Road" ({m.wtext[m.widgets["label_title"]]})')
+    expect(all(vis(m, n) == (0, 0) for n in ('btn_play', 'btn_shuffle', 'hd_play', 'hd_shuffle', 'btn_more', 'btn_select', 'btn_backtoplayer', 'btn_search', 'btn_coverflow', 'sg_title')) and vis(m, 'sg_rail')[0] == 1,
+           'no Play or Shuffle, no "...", Select, Search, Cover Flow or Now Playing, no large title; the rail stays')
+    blits, _, _, _ = paint(m)
+    cov = sorted(b[2][1] for b in blits if b[2][2] == O['LIST_ART'])
+    expect(cov and cov[0] == lay.row_y(0) + O['LIST_ART_Y'], f'the rows start under the navbar ({cov[:1]} want {lay.row_y(0) + O["LIST_ART_Y"]})')
+    mk = marks(m)
+    expect(mk[:3] == ['done'] * 3 and mk[3:] == ['add'] * (len(mk) - 3) and len(mk) == 8, f'the marks by path: the three songs in the playlist ticked in grey, the others a white plus ({mk})')
+
+    # a CUE image's tracks share one path: the marks tell them apart by REC_CUE_START / REC_CUE_END too (stock's duplicate check compares them)
+    mc = page()
+    one = mc.cstr('/mnt/mmc/m/1.flac')
+    pr = mc.playlist_songs[7][0]; mc.setword(pr + O['REC_CUE_START'], 1000); mc.setword(pr + O['REC_CUE_END'], 2000)
+    for i, (a, z) in ((3, (1000, 2000)), (4, (1000, 3000)), (5, (0, 0))):
+        mc.setword(mc.songs[i] + O['REC_PATH'], one); mc.setword(mc.songs[i] + O['REC_CUE_START'], a); mc.setword(mc.songs[i] + O['REC_CUE_END'], z)
+    mc.click('sg_eplus', count=900000000); settle(mc)
+    mk = marks(mc)
+    expect(mk[:6] == ['add', 'done', 'done', 'done', 'add', 'add'], f'one file, three spans: the playlist holds 1000..2000 (ticked), the whole file and 1000..3000 can still be added ({mk[:6]})')
+
+    # a tap on a row adds that song alone with the stock engine, the mark turns, the toast; no Now Playing
+    m.calls = []
+    calls = tap(m, 150, lay.row_y(5) + 30)
+    expect(len(adds(calls)) == 1 and adds(calls)[0][1:3] == (ALL, 0xf00b) and adds(calls)[0][5] == 7 and adds(calls)[0][6] == [5] and said(calls) == ['msg_addplaylistsuccess']
+           and not any(c[0] == 'navigator_to_with_context' and c[1] == 'playing_page' for c in calls), f'a tap: batch_add_file(all songs, 0xf00b, list, vector, 7) with row 5 alone, the success toast, no Now Playing ({adds(calls)}, {said(calls)})')
+    mk = marks(m)
+    expect(mk[:3] == ['done'] * 3 and mk[3:5] == ['add'] * 2 and mk[5] == 'done' and mk[6:] == ['add'] * (len(mk) - 6), f'the mark of row 5 turns to the tick ({mk})')
+    m.calls = []
+    calls = tap(m, 150, lay.row_y(5) + 30)
+    calls += tap(m, 290, lay.row_y(1) + 30)
+    expect(not adds(calls) and not said(calls) and not any(c[0] == 'navigator_to_with_context' and c[1] == 'playing_page' for c in calls), 'a ticked row does nothing: no add, no toast, no Now Playing')
+    m.calls = []
+    calls = tap(m, 290, lay.row_y(4) + 30)
+    expect(len(adds(calls)) == 1 and adds(calls)[0][6] == [4], 'a tap on the plus itself adds that row')
+    m.calls = []
+    touch(m, 'down', 150, SCREEN_Y0 + lay.row_y(3) + 30, 'sg_on_down')
+    expect(not any(c[0] == 'timer_add' for c in m.calls), 'a long press has nothing to wait for (no row sheet)')
+    touch(m, 'abort', 150, SCREEN_Y0 + lay.row_y(3) + 30, 'sg_on_abort')
+
+    # Done: the page closes, the playlist page below is read again in Edit, the new songs at the end
+    m.playlist_songs[7] += [m.row(5, 301), m.row(4, 302)]
+    m.calls = []
+    m.click('btn_return', count=900000000)
+    expect(('navigator_back',) in m.calls, 'Done closes the page')
+    # the device's order: the page below gets its foreground event first (it goes to the Add Songs page's state), then the top page is destroyed; the put-back timer runs the fg handler
+    m.call(PSYMS['sg_on_fg'], a0=0, a1=0, count=900000000)
+    m.calls = []
+    m.call(PSYMS['sg_on_destroy'], a0=0, a1=0, count=9000000)
+    expect(m.word(PSYMS['sg_under']) == 0 and any(c[0] == 'timer_add' and c[1] == PSYMS['sg_on_put_back'] for c in m.calls), 'the page below is the open one again, its fg handler due on a timer')
+    m.calls = []
+    m.call(PSYMS['sg_on_put_back'], a0=0, count=900000000)
+    settle(m)
+    expect(m.word(m.widgets['label_title'] + 0) is not None and m.wtext[m.widgets['sg_foot']] == '5 songs' and vis(m, 'sg_bar') == (1, 1) and vis(m, 'sg_edel') == (1, 0) and vis(m, 'sg_eplus') == (1, 1) and vis(m, 'hd_play') == (0, 0),
+           f'the playlist page: read again ({m.wtext[m.widgets["sg_foot"]]}), still in Edit (bar, Delete dim, + on, no pills)')
+    rows = scan(m)[1]
+    expect(rows[-2:] == ['Mike', 'Kilo'], f'the new songs are last ({rows})')
+    expect(m.read_cstr(NAV_TITLE) == 'Road' and m.word(G_CLASS) == pls, 'the browsing class is the playlist\'s again')
+    m.calls = []
+    m.call(PSYMS['sg_on_fg'], a0=0, a1=0, count=900000000)
+    m.call(PSYMS['sg_on_put_back'], a0=0, count=900000000)
+    expect(sum(c[0] == 'loadLocalClassList' for c in m.calls) == 0, 'a later foreground event reads nothing again, and the timer is spent')
+
+    # the library page and the other lists are as before outside pick mode (the other sections), and + is dead with a page already under the playlist's
+    m = page()
+    m.setword(PSYMS['sg_under'], 1)
+    m.calls = []
+    m.click('sg_eplus', count=900000000)
+    expect(('window_open', 'm1plus_songs') not in m.calls, 'a playlist page that is over another page opens nothing')
+    m.setword(PSYMS['sg_under'], 0)
+
+    # an empty playlist: Edit works, nothing to delete or drag, + opens
+    m = page(0)
+    expect(vis(m, 'sg_bar') == (1, 1) and vis(m, 'sg_edel') == (1, 0) and vis(m, 'sg_eplus') == (1, 1) and vis(m, 'hd_play') == (0, 0), 'an empty playlist: Edit mode on, Delete dim, + on')
+    blits, _, _, _ = paint(m)
+    expect(not [b for b in blits if b[2][2] == O['SG_HANDLE_PX']], 'no handles')
+    m.click('sg_eplus', count=900000000); settle(m)
+    expect(m.wtext[m.widgets['label_title']] == 'Add to Road' and marks(m)[:1] == ['add'], 'the + opens Add Songs: every song is a white plus')
+
+    # an empty playlist outside Edit: its header and one Add Songs row (the tile, the text) where the pills and "No songs" were; a tap opens Add Songs, Done shows the songs
+    top = O['PH_TOP'] - O['PH_EDIT_UP']
+    m = page(0, edit=False)
+    expect(vis(m, 'view_grid') == (1, 1) and vis(m, 'label_status')[0] == 0 and vis(m, 'sg_foot')[0] == 0 and vis(m, 'hd_play') == (0, 0) and vis(m, 'hd_shuffle') == (0, 0) and vis(m, 'btn_more') == (1, 1),
+           f'the header shown, no "No songs", no footer, no pills, not in Edit ({vis(m, "view_grid")}, {vis(m, "label_status")}, {vis(m, "sg_foot")}, {vis(m, "hd_play")}, {vis(m, "btn_more")})')
+    blits, texts, _, fills = paint(m)
+    tile = [b for b in blits if b[2][:4] == (O['LIST_ART_X'], top + O['LIST_ART_Y'], O['LIST_ART'], O['LIST_ART'])]
+    said_t = [t for t in texts if t[0] == 'Add Songs']
+    expect(len(tile) == 2 and said_t and said_t[0][1][0] == O['LIST_TEXT_X'] and said_t[0][1][1] == top + (O['LIST_ROW_H'] - 1 - O['LIST_TITLE_H']) // 2,
+           f'the tile\'s two masks at the first row\'s cover, "Add Songs" at the title\'s x, centred on the row ({[b[2] for b in blits]}, {said_t})')
+    expect(any(f[0] == O['SG_ADD_TILE_RGB'] for f in fills), 'the tile\'s square in #2C2C2E')
+    calls = tap(m, 150, top + 30)
+    expect(('window_open', 'm1plus_songs') in calls, 'a tap on the row opens Add Songs')
+    settle(m)
+    expect(m.wtext[m.widgets['label_title']] == 'Add to Road', 'the Add Songs page, for this playlist')
+    m.click('btn_return', count=900000000)
+    m.playlist_songs[7] += [m.row(5, 301)]
+    m.call(PSYMS['sg_on_destroy'], a0=0, a1=0, count=9000000)
+    m.call(PSYMS['sg_on_put_back'], a0=0, count=900000000); settle(m)
+    expect(m.wtext[m.widgets['sg_foot']] == '1 song' and vis(m, 'sg_foot')[0] == 1 and vis(m, 'hd_play') == (1, 1) and vis(m, 'label_status')[0] == 0 and m.word(G_CLASS) == pls,  # (the harness shares widget names between the two windows: the More button is the Add Songs page's)
+          
+           f'back: the song shows, the pills and the footer are back, the browsing class the playlist\'s ({m.wtext[m.widgets["sg_foot"]]}, {vis(m, "hd_play")}, {vis(m, "sg_foot")}, {vis(m, "label_status")}, {vis(m, "btn_more")})')
+
+    # Delete that empties the playlist stays in Edit
+    m = page(2)
+    tap(m, 150, Layout(['A'] * 2, sections=False, top=O['PH_TOP'] - O['PH_EDIT_UP']).row_y(0) + 30)
+    tap(m, 150, Layout(['A'] * 2, sections=False, top=O['PH_TOP'] - O['PH_EDIT_UP']).row_y(1) + 30)
+    m.confirm_yes = True; m.on_confirm = lambda mm: mm.playlist_songs.__setitem__(7, [])
+    m.click('sg_edel', count=900000000)
+    expect(vis(m, 'sg_bar') == (1, 1) and vis(m, 'sg_eplus') == (1, 1) and vis(m, 'sg_edel') == (1, 0) and vis(m, 'hd_play') == (0, 0), 'Delete that empties the playlist stays in Edit: + still on')
+    expect(all(k in pod_i18n.TEXT and set(pod_i18n.TEXT[k]) == set(pod_i18n.LOCALES) for k in ('Add to %s', 'Add Songs')) and all('%s' in v for v in pod_i18n.TEXT['Add to %s'].values()), '"Add to %s" and "Add Songs" exist in the 13 languages, "Add to %s" each with its %s')
+
+
+def drag_checks(ctx, page, elay, said, asked, gone_ids, rid, upd):
+    """Edit mode's reorder (patch/songs.c sg_handles / sg_lift_start / sg_lift_follow / sg_edge_arm / sg_on_edge / sg_lift_drop / sg_reorder, patch/songops.c so_reorder_rows, patch/scroll.c m1_lift_sv): the handles in
+    Edit only, a press in their zone lifts at once, the row floats and the others close up, the edge timer, the one transaction of ids on release, the marks that follow, the failure, abort and release paths."""
+    expect = ctx.expect
+    hx, hpx = O['SG_HANDLE_CX'], O['SG_HANDLE_PX']
+    ry = elay.row_y
+    slide = lambda m: m.props.get((m.sv, 'yslidable'))
+    lifted = lambda m: m.word(PSYMS['m1_lift_sv'])
+    grab = lambda m: ('widget_grab', m.sv, m.view) in m.calls
+    titles_of = lambda m: [m.read_cstr(m.word(r + O['REC_TITLE'])) for r in m.playlist_songs[7]]
+    handles = lambda blits: [b for b in blits if b[2][2] == hpx and b[1][2] == hpx]
+
+    def edit_page(n=5, off=128, **kw):
+        m = page(n, **kw)
+        m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000); settle(m)
+        m.setword(m.sv + SC_YOFF, off); m.calls = []   # (scrolled, so the rows moved between are all on the screen)
+        return m
+
+    def down(m, i, x=hx, dy=30): touch(m, 'down', x, SCREEN_Y0 + ry(i) + dy, 'sg_on_down')
+    def move(m, y, x=hx, t=1040): touch(m, 'move', x, SCREEN_Y0 + y, 'sg_on_move', t)
+    def up(m, y, x=hx): touch(m, 'up', x, SCREEN_Y0 + y, 'sg_on_up', 1100)
+    def abort(m, y, x=hx): touch(m, 'abort', x, SCREEN_Y0 + y, 'sg_on_abort', 1100)
+    # (the harness' widget_to_local does not add the list's offset: the y of an event is the content's, a finger fixed on the screen is at the screen y plus the offset)
+    def mark(m, i): down(m, i, 150); up(m, ry(i) + 30, 150)
+
+    # the handles: only in Edit, centred at x 286 on every row, in the grey; the text ends at 262
+    m = page()
+    blits, texts, _, _ = settle(m)
+    expect(not handles(blits), 'outside Edit no row has a handle')
+    m.click('btn_more', count=900000000); m.click('vs_item7', count=900000000)
+    blits, texts, _, _ = settle(m)
+    hs = handles(blits)
+    expect(len(hs) >= 3 and all(b[2][0] == hx - hpx // 2 and b[2][1] in [ry(i) + (O['LIST_ROW_H'] - 1 - hpx) // 2 for i in range(5)] for b in hs), f'Edit: a handle at x {hx - hpx // 2} on every row, centred on it ({[b[2] for b in hs]})')
+    data, bw, bh = m.bitmaps[hs[0][0]]
+    words = struct.unpack(f'<{hpx * hpx}I', bytes(m.u.mem_read(data, hpx * hpx * 4)))
+    expect((bw, bh) == (hpx, hpx) and all(w & 0xffffff == O['SG_HANDLE_RGB'] for w in words) and any(w >> 24 for w in words) and not any(w >> 24 for w in words[:hpx * 2]), 'the handle bitmap is #8E8E93 with the coverage as its alpha, the top rows empty')
+
+    # a press outside the zone is today's (marks the row); in the zone it lifts at once, with no hold
+    m = edit_page()
+    down(m, 1, 261); up(m, ry(1) + 30, 261)
+    expect(not grab(m) and slide(m) is None and not lifted(m) and m.wtext[m.widgets['label_title']] == '1 Selected', 'a tap at x 261 marks the row: no lift')
+    m = edit_page()
+    down(m, 1, 310); up(m, ry(1) + 30, 310)
+    expect(not grab(m) and not lifted(m), 'x 310 is outside the zone')
+    m = edit_page()
+    down(m, 1, 262)
+    expect(grab(m) and slide(m) == 0 and lifted(m) == m.sv, 'a press at x 262 lifts at once: the touch grabbed at the list, yslidable off, the hook\'s list set')
+    up(m, ry(1) + 30, 262)
+    expect(slide(m) == 1 and not lifted(m) and m.wtext[m.widgets['label_title']] != '1 Selected' and ('widget_ungrab', m.sv, m.view) in m.calls and not upd(m.calls), 'released where it was: nothing marked, nothing written, the sliding and the touch given back')
+    m = page()
+    m.calls = []
+    down(m, 1, hx)
+    expect(not grab(m) and not lifted(m), 'outside Edit a press at the handle\'s place lifts nothing')
+
+    # the lifted row floats at the finger and the others close up around its slot
+    m = edit_page(off=0)
+    down(m, 0)
+    blits, _, _, fills = paint(m)
+    expect((O['SG_FLOAT_BG'], 0, ry(0), 320, O['LIST_ROW_H'] - 1) in fills, 'the lifted row has the lighter background at its place')
+    move(m, ry(2) + 10)
+    blits, _, _, fills = paint(m)
+    art = sorted(b[2][1] for b in blits if b[2][2] == O['LIST_ART'])
+    want = sorted([ry(0) + O['LIST_ART_Y'], ry(1) + O['LIST_ART_Y'], ry(2) - 30 + 10 + O['LIST_ART_Y']])
+    expect((O['SG_FLOAT_BG'], 0, ry(2) - 20, 320, O['LIST_ROW_H'] - 1) in fills and art == want, f'dragged over slot 2: the row floats at the finger, rows 1 and 2 moved up, slot 2 is empty ({art} want {want})')
+    abort(m, ry(2) + 10)
+    m = edit_page(off=0)
+    down(m, 1); move(m, ry(0) - 10)
+    blits, _, _, fills = paint(m)
+    art = sorted(b[2][1] for b in blits if b[2][2] == O['LIST_ART'])
+    want = sorted([ry(0) - 40 + O['LIST_ART_Y'], ry(1) + O['LIST_ART_Y'], ry(2) + O['LIST_ART_Y']])
+    expect(art == want, f'dragged above the first row: slot 0, row 0 one down, row 1\'s place empty ({art} want {want})')
+    abort(m, ry(0) - 10)
+
+    # drag row 1 to slot 3: one transaction, the ids of the range rotated; the list read again in Edit, the sliding back, no timer
+    m = edit_page()
+    down(m, 1); move(m, ry(1) + 60); move(m, ry(3) + 30); m.calls = []
+    up(m, ry(3) + 30)
+    sql = upd(m.calls)
+    want = ('SAVEPOINT so_reorder;' + ''.join(f'update playlist set id=-{rid(i)} where id={rid(i)} and cd_num=7;' for i in (1, 2, 3))
+            + f'update playlist set id={rid(3)} where id=-{rid(1)};update playlist set id={rid(1)} where id=-{rid(2)};update playlist set id={rid(2)} where id=-{rid(3)};RELEASE so_reorder;')
+    expect(sql == [want], f'row 1 to slot 3: one call: SAVEPOINT / negative pass / final pass / RELEASE (no BEGIN that an open transaction would refuse) ({sql})')
+    import sqlite3   # the string itself on a real SQLite, statement by statement as sqlite3_exec runs it: alone, and inside a scan's open transaction
+    for scan in (False, True):
+        db = sqlite3.connect(':memory:', isolation_level=None)
+        db.execute('create table playlist(id INTEGER PRIMARY KEY, name TEXT, cd_num INTEGER)'); db.execute('create table songtable(x)')
+        db.executemany('insert into playlist values(?, ?, 7)', [(rid(i), t) for i, t in enumerate(['Zed', 'Alpha', 'Mike', 'Bravo', 'Echo'])])
+        if scan: db.execute('BEGIN;'); db.execute('insert into songtable values(1)')
+        for st in want.split(';')[:-1]: db.execute(st)
+        open_after = db.in_transaction
+        if scan: db.execute('insert into songtable values(2)'); db.execute('COMMIT;')
+        order = [r[0] for r in db.execute('select name from playlist where id > 100 and cd_num=7')]
+        expect(open_after == scan and order == ['Zed', 'Mike', 'Bravo', 'Alpha', 'Echo'] and db.execute('select count(*) from songtable').fetchone()[0] == (2 if scan else 0),
+               f'real SQLite, {"inside the scan\'s transaction: it nests, stays open for the scan\'s COMMIT, the scan\'s rows kept" if scan else "alone: it commits"} ({order}, open {open_after})')
+    expect(titles_of(m) == ['Zed', 'Mike', 'Bravo', 'Alpha', 'Echo'] and vis(m, 'sg_bar') == (1, 1) and vis(m, 'hd_play') == (0, 0) and slide(m) == 1 and not lifted(m) and not said(m.calls),
+           f'the list reads the new order, Edit stays, the sliding is back ({titles_of(m)})')
+    m = edit_page()
+    down(m, 3); move(m, ry(0) + 20); m.calls = []
+    up(m, ry(0) + 20)
+    expect(upd(m.calls) == ['SAVEPOINT so_reorder;' + ''.join(f'update playlist set id=-{rid(i)} where id={rid(i)} and cd_num=7;' for i in (0, 1, 2, 3))
+                            + f'update playlist set id={rid(1)} where id=-{rid(0)};update playlist set id={rid(2)} where id=-{rid(1)};update playlist set id={rid(3)} where id=-{rid(2)};update playlist set id={rid(0)} where id=-{rid(3)};RELEASE so_reorder;']
+           and titles_of(m) == ['Bravo', 'Zed', 'Alpha', 'Mike', 'Echo'], f'row 3 to the top: rows 0..2 each take the next id ({titles_of(m)})')
+    # the header's mosaic stays through Edit's moves (no new tile per drop) and is made again from the new first albums on Done (patch/songs.c sg_head_prep, sg_select)
+    PHC = O['PH_COVER']
+    quads = lambda m: [[pixel(m, b[0], x, y) for x, y in ((PHC // 4, PHC // 4), (3 * PHC // 4, PHC // 4), (PHC // 4, 3 * PHC // 4), (3 * PHC // 4, 3 * PHC // 4))] for b in settle(m)[0] if b[2][2] == PHC]
+    m = edit_page(off=0)
+    q0 = quads(m)
+    expect(len(q0) == 1 and all(near(a, colour(k)) for k, a in enumerate(q0[0])), f'Edit opens on the mosaic of albums 0 1 / 2 3 ({q0})')
+    down(m, 0); up(m, ry(3) + 30)
+    q1 = quads(m)
+    expect(titles_of(m)[:4] == ['Alpha', 'Mike', 'Bravo', 'Zed'] and q1 == q0, f'row 0 to slot 3: the first albums are 1 2 3 0 now, the mosaic stays as it was ({q1})')
+    m.click('btn_return', count=900000000)
+    q2 = quads(m)
+    expect(len(q2) == 1 and all(near(a, colour(k)) for k, a in zip((1, 2, 3, 0), q2[0])), f'Done: the mosaic is made again, albums 1 2 / 3 0 ({q2})')
+    # a release with no move event reports the displacement alone
+    m = edit_page()
+    down(m, 0); m.calls = []
+    up(m, ry(2) + 30)
+    expect(titles_of(m) == ['Alpha', 'Mike', 'Zed', 'Bravo', 'Echo'], f'released over slot 2 with no move event: it moves there ({titles_of(m)})')
+
+    # the marks follow the moved row
+    m = edit_page()
+    mark(m, 1); mark(m, 2)
+    down(m, 1); move(m, ry(3) + 30); up(m, ry(3) + 30)
+    expect(m.wtext[m.widgets['label_title']] == '2 Selected' and vis(m, 'sg_edel') == (1, 1), 'two marks stay two marks')
+    m.confirm_yes = True; m.calls = []
+    m.click('sg_edel', count=900000000)
+    expect(gone_ids(m.calls) == [rid(1), rid(3)], f'Alpha (moved to row 3) and Mike (row 1) are the marked ones: the ids they hold now go ({gone_ids(m.calls)})')
+    expect(vis(m, 'sg_bar') == (1, 1) and titles_of(m) == ['Zed', 'Bravo', 'Echo'], f'Delete leaves Edit mode on, the other rows stay ({titles_of(m)})')
+
+    # no move, a failed write, an abort
+    m = edit_page()
+    down(m, 1); move(m, ry(1) + 40); move(m, ry(1) + 20); m.calls = []
+    up(m, ry(1) + 20)
+    expect(not upd(m.calls) and not said(m.calls) and slide(m) == 1, 'dropped on its own slot: nothing is written, nothing said')
+    m = edit_page(); m.update_fails = True
+    down(m, 1); move(m, ry(3) + 30); m.calls = []
+    up(m, ry(3) + 30)
+    expect(len(upd(m.calls)) == 1 and upd(m.calls)[0].startswith('SAVEPOINT so_reorder;') and said(m.calls) == ["Can't reorder playlist"] and titles_of(m) == ['Zed', 'Alpha', 'Mike', 'Bravo', 'Echo'] and slide(m) == 1 and vis(m, 'sg_bar') == (1, 1),
+           f'a write that did not run: no ROLLBACK (stock closed the handle, which rolled ours back), "Can\'t reorder playlist", the row is back, Edit stays ({upd(m.calls)})')
+    m = edit_page(); m.setword(pod.DATA['DB_TX'][0], 3)
+    down(m, 1); move(m, ry(3) + 30); m.calls = []
+    up(m, ry(3) + 30)
+    expect(not upd(m.calls) and said(m.calls) == ["Can't reorder playlist"] and titles_of(m) == ['Zed', 'Alpha', 'Mike', 'Bravo', 'Echo'],
+           f'stock\'s scan holds a transaction (DB_TX 3): nothing is sent, so the move does not ride in the scan\'s transaction ({upd(m.calls)})')
+    m = edit_page(); m.update_fails = True
+    down(m, 1); move(m, ry(3) + 30); up(m, ry(3) + 30)
+    blits, _, _, fills = paint(m)
+    expect(sorted(b[2][1] for b in blits if b[2][2] == O['LIST_ART']) == [ry(i) - 128 + O['LIST_ART_Y'] for i in range(5)] and not any(f[0] == O['SG_FLOAT_BG'] for f in fills), 'and it is painted back in its slot')
+    m = edit_page()
+    down(m, 1); move(m, ry(3) + 30); m.calls = []
+    abort(m, ry(3) + 30)
+    expect(not upd(m.calls) and slide(m) == 1 and not lifted(m) and ('widget_ungrab', m.sv, m.view) in m.calls and titles_of(m) == ['Zed', 'Alpha', 'Mike', 'Bravo', 'Echo'], 'an abort: nothing written, the sliding and the touch given back')
+    m = edit_page()
+    down(m, 1); m.calls = []
+    m.call(PSYMS['sg_on_bg'], a0=0, a1=0, count=9000000)
+    expect(slide(m) == 1 and not lifted(m), 'the window going to the background ends the lift')
+    m = edit_page()
+    down(m, 1); m.calls = []
+    m.call(PSYMS['sg_select'], a0=0, count=9000000)
+    expect(slide(m) == 1 and not lifted(m) and not upd(m.calls), 'select mode ending ends the lift')
+    m = edit_page()
+    down(m, 1); m.calls = []
+    m.call(PSYMS['sg_on_destroy'], a0=0, a1=0, count=9000000)
+    expect(slide(m) == 1 and not lifted(m) and ('widget_ungrab', m.sv, m.view) in m.calls, 'the page closing ends the lift')
+
+    # the edge timer: a finger near the select bar scrolls the list 8 px a tick, the slot follows, the end stops it, every end removes it
+    m = edit_page(8, off=0)
+    down(m, 1); m.calls = []
+    move(m, ry(1) + 30)
+    expect(('timer_add', PSYMS['sg_on_edge'], O['SG_EDGE_MS']) in m.calls, 'near the bar the lift starts the scroll timer')
+    m.calls = []
+    r = [m.call(PSYMS['sg_on_edge'], count=9000000) for _ in range(8)]
+    expect(off_of(m) == 8 * O['SG_EDGE_STEP'] and set(r) == {8}, f'eight ticks scroll 64 px and repeat ({off_of(m)}, {r})')
+    m.calls = []
+    up(m, ry(1) + 30 + off_of(m))
+    expect(('timer_remove', 0x777) in m.calls and upd(m.calls) == ['SAVEPOINT so_reorder;' + ''.join(f'update playlist set id=-{rid(i)} where id={rid(i)} and cd_num=7;' for i in (1, 2))
+                                                                  + f'update playlist set id={rid(2)} where id=-{rid(1)};update playlist set id={rid(1)} where id=-{rid(2)};RELEASE so_reorder;'],
+           f'the release removes the timer; the row scrolled under the finger moved on to the slot there ({upd(m.calls)})')
+    expect(off_of(m) == 64, 'and the list keeps its place')
+    m = edit_page(8, off=0)
+    down(m, 1); move(m, ry(1) + 30)
+    for _ in range(60): r = m.call(PSYMS['sg_on_edge'], count=9000000)
+    expect(r == 0 and off_of(m) == Layout(['A'] * 8, sections=False, top=O['PH_TOP'] - O['PH_EDIT_UP']).content(O['SG_BAR_H']) - VIEW_H, 'at the end of the list the timer ends (the return is not a repeat) with the list at its last place')
+    m.calls = []
+    abort(m, ry(2) + 30)
+    expect(slide(m) == 1, 'an abort after it ended')
+    m = edit_page(8, off=0)
+    down(m, 1); move(m, ry(1) + 30); m.calls = []
+    m.call(PSYMS['sg_on_destroy'], a0=0, a1=0, count=9000000)
+    expect(('timer_remove', 0x777) in m.calls, 'the page closing removes the timer')
+    m = edit_page(8, off=0)
+    down(m, 1); move(m, ry(1) + 30); m.calls = []
+    m.call(PSYMS['sg_select'], a0=0, count=9000000)
+    expect(('timer_remove', 0x777) in m.calls and slide(m) == 1, 'select mode ending removes the timer')
+    m = edit_page(8, off=100)
+    down(m, 1); m.calls = []
+    move(m, ry(1) + 30)
+    expect(not [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['sg_on_edge']], 'in the middle of the list no timer starts')
+
+
+SECTIONS = [asset_tests, open_and_paint_tests, touch_tests, rail_tests, switch_tests, order_search_and_stale_tests, collapse_and_select_tests, loader_tests, big_library_tests, lists_tests, clean_tests, edit_tests, add_songs_tests, src_tests, src_marks_tests, src_ring_accent_tests, src_dsd_tests, src_dlqueue_tests]   # tools/check.py runs each as its own task

@@ -940,12 +940,20 @@ SONGS_IMAGES = {'sg_play': ('play:filled', WHITE, 14, 16), 'sg_shuffle': ('shuff
                 'pod_ic_vsadd': ('list-plus', WHITE, None, 20), 'pod_ic_vsnext': ('list-start', WHITE, None, 20), 'pod_ic_vsafter': ('list-end', WHITE, None, 20),   # the library album page's "..." popup (patch/albumpage.c ab_on_more): Add to Playlist, Play Next, Play After
                 'pod_ic_vspin': ('pin', WHITE, None, 20), 'pod_ic_vsunpin': ('pin-off', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Pin Playlist / Unpin Playlist
                 'pod_ic_vsclean': ('broom', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Clean Up
-                'pod_ic_vsrename': ('pencil', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Rename
+                'sg_padd': ('circle-plus', WHITE, 24, 24), 'sg_pdone': ('circle-check', WHITE, 24, 24),   # the Add Songs page's marks (patch/songs.c sg_make_bmp): white on transparent; the payload makes bitmaps whose alpha is the coverage, white (add) and #8E8E93 (in the playlist)
+                'sg_pencil': ('pencil', (0x8E, 0x8E, 0x93), 16, 16),   # a stock playlist's Edit mode: the grey pencil after the header's name (patch/songs.c sg_pencil)
+                'pod_ic_vsrename': ('pencil', WHITE, None, 20),   # a playlist's "..." card (patch/songs.c): Edit
                 'pod_ic_vsorder': ('arrow-down-wide-narrow', WHITE, None, 20), 'pod_ic_vslink': ('link', WHITE, None, 20), 'pod_ic_vsimport': ('import', WHITE, None, 20), 'pod_ic_vstrash': ('trash', (0xFF, 0x6B, 0x6B), None, 20),   # the Radio stations' "..." card (patch/radiopage.c): Sort by Name, Add by URL, Import from Card, Clear History (red)
                 'pod_ic_vsphoto': ('user-round-search', WHITE, None, 20),   # an artist's page "..." card (patch/albums.c): Find Artist Photo
                 'nd_st_ok': ('circle-check', WIFI_GREY, 14, 14), 'nd_st_off': ('unplug', WIFI_GREY, 14, 14)}   # the Subsonic root's status line: connected, and not connected / offline (14 px, the spinner's size, the line's grey)   # the "..." cards' row glyphs (bare, as the Playlists menu's rows); ink None: drawn on the icon set's own 24 grid at VS_GRID_PX, not fitted to the box, so a round or square shape keeps the set's optical balance and the rows' glyphs look one size
 VS_GRID_PX = 21   # the "..." card glyphs' grid: 24 units = 21 px (1.5 px stroke), so a full-grid shape (layout-grid, circle-check) has about 17 px of ink in its 20 px box
-ALBUM += sorted(SONGS_IMAGES)
+# A stock playlist's Edit mode: the reorder handle at the right of every row (patch/songs.c sg_handle_paint): three rounded bars, 20 px wide and 6 px apart (ink 14 px tall), white on
+# transparent in a 20 px square; the payload makes it a bitmap whose alpha is the coverage and whose colour is SG_HANDLE_RGB (#8E8E93), as the rows' "..." (rm_dots).
+SG_HANDLE = ('sg_handle', 20)
+# An empty stock playlist's Add Songs row (patch/songs.c sg_paint_add): the payload fills a LIST_ART px tile (SG_ADD_TILE_RGB, LIST_R corners) and paints two masks of that size over it, white on
+# transparent: the notes (Lucide music, tinted SG_HANDLE_RGB grey) with a hole round the badge, and the badge (a white disc, its plus cut out so the tile shows through), top right of the notes.
+SG_ADD = ('sg_addnote', 'sg_addbadge')
+ALBUM += sorted(SONGS_IMAGES) + [SG_HANDLE[0]] + list(SG_ADD)
 
 # The keyboard page's glyphs (patch/keyboard.c, docs/modules/keyboard.md): shift (outline, white) and shift on (filled, dark on the light key), delete, the field's magnifier (grey) and its clear
 # disc (a dark x on a grey disc), exact canvases; the custom SVGs are Lucide's arrow-big-up and delete. White and grey only.
@@ -991,7 +999,32 @@ def songs_images():
         c = Image.new('RGBA', (canvas, canvas), (0, 0, 0, 0))
         gi = glyph_fit(g, ink, ink, rgb, 0) if ink else tint(ink_crop(render(gname(g), VS_GRID_PX, 'outline', 1.5 * 24 / VS_GRID_PX)), rgb)
         c.alpha_composite(gi, ((canvas - gi.width) // 2, (canvas - gi.height) // 2)); f[n] = c
+    f[SG_HANDLE[0]] = handle_image()
+    f.update(zip(SG_ADD, add_tile_images()))
     return f
+
+def add_tile_images(px=52, k=8):
+    """The Add Songs tile's two masks (SG_ADD): the notes 26 px (2.4 px strokes), their ink centred 3 px left and 3 px low, a 2 px gap round the 16 px badge whose centre is at (38, 14); the plus 8 px, 2 px strokes."""
+    from PIL import Image, ImageDraw, ImageChops
+    notes = glyph_fit('music', 26, 26, WHITE, 0, 2.4).getchannel('A')
+    big = Image.new('L', (px * k, px * k), 0); big.paste(notes.resize((26 * k, 26 * k), Image.LANCZOS), ((px - 26) // 2 * k - 3 * k, (px - 26) // 2 * k + 3 * k))
+    cx, cy, r, gap = 38 * k, 14 * k, 8 * k, 2 * k
+    hole = Image.new('L', big.size, 255); ImageDraw.Draw(hole).ellipse((cx - r - gap, cy - r - gap, cx + r + gap, cy + r + gap), fill=0)
+    big = ImageChops.multiply(big, hole)
+    badge = Image.new('L', big.size, 0); d = ImageDraw.Draw(badge); d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=255)
+    h, w = 4 * k, k
+    d.rectangle((cx - h, cy - w, cx + h, cy + w), fill=0); d.rectangle((cx - w, cy - h, cx + w, cy + h), fill=0)
+    out = []
+    for m in (big, badge):
+        im = Image.new('RGBA', (px, px), (255, 255, 255, 0)); im.putalpha(m.resize((px, px), Image.BOX)); out.append(im)
+    return out
+
+def handle_image():
+    from PIL import Image, ImageDraw
+    px, k = SG_HANDLE[1], 4
+    big = Image.new('L', (px * k, px * k), 0); d = ImageDraw.Draw(big)
+    for i in range(3): d.rounded_rectangle((0, (3 + 6 * i) * k, px * k - 1, (3 + 6 * i + 2) * k - 1), radius=k, fill=255)   # bars at y 3, 9 and 15, 2 px thick: the ink spans y 3 .. 16, centred on the canvas
+    im = Image.new('RGBA', (px, px), (255, 255, 255, 0)); im.putalpha(big.resize((px, px), Image.BOX)); return im
 
 # The Podcasts Show page (patch/podcasts.c, docs/modules/podcasts.md "Pages and controls"). ONE atlas, pc_atlas (PA_SIZE square, straight-alpha RGBA), holds what the page paints
 # in its content view (no widget per cell): the progress ring's 12 steps, the state glyphs, the "on the card" badge, the "..." glyph and the discs the pills' ends are cut from. The
@@ -1346,7 +1379,7 @@ def capsule_piece(position, glyph, pressed=False):
 
 # image -> (width, glass columns, glyph centre, glyph, capsule columns or None): the lone discs. Back (the Pod pages' 44 px button centres it: x 8 .. 50),
 # Now Playing's disc (Pod pages, button x 260: glass 269 .. 311) and the USB mode page's settings disc.
-AH_NAV_PIECES = {'ah_nav_back': (42, 0, 42, 21, 'chevron-left', None), 'ah_nav_close': (42, 0, 42, 21, 'x', None), 'ah_nav_np': (NAV_PLAY_W, 9, 51, 30, 'audio-lines', None),
+AH_NAV_PIECES = {'ah_nav_back': (42, 0, 42, 21, 'chevron-left', None), 'ah_nav_close': (42, 0, 42, 21, 'x', None), 'ah_nav_done': (42, 0, 42, 21, 'check', None), 'ah_nav_np': (NAV_PLAY_W, 9, 51, 30, 'audio-lines', None),
                  'ah_nav_set': (NAV_PLAY_W, 9, 51, 30, 'settings', None)}   # the USB mode page's DAC settings (tools/mod_ipodrows.py edit_usbmode), on Now Playing's disc
 AH_NAV_RIGHT = 'ah_nav_play'                                 # Now Playing as the capsule's right cap (Pod pages)
 AH_NAV_NAMES = sorted([n + s for n in [*AH_NAV_PIECES, AH_NAV_RIGHT] for s in ('', '_down')])
@@ -1372,17 +1405,18 @@ NB_FADE = ('nb_fade', 320, 20)
 # The select mode's chrome (patch/selmode.c, docs/modules/selmode.md): Select All is a glass pill, drawn patch3_x so its width follows the text (sg_selall_glass, 72 x 42, r 21; _down
 # pressed); the bottom bar is ONE capsule of 60 px icon-only slots (Add to Playlist, Delete; Playlists / Podcasts have the Delete slot alone, a 60 px capsule), each slot's glass cut from the
 # capsule as the navbar's pieces are: image -> (glyph, ink, capsule columns); _down has the round highlight, _off the glyph at 35 % (nothing marked).
-SELBAR_SLOT, SELBAR_GLYPH, SELBAR_RED, SELBAR_DIM = 60, 22, (0xFF, 0x6B, 0x6B), 0.35
+SELBAR_SLOT, SELBAR_GLYPH, SELBAR_RED, SELBAR_DIM, SELBAR_PLUS = 60, 22, (0xFF, 0x6B, 0x6B), 0.35, 16
 SELALL_GLASS = (72, 42, 21)
-SELBAR_PIECES = {'sg_bar_add': ('list-plus', WHITE, (0, 2 * SELBAR_SLOT)), 'sg_bar_del': ('trash', SELBAR_RED, (-SELBAR_SLOT, SELBAR_SLOT)), 'sg_bar_one': ('trash', SELBAR_RED, (0, SELBAR_SLOT))}
+SELBAR_PIECES = {'sg_bar_add': ('list-plus', WHITE, (0, 2 * SELBAR_SLOT)), 'sg_bar_del': ('trash', SELBAR_RED, (-SELBAR_SLOT, SELBAR_SLOT)), 'sg_bar_one': ('trash', SELBAR_RED, (0, SELBAR_SLOT)),
+                 'sg_bar_edel': ('trash', SELBAR_RED, (0, 2 * SELBAR_SLOT)), 'sg_bar_eplus': ('plus', WHITE, (-SELBAR_SLOT, SELBAR_SLOT), SELBAR_PLUS)}   # a playlist's Edit: Delete (left slot) | + (right slot, a 16 px plus: fit-to-box makes it look bigger than the trash)
 SELBAR_NAMES = sorted(['sg_selall_glass', 'sg_selall_glass_down'] + [n + s for n in SELBAR_PIECES for s in ('', '_down', '_off')])
 ALBUM += SELBAR_NAMES
 
 def selbar_images():
     f = {'sg_selall_glass': glass_image(*SELALL_GLASS), 'sg_selall_glass_down': glass_image(*SELALL_GLASS, True)}
-    for n, (g, ink, cap) in SELBAR_PIECES.items():
+    for n, (g, ink, cap, *px) in SELBAR_PIECES.items():
         for suffix, pressed, k in (('', False, 1), ('_down', True, 1), ('_off', False, SELBAR_DIM)):
-            f[n + suffix] = glass_piece(SELBAR_SLOT, 0, SELBAR_SLOT, g, SELBAR_SLOT // 2, pressed, cap, ink=tuple(round(c * k) for c in ink), glyph_px=SELBAR_GLYPH)
+            f[n + suffix] = glass_piece(SELBAR_SLOT, 0, SELBAR_SLOT, g, SELBAR_SLOT // 2, pressed, cap, ink=tuple(round(c * k) for c in ink), glyph_px=px[0] if px else SELBAR_GLYPH)
     assert sorted(f) == SELBAR_NAMES
     return f
 

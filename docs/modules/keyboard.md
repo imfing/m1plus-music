@@ -11,7 +11,7 @@ thread; one timer only while the delete key or an accent key is held.
 
 ## Layout
 
-A page of stock widgets: the plain navbar (Back = cancel, Now Playing), a search field and a 180 px
+A page of stock widgets: the plain navbar (Back = cancel, Now Playing; a name entry, `KB_DONE`, has no Now Playing), a search field and a 180 px
 pad at the bottom of the 450 px window, `#1C1C1E`. White and grey only, no accent.
 
 - **Pad:** four rows at a 44 px pitch, keys 36 px high. Char keys 29 px wide with 3 px gaps, ten

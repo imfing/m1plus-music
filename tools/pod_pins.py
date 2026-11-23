@@ -980,6 +980,10 @@ PLAYLIST_PINS = (   # (address, stock word, what it proves)
     (0x4ede0c, 0x24a5c510, 'getMusicByPlayList: a1 = "select * from %s where id > 100 and cd_num=%d" 0x74c510'),
     (0x5eefb0, 0x3c1c0041, 'toolsUpdateDbTable prologue'), (0x5eefb4, 0x279c4f20, 'toolsUpdateDbTable prologue'), (0x5eefb8, 0x0399e021, 'toolsUpdateDbTable prologue'),
     (0x5ef008, 0x0320f809, 'toolsUpdateDbTable: jalr sqlite3_exec(db handle, sql = the second argument, 0, 0, &err)'),
+    # Reorder (patch/songops.c so_reorder_rows): a failed statement closes the shared handle (rolling back what is open on it) and clears it; stock's scan insert sends BEGIN only while
+    # the transaction word DB_TX is 0, so a word above 0 is a transaction of stock's open on the handle
+    (0x5ef028, 0x0320f809, 'toolsUpdateDbTable error path: jalr sqlite3_close(the shared handle)'), (0x5ef034, 0xae00ac74, 'toolsUpdateDbTable error path: sw zero, the handle 0xa0ac74'),
+    (0x5edf30, 0x8e22b080, 'scan insert: lw v0, the transaction word 0xa0b080'), (0x5edf34, 0x1440000c, 'scan insert: bnez v0: BEGIN only while the word is 0'),
     (0x5ef370, 0x3c1c0041, 'toolsDeleteItemById prologue'), (0x5ef374, 0x279c4b60, 'toolsDeleteItemById prologue'), (0x5ef378, 0x0399e021, 'toolsDeleteItemById prologue'),
     (0x5ef3f8, 0x24c67ec0, 'toolsDeleteItemById: a2 = "delete from %s where id=%d" 0x757ec0'), (0x5ef418, 0x0320f809, 'toolsDeleteItemById: jalr sqlite3_exec'),
     (0x4edfc4, 0x0320f809, 'deletePlaylist: jalr toolsDeleteItemById("playlist", the database path, id): stock\'s own use on this table'),

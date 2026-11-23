@@ -30,13 +30,16 @@
 #include "stock.h"
 #include "scroll.h"
 #include "home.h"
-#include "pins.h"
 
 #define B(w, off) (*(unsigned char *)((char *)(w) + (off)))
 #define I(w, off) (*(int *)((char *)(w) + (off)))
 #define P(w, off) (*(void **)((char *)(w) + (off)))
 
 static int sc_state __attribute__((section(".scratch"))); /* 0 not read yet, 1 on, 2 kill switch */
+
+/* The list a tile or row is lifted in (a Home pin, patch/pins.c; a playlist row in Edit mode, patch/songs.c), for the hook below: yslidable off at the lift does not last, a layout turns it back on each
+ * time (scroll_view_set_yslidable(sv, 1), 0x60b1e4), so the hook turns it off again before every pointer event of the lift reaches the list. */
+void *m1_lift_sv __attribute__((section(".scratch")));
 
 static int sc_off(void) {
     if (!sc_state) sc_state = home_off() ? 2 : 1;
@@ -77,9 +80,9 @@ __attribute__((noinline)) static int sc_up(void *w, void *e) {
  * widget and the event, both non-null. Anything but a pointer DOWN or UP is stock. */
 int m1plus_scroll_event(void *w, void *e) {
     unsigned type = *(unsigned *)e & 0xffff;
-    if (w == pins_lift_sv)
+    if (w == m1_lift_sv)
         B(w, SC_YSLIDE) =
-            0; /* a Home pin is lifted (patch/pins.c): the list does not slide with its drag or fling at its drop, whatever a layout set since the hold; no late-drag abort either */
+            0; /* a Home pin or a playlist row is lifted (patch/pins.c, patch/songs.c): the list does not slide with its drag or fling at its drop, whatever a layout set since the hold; no late-drag abort either */
     if (type == EVT_POINTER_DOWN) return sc_down(w, e);
     if (type == EVT_POINTER_UP) return sc_up(w, e);
     return RET_OK;

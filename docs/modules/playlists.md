@@ -127,6 +127,10 @@ action key **Done**).
   reads the stock list first (`createPlayListItem` needs it for the free id and the duplicate
   check), creates, shows the two messages, and calls `pl_load` if the page is up. Back creates
   nothing. The name is at most 63 bytes.
+- A playlist made there (not in the picker) then opens on its own page, empty, with its Add Songs
+  row ([songs](songs.md) "A playlist's header"): `pl_new_later` waits `PL_PICK_MS` on a timer (the
+  keyboard's close, as `pl_pick_later`) and `pl_new_fire` calls `songs_open_playlist(id, name)` when
+  the Playlists page is the front window.
 
 ### Import and Export
 
@@ -210,7 +214,7 @@ Shuffle check the first file with `access` and toast **"File not found"** with t
 "Storage unavailable" without it: `so_missing`.)
 
 **The row.** A stock playlist's songs page has the "..." in place of Select (`sg_cleans`); its card
-is four rows in `vs_glass4`: **Select**, **Rename**, **Clean Up** (slot 8, `VS_ACT2`, glyph
+is three rows in `vs_glass3`: **Edit** (the Select row, [songs](songs.md) "A playlist's header"), **Clean Up** (slot 8, `VS_ACT2`, glyph
 `pod_ic_vsclean`, Lucide broom), **Pin Playlist**. A server playlist keeps the Select button. It works on this playlist only:
 
 1. **Check** (`sg_gone`, `so_gone_mark`): each row whose path starts with `/mnt/mmc/` is tested
@@ -263,10 +267,39 @@ clean-up does. No file is ever deleted and no other playlist's copy of the song 
 - A pinned playlist keeps the cover keys it was pinned with; the Playlists page sees the changed
   database (`pl_dbsig`) and reads its list and mosaics again when it is back in front.
 
+## Reorder (`patch/songs.c` `sg_reorder`, `patch/songops.c` `so_reorder_rows`)
+
+Dragging a row by its handle in Edit mode ([songs](songs.md) "Reorder"). Stock reads a playlist's
+songs with `select * from playlist where id > 100 and cd_num=%d` and no ORDER BY, so they come back in
+`id` order (`id` is `INTEGER PRIMARY KEY`, the rowid): the order is the ids'. Only the rows between the
+drag's two indexes change. Their ids (`REC_ID`, taken from the list, strictly ascending and over 100)
+stay in the table; the moved row takes the id of the slot it lands in and the rows between shift by one.
+`toolsUpdateDbTable` runs `sqlite3_exec` on the shared handle, and when a statement fails it closes
+the handle (`sqlite3_close`, which rolls back whatever is open on it) and clears it (`0xa0ac74`).
+Stock's scan insert keeps its own transaction open there between its `BEGIN` and the `COMMIT` every
+100 rows, counting the rows in `DB_TX` (`0xa0b080`; it sends `BEGIN` only while the word is 0).
+While `DB_TX` is above 0 nothing is sent, so a move does not ride in the scan's transaction. That
+check is only a preference: the worker can `BEGIN` right after it is read. What makes the write safe
+is one `toolsUpdateDbTable` call for the whole move: `SAVEPOINT so_reorder;`, per row `update
+playlist set id=-OLD where id=OLD and cd_num=N;` (negative ids are never used, so no PRIMARY KEY
+clash), per row `update playlist set id=NEW where id=-OLD;`, then `RELEASE so_reorder;`.
+- SQLite 3.19.3 is built `THREADSAFE=1` and demo opens with plain `sqlite3_open` (serialized), so no
+  other thread's statement runs inside one `sqlite3_exec`.
+- `SAVEPOINT` is never refused for an open transaction (a `BEGIN` was, and its failure closed the
+  handle under the scan). Alone it begins a transaction and `RELEASE` commits it. Inside the scan's
+  it nests, and `RELEASE` leaves the rows to the scan's `COMMIT` (a scan that rolls back later
+  takes the move with it).
+- The string is built in a `calloc`ed buffer (O(rows); no memory: nothing changes). A statement that
+  failed closed the handle, which rolled ours back; no `ROLLBACK` is sent.
+
+Playlist inserts (`toolsInsertDbTable`, Add Songs) run without a transaction and never move `DB_TX`.
+Any failure toasts "Can't reorder playlist". Nothing else depends on a playlist row's id: resume matches name and path, the stock delete
+matches columns and Remove reads the list fresh.
+
 ## Rename Playlist (`patch/songs.c` `sg_rename`, `patch/songops.c` `so_rename_pl`)
 
-The "..." card's second row on a stock playlist, **Rename** (Lucide `pencil`, `pod_ic_vsrename`,
-slot 6 packed under Select by `VS_SELECT_FIRST`). It opens our keyboard as New Playlist does
+In Edit mode on a stock playlist, a tap on the header's name (a grey pencil after it says so; the
+card has no Rename row). It opens our keyboard as New Playlist does
 (a name on the keyboard's card row, no magnifier; title "Rename Playlist", hint `msg_newplaylists`, action key **Done**, the current name in the
 field). The keyboard is not modal; `sg_renamed` runs on Done for the playlist it was opened for
 (`sg_rn_id`; `sg_rn_on` says one is waiting, since stock's ids start at 0), with the name trimmed and 1 to 63 bytes:
@@ -280,7 +313,11 @@ field). The keyboard is not modal; `sg_renamed` runs on Done for the playlist it
 - Then `sg.name`, the header name (one or two lines, `sg_name_place`; the list is read again for
   the new row offset), the small title, stock's `nagvation_title` when it held the old name, and a
   Home pin of this playlist (`pins_rename_playlist`: same place and cover keys) take the new name.
-  The Playlists page reads the list again when it is back in front.
+  The Playlists page reads the list again when it is back in front. Edit mode and its marks stay
+  (`sg_edit_reload`).
+
+**Add Songs.** The + in Edit mode adds library songs to this playlist, one tap each, through the stock
+`batch_add_file` (appended at the end, duplicates skipped); see [songs](songs.md) "Add Songs".
 
 **Pins** (`PLAYLIST_PINS`): `getMusicByPlayList` passes the song row callback (a song record's
 `REC_DISC` is its `cd_num`, the playlist id); `createPlayListItem`'s two name copies and

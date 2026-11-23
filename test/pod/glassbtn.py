@@ -27,7 +27,7 @@ def run(ctx):
            and all(asset_image(n).size == (60, 42) for n in sel if n.startswith('sg_bar_')) and asset_image('sg_selall_glass').size == (72, 42),
            'the select mode\'s glass images are the generator\'s output: Select All 72 x 42, every bar slot 60 x 42 (capsule cuts of 120 / 60 px)')
     # independent of mod_icons.glass_piece: (width, glass columns, glyph centre) of every image, and its capsule (image columns) when it is a slice: the Pod pages' right cap of the 141 px capsule, its glass from 7 (the slots' 7 px shift)
-    want = {'ah_nav_back': (42, 0, 42, 21), 'ah_nav_close': (42, 0, 42, 21), 'ah_nav_np': (60, 9, 51, 30), 'ah_nav_set': (60, 9, 51, 30),
+    want = {'ah_nav_back': (42, 0, 42, 21), 'ah_nav_close': (42, 0, 42, 21), 'ah_nav_done': (42, 0, 42, 21), 'ah_nav_np': (60, 9, 51, 30), 'ah_nav_set': (60, 9, 51, 30),
             'ah_nav_play': (60, 7, 51, 30, (-90, 51))}
     PD = 36   # a pressed slice: the rest glass and a white disc of PD px, 14 % opaque, on the glyph's centre (3 px of glass above and below)
     def highlight(out, cx):

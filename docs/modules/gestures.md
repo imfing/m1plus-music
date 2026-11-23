@@ -44,7 +44,7 @@ The scroll_view vtable's before-children slot (zero in stock) is set to `m1plus_
 - **UP after a late drag** (pressed, not dragged, released at least 10 px from the press along a
   slidable axis): send the same abort the stock MOVE path sends, before the rows see the UP. The row
   drops its press and the release is no click; the fling is unchanged.
-- **A lifted Home pin** (`pins_lift_sv` is this scroll_view, [pins](pins.md)): the `yslidable` byte is
+- **A lifted Home pin or playlist row** (`m1_lift_sv` is this scroll_view, set by [pins](pins.md) and by Edit mode's reorder in [songs](songs.md)): the `yslidable` byte is
   cleared before anything else, on every event, so the list neither slides with the drag nor sends
   the late-drag abort at the drop. One load and one compare for every other list.
 - MOVE, key and wheel events: three compares and out. Only slidable axes count, so a horizontal drag
