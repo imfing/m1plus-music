@@ -326,6 +326,9 @@ class Machine:
         self.timers = []            # (callback, ms) of every timer_add
         self.timer_arg = {}         # callback -> the arg of its last timer_add
         self.timer_fail = False
+        self.wtimers = {}           # id -> (widget, callback, ms) of every widget_add_timer
+        self.next_wtid = 0x900
+        self.wtimer_fail = False
         self.create_fail = set()    # widget constructors (view_create, ..) that return 0
         self.deque_fail = False     # _create_deque returns 0 (no memory for a list copy)
         self.wm, self.top_main, self.home_opened, self.init_ret = 0x22000000, 0, 1, 0
@@ -677,6 +680,27 @@ class Machine:
             self.styled.append((a0, self.read_cstr(a1), self.word(a2 + 8)))
         elif name == 'value_set_uint32':   # value_t's uint32 at 8, as the setters read it
             self.setword(a0 + 8, a1); ret = a0
+        elif name == 'value_uint32':
+            ret = self.word(a0 + 8)
+        elif name == 'widget_get_prop':
+            prop = self.read_cstr(a1)
+            if (a0, prop) in self.props: self.setword(a2 + 8, self.props[(a0, prop)]); ret = 0
+            else: ret = 0x10
+        elif name == 'widget_set_prop':
+            prop, val = self.read_cstr(a1), self.word(a2 + 8)
+            self.props[(a0, prop)] = val; self.calls.append(('widget_set_prop', a0, prop, val)); ret = 0
+        elif name == 'widget_add_timer':
+            self.calls.append(('widget_add_timer', a0, a1, a2))
+            if self.wtimer_fail: ret = 0
+            else:
+                ret = self.next_wtid; self.next_wtid += 1
+                self.wtimers[ret] = (a0, a1, a2)
+        elif name == 'widget_remove_timer':
+            self.calls.append(('widget_remove_timer', a0, a1)); self.wtimers.pop(a1, None); ret = 0
+        elif name in ('player_timer_start', 'player_timer_clear', 'hscroll_label_start', 'hscroll_label_stop'):
+            self.calls.append((name, a0)); ret = 0
+        elif name == 'show_player_face':
+            self.calls.append(('show_player_face', a0, a1)); ret = 0
         elif name == 'widget_destroy':
             self.calls.append(('widget_destroy', a0))
             for kids in self.children.values():

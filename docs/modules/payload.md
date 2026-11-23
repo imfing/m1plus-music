@@ -97,6 +97,7 @@ stock's own behaviour.
 | 38 | `on_wm_idle_status` USB poll call, call site `0x4cef08` | [pulldown](pulldown.md) | stock `check_usb_status` |
 | 39 | `on_wm_timer_dialogresponse` read of the USB page request, `0x4cf254` (two words, asm stub `pod_usb_site`) | [pulldown](pulldown.md) | stock's read; drops the request when the cable is gone |
 | 40 | SyncLink shown, call sites `0x545068` / `0x475bb0` | [lineout](lineout.md) | stock `widget_set_visible`; hides SyncLink only when stock's marks would reach the clock |
+| 41 | `check_cpumem` `0x50b810` | `patch/power.c` | stock `check_cpumem` (boot); skips the 6 s `drop_caches=3` thread unless `/mnt/mmc/m1plus-off` exists (checked at boot and once after 15 s for async SD mount) |
 
 Sites without a number:
 

@@ -122,6 +122,121 @@ static struct {
     mb_blur_t bl;
 } lk __attribute__((section(".scratch")));
 
+/* Replacement for stock's 20 ms screensaver timer (0x53fc68, stored in "timer_idex"): runs on all lock screen layouts
+ * (Large Cover and Mini Player). While LOCK_DELAY > 0 it delegates verbatim to stock so the 40 ms wake backlight-on
+ * sequence is untouched; afterwards it slows to LK_STOCK_LIT_MS when lit (only calling 0x53f520(win, 0) when one of
+ * the six battery globals actually changes) and to POD_DARK_MS with no repaints when dark. */
+#define LK_STOCK_LIT_MS 200u
+static struct {
+    void *win;
+    unsigned tid;
+    unsigned interval;
+    int dirty;
+    int ext, usb, flag, dac, pmu, cap;
+} lks __attribute__((section(".scratch")));
+
+static int lks_bat_changed(void) {
+    int ext = *(volatile int *)POWER_EXT;
+    int usb = *(volatile int *)POWER_USBSTATE;
+    int flag = *(volatile signed char *)POWER_FLAG;
+    int dac = *(volatile int *)USBDAC_CHARGEFLAG;
+    int pmu = *(volatile int *)PMUCHARGE_STATUS;
+    int cap = *(volatile int *)POWER_CAPACITY;
+    if (ext == lks.ext && usb == lks.usb && flag == lks.flag && dac == lks.dac && pmu == lks.pmu && cap == lks.cap)
+        return 0;
+    lks.ext = ext;
+    lks.usb = usb;
+    lks.flag = flag;
+    lks.dac = dac;
+    lks.pmu = pmu;
+    lks.cap = cap;
+    return 1;
+}
+
+static void lks_bat_snap(void) {
+    lks.ext = *(volatile int *)POWER_EXT;
+    lks.usb = *(volatile int *)POWER_USBSTATE;
+    lks.flag = *(volatile signed char *)POWER_FLAG;
+    lks.dac = *(volatile int *)USBDAC_CHARGEFLAG;
+    lks.pmu = *(volatile int *)PMUCHARGE_STATUS;
+    lks.cap = *(volatile int *)POWER_CAPACITY;
+}
+
+static void lks_refresh(int force) {
+    int (*refresh)(void *, int) = (int (*)(void *, int))LOCK_REFRESH;
+    int (*cover)(void *) = (int (*)(void *))LOCK_COVER;
+    if (!lks.win) return;
+    if (*(volatile unsigned char *)LOCK_TRACK_DIRTY) {
+        *(volatile unsigned char *)LOCK_TRACK_DIRTY = 0;
+        refresh(lks.win, 1);
+        lks_bat_snap();
+        lks.dirty = 0;
+    } else if (force || lks_bat_changed()) {
+        refresh(lks.win, 0);
+        lks_bat_snap();
+        lks.dirty = 0;
+    }
+    if (*(volatile unsigned char *)LOCK_COVER_DIRTY) cover(lks.win);
+}
+
+static int lks_tick(const void *timer) {
+    unsigned want;
+    if (!lks.win) return RET_OK;
+    if (*(volatile int *)LOCK_DELAY > 0) {
+        int (*stock_cb)(const void *) = (int (*)(const void *))LOCK_TIMER_CB;
+        stock_cb(timer);
+        return RET_REPEAT;
+    }
+    want = m1_screen_lit() ? LK_STOCK_LIT_MS : POD_DARK_MS;
+    if (lks.tid && lks.interval != want && timer_modify(lks.tid, want) == RET_OK) lks.interval = want;
+    if (!m1_screen_lit()) {
+        lks.dirty = 1;
+        return RET_REPEAT;
+    }
+    lks_refresh(lks.dirty);
+    return RET_REPEAT;
+}
+
+static int lks_on_destroy(void *ctx, void *e) {
+    (void)e;
+    if (ctx != lks.win) return RET_OK;
+    memset(&lks, 0, sizeof lks);
+    return RET_OK;
+}
+
+static void lks_take(void *win) {
+    unsigned v[4], id, nid;
+    if (lks.win) memset(&lks, 0, sizeof lks);
+    if (widget_get_prop(win, "timer_idex", v) != RET_OK) return;
+    id = value_uint32(v);
+    if (id == 0xffffffffu || !id) return;
+    if (!widget_on(win, EVT_DESTROY, lks_on_destroy, win)) return;
+    nid = widget_add_timer(win, lks_tick, 20);
+    if (!nid) return;
+    widget_remove_timer(win, id);
+    value_set_uint32(v, nid);
+    widget_set_prop(win, "timer_idex", v);
+    lks.win = win;
+    lks.tid = nid;
+    lks.interval = 20;
+    lks_bat_snap();
+}
+
+void lk_on_dark(void) {
+    if (!lks.win) return;
+    lks.dirty = 1;
+    if (*(volatile int *)LOCK_DELAY <= 0 && lks.tid && lks.interval != POD_DARK_MS &&
+        timer_modify(lks.tid, POD_DARK_MS) == RET_OK)
+        lks.interval = POD_DARK_MS;
+}
+
+void lk_on_wake(void) {
+    if (!lks.win || *(volatile int *)LOCK_DELAY > 0) return;
+    if (lks.tid && lks.interval != LK_STOCK_LIT_MS && timer_modify(lks.tid, LK_STOCK_LIT_MS) == RET_OK)
+        lks.interval = LK_STOCK_LIT_MS;
+    lks_refresh(1);
+}
+
 /* Radio owns the lock screen card whenever the Home mini bar shows radio, except while stock hides the card for BT receiver, USB DAC or AirPlay. */
 static int lk_want_radio(void) {
     if (!mb_radio_active()) return 0;
@@ -406,6 +521,7 @@ static void lk_stop(void) {
 static int lk_on_destroy(void *ctx, void *e) {
     (void)e;
     if (ctx == lk.win) lk_stop(); /* an earlier window's end leaves the new one alone */
+    if (ctx == lks.win) memset(&lks, 0, sizeof lks);
     return RET_OK;
 }
 
@@ -561,6 +677,7 @@ int m1plus_lockscreen_init(void *win, void *ctx) {
         lk_date(win);
         lk_clock(win);
         bp_lock(win); /* the Battery Percentage beside the page's gauge (patch/battery.c) */
+        lks_take(win); /* replace stock's 20 ms timer across both layouts (no 50 FPS no-op or dark repaints) */
         mini = lk_layout() == 1;
         radio = lk_want_radio();
         if (mini) {

@@ -26,6 +26,7 @@
 #include "charging.h"
 #include "batthist.h"
 #include "scrobble.h"
+#include "entries.h"
 
 static struct {
     int state; /* the setting: 0 not read yet, 1 off, 2 on */
@@ -194,6 +195,8 @@ int bp_light_on(int level) {
     if (dark && access(KILL_SD, F_OK) != 0) {
         void *wm = window_manager();
         show_sysbar_face(0);
+        np_on_wake();
+        lk_on_wake();
         if (wm) widget_invalidate_force(wm, (void *)0), window_manager_check_and_layout(wm), window_manager_paint(wm);
     }
     return toolSetBackLight(level);
@@ -201,5 +204,7 @@ int bp_light_on(int level) {
 
 int bp_light_off(int level) {
     bp.dark = 1;
+    np_on_dark();
+    lk_on_dark();
     return toolSetBackLight(level);
 }

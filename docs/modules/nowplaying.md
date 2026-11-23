@@ -18,6 +18,13 @@ seconds heard for [scrobbling](scrobble.md).
   state. Stale callbacks end without touching widgets.
 - A covered normal page skips cover, time and info work. A dialog can leave the page partly
   visible, so its data keeps updating beneath it.
+- While the screen is off (`bp_light_off` -> `np_on_dark`, with `np_tick` as fallback), stock's
+  500 ms timer (`player_timer_clear`) and the title/artist marquee timers (`hscroll_label_stop` on
+  `scrlabel_title` / `scrlabel_artist`) are paused even when Now Playing is covered. On wake
+  (`bp_light_on` -> `np_on_wake`), `player_timer_start` and `hscroll_label_start` always resume
+  synchronously (preserving stock's lit behaviour such as its stream disconnect check), and
+  `show_player_face(win, 0)` plus our lit refresh run before the backlight turns on when the page
+  is visible.
 
 ## Layout and assets
 

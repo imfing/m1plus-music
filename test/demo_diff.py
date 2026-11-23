@@ -23,6 +23,7 @@ HOME_INIT = (0x534cd4, 8)   # home_page_init: the boot guard's hook (docs/archit
 PLAYING = (0x53d1e4, 8)     # playing_page_init: the Now Playing hook (patch/nowplaying.c)
 BIGCOVER = (0x529a24, 8)    # bigcover_page_init: the timed cover page hook (patch/bigcover.c)
 LOCKSCREEN = (0x53fd44, 8)  # screensaver_page_init: the lock screen's mini player layout hook (patch/lockscreen.c)
+CHECK_CPUMEM = (pod.CHECK_CPUMEM, 8)  # check_cpumem: drop_caches=3 thread hook (patch/power.c, docs/modules/payload.md hook 41)
 PLAYMORE = (0x479cc4, 8)    # dialog_playmore_dialog_init: the More menu hook (patch/playmore.c)
 PULLDOWN = (0x475f04, 8)    # dialog_dropdown_dialog_init: the pull-down tile hook (patch/pulldown.c)
 BACKTOPLAYER = (0x4cd58c, 8)   # on_backtoplayer_onclick: Radio Now Playing from stock pages (patch/radionp.c rn_backtoplayer)
@@ -101,6 +102,7 @@ def main():
     allow(va_to_off(s, PLAYING[0]), PLAYING[1], 'playing init hook')
     allow(va_to_off(s, BIGCOVER[0]), BIGCOVER[1], 'timed cover page init hook')
     allow(va_to_off(s, LOCKSCREEN[0]), LOCKSCREEN[1], 'lock screen init hook')
+    allow(va_to_off(s, CHECK_CPUMEM[0]), CHECK_CPUMEM[1], 'check_cpumem hook')
     allow(va_to_off(s, PLAYMORE[0]), PLAYMORE[1], 'more dialog init hook')
     allow(va_to_off(s, PULLDOWN[0]), PULLDOWN[1], 'pull-down init hook')
     allow(va_to_off(s, START_PLAYER[0]), START_PLAYER[1], 'start player hook')
@@ -188,6 +190,10 @@ def main():
     h = LOCKSCREEN[0]; o = va_to_off(s, h)
     print(f'Lock screen hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
     ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]
+    h = CHECK_CPUMEM[0]; o = va_to_off(s, h); mw = struct.unpack_from('<I', m, o)[0]
+    good = mw >> 26 == 2 and m[o + 4:o + 8] == bytes(4) and s[o + 8:o + 12] == m[o + 8:o + 12] and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
+    print(f'check_cpumem hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'ok' if good else 'WRONG')
+    ok = ok and good
     h = PULLDOWN[0]; o = va_to_off(s, h)
     print(f'Pull-down hook {h:#x}: {s[o:o + 8].hex()} -> {m[o:o + 8].hex()}', 'changed' if s[o:o + 8] != m[o:o + 8] else 'UNCHANGED')
     ok = ok and s[o:o + 8] != m[o:o + 8] and s[o + 8:o + 16] == m[va_to_off(m, h) + 8:va_to_off(m, h) + 16]

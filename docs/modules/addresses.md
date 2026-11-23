@@ -40,6 +40,7 @@ Every prologue hook pins `$gp` and three words: `0x3c1c....`, `0x279c....` and `
 | 29 | `loadLocalClassList` | `0x4ee504` | `0x3c1c0051, 0x279c59cc` | `0x4ee510` |
 | 30 | `on_wm_tsdown_fun` | `0x4cd6e8` | `0x3c1c0053, 0x279c67e8` | `0x4cd6f4` |
 | 32 | Bluetooth hub row thunk | `0x4b1408` | `0x3c1c0055, 0x279c2ac8` | call site `0x4b1428` |
+| 41 | `check_cpumem` | `0x50b810` | `0x3c1c0050, 0x279c86c0` | `0x50b81c` |
 
 Other hook sites (call-site words and two-word stubs):
 
@@ -89,6 +90,9 @@ hciplayer (`$gp` `0xb16750`, payload `0xe10000`): equalizer `af_info` `0x893808`
 | `loadAlbumdetailList(class, album record)` | `0x4eea98` | `0xf003` -> `0xff10`, `0xff01` -> `0xff11`, `0xff02` -> `0xff14` |
 | `system_bar` (data) | `0xa06f90` | the status bar window |
 | `backlight_status` (data) | `0x97cae4` | 1 once the framebuffer is on; page timers use it to defer visual work |
+| `player_timer_start` / `player_timer_clear` / `show_player_face` | `0x53c210` / `0x53c758` / `0x53bab4` | Now Playing 500 ms timer and immediate refresh on wake (`NP_IDLE_PINS`) |
+| `hscroll_label_start` / `hscroll_label_stop` / `widget_add_timer` | `0x609648` / `0x6097e8` / `0x668c78` | Now Playing marquee pause while dark; lock screen timer replacement |
+| lock screen timer (`0x53fc68`), refresh (`0x53f520`), cover (`0x53f9b4`) | `0x97ccf0` / `0xa05a60` / `0xa05a5c` | startup delay counter, track-dirty and cover-dirty flags (`LOCKSCREEN_PINS`) |
 | `COVER_SRC` / `COVER_PARSED` (`savecover_path`) | `0x97cad8` / `0xa04c3c` | timed cover page |
 | `COVER_MODE` | `0xa05aa5` | Cover mode byte; the Playback Settings row `0x4a0098` toggles it with `write_int_config(v, "SYSSET", "COVERMODE")` `0x4d6a2c` |
 | idle countdown | `0x97ccd0` | reset to 20 at `0x53d0f4` |
@@ -105,7 +109,7 @@ Pins by page: `LYRICS_PINS` (`scroll_lrc` `0x751c3c`, `lrc_time` `0x751c80`, the
 (`createPlayListItem` `0x4eeca8`, `getPlayListMaxId` `0x4ee184`, `checkPlayListExist` `0x4ee1a8`,
 `addPlayList` `0x4ee1cc`, the name columns in `createPlayListItem` and `toolsInsertDbTable` `0x5ee2fc`, `nagvation_title` `0xa0533c`, `navigation_status` `0xa05a24`, `*pdeq_playlist`
 `0xa045d0`), `SHUFFLE_PINS`, `NEXTALBUM_PINS`, `TSDOWN_PINS`, `LOCKSCREEN_PINS`, `RADIO_PINS`,
-`JPEG_PINS`, `COVER_PINS`, `LIGHT_PINS`, `TEXTGAMMA_PINS`.
+`JPEG_PINS`, `COVER_PINS`, `LIGHT_PINS`, `TEXTGAMMA_PINS`, `NP_IDLE_PINS`, `CHECK_CPUMEM_PINS`.
 
 ## Home icons and their conditions
 

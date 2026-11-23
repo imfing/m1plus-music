@@ -279,4 +279,65 @@ def history_tests(ctx):
     expect(bt.last(m)[1] & bt.CHG and bt.view(m)['unplug_at'] == 0, 'a first sample with only ac online 1: charging, no run')
 
 
-SECTIONS = [pwr_tests, pins_tests, worker_tests, start_tests, history_tests]
+def cpumem_tests(ctx):
+    """Hook 41 (check_cpumem @ 0x50b810): skips stock's 6 s drop_caches=3 thread unless the kill switch is present."""
+    expect = ctx.expect
+    stock = stock_demo_bytes(); built = built_demo_bytes()
+    word = lambda b, a: struct.unpack_from('<I', b, pod.fileoff(b, a))[0]
+    A = pod.CHECK_CPUMEM
+    expect(A == 0x50b810 and pod.CHECK_CPUMEM_PROLOGUE == (0x3c1c0050, 0x279c86c0, 0x0399e021)
+           and tuple(word(stock, A + 4 * i) for i in range(3)) == pod.CHECK_CPUMEM_PROLOGUE, 'stock check_cpumem prologue matches pin')
+    expect((0x50 << 16) + (0x86c0 - 0x10000) + A == pod.GP, 'check_cpumem prologue computes $gp = 0xa03ed0')
+    expect(tuple(word(built, A + 4 * i) for i in range(3)) == (pod.j(PSYMS['m1plus_check_cpumem']), 0, pod.CHECK_CPUMEM_PROLOGUE[2]),
+           'built demo has j m1plus_check_cpumem; nop over the first two prologue words')
+    tramp = struct.unpack_from('<4I', open(os.path.join(BUILD, 'patch.bin'), 'rb').read(), PSYMS['stock_check_cpumem_trampoline'] - pod.BASE)
+    expect(tramp == (0x3c1c0000 | pod.GP >> 16, 0x379c0000 | pod.GP & 0xffff, pod.j(A + 12), 0), 'trampoline restores $gp and resumes at +12')
+    expect(MANIFEST['hook_check_cpumem'] == {'addr': A, 'target': PSYMS['m1plus_check_cpumem']}, 'manifest records hook_check_cpumem')
+    expect(all(word(stock, a) == w and word(built, a) == w for a, w, _ in pod.CHECK_CPUMEM_PINS), 'CHECK_CPUMEM_PINS match stock and stay untouched')
+
+    class CPU(CM):
+        def __init__(self):
+            super().__init__()
+            self.gp_seen = []
+            self.handlers[A + 12] = 'stock_check_cpumem_resume'
+
+        def _hook(self, u, address, size, _):
+            if self.handlers.get(address) == 'stock_check_cpumem_resume':
+                self.gp_seen.append(u.reg_read(UC_MIPS_REG_GP))
+                self.calls.append(('stock_check_cpumem_resume', u.reg_read(UC_MIPS_REG_A0)))
+                u.reg_write(UC_MIPS_REG_V0, 0x42); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+            return super()._hook(u, address, size, _)
+
+    m = CPU()
+    r = m.call(PSYMS['m1plus_check_cpumem'], a0=0x1234, count=200000)
+    expect(r == 0 and m.calls == [('access', KILL), ('sleep', 15), ('access', KILL)],
+           f'normal boot: checks kill switch, re-checks after 15 s (async SD mount), exits NULL without calling stock ({r}, {m.calls})')
+    m = CPU(); m.present.add(KILL)
+    r = m.call(PSYMS['m1plus_check_cpumem'], a0=0x1234, count=200000)
+    expect(r == 0x42 and m.gp_seen == [pod.GP] and m.calls == [('access', KILL), ('stock_check_cpumem_resume', 0x1234)],
+           f'kill switch present at boot: restores $gp and delegates immediately without sleeping ({r:#x}, {m.gp_seen}, {m.calls})')
+    m = CPU(); m.on_sleep = lambda k: m.present.add(KILL)
+    r = m.call(PSYMS['m1plus_check_cpumem'], a0=0x1234, count=200000)
+    expect(r == 0x42 and m.gp_seen == [pod.GP] and ('sleep', 15) in m.calls and ('stock_check_cpumem_resume', 0x1234) in m.calls,
+           f'kill switch appears while SD mounts during sleep(15): delegates to stock check_cpumem ({r:#x}, {m.gp_seen}, {m.calls})')
+
+
+def watchdog_tests(ctx):
+    """Lightweight /usr/bin/checkappprocess.sh (tools/mod_watchdog.py): SHA pin, syntax, fallback and built rootfs."""
+    import subprocess
+    import mod_watchdog
+    expect = ctx.expect
+    stock_path = os.path.join(WORK, 'rootfs', mod_watchdog.REL)
+    built_sh = open(stock_path, 'rb').read()
+    expect(built_sh == mod_watchdog.WATCHDOG_SH, 'built rootfs carries the lightweight watchdog script')
+    expect(os.stat(stock_path).st_mode & 0o111 != 0, 'watchdog script keeps executable permission')
+    r = subprocess.run(['sh', '-n'], input=built_sh, capture_output=True)
+    expect(r.returncode == 0, f'watchdog script passes sh -n ({r.stderr.decode("utf-8", "replace")})')
+    expect(b'/proc/$DEMO_PID/comm' in built_sh and b'pgrep "/release/bin/demo"' in built_sh and b'reboot' in built_sh,
+           'watchdog caches PID via /proc/$DEMO_PID/comm and keeps stock pgrep fallback + reboot')
+    try: mod_watchdog.patch(b'not stock'); refused = False
+    except ValueError: refused = True
+    expect(refused, 'mod_watchdog.patch refuses unpinned stock bytes')
+
+
+SECTIONS = [pwr_tests, pins_tests, worker_tests, start_tests, history_tests, cpumem_tests, watchdog_tests]

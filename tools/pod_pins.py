@@ -44,6 +44,26 @@ IDLE_PINS = (   # (address, stock word, what it proves)
     (0x4a00c4, 0xa2440000, 'cover mode row: sb a0, (s2) in the delay slot (the byte is stored)'),
     (0x744540, 0x53535953, 'the string "SYSS(ET)"'), (0x74745c, 0x45564f43, 'the string "COVE(RMODE)"'), (0x747460, 0x444f4d52, 'the string "(COVE)RMOD(E)"'),
 )
+# Now Playing screen-off pause (patch/nowplaying.c np_dark_set): pauses stock's 500 ms timer and title/artist marquees while dark, refreshes synchronously on wake.
+NP_IDLE_PINS = (   # (address, stock word, what it proves)
+    (0x53c210, 0x3c1c004c, 'player_timer_start: PIC prologue'),
+    (0x53c25c, 0x240601f4, 'player_timer_start: a2 = 500 ms (0x1f4)'),
+    (0x53c268, 0x0320f809, 'player_timer_start: jalr widget_add_timer'),
+    (0x53c758, 0x3c1c004c, 'player_timer_clear: PIC prologue'),
+    (0x53bab4, 0x3c1c004d, 'show_player_face: PIC prologue'),
+    (0x609648, 0x3c1c0040, 'hscroll_label_start: PIC prologue'),
+    (0x6097e8, 0x3c1c0040, 'hscroll_label_stop: PIC prologue'),
+)
+# Boot cache-dropper thread (patch/power.c m1plus_check_cpumem, payload hook 41): stock's platform_init spawns detached thread check_cpumem (0x50b810)
+# which opens /proc/sys/vm/drop_caches once and writes "3" every ~6 s without checking free memory. On the kill switch the hook falls back to stock.
+CHECK_CPUMEM_PINS = (   # (address, stock word, what it proves)
+    (0x50b81c, 0x27bdffd8, 'check_cpumem: addiu sp, sp, -0x28 (the trampoline resumes here)'),
+    (0x50b830, 0x2484f040, 'check_cpumem: a0 = "/proc/sys/vm/drop_caches" (0x74f040)'),
+    (0x50b844, 0x0320f809, 'check_cpumem: jalr open64'),
+    (0x50b878, 0x0320f809, 'check_cpumem: jalr write(fd, "3", 1)'),
+    (0x50bca8, 0x8f86be14, 'platform_init: lw a2, GOT check_cpumem (0x50b810)'),
+    (0x50bcb0, 0x0320f809, 'platform_init: jalr pthread_create(..., check_cpumem, NULL)'),
+)
 LOCKSCREEN_PINS = (   # (address, stock word, what it proves)
     (0x53fd50, 0x10800054, 'screensaver_page_init: beqz a0 (the trampoline resumes here)'),
     # the lock screen switch (Settings > Lock Screen: the stock systemset/screensaver_page's image_switch click handler 0x4aba34 flips the byte screensaver_mode and saves it): the byte, the order
@@ -82,6 +102,20 @@ LOCKSCREEN_PINS = (   # (address, stock word, what it proves)
     (0x4ab9e8, 0x0320f809, 'show time handler: jalr write_int_config(new, "SYSSET", "SSAVERTIMESHOW")'), (0x4ab9ec, 0xa2240000, 'show time handler: sb a0, (s1) in the delay slot: the byte first, then the save'),
     (0x4e6190, 0x24c6877c, 'config_init: toolsReadConfig(.., "SYSSET", "SSAVERTIMESHOW")'), (0x4e61ac, 0x2c430002, 'config_init: sltiu v1, v0, 2'), (0x4e61b0, 0x0003100a, 'config_init: movz v0, zero, v1: above 1 is 0'),
     (0x4e61b8, 0x8f83b000, 'config_init: lw v1, GOT screensaver_timeshow'),
+    # Lock screen 20 ms timer (0x53fc68) and refresh (0x53f520, 0x53f9b4) replaced in m1plus_lockscreen_init (patch/lockscreen.c lks_take):
+    # stock adds 0x53fc68 with period 20 ms (0x14) and stores its id in "timer_idex"; while LOCK_DELAY (0x97ccf0) > 0 it runs the wake backlight
+    # countdown, then calls 0x53f520(win, a1) where a1 = 0 updates img_battery / pgbar_battery only and returns at 0x53f64c (bnez s4, 0x53f698; b 0x53f6bc).
+    (0x53fe28, 0x24060014, 'screensaver_page_init: a2 = 20 ms for widget_add_timer'),
+    (0x53fe34, 0x0320f809, 'screensaver_page_init: jalr widget_add_timer'),
+    (0x53fe38, 0x24a5fc68, 'screensaver_page_init: a1 = 0x53fc68 (the 20 ms timer callback)'),
+    (0x53fc68, 0x3c1c004c, 'screensaver timer 0x53fc68: PIC prologue'),
+    (0x53fc88, 0x8c62ccf0, 'screensaver timer: lw v0, -0x3310(0x980000) = LOCK_DELAY (0x97ccf0)'),
+    (0x53fcec, 0x90430000, 'screensaver timer: lbu v1, LOCK_TRACK_DIRTY (0xa05a60)'),
+    (0x53fd1c, 0x8f82b8a8, 'screensaver timer: lw v0, GOT LOCK_COVER_DIRTY (0xa05a5c)'),
+    (0x53f520, 0x3c1c004c, 'screensaver refresh 0x53f520: PIC prologue'),
+    (0x53f64c, 0x16800012, 'screensaver refresh: bnez s4 (a1), 0x53f698 (a1 == 0 skips track/button work)'),
+    (0x53f654, 0x10000019, 'screensaver refresh: b 0x53f6bc (a1 == 0 returns after battery update)'),
+    (0x53f9b4, 0x3c1c004c, 'screensaver cover reload 0x53f9b4: PIC prologue'),
     # Screen Timeout (Settings > Display, patch/display.c disp_light_set; docs/modules/display.md): stock's systemset/lighttime_page. Each of its five rows has a click handler
     # (0x4a8708 row 1 = index 0 .. 0x4a8578 row 5 = index 4) that does nothing when the index is the word backlighttime_mode already, else calls the shared 0x4a8410 (the row images, then the word
     # stored in the delay-slot position before write_int_config(index, "SYSSET", "LIGHTTIME")) and then reset_poweroptions_timer(0, 0, 1), which sets the screen's countdown from the new word.

@@ -90,6 +90,8 @@ static struct {
     unsigned favgen; /* sba_gen() at that read: the cache changed since when it differs */
     void *win, *rem, *tot; /* the window, np_remaining (ours), label_playlen (stock) */
     void *el, *pt; /* np_elapsed (ours), label_playtime (stock's elapsed time); both 0 if the page lacks either */
+    void *title, *artist; /* stock scrlabel_title / scrlabel_artist: marquee timers stopped while the screen is dark */
+    int dark; /* 1 while stock's 500 ms timer and marquees are paused for screen-off */
     unsigned timer; /* the repeating np_tick timer */
     unsigned interval; /* interval last accepted by timer_modify */
     unsigned key; /* what the colour was last made from: 0 nothing yet, NP_KEY_NEUTRAL, or a file's hash */
@@ -1407,12 +1409,7 @@ static int np_on_skip(void *ctx, void *e) {
     return RET_STOP;
 }
 
-static void np_work(void) {
-    recent_note(cc_playing()); /* No stock list query: the page underneath owns pdeq_showlist;
-                               * the menu's foreground handler resolves the cover key. */
-    np_art_sync(
-        np_art_live()); /* a pause seen with the screen dark or another page in front: the cover is just small */
-    if (!m1_screen_lit()) return;
+static void np_work_lit(void) {
     np_server_art();
     np_cover();
     np_time();
@@ -1425,11 +1422,64 @@ static void np_work(void) {
     np_pages_sync();
 }
 
+static void np_work(void) {
+    recent_note(cc_playing()); /* No stock list query: the page underneath owns pdeq_showlist;
+                               * the menu's foreground handler resolves the cover key. */
+    np_art_sync(
+        np_art_live()); /* a pause seen with the screen dark or another page in front: the cover is just small */
+    if (!m1_screen_lit()) return;
+    np_work_lit();
+}
+
+/* Pause stock's 500 ms playing_page timer (0x53cf48 -> show_player_face) and title/artist hscroll_label 16 ms
+ * marquees strictly while the screen is off, and resume synchronously before the panel lights up on wake
+ * (patch/battery.c). Resuming on wake regardless of np.fg preserves stock's lit behaviour (including its stream
+ * disconnect check while another page is in front) and avoids any TO_BG/TO_FG edge case stranding the timer. */
+static void np_dark_set(int dark, int force_lit) {
+    int vis;
+    if (!np.win) return;
+    if (dark) {
+        if (np.dark) return;
+        np.dark = 1;
+        player_timer_clear(np.win);
+        if (np.title) hscroll_label_stop(np.title);
+        if (np.artist) hscroll_label_stop(np.artist);
+        return;
+    }
+    if (!np.dark) return;
+    np.dark = 0;
+    vis = np.fg || m1_is_top(np.win);
+    if (vis) show_player_face(np.win, 0);
+    player_timer_start(np.win);
+    if (np.title) hscroll_label_start(np.title);
+    if (np.artist) hscroll_label_start(np.artist);
+    if (force_lit && vis) {
+        recent_note(cc_playing());
+        np_work_lit();
+    }
+}
+
+void np_on_dark(void) {
+    if (!np.win) return;
+    if (np.timer && np.interval != POD_DARK_MS && timer_modify(np.timer, POD_DARK_MS) == RET_OK)
+        np.interval = POD_DARK_MS;
+    np_dark_set(1, 0);
+}
+
+void np_on_wake(void) {
+    if (!np.win) return;
+    if (np.timer && np.interval != NP_TICK_MS && timer_modify(np.timer, NP_TICK_MS) == RET_OK) np.interval = NP_TICK_MS;
+    np_dark_set(0, 1);
+}
+
 static int np_tick(const void *timer) {
     unsigned want;
+    int lit;
     (void)timer;
     if (!np.win) return RET_OK; /* not ours any more: a timer that returns RET_OK ends */
-    want = m1_screen_lit() ? NP_TICK_MS : POD_DARK_MS;
+    lit = m1_screen_lit();
+    np_dark_set(!lit, 0);
+    want = lit ? NP_TICK_MS : POD_DARK_MS;
     if (np.timer && np.interval != want && timer_modify(np.timer, want) == RET_OK) np.interval = want;
     /* another page on top: nothing of this one is seen, np_on_foreground catches up. A dialog (the pull-down) also clears np.fg
      * but leaves the page the top normal window and partly visible, so the work goes on under it. */
@@ -1461,7 +1511,7 @@ static int np_on_destroy(void *ctx, void *e) {
 static int np_on_background(void *ctx, void *e) {
     (void)e;
     if (!np.win || ctx != np.win) return RET_OK;
-    np.fg = 0;
+    if (np.barok) np.fg = 0;
     np_bar_black();
     return RET_OK;
 }
@@ -1492,6 +1542,8 @@ static void np_start(void *win) {
     np.tot = widget_lookup(win, "label_playlen", 1);
     np.el = widget_lookup(win, "np_elapsed", 1);
     np.pt = widget_lookup(win, "label_playtime", 1);
+    np.title = widget_lookup(win, "scrlabel_title", 1);
+    np.artist = widget_lookup(win, "scrlabel_artist", 1);
     np.fav = widget_lookup(win, "btn_fav", 1);
     if (np.fav) widget_on(np.fav, EVT_CLICK, np_on_fav, (void *)0);
     np.mode = widget_lookup(win, "btn_playmode", 1);

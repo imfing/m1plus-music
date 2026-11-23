@@ -61,6 +61,10 @@ void *np_window(void); /* Now Playing's window, 0 when it has none (patch/idlely
 int np_spoken_seek(int fwd);
 int np_speed_step(void);
 unsigned np_idle_color(void); /* the window's colour (a color_t word) after the cover's tone is looked at again */
+void np_on_dark(
+    void); /* screen off (patch/battery.c bp_light_off): pause stock's 500 ms timer and title/artist marquees */
+void np_on_wake(
+    void); /* screen on (patch/battery.c bp_light_on): refresh and resume stock's timer and marquees before paint */
 
 /* patch/idlelyrics.c */
 int idlelyrics_open_idle(
@@ -146,6 +150,13 @@ int lk_enabled(void); /* stock's lock screen switch (the byte screensaver_mode):
 int lk_enabled_toggle(void); /* flip it as stock's switch does (byte, then [SYSSET] SCREENSAVER); the new state */
 int lk_time(void); /* stock's lock screen clock switch (the byte screensaver_timeshow): 1 on */
 int lk_time_toggle(void); /* flip it as stock's switch does (byte, then [SYSSET] SSAVERTIMESHOW); the new state */
+void lk_on_dark(
+    void); /* screen off (patch/battery.c bp_light_off): pause stock's 20 ms lock screen refresh while dark */
+void lk_on_wake(void); /* screen on (patch/battery.c bp_light_on): refresh the lock screen synchronously before paint */
+
+/* patch/power.c */
+void *
+m1plus_check_cpumem(void *arg); /* payload hook 41: disable stock's 6 s drop_caches=3 thread (stock on kill switch) */
 
 /* patch/relnotes.c */
 int lockinfo_open(

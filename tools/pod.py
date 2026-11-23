@@ -95,6 +95,11 @@ BIGCOVER_INIT_PROLOGUE = (0x3c1c004e, 0x279ca4ac, 0x0399e021)
 LOCKSCREEN_INIT = 0x53fd44
 LOCKSCREEN_INIT_PROLOGUE = (0x3c1c004c, 0x279c418c, 0x0399e021)
 
+# Boot cache-dropper thread (patch/power.c m1plus_check_cpumem, payload hook 41): stock's platform_init spawns detached thread check_cpumem
+# which writes "3" to /proc/sys/vm/drop_caches every ~6 s with no memory check. Falls back to stock on the kill switch.
+CHECK_CPUMEM = 0x50b810
+CHECK_CPUMEM_PROLOGUE = (0x3c1c0050, 0x279c86c0, 0x0399e021)
+
 
 # Light Mode (patch/palette.c, docs/modules/accent.md, docs/modules/payload.md hooks 10 - 12): three hooks on the painter's inputs, q2-pod's (its style_get_color / style_get_gradient / image_manager_add hooks).
 # Each is a plain pass-through while Light Mode is off (the setting, the kill switch, the bad-boot note).
@@ -259,6 +264,13 @@ FUNCTIONS.update({
     'value_uint32':            ('unsigned', 'const void *', 0x712380),
     'timer_count':             ('unsigned', 'void', 0x6638cc),
     'widget_remove_timer':     ('int', 'void *, unsigned', 0x668cb0),
+    'widget_add_timer':        ('unsigned', 'void *, int (*)(const void *), unsigned', 0x668c78),
+    # Now Playing screen-off pause (patch/nowplaying.c np_dark_set): stock's 500 ms timer pair, refresh and hscroll_label marquee start/stop
+    'player_timer_start':      ('int', 'void *', 0x53c210),
+    'player_timer_clear':      ('int', 'void *', 0x53c758),
+    'show_player_face':        ('int', 'void *, int', 0x53bab4),
+    'hscroll_label_start':     ('int', 'void *', 0x609648),
+    'hscroll_label_stop':      ('int', 'void *', 0x6097e8),
     # The album page's Play pill (patch/albumpage.c): the translated text (a wchar_t string) and its width
     # in the widget's own style, as widget_measure_text @0x66c7e0 gets it (widget_get_canvas, widget_prepare_text_style,
     # canvas_measure_text @0x644544; 0 when there is no canvas or no text)
@@ -781,6 +793,13 @@ DATA.update({
     'LIGHTNESS':          (0x97caf0, 'lightness'),   # int: stock's brightness, 0 .. 100 ([SYSSET] LIGHTNESS; written by stock's own handlers only, test/pod/display.py reads it)
     'LOCK_PICTURE':     (0xa0473c, 'screensaver_picture'),   # char[256]: the chosen wallpaper, the resource name screensaver_default or a path ("file://" is added where it is shown; [SYSSET] SCREENSAVERPATH)
     'LOCK_LIST':          (0xa045cc, 'pdeq_screensaverlist'),   # void *: the deque the wallpaper grid lists (strings: the Default name first, then up to five paths)
+    # Lock screen 20 ms timer state and internal helpers (patch/lockscreen.c lks_*, pinned in LOCKSCREEN_PINS)
+    'LOCK_DELAY':         (0x97ccf0, None),   # int: startup backlight-on countdown decremented by 0x53fc68 (init stores 2)
+    'LOCK_TRACK_DIRTY':   (0xa05a60, None),   # byte: set on track/play state change; 0x53fc68 clears it and runs 0x53f520(win, 1)
+    'LOCK_COVER_DIRTY':   (0xa05a5c, None),   # byte: set when lock screen cover needs reload via 0x53f9b4(win)
+    'LOCK_TIMER_CB':      (0x53fc68, None),   # int (const void *): stock's 20 ms screensaver timer callback (delegated while LOCK_DELAY > 0)
+    'LOCK_REFRESH':       (0x53f520, None),   # int (void *, int): stock's screensaver refresh (a1=0 battery only, a1=1 battery + track card)
+    'LOCK_COVER':         (0x53f9b4, None),   # int (void *): stock's screensaver cover reload
     'FOLDER_LAYER':       (0xa0554c, None),
     'FOLDER_TITLE':       (0xa0533c, None),
     'FOLDER_M3U':         (0xa0483c, None),
@@ -1230,6 +1249,9 @@ def gen_asm(out, slots):
     # and for the lock screen's init
     asm += ['.globl stock_lockscreen_init_trampoline', 'stock_lockscreen_init_trampoline:',
             f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{LOCKSCREEN_INIT + 12:x}', 'nop']
+    # and for check_cpumem (hook 41: boot drop_caches thread)
+    asm += ['.globl stock_check_cpumem_trampoline', 'stock_check_cpumem_trampoline:',
+            f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{CHECK_CPUMEM + 12:x}', 'nop']
     # and for the Now Playing More dialog's init
     asm += ['.globl stock_playmore_init_trampoline', 'stock_playmore_init_trampoline:',
             f'lui $gp, {GP >> 16}', f'ori $gp, $gp, {GP & 0xffff}', f'j 0x{PLAYMORE_INIT + 12:x}', 'nop']
@@ -1317,7 +1339,7 @@ def compile_payload(out, demo_path, tag=TAG):
     # compact_set_row_layout is reached only from the patched stock call sites, so keep it
     keep = ['--undefined=compact_set_row_layout', '--undefined=m1plus_home_init',
             '--undefined=stock_home_init_trampoline', '--undefined=m1plus_playing_init',
-            '--undefined=stock_playing_init_trampoline', '--undefined=m1plus_bigcover_init', '--undefined=stock_bigcover_init_trampoline', '--undefined=m1plus_lockscreen_init', '--undefined=stock_lockscreen_init_trampoline', '--undefined=m1plus_scroll_event',
+            '--undefined=stock_playing_init_trampoline', '--undefined=m1plus_bigcover_init', '--undefined=stock_bigcover_init_trampoline', '--undefined=m1plus_lockscreen_init', '--undefined=stock_lockscreen_init_trampoline', '--undefined=m1plus_check_cpumem', '--undefined=stock_check_cpumem_trampoline', '--undefined=m1plus_scroll_event',
             '--undefined=m1plus_playmore_init', '--undefined=stock_playmore_init_trampoline', '--undefined=m1plus_pulldown_init', '--undefined=pd_open_settings', '--undefined=pd_open_dialog', '--undefined=m1plus_tsdown', '--undefined=pd_usb_poll', '--undefined=stock_tsdown_trampoline', '--undefined=stock_pulldown_init_trampoline', '--undefined=rd_start_player', '--undefined=rd_step', '--undefined=stock_start_player_trampoline', '--undefined=rd_save_stop', '--undefined=rd_save_start', '--undefined=rd_auto_change', '--undefined=rd_notice', '--undefined=stock_save_stop_trampoline', '--undefined=stock_save_start_trampoline', '--undefined=rn_backtoplayer', '--undefined=stock_backtoplayer_trampoline', '--undefined=pc_id3_path', '--undefined=pc_library_query', '--undefined=pc_sorted_query', '--undefined=stock_dbquery_trampoline', '--undefined=stock_sorted_query_trampoline',
             '--undefined=sba_parse_tracks', '--undefined=sba_parse_albums', '--undefined=sba_parse_artists', '--undefined=sba_parse_playlists', '--undefined=sba_parse_ping',   # (sbparse.c until sbapi.c calls them)
             '--undefined=m1plus_style_color', '--undefined=m1plus_style_gradient', '--undefined=m1plus_image_add', '--undefined=stock_style_color_trampoline', '--undefined=stock_image_add_trampoline', '--undefined=pal_map', '--undefined=pal_active', '--undefined=pal_background', '--undefined=pal_accent', '--undefined=pal_accent_saved', '--undefined=pal_accent_set', '--undefined=pal_accent_color', '--undefined=pal_fill',
@@ -1481,6 +1503,9 @@ def patch_demo(raw, payload, ps, demo_path):
     check(BASE <= target6 < BASE + len(payload), 'lockscreen init entry symbol outside payload')
     check_pins(patched, LOCKSCREEN_PINS)
     hook(patched, LOCKSCREEN_INIT, LOCKSCREEN_INIT_PROLOGUE, target6, 'screensaver_page_init')
+    check(BASE <= ps['m1plus_check_cpumem'] < BASE + len(payload), 'check_cpumem hook symbol outside payload')
+    check_pins(patched, CHECK_CPUMEM_PINS + NP_IDLE_PINS)
+    hook(patched, CHECK_CPUMEM, CHECK_CPUMEM_PROLOGUE, ps['m1plus_check_cpumem'], 'check_cpumem')
     check(BASE <= ps['bc_timed_open'] < BASE + len(payload), 'idle view hook symbol outside payload')
     check_pins(patched, IDLE_PINS)
     struct.pack_into('<I', patched, fileoff(patched, IDLE_SITE), jal(ps['bc_timed_open'], IDLE_SITE))   # (the pins above checked the site's word, its delay slot, the GOT load and the callback round it)
@@ -1574,7 +1599,7 @@ def patch_demo(raw, payload, ps, demo_path):
     check(dynsym(demo_path).get('playsong_id3info') == 0xa0d88c, 'playsong_id3info moved')
     edits = patch_rows(patched, ps)
     # no row edit may touch a PIC prologue (the hooks are the only ones) or a hook site
-    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, PLAYMORE_INIT, PULLDOWN_INIT, TSDOWN, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, LCL, timezones.SELECT)) and int(a, 16) != LCL_ASSIGN_SITE and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not LIGHT_ON_SITE <= int(a, 16) < LIGHT_ON_SITE + 4 and not LIGHT_OFF_SITE <= int(a, 16) < LIGHT_OFF_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) not in SYNCLINK_SITES and int(a, 16) != WIFIHUB_SITE and int(a, 16) != BTHUB_SITE and int(a, 16) != VOLUME_SITE and int(a, 16) != AUTOCHANGE_SITE and int(a, 16) != USBPOLL_SITE and int(a, 16) not in NOTICE_SITES and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and int(a, 16) != PULLDOWN_DIALOG_SITE and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8 and not KEYS_SITE <= int(a, 16) < KEYS_SITE + 8 and not USBTAKE_SITE <= int(a, 16) < USBTAKE_SITE + 8
+    check(all(not any(h <= int(a, 16) < h + 12 for h in (HOME_CLICK, HOME_INIT, PLAYING_INIT, BIGCOVER_INIT, LOCKSCREEN_INIT, CHECK_CPUMEM, PLAYMORE_INIT, PULLDOWN_INIT, TSDOWN, START_PLAYER, SAVE_STOP, SAVE_START, BACKTOPLAYER, QUERY_DB, QUERY_SORT, STYLE_COLOR, IMAGE_ADD, SETMODE, LOADPL, FILETIME, LCL, timezones.SELECT)) and int(a, 16) != LCL_ASSIGN_SITE and not STYLE_GRADIENT <= int(a, 16) < STYLE_GRADIENT + 8 and not any(int(a, 16) == s for s, _ in MODE_SITES) and int(a, 16) != CLEAR_SITE and not ID3_SITE <= int(a, 16) < ID3_SITE + 4 and not SCAN_SITE <= int(a, 16) < SCAN_SITE + 4 and not BATTERY_SITE <= int(a, 16) < BATTERY_SITE + 4 and not LIGHT_ON_SITE <= int(a, 16) < LIGHT_ON_SITE + 4 and not LIGHT_OFF_SITE <= int(a, 16) < LIGHT_OFF_SITE + 4 and not any(int(a, 16) == s for s, _ in LINEOUT_SITES) and int(a, 16) not in SYNCLINK_SITES and int(a, 16) != WIFIHUB_SITE and int(a, 16) != BTHUB_SITE and int(a, 16) != VOLUME_SITE and int(a, 16) != AUTOCHANGE_SITE and int(a, 16) != USBPOLL_SITE and int(a, 16) not in NOTICE_SITES and int(a, 16) != IDLE_SITE and int(a, 16) != TIDALKB_SITE and int(a, 16) not in PULLDOWN_OPEN_SITES and int(a, 16) != PULLDOWN_DIALOG_SITE and not EQ_ROW <= int(a, 16) < EQ_ROW + 8 and not NEXTALBUM_SITE <= int(a, 16) < NEXTALBUM_SITE + 8 and not KEYS_SITE <= int(a, 16) < KEYS_SITE + 8 and not USBTAKE_SITE <= int(a, 16) < USBTAKE_SITE + 8
               for a, *_ in edits), 'row edit on a hook')
     check(all(not (SCROLL_SLOT <= int(a, 16) < SCROLL_SLOT + 4 or a in {hex(p[0]) for p in SCROLL_PINS}) for a, *_ in edits),
           'row edit on a list gesture word')
@@ -1611,6 +1636,7 @@ def main():
         'hook_playing': {'addr': PLAYING_INIT, 'target': ps['m1plus_playing_init']},
         'hook_bigcover': {'addr': BIGCOVER_INIT, 'target': ps['m1plus_bigcover_init']},
         'hook_lockscreen': {'addr': LOCKSCREEN_INIT, 'target': ps['m1plus_lockscreen_init']},
+        'hook_check_cpumem': {'addr': CHECK_CPUMEM, 'target': ps['m1plus_check_cpumem']},
         'hook_playmore': {'addr': PLAYMORE_INIT, 'target': ps['m1plus_playmore_init']},
         'hook_pulldown': {'addr': PULLDOWN_INIT, 'target': ps['m1plus_pulldown_init']},
         'hook_tsdown': {'addr': TSDOWN, 'target': ps['m1plus_tsdown']}, 'hook_usbpoll': {'addr': USBPOLL_SITE, 'target': ps['pd_usb_poll']},

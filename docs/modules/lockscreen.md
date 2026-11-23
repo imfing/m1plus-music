@@ -118,6 +118,14 @@ the only lock-specific thing; the look is the Home bar's.
   timer leaves the moved stock widgets with stock's cover and glyphs.
 - Nothing in stock's lock screen code moves, resizes or restyles a widget, so the layout survives
   every refresh and track change. Any failure leaves the large card.
+- **Stock 20 ms timer replacement** (`lks_*`, both Large Cover and Mini Player layouts): hook 25
+  replaces stock's 20 ms `"timer_idex"` callback (`0x53fc68`) with `lks_tick`. While stock's
+  startup delay counter (`0x97ccf0`) is positive, `lks_tick` delegates verbatim to `0x53fc68` so
+  the 40 ms backlight-on sequence is unchanged. Afterwards it slows to 200 ms lit—calling
+  `0x53f520(win, 0)` only when one of the six battery globals changes, `0x53f520(win, 1)` on the
+  track-dirty flag (`0xa05a60`) and `0x53f9b4(win)` on the cover-dirty flag (`0xa05a5c`)—and to
+  1000 ms with no repaints while dark. `bp_light_on` (`lk_on_wake`) refreshes synchronously before
+  the backlight turns on.
 
 ## Radio mode
 

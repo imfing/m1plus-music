@@ -1884,3 +1884,75 @@ def run(ctx):
     expect(rowv(m, 6) == ('File Size', '0.00 MB') and rowv(m, 7) == ('Location', '/mnt/mmc/Subsonic/a.flac'), 'a downloaded track plays from its own path: stock\'s lines')
     m = stream_info(rid=1)
     expect(rowv(m, 6) == ('File Size', '0.00 MB') and (rowv(m, 7)[1] + (T(m, 'np_i_v8') if shown(m, 'np_i_v8') else '')).endswith('format=raw') and len(T(m, 'np_i_v7')) < 60, 'a record outside the queue map: stock\'s lines')
+
+    # screen-off pause & synchronous wake refresh (NP_IDLE_PINS, np_on_dark / np_on_wake / np_tick)
+    stock = stock_demo_bytes(); built = built_demo_bytes()
+    word = lambda b, a: struct.unpack_from('<I', b, pod.fileoff(b, a))[0]
+    expect(all(word(stock, a) == old and word(built, a) == old for a, old, _ in pod.NP_IDLE_PINS), 'NP_IDLE_PINS match stock and stay untouched')
+    m = NowMachine(); m.page(); m.src(0)
+    m.handlers[pod.FUNCTIONS['window_manager_check_and_layout'][2]] = 'window_manager_check_and_layout'
+    ti, ar = m.widget('scrlabel_title'), m.widget('scrlabel_artist')
+    m.init()
+    m.calls = []; m.call(PSYMS['bp_light_off'], a0=0, count=200000)
+    expect(('player_timer_clear', WIN) in m.calls and ('hscroll_label_stop', ti) in m.calls and ('hscroll_label_stop', ar) in m.calls
+           and ('timer_modify', 0x777, 1000) in m.calls and ('toolSetBackLight', 0) in m.calls,
+           f'bp_light_off pauses stock 500 ms timer, stops title/artist marquees, slows np_tick to 1000 ms ({m.calls})')
+    # second dark call is a no-op for Now Playing; dark tick does not restart anything
+    m.screen(False); m.calls = []; m.tick()
+    expect(not any(c[0] in ('player_timer_clear', 'player_timer_start', 'show_player_face', 'hscroll_label_stop', 'hscroll_label_start', 'get_playtimeandlength', 'timer_modify') for c in m.calls),
+           f'dark np_tick is quiet after np_on_dark ({m.calls})')
+    # synchronous wake via bp_light_on while BACKLIGHT_STATUS is still 0 (stock sets it after toolSetBackLight)
+    m.pt = (45, 200, 1); m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000)
+    names = m.names()
+    expect(('show_player_face', WIN, 0) in m.calls and ('player_timer_start', WIN) in m.calls
+           and ('hscroll_label_start', ti) in m.calls and ('hscroll_label_start', ar) in m.calls
+           and ('timer_modify', 0x777, 500) in m.calls and ('get_playtimeandlength',) in m.calls
+           and names.index('show_player_face') < names.index('toolSetBackLight'),
+           f'bp_light_on refreshes stock face + our times and restarts timers/marquees before toolSetBackLight ({m.calls})')
+    # second wake while already lit does not double-start stock's 500 ms timer
+    m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000)
+    expect(not any(c[0] in ('player_timer_start', 'show_player_face', 'hscroll_label_start') for c in m.calls), f'repeated wake is a no-op ({m.calls})')
+    # Lock Screen wake sequence: dark on Now Playing -> Lock Screen opens (TO_BG) -> bp_light_on while covered -> unlock (TO_FG)
+    # Paused strictly while dark: bp_light_on resumes stock's 500 ms timer (preserving stream disconnect checks) and marquees
+    # without repainting the covered page; TO_FG refreshes our face without restarting stock's timer again
+    m.call(PSYMS['bp_light_off'], a0=0, count=200000); m.screen(False)
+    m.fire(O['EVT_WINDOW_TO_BG'])
+    m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000); m.screen(True)
+    expect(('player_timer_start', WIN) in m.calls and ('hscroll_label_start', ti) in m.calls
+           and ('hscroll_label_start', ar) in m.calls and ('timer_modify', 0x777, 500) in m.calls
+           and 'show_player_face' not in m.names() and 'get_playtimeandlength' not in m.names(),
+           f'wake while covered by lock screen resumes stock timer & marquees without repainting covered page ({m.calls})')
+    m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
+    expect(('get_playtimeandlength',) in m.calls and 'player_timer_start' not in m.names(),
+           f'unlocking back to Now Playing catches up our face; stock timer is already running ({m.calls})')
+    # Idle view covering Now Playing when screen turns off: pauses stock's hidden 500 ms timer and marquees while dark, resumes on wake
+    m.fire(O['EVT_WINDOW_TO_BG'])
+    m.calls = []; m.call(PSYMS['bp_light_off'], a0=0, count=200000); m.screen(False)
+    expect(('player_timer_clear', WIN) in m.calls and ('hscroll_label_stop', ti) in m.calls and ('hscroll_label_stop', ar) in m.calls,
+           f'screen off while covered by idle view still clears stock 500 ms timer and marquees ({m.calls})')
+    m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000); m.screen(True)
+    expect(('player_timer_start', WIN) in m.calls and ('hscroll_label_start', ti) in m.calls and 'show_player_face' not in m.names(),
+           f'waking on idle view resumes stock 500 ms timer and marquees ({m.calls})')
+    # returning to foreground while still dark keeps timers paused until wake
+    m.call(PSYMS['bp_light_off'], a0=0, count=200000); m.screen(False)
+    m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
+    expect(not any(c[0] in ('player_timer_start', 'show_player_face', 'hscroll_label_start') for c in m.calls),
+           f'foreground while dark does not restart timers ({m.calls})')
+    m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000); m.screen(True)
+    expect(('show_player_face', WIN, 0) in m.calls and ('player_timer_start', WIN) in m.calls,
+           f'later wake restarts timers once lit ({m.calls})')
+    # incomplete window listeners (EVT_WINDOW_TO_BG ok, EVT_WINDOW_TO_FG refused): np.fg must not stick at 0 and freeze playback timer after dark/wake
+    m2 = NowMachine().with_bar(); m2.page(); m2.src(0)
+    m2.handlers[pod.FUNCTIONS['window_manager_check_and_layout'][2]] = 'window_manager_check_and_layout'
+    ti2, ar2 = m2.widget('scrlabel_title'), m2.widget('scrlabel_artist')
+    m2.on_fail = {O['EVT_WINDOW_TO_FG']}; m2.init()
+    m2.top_main = 0x24001000; m2.fire(O['EVT_WINDOW_TO_BG'])
+    m2.call(PSYMS['bp_light_off'], a0=0, count=200000); m2.screen(False)
+    m2.top_main = WIN; m2.calls = []; m2.call(PSYMS['bp_light_on'], a0=1, count=200000); m2.screen(True)
+    expect(('show_player_face', WIN, 0) in m2.calls and ('player_timer_start', WIN) in m2.calls
+           and ('hscroll_label_start', ti2) in m2.calls and ('hscroll_label_start', ar2) in m2.calls,
+           f'TO_FG refused: wake still restores stock 500 ms timer and marquees ({m2.calls})')
+    # after destroy, bp_light_off / bp_light_on touch nothing of Now Playing
+    m.screen(True); m.call(PSYMS['np_on_destroy'], a0=WIN, a1=0)
+    m.calls = []; m.call(PSYMS['bp_light_off'], a0=0, count=200000)
+    expect(m.calls == [('toolSetBackLight', 0)], f'after destroy bp_light_off touches only backlight ({m.calls})')

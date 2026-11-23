@@ -230,6 +230,7 @@ def rows_tests(expect):
     allowed |= {pod.fileoff(built, pod.PLAYING_INIT), pod.fileoff(built, pod.PLAYING_INIT) + 4}           # the Now Playing init hook
     allowed |= {pod.fileoff(built, pod.BIGCOVER_INIT), pod.fileoff(built, pod.BIGCOVER_INIT) + 4}         # the timed cover page init hook (patch/bigcover.c)
     allowed |= {pod.fileoff(built, pod.LOCKSCREEN_INIT), pod.fileoff(built, pod.LOCKSCREEN_INIT) + 4}     # the lock screen init hook (patch/lockscreen.c)
+    allowed |= {pod.fileoff(built, pod.CHECK_CPUMEM), pod.fileoff(built, pod.CHECK_CPUMEM) + 4}           # check_cpumem hook (patch/power.c, hook 41)
     allowed |= {pod.fileoff(built, pod.PLAYMORE_INIT), pod.fileoff(built, pod.PLAYMORE_INIT) + 4}         # the More dialog init hook
     allowed |= {pod.fileoff(built, pod.PULLDOWN_INIT), pod.fileoff(built, pod.PULLDOWN_INIT) + 4}         # the pull-down init hook
     allowed |= {pod.fileoff(built, pod.TSDOWN), pod.fileoff(built, pod.TSDOWN) + 4}                       # the touch-down hook (patch/pulldown.c m1plus_tsdown)

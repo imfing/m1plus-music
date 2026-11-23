@@ -13,6 +13,9 @@
 #include "stock.h"
 #include "home.h"
 #include "power.h"
+#include "entries.h"
+
+extern void *stock_check_cpumem_trampoline(void *);
 
 /* The first characters of a sysfs file: bytes read (NUL terminated), or -1 when it does not open or read. */
 static int pwr_file(const char *path, char *b, int max) {
@@ -54,4 +57,15 @@ int pwr_external(void) {
     v = pwr_gpio();
     one += v == 0, zero += v == 1;
     return one ? 1 : zero ? 0 : -1;
+}
+
+/* Payload hook 41 (tools/pod.py CHECK_CPUMEM, 0x50b810): stock's detached boot thread opens /proc/sys/vm/drop_caches once
+ * and writes "3" every ~6 s without checking free memory, evicting clean page cache and forcing continuous NAND SquashFS
+ * re-reads. Linux reclaims page cache on demand, so exiting cleanly leaves caching intact; the kill switch is checked
+ * immediately and once more after 15 s (in case mdev mounts /mnt/mmc asynchronously after platform_init) before exiting. */
+void *m1plus_check_cpumem(void *arg) {
+    if (access(KILL_SD, F_OK) == 0) return stock_check_cpumem_trampoline(arg);
+    sleep(15);
+    if (access(KILL_SD, F_OK) == 0) return stock_check_cpumem_trampoline(arg);
+    return (void *)0;
 }

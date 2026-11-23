@@ -1219,4 +1219,89 @@ def radio_tests(ctx):
     expect(not m.bitmaps and not m.paint(), 'large radio destroy: bitmap freed, paint is a no-op')
 
 
-SECTIONS = [hook_tests, layout_tests, life_tests, bar_tests, radio_tests, setting_tests, wallpaper_tests, redirect_tests, date_tests]
+def lks_tests(ctx):
+    """Replacement of stock's 20 ms screensaver timer (0x53fc68 / "timer_idex") across both Large Cover and Mini Player layouts."""
+    expect = ctx.expect
+    DELAY = pod.DATA['LOCK_DELAY'][0]
+    TRK_D, COV_D = pod.DATA['LOCK_TRACK_DIRTY'][0], pod.DATA['LOCK_COVER_DIRTY'][0]
+    CB, REF, COV = pod.DATA['LOCK_TIMER_CB'][0], pod.DATA['LOCK_REFRESH'][0], pod.DATA['LOCK_COVER'][0]
+    BAT_ADDRS = [pod.DATA[k][0] for k in ('POWER_EXT', 'POWER_USBSTATE', 'POWER_FLAG', 'USBDAC_CHARGEFLAG', 'PMUCHARGE_STATUS', 'POWER_CAPACITY')]
+
+    class LKS(LK):
+        def __init__(self, setting=b'0'):
+            super().__init__(setting=setting)
+            self.handlers[pod.FUNCTIONS['window_manager_check_and_layout'][2]] = 'window_manager_check_and_layout'
+            self.handlers[CB] = 'stock_lock_cb'
+            self.handlers[REF] = 'stock_lock_refresh'
+            self.handlers[COV] = 'stock_lock_cover'
+            self.props[(WIN, 'timer_idex')] = 42
+
+        def _hook(self, u, address, size, _):
+            nm = self.handlers.get(address)
+            if nm in ('stock_lock_cb', 'stock_lock_refresh', 'stock_lock_cover'):
+                a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+                self.calls.append((nm, a0, a1) if nm == 'stock_lock_refresh' else (nm, a0))
+                if nm == 'stock_lock_cb':
+                    d = self.s32(DELAY)
+                    if d > 0: self.setword(DELAY, d - 1)
+                elif nm == 'stock_lock_cover':
+                    self.u.mem_write(COV_D, b'\x00')
+                u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+            return super()._hook(u, address, size, _)
+
+    for setting, tag in ((b'0', 'large'), (b'1', 'mini')):
+        m = LKS(setting=setting)
+        m.setword(DELAY, 2); m.u.mem_write(TRK_D, b'\x00'); m.u.mem_write(COV_D, b'\x00')
+        for a in BAT_ADDRS: m.setword(a, 0)
+        m.setword(pod.DATA['POWER_CAPACITY'][0], 75)
+        m.open()
+        nid = m.props[(WIN, 'timer_idex')]
+        expect(nid == 0x900 and ('widget_remove_timer', WIN, 42) in m.log and ('widget_add_timer', WIN, PSYMS['lks_tick'], 20) in m.log,
+               f'{tag}: stock timer 42 replaced by lks_tick (20 ms) and stored back in timer_idex ({nid:#x})')
+        # while LOCK_DELAY > 0, delegates verbatim to stock 0x53fc68 and stays at 20 ms
+        r1 = m.call(PSYMS['lks_tick'], a0=0x1234, count=200000); c1 = list(m.calls)
+        r2 = m.call(PSYMS['lks_tick'], a0=0x1234, count=200000); calls = c1 + m.calls
+        expect(r1 == O['RET_REPEAT'] and r2 == O['RET_REPEAT'] and calls.count(('stock_lock_cb', 0x1234)) == 2 and m.s32(DELAY) == 0
+               and not any(c[0] in ('timer_modify', 'stock_lock_refresh') for c in calls),
+               f'{tag}: LOCK_DELAY countdown delegates verbatim to stock 0x53fc68 ({calls})')
+        # once LOCK_DELAY == 0 and lit: slows to 200 ms, skips 0x53f520 when battery globals are unchanged
+        m.calls = []; m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(('timer_modify', nid, 200) in m.calls and not any(c[0] == 'stock_lock_refresh' for c in m.calls),
+               f'{tag}: lit steady state slows to 200 ms with zero refresh calls ({m.calls})')
+        # changing any battery global triggers one 0x53f520(win, 0), next tick is quiet again
+        m.setword(pod.DATA['POWER_CAPACITY'][0], 74)
+        m.calls = []; m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(('stock_lock_refresh', WIN, 0) in m.calls and 'timer_modify' not in m.names(), f'{tag}: battery change calls 0x53f520(win, 0) ({m.calls})')
+        m.calls = []; m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(not m.calls, f'{tag}: unchanged battery ticks do nothing ({m.calls})')
+        # track dirty + cover dirty both run and clear flags
+        m.u.mem_write(TRK_D, b'\x01'); m.u.mem_write(COV_D, b'\x01')
+        m.calls = []; m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(('stock_lock_refresh', WIN, 1) in m.calls and ('stock_lock_cover', WIN) in m.calls
+               and m.u.mem_read(TRK_D, 1)[0] == 0 and m.u.mem_read(COV_D, 1)[0] == 0,
+               f'{tag}: track + cover dirty both run ({m.calls})')
+        # screen off via bp_light_off slows to 1000 ms; dark tick performs zero repaints even if battery/track change
+        m.calls = []; m.call(PSYMS['bp_light_off'], a0=0, count=200000)
+        expect(('timer_modify', nid, 1000) in m.calls, f'{tag}: bp_light_off slows lock timer to 1000 ms ({m.calls})')
+        m.screen(False); m.setword(pod.DATA['POWER_CAPACITY'][0], 70); m.u.mem_write(TRK_D, b'\x01')
+        m.calls = []; m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(not m.calls, f'{tag}: dark tick skips all refreshes ({m.calls})')
+        # wake via bp_light_on refreshes synchronously before backlight turns on and restores 200 ms
+        m.calls = []; m.call(PSYMS['bp_light_on'], a0=1, count=200000)
+        names = m.names()
+        expect(('timer_modify', nid, 200) in m.calls and ('stock_lock_refresh', WIN, 1) in m.calls
+               and names.index('stock_lock_refresh') < names.index('toolSetBackLight'),
+               f'{tag}: bp_light_on refreshes synchronously before toolSetBackLight ({m.calls})')
+        # destroy clears lks state so subsequent ticks return RET_OK and bp_light_off touches nothing
+        m.handler(WIN, 'EVT_DESTROY')
+        m.calls = []; r = m.call(PSYMS['lks_tick'], a0=0x1234, count=200000)
+        expect(r == 0 and not m.calls, f'{tag}: destroyed lock screen ends lks_tick cleanly')
+        m.calls = []; m.call(PSYMS['bp_light_off'], a0=0, count=200000)
+        expect(m.calls == [('toolSetBackLight', 0)], f'{tag}: after destroy bp_light_off does not touch lock screen')
+
+    # kill switch leaves stock's 20 ms timer untouched
+    m = LKS(setting=b'0'); m.present.add(KILL); m.open()
+    expect(m.props[(WIN, 'timer_idex')] == 42 and not m.wtimers, 'kill switch leaves stock timer_idex untouched')
+
+
+SECTIONS = [hook_tests, layout_tests, life_tests, bar_tests, radio_tests, setting_tests, wallpaper_tests, redirect_tests, date_tests, lks_tests]
