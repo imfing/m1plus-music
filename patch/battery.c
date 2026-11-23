@@ -31,6 +31,7 @@ static struct {
     int state; /* the setting: 0 not read yet, 1 off, 2 on */
     int shown; /* a label may be showing: the hide path has work to do */
     int chg; /* the charging look may be showing: the same */
+    int white; /* bitmask (1 bar, 2 pull-down, 4 lock): that face's label was painted white and has not been reset to black yet */
     int dark; /* the backlight went off (bp_light_off) and has not come on since: the wake repaint is due */
 } bp __attribute__((section(".scratch")));
 
@@ -91,7 +92,7 @@ static int bp_charging(void) { return bp_external() && *(int *)PMUCHARGE_STATUS 
  * `bolt` in the body's middle without the number, the small `bolt_s` right of a number of one or two digits, whose label is BP_W_CHG wide then (BP_W otherwise).
  * Everything stays insensitive. */
 static void bp_face(void *root, const char *name, const char *bg, const char *lvl, const char *bolt, const char *bolt_s,
-                    int pct, int chg) {
+                    int mask, int pct, int chg) {
     char t[4];
     int n = 0, small = chg && pct >= 0 && pct < 100, width;
     void *w = root ? widget_lookup(root, name, 1) : (void *)0, *b;
@@ -117,11 +118,16 @@ static void bp_face(void *root, const char *name, const char *bg, const char *lv
         t[n++] = (char)('0' + pct % 10);
     }
     t[n] = 0;
-    if (chg || bp.chg) { /* white digits while charging, the asset's black again after it */
+    if (chg ||
+        (bp.white & mask)) { /* white digits while charging, black again whenever this face next shows on battery */
         unsigned v[4]; /* value_t: type at 0, the uint32 at 8 */
         memset(v, 0, sizeof v);
         value_set_uint32(v, chg ? BP_INK_CHG : BP_INK);
         widget_set_style(w, "normal:text_color", v);
+        if (chg)
+            bp.white |= mask;
+        else
+            bp.white &= ~mask;
     }
     widget_set_text_utf8(w, t);
     widget_set_visible(w, 1, 0);
@@ -130,21 +136,21 @@ static void bp_face(void *root, const char *name, const char *bg, const char *lv
 /* A page's battery at its init (after stock's init and only without the kill switch): the percentage and the charging look at once, where the status bar's tick would show
  * them up to a second later. All of it is hidden in the asset, so on battery with the setting off or an unreadable gauge nothing is touched. */
 static void bp_init_face(void *win, const char *name, const char *bg, const char *lvl, const char *bolt,
-                         const char *bolt_s) {
+                         const char *bolt_s, int mask) {
     int pct = -1, chg = bp_charging();
     if (bp.state == 0) bp.state = bp_read_setting() ? 2 : 1;
     if (bp.state == 2) pct = battery_gauge();
     if (pct < 0 && !chg) return;
-    bp_face(win, name, bg, lvl, bolt, bolt_s, pct, chg);
+    bp_face(win, name, bg, lvl, bolt, bolt_s, mask, pct, chg);
     if (pct >= 0) bp.shown = 1;
     if (chg) bp.chg = 1;
 }
 
 /* The lock screen's battery (patch/lockscreen.c). */
-void bp_lock(void *win) { bp_init_face(win, BP_NAMES(_LK)); }
+void bp_lock(void *win) { bp_init_face(win, BP_NAMES(_LK), 4); }
 
 /* The pull-down's battery (patch/pulldown.c m1plus_pulldown_init). */
-void bp_pulldown(void *dlg) { bp_init_face(dlg, BP_NAMES(_DD)); }
+void bp_pulldown(void *dlg) { bp_init_face(dlg, BP_NAMES(_DD), 2); }
 
 /* The hook (tools/pod.py BATTERY_SITE): stock's get_battery_capacity, then the real percentage when asked for. Returns what stock's function returned, or the percentage. */
 int bp_capacity(void) {
@@ -168,10 +174,10 @@ int bp_capacity(void) {
     if (bp.dark && !*(volatile unsigned char *)BACKLIGHT_STATUS)
         return cap; /* the screen is off: no lookups, no labels (the wake repaint's call below shows them before the backlight comes on) */
     bar = *(void **)SYSTEM_BAR;
-    bp_face(bar, BP_NAMES(), pct, chg);
+    bp_face(bar, BP_NAMES(), 1, pct, chg);
     wm = window_manager();
-    bp_face(wm, BP_NAMES(_DD), pct, chg);
-    bp_face(wm, BP_NAMES(_LK), pct, chg);
+    bp_face(wm, BP_NAMES(_DD), 2, pct, chg);
+    bp_face(wm, BP_NAMES(_LK), 4, pct, chg);
     bp.shown = pct >= 0;
     bp.chg = chg;
     return cap;

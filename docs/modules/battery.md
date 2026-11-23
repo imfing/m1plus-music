@@ -136,8 +136,8 @@ DAC's no-charge case, and `PMUCHARGE_STATUS` not 2 (full shows `bar_power` at 10
 | `pod_chg_bolt`: `pod_bar_chg`, a white 8x12 bolt with a dark edge in the body's middle | charging without the number |
 | `pod_chg_bolts`: `pod_bar_chgs`, a white 5x9 bolt at the interior's right end | charging with a number of one or two digits |
 
-- While charging the number is white (`BP_INK_CHG`, set on the label's style; black again on the
-  tick after) over the body's darker grey: `pod_pct_bg` stays hidden.
+- While charging the number is white (`BP_INK_CHG`, set on the label's style; black again when that
+  face next shows on battery, even if the label was hidden when charging ended) over the body's darker grey: `pod_pct_bg` stays hidden.
 - With the small bolt the label is `BP_W_CHG` (21) px wide: the digits' ink sits about 1.5 px left
   of the box's centre, so two digits clear the rim by 1 px and the bolt by 2; otherwise it is the body's 26 px. `100` has no room for a bolt.
 - `bp_face` sets all of this for the status bar, the pull-down (`_dd`) and the lock screen (`_lk`)

@@ -225,6 +225,19 @@ def run(ctx):
     expect(look(m)[:4] == (0, None, 0, 0), 'the kill switch while charging: the green level and the bolt are hidden')
     m = chg_machine(setting=None); m.present.add(KILL); tick(m)
     expect(vis_calls(m) == [] and not any(c[0] == 'widget_lookup' for c in m.calls), 'the kill switch from the start: charging touches nothing')
+    # issue 19: unplugging (or reaching full) while the label is hidden (setting off, bad gauge or kill switch) must still reset its white charging ink to black when it next shows on battery
+    m = chg_machine(gauge=b'100\n'); tick(m)   # charging at 100: pod_pct turns white
+    m.call(PSYMS['battpct_toggle'], count=4000000); tick(m)   # setting off while still charging
+    m.setword(D('POWER_EXT'), 0); tick(m)   # unplugged while setting is off
+    m.call(PSYMS['battpct_toggle'], count=4000000); m.calls = []; m.styled = []; tick(m)   # back on, on battery at 100
+    expect(ink(m) == [INK] and bg_shown(m) == 1 and look(m)[4] == W, f'unplugged while setting off, then turned back on: black digits restored ({ink(m)}, {look(m)})')
+    m.styled = []; tick(m)
+    expect(ink(m) == [], f'and once black again the next tick does not restyle ({ink(m)})')
+    m = chg_machine(gauge=b'87\n'); tick(m)   # narrow white label while charging
+    m.fs[GAUGE] = b'garbage'; tick(m)   # bad gauge hides it
+    m.setword(D('PMUCHARGE_STATUS'), 2); tick(m)   # charging finishes while hidden
+    m.fs[GAUGE] = b'100\n'; m.styled = []; tick(m)
+    expect(ink(m) == [INK] and look(m)[4] == W, f'full while gauge bad, then readable: black digits and full width restored ({ink(m)}, {look(m)})')
     for sym, names in (('bp_lock', (LABEL_LK, LEVEL_LK, BOLT_LK, BOLT_S_LK)), ('bp_pulldown', (LABEL_DD, LEVEL_DD, BOLT_DD, BOLT_S_DD))):
         for setting, want in ((None, [1, 1, 0]), (b'1\n', [1, 0, 1])):
             m = chg_machine(setting=setting)
@@ -232,6 +245,11 @@ def run(ctx):
             m.call(PSYMS[sym], a0=win, count=200000)
             got = [next((v for h, v in reversed(vis_calls(m)) if h == m.widgets[n]), None) for n in names[1:]]
             expect(got == want, f'{sym} while charging, setting {setting!r}: the page\'s green level and its bolt are shown at its init ({got})')
+            if setting:
+                m.styled = []
+                m.call(PSYMS[sym], a0=win, count=200000)   # reopened while still charging: a fresh widget starts black and must still turn white
+                expect([c for h, k, c in getattr(m, 'styled', []) if h == m.widgets[names[0]] and k == 'normal:text_color'] == [INK_CHG],
+                       f'{sym} reopened while still charging: white digits set again on the fresh label')
     m = keep
 
     # 5. The Settings switch
