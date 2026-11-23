@@ -171,7 +171,8 @@ customizes the pull-down tiles, and **Control Labels** toggles the text under th
 **Button Lock** applies while the screen is off, and is the same setting as the Control Center
 key-lock tile. **Tap to Wake** uses one or two taps depending on the touch panel. **Swap Prev /
 Next** makes the upper track button skip forward and the lower one go back; Bluetooth controls are
-unchanged. Auto-Standby and
+unchanged. **Tap for Volume** turns off the status bar tap that opens Volume, if you keep hitting it by
+mistake; the volume keys still work. Auto-Standby and
 Auto-Shutdown cannot both be on. **Car Mode** resumes the last track at start, disables those
 automatic power options and ignores USB connections.
 

@@ -209,6 +209,11 @@ TEXT = dict([
        'Vinilo', 'Vinile', 'แผ่นเสียง', 'Winyl', 'Винил', 'Вініл'),
     _t('Shown after 10 seconds on Now Playing.', '在正在播放界面停留10秒后显示。', '在正在播放畫面停留10秒後顯示。', '再生画面で10秒後に表示されます。', '지금 재생 화면에서 10초 후 표시됩니다.', "Affichée après 10 s sur Lecture en cours.", 'Nach 10 Sekunden auf „Jetzt läuft“.',
        'Se muestra tras 10 s en Reproduciendo.', 'Mostrata dopo 10 secondi in Riproduzione.', 'แสดงหลัง 10 วินาทีในหน้ากำลังเล่น', 'Pokazywane po 10 s na ekranie odtwarzania.', 'Через 10 с на экране «Сейчас играет».', 'Через 10 секунд на екрані «Зараз грає».'),
+    # Settings > Buttons & Power > Tap for Volume (patch/volume.c, docs/modules/volume.md); machine translations, unreviewed
+    _t('Tap for Volume', '点按调音量', '點按調音量', 'タップで音量', '탭하여 볼륨', 'Toucher: volume', 'Tippen: Lautstärke',
+       'Tocar: volumen', 'Tocca: volume', 'แตะเพื่อเสียง', 'Dotyk: głośność', 'Касание: звук', 'Дотик: гучність'),
+    _t('Tapping the top of the screen opens the Volume page', '点按屏幕顶部会打开音量页面', '點按螢幕頂部會開啟音量頁面', '画面上部をタップすると音量ページが開きます', '화면 상단을 누르면 볼륨 페이지가 열립니다', 'Toucher le haut de l\'écran ouvre la page Volume', 'Antippen des oberen Bildschirmrands öffnet die Lautstärkeseite',
+       'Tocar la parte superior de la pantalla abre la página Volumen', 'Toccare la parte superiore dello schermo apre la pagina Volume', 'แตะด้านบนของหน้าจอเพื่อเปิดหน้าระดับเสียง', 'Dotknięcie góry ekranu otwiera stronę Głośność', 'Нажатие вверху экрана открывает страницу громкости', 'Натискання вгорі екрана відкриває сторінку гучності'),
     # Settings > Buttons & Power > Swap Prev / Next (patch/keyspower.c, docs/modules/keyspower.md); machine translations, unreviewed
     _t('Swap Prev / Next', '交换上一曲/下一曲', '交換上一首/下一首', '前/次を入れ替え', '이전/다음 바꾸기', 'Inverser Préc./Suiv.', 'Tasten tauschen',
        'Invertir Ant./Sig.', 'Inverti Prec./Succ.', 'สลับก่อนหน้า/ถัดไป', 'Zamień Poprz./Nast.', 'Поменять кнопки', 'Поміняти кнопки'),

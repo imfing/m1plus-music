@@ -20,6 +20,7 @@ calls in the same order.
 | Auto-Standby | byte (0/1, 300 s fixed) | `STANDBYMODE` | switch row |
 | Auto-Shutdown | word (0 off, 1..4 = 1/3/5/10 min) | `SAVEPOWERMODE` | value row + picker (Off, 1min, 3min, 5min, 10min) |
 | Swap Prev / Next | ours: `/mnt/data/m1plus/buttons-swap` | none | switch row |
+| Tap for Volume | ours: `/mnt/data/m1plus/volume-tap` (default on) | none | switch row ([volume](volume.md) "Entry") |
 
 ## Behaviour rules
 
@@ -97,7 +98,7 @@ atomically); a change applies to the next key press.
 ## The page
 
 In the Display, Appearance, Buttons & Power, Battery card (`Row('Buttons & Power', ACT_PAGE,
-KEYSPOWER_PAGE_INDEX)`, glyph `power`). Four cards:
+KEYSPOWER_PAGE_INDEX)`, glyph `power`). Five cards:
 
 | Card | Row | Kind | Action |
 |---|---|---|---|
@@ -106,8 +107,10 @@ KEYSPOWER_PAGE_INDEX)`, glyph `power`). Four cards:
 | 2 | Tap to Wake | switch | `ACT_TAPWAKE` |
 | 3 | Swap Prev / Next | switch | `ACT_SWAPKEYS` |
 | | "Next moves to the upper button" | note | |
-| 4 | Auto-Standby | switch | `ACT_STANDBY` |
-| 4 | Auto-Shutdown | value row opening picker `m1plus_shutdown` | `ACT_SHUTDOWN` |
+| 4 | Tap for Volume | switch | `ACT_VOLTAP` |
+| | "Tapping the top of the screen opens the Volume page" | note, two lines | |
+| 5 | Auto-Standby | switch | `ACT_STANDBY` |
+| 5 | Auto-Shutdown | value row opening picker `m1plus_shutdown` | `ACT_SHUTDOWN` |
 | | "Only one of Auto-Standby and Auto-Shutdown is on at a time" | note, two lines | |
 
 The pickers are check rows: Button Lock (Off, Lock Volume Only, Lock Buttons Only, Lock Volume &

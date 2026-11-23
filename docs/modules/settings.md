@@ -174,6 +174,7 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `home-daily-mix` | Daily Mix | `0` off; missing/other on ([dailymix](dailymix.md)) |
 | `home-menu` | Main Menu / Extras | item ids in order, optional `-` then the hidden ids; invalid = defaults ([menu](menu.md)) |
 | `buttons-swap` | Swap Prev / Next | `1` on; missing/other off (the default) ([keyspower](keyspower.md) "Swap Prev / Next") |
+| `volume-tap` | Tap for Volume | `0` off; missing/other on ([volume](volume.md) "Entry") |
 | `home-recent-albums` | Recent Albums | `0` off; missing/other on |
 | `keyboard-pinyin` | Chinese (Pinyin) keyboard | `1` on; missing/other off ([keyboard](keyboard.md)) |
 | `keyboard-french` | French (AZERTY) keyboard | `1` on; missing/other off ([keyboard](keyboard.md)) |

@@ -121,8 +121,8 @@ def pages_tests(ctx):
     """The rows, the ids, the pages and the built assets."""
     expect = ctx.expect
     L, S, B, F = P.LIBRARY_PAGE, P.SCROBBLING_PAGE, P.LB_PAGE, P.LF_PAGE
-    expect((P.ACT_LB, P.ACT_SCROBUP, P.ACT_LBAUTO, P.ACT_LF, P.ACT_SCROBPAGE) == (108, 109, 112, 113, 139) and max(P._ACTS) == 218 and 110 not in P._ACTS and 111 not in P._ACTS and not hasattr(P, 'ACT_LBTOKEN') and not hasattr(P, 'ACT_LBOUT')
-           and (P.INFO_LBACCT, P.INFO_LFACCT) == (P.INFO_DUR + 3, P.INFO_DUR + 4) == (81, 82),
+    expect((P.ACT_LB, P.ACT_SCROBUP, P.ACT_LBAUTO, P.ACT_LF, P.ACT_SCROBPAGE) == (108, 109, 112, 113, 139) and max(P._ACTS) == 219 and 110 not in P._ACTS and 111 not in P._ACTS and not hasattr(P, 'ACT_LBTOKEN') and not hasattr(P, 'ACT_LBOUT')
+           and (P.INFO_LBACCT, P.INFO_LFACCT) == (P.INFO_DUR + 3, P.INFO_DUR + 4) == (82, 83),
            'the actions 108, 109, 112, 113 and 139 (110 was the Token row, 111 Sign Out: gone, their ids not reused); the Account rows are INFO_DUR + 3 and + 4')
     expect(P.PAGES[P.LB_PAGE_INDEX] is B and P.PAGES[P.LF_PAGE_INDEX] is F and P.PAGES[P.SCROBBLING_PAGE_INDEX] is S
            and (B.key, B.name, B.title) == ('m1plus_listenbrainz', 'm1plus_listenbrainz_page', 'ListenBrainz') and (F.key, F.name, F.title) == ('m1plus_lastfm', 'm1plus_lastfm_page', 'Last.fm')

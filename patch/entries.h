@@ -243,6 +243,8 @@ void volpage_opened(void *win); /* the Volume page's window is up: stock's volum
 void volpage_go(
     int k); /* the Volume page's second card: row k (0 Max Volume, 1 Equalizer, 2 Volume & Sound) opens its page without a second window */
 int vol_tap_open(const char *name, int ctx); /* payload hook 33: the status bar tap's open of the volume dialog */
+int vol_tap_on(void); /* Tap for Volume, ours (VOLTAP_FILE): 0 off, anything else on (the default) */
+int vol_tap_toggle(void); /* flip it; the new state, or -1 when it could not be saved */
 
 /* patch/lineout.c */
 int lo_link_show(

@@ -203,12 +203,12 @@ def settings_tests(ctx):
            'Settings > Buttons & Power: after Appearance, opens our page')
     expect(P.PAGES[P.KEYSPOWER_PAGE_INDEX] is K and P.PAGES[P.KEYLOCK_PAGE_INDEX] is L and P.PAGES[P.SHUTDOWN_PAGE_INDEX] is S
            and (K.key, K.title, L.key, L.title, S.key, S.title) == ('m1plus_keyspower', 'Buttons & Power', 'm1plus_keylock', 'Button Lock', 'm1plus_shutdown', 'Auto-Shutdown'), 'the three pages')
-    expect([(r.label, r.action, r.arg) for r in K.rows] == [('Button Lock', P.ACT_KEYLOCK, P.KEYLOCK_PAGE_INDEX), ('Tap to Wake', P.ACT_TAPWAKE, 0), ('Swap Prev / Next', P.ACT_SWAPKEYS, 0), ('Auto-Standby', P.ACT_STANDBY, 0),
-                                                           ('Auto-Shutdown', P.ACT_SHUTDOWN, P.SHUTDOWN_PAGE_INDEX), ('Car Mode', P.ACT_CARMODE, 0)] and [P.row_kind(r) for r in K.rows] == ['value', 'switch', 'switch', 'switch', 'value', 'switch'], 'the page\'s rows and their kinds')
+    expect([(r.label, r.action, r.arg) for r in K.rows] == [('Button Lock', P.ACT_KEYLOCK, P.KEYLOCK_PAGE_INDEX), ('Tap to Wake', P.ACT_TAPWAKE, 0), ('Swap Prev / Next', P.ACT_SWAPKEYS, 0), ('Tap for Volume', P.ACT_VOLTAP, 0), ('Auto-Standby', P.ACT_STANDBY, 0),
+                                                           ('Auto-Shutdown', P.ACT_SHUTDOWN, P.SHUTDOWN_PAGE_INDEX), ('Car Mode', P.ACT_CARMODE, 0)] and [P.row_kind(r) for r in K.rows] == ['value', 'switch', 'switch', 'switch', 'switch', 'value', 'switch'], 'the page\'s rows and their kinds')
     kl = [x.label if isinstance(x, P.Row) else x.text if isinstance(x, P.Note) else x for x in K.layout]
-    expect(kl == ['Button Lock', 'Only effective when the screen is off', 'Tap to Wake', P.GAP, 'Swap Prev / Next', 'Next moves to the upper button', P.GAP, 'Auto-Standby', 'Auto-Shutdown', 'Only one of Auto-Standby and Auto-Shutdown is on at a time', P.GAP,
+    expect(kl == ['Button Lock', 'Only effective when the screen is off', 'Tap to Wake', P.GAP, 'Swap Prev / Next', 'Next moves to the upper button', P.GAP, 'Tap for Volume', 'Tapping the top of the screen opens the Volume page', P.GAP, 'Auto-Standby', 'Auto-Shutdown', 'Only one of Auto-Standby and Auto-Shutdown is on at a time', P.GAP,
                  'Car Mode', 'Resumes the last track at start. Auto-Standby, Auto-Shutdown and USB connections are ignored.'],
-           f'five cards: Button Lock with its note; Tap to Wake; Swap Prev / Next with its note; Auto-Standby + Auto-Shutdown with its note; Car Mode with its note ({kl})')
+           f'six cards: Button Lock with its note; Tap to Wake; Swap Prev / Next with its note; Tap for Volume with its note; Auto-Standby + Auto-Shutdown with its note; Car Mode with its note ({kl})')
     expect([(r.label, r.action, r.arg) for r in L.rows] == [('Off', P.ACT_KEYLOCKSET, 0), ('Lock Volume Only', P.ACT_KEYLOCKSET, 1), ('Lock Buttons Only', P.ACT_KEYLOCKSET, 2), ('Lock Volume & Buttons', P.ACT_KEYLOCKSET, 3)]
            and all(P.row_kind(r) == 'check' for r in L.rows) and [x.text for x in L.layout if isinstance(x, P.Note)] == ['Only effective when the screen is off'] and P.KEYLOCK_VALUES == ('Off', 'Volume', 'Buttons', 'Both'),
            'the Button Lock picker: Off and stock\'s three modes in stock\'s numbers, the note repeated')
@@ -268,40 +268,40 @@ def settings_tests(ctx):
 
     def sw_images(m, i): return [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] == m.widgets[f'pod_switch{i}']]
     for flag, mode, want in ((0, 3, 'Off'), (1, 1, 'Volume'), (1, 2, 'Buttons'), (1, 3, 'Both'), (1, 9, 'Volume')):
-        got, tr = value(page(P.KEYSPOWER_PAGE_INDEX, 6, PK, flag=flag, mode=mode), 0)
+        got, tr = value(page(P.KEYSPOWER_PAGE_INDEX, 7, PK, flag=flag, mode=mode), 0)
         expect(tr == [want], f'flag {flag}, mode {mode}: the Button Lock row shows {tr}')
     for sh, want in ((0, ['Off']), (1, []), (4, [])):
-        got, tr = value(page(P.KEYSPOWER_PAGE_INDEX, 6, PK, shutdown=sh), 4)
+        got, tr = value(page(P.KEYSPOWER_PAGE_INDEX, 7, PK, shutdown=sh), 5)
         expect(tr == want and got[-1][1] == ('Off' if sh == 0 else ('1min', '3min', '5min', '10min')[sh - 1]), f'the word {sh}: the Auto-Shutdown row shows {got}')
     for tap, sb, img_t, img_s in ((0, 0, 'sset_off', 'sset_off'), (1, 1, 'sset_on', 'sset_on')):
-        m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK, tap=tap, standby=sb)
-        expect(sw_images(m, 1) == [img_t] and sw_images(m, 3) == [img_s] and not saves(m), f'the switches open {img_t} / {img_s} with the bytes ({tap}, {sb}), nothing written')
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK, tap=0)
+        m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK, tap=tap, standby=sb)
+        expect(sw_images(m, 1) == [img_t] and sw_images(m, 4) == [img_s] and not saves(m), f'the switches open {img_t} / {img_s} with the bytes ({tap}, {sb}), nothing written')
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK, tap=0)
     m.click('pod_row1')
     expect(m.byte(TAP) == 1 and saves(m) == [('write_int_config', 1, 'SYSSET', 'DOUBLEWAKE')] and sw_images(m, 1)[-1] == 'sset_on', 'a tap turns Tap to Wake on: the byte, the save, the switch')
     m.click('pod_row1')
     expect(m.byte(TAP) == 0 and sw_images(m, 1)[-1] == 'sset_off', 'and off again')
     # Auto-Standby on while Auto-Shutdown is on: the shutdown row shows Off at once (the page reads the words again after the tap)
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK, standby=0, shutdown=3)
-    m.click('pod_row3')
-    got, tr = value(m, 4)
-    expect(m.state()[3:] == (1, 0) and sw_images(m, 3)[-1] == 'sset_on' and got[-1][1] == 'Off' and tr[-1] == 'Off', f'Auto-Standby on turns Auto-Shutdown off: the words and the row follow ({m.state()}, {got[-2:]})')
-    m.click('pod_row3')
-    expect(m.state()[3:] == (0, 0) and sw_images(m, 3)[-1] == 'sset_off', 'Auto-Standby off')
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK)
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK, standby=0, shutdown=3)
+    m.click('pod_row4')
+    got, tr = value(m, 5)
+    expect(m.state()[3:] == (1, 0) and sw_images(m, 4)[-1] == 'sset_on' and got[-1][1] == 'Off' and tr[-1] == 'Off', f'Auto-Standby on turns Auto-Shutdown off: the words and the row follow ({m.state()}, {got[-2:]})')
+    m.click('pod_row4')
+    expect(m.state()[3:] == (0, 0) and sw_images(m, 4)[-1] == 'sset_off', 'Auto-Standby off')
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK)
     m.calls = []; m.click('pod_row0')
     expect([c[1] for c in m.calls if c[0] == 'window_open'] == [L.key] and 'navigator_to' not in m.names(), 'the Button Lock row opens our picker')
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK); m.calls = []; m.click('pod_row4')
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK); m.calls = []; m.click('pod_row5')
     expect([c[1] for c in m.calls if c[0] == 'window_open'] == [S.key] and 'navigator_to' not in m.names(), 'the Auto-Shutdown row opens our picker')
     # back in front: the words are read again (the Control Center's Button Lock tile writes the byte; stock's pages write all of them)
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK, flag=0, mode=2, tap=0, standby=0, shutdown=0)
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK, flag=0, mode=2, tap=0, standby=0, shutdown=0)
     m.u.mem_write(FLAG, b'\1'); m.u.mem_write(TAP, b'\1'); m.u.mem_write(STANDBY, b'\1')
     m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
     got, tr = value(m, 0)
-    expect(tr == ['Buttons'] and sw_images(m, 1) == ['sset_on'] and sw_images(m, 3) == ['sset_on'] and not saves(m), f'back in front: the lock, both switches follow the state ({tr}, {sw_images(m, 1)}, {sw_images(m, 3)}), nothing written')
+    expect(tr == ['Buttons'] and sw_images(m, 1) == ['sset_on'] and sw_images(m, 4) == ['sset_on'] and not saves(m), f'back in front: the lock, both switches follow the state ({tr}, {sw_images(m, 1)}, {sw_images(m, 4)}), nothing written')
     m.setword(SHUTDOWN, 2); m.u.mem_write(STANDBY, b'\0'); m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
-    got, tr = value(m, 4)
-    expect(got[-1][1] == '3min' and sw_images(m, 3) == ['sset_off'], 'back in front: Auto-Shutdown shows the word stock\'s page set')
+    got, tr = value(m, 5)
+    expect(got[-1][1] == '3min' and sw_images(m, 4) == ['sset_off'], 'back in front: Auto-Shutdown shows the word stock\'s page set')
     m = page(P.KEYLOCK_PAGE_INDEX, 4, flag=1, mode=1)
     m.u.mem_write(FLAG, b'\0'); m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
     expect(checks(m, 4) == [1, 0, 0, 0], 'the picker follows the tile too: Off checked after the byte was cleared')
@@ -311,19 +311,19 @@ def settings_tests(ctx):
     lt = awtk_ui.parse(open(os.path.join(raw, 'm1plus_keylock.bin'), 'rb').read())
     st = awtk_ui.parse(open(os.path.join(raw, 'm1plus_shutdown.bin'), 'rb').read())
     se = awtk_ui.parse(open(os.path.join(raw, 'm1plus_settings.bin'), 'rb').read())
-    expect([kt.find(f'pod_row{i}').find('pod_icon').get('image') for i in range(6)] == ['pod_ci_lock_keyhole', 'pod_ci_pointer', 'pod_ci_skip_forward', 'pod_ci_moon', 'pod_ci_power', 'pod_ci_car'] and kt.find('label_title').get('tr_text') == 'Buttons & Power'
-           and se.find(f'pod_row{ki}').find('pod_icon').get('image') == 'pod_ci_power', 'the page asset: the six glyphs and the title; the Settings row\'s glyph')
-    expect([kt.find(f'pod_label{i}').get('tr_text') for i in range(6)] == ['Button Lock', 'Tap to Wake', 'Swap Prev / Next', 'Auto-Standby', 'Auto-Shutdown', 'Car Mode'], 'the row labels are our short keys')
+    expect([kt.find(f'pod_row{i}').find('pod_icon').get('image') for i in range(7)] == ['pod_ci_lock_keyhole', 'pod_ci_pointer', 'pod_ci_skip_forward', 'pod_ci_volume_2', 'pod_ci_moon', 'pod_ci_power', 'pod_ci_car'] and kt.find('label_title').get('tr_text') == 'Buttons & Power'
+           and se.find(f'pod_row{ki}').find('pod_icon').get('image') == 'pod_ci_power', 'the page asset: the seven glyphs and the title; the Settings row\'s glyph')
+    expect([kt.find(f'pod_label{i}').get('tr_text') for i in range(7)] == ['Button Lock', 'Tap to Wake', 'Swap Prev / Next', 'Tap for Volume', 'Auto-Standby', 'Auto-Shutdown', 'Car Mode'], 'the row labels are our short keys')
     # Car Mode: the switch follows the byte and a tap is stock's click (the byte, the save, the start flag cleared)
     for car, img in ((0, 'sset_off'), (1, 'sset_on')):
-        m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK, tap=0)
+        m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK, tap=0)
         m.u.mem_write(CAR, bytes([car])); m.calls = []; m.fire(O['EVT_WINDOW_TO_FG'])
-        expect(sw_images(m, 5)[-1] == img and not saves(m), f'the byte {car}: the Car Mode switch shows {img} when the page is back in front, nothing written')
-    m = page(P.KEYSPOWER_PAGE_INDEX, 6, PK)
-    m.setword(CARSTART, 3); m.calls = []; m.click('pod_row5')
-    expect(m.byte(CAR) == 1 and m.word(CARSTART) == 0 and saves(m) == [('write_int_config', 1, 'SYSSET', 'CARMODE')] and sw_images(m, 5)[-1] == 'sset_on', f'a tap turns Car Mode on: the byte, the save, the start flag cleared, the switch ({saves(m)})')
-    m.click('pod_row5')
-    expect(m.byte(CAR) == 0 and sw_images(m, 5)[-1] == 'sset_off' and saves(m)[-1] == ('write_int_config', 0, 'SYSSET', 'CARMODE'), 'and off again')
+        expect(sw_images(m, 6)[-1] == img and not saves(m), f'the byte {car}: the Car Mode switch shows {img} when the page is back in front, nothing written')
+    m = page(P.KEYSPOWER_PAGE_INDEX, 7, PK)
+    m.setword(CARSTART, 3); m.calls = []; m.click('pod_row6')
+    expect(m.byte(CAR) == 1 and m.word(CARSTART) == 0 and saves(m) == [('write_int_config', 1, 'SYSSET', 'CARMODE')] and sw_images(m, 6)[-1] == 'sset_on', f'a tap turns Car Mode on: the byte, the save, the start flag cleared, the switch ({saves(m)})')
+    m.click('pod_row6')
+    expect(m.byte(CAR) == 0 and sw_images(m, 6)[-1] == 'sset_off' and saves(m)[-1] == ('write_int_config', 0, 'SYSSET', 'CARMODE'), 'and off again')
     expect(P.ACT_CARMODE == 154 and P.ACT_CARMODE in P.SWITCH_ACTIONS and pod_i18n.key_for('Car Mode') == 'Car Mode' and mod_icons.CARD_GLYPHS['Car Mode'] == 'car', 'the action 154, a switch row; our short key and the car glyph')
     for tree, n, title, first in ((lt, 4, 'Button Lock', 'Off'), (st, 5, 'Auto-Shutdown', 'Off')):
         expect(all(tree.find(f'pod_check{i}').get('visible') == 'false' and tree.find(f'pod_check{i}').get('sensitive') == 'false' for i in range(n)) and tree.find('label_title').get('tr_text') == title

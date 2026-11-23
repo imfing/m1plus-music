@@ -51,6 +51,8 @@
     "/mnt/data/m1plus/nowplaying-shrink" /* "0" = the Now Playing cover stays full size while paused, anything else or missing: it shrinks (a spring; the default); docs/modules/nowplaying.md */
 #define SWAPKEYS_FILE \
     "/mnt/data/m1plus/buttons-swap" /* "1" = the previous and next buttons are swapped, anything else or missing off (the default); docs/modules/keyspower.md */
+#define VOLTAP_FILE \
+    "/mnt/data/m1plus/volume-tap" /* "0" = the status bar tap does not open the Volume page, anything else or missing on (the default); docs/modules/volume.md */
 #define VINYLREC_FILE \
     "/mnt/data/m1plus/vinyl-record" /* Vinyl Mode's record colour: "1" Cover (with an optional newline), anything else or missing = Black (the default) */
 #define VINYLTHEME_FILE \

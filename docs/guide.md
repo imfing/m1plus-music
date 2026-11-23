@@ -99,7 +99,8 @@ While a radio station is up, the page shows the station's logo, name and line wi
 
 Tap the status bar at the top of any page to open **Volume**. Use the **−** and **+** buttons, drag
 the bar, or press the volume keys. A small mark on the bar shows the **Max Volume** limit. Under
-the bar, shortcuts open **Max Volume**, **Equalizer** and **Volume & Sound**.
+the bar, shortcuts open **Max Volume**, **Equalizer** and **Volume & Sound**. If you open it by
+accident too often, turn off **Tap for Volume** in Settings > Buttons & Power.
 
 ### Choose what plays next
 

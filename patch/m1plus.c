@@ -603,6 +603,7 @@ static const struct pod_switch {
     {ACT_LEDFOLLOW, disp_follow, disp_follow_toggle},
     {ACT_TAPWAKE, kp_tap, kp_tap_toggle},
     {ACT_SWAPKEYS, kp_swap, kp_swap_toggle},
+    {ACT_VOLTAP, vol_tap_on, vol_tap_toggle},
     {ACT_PDLABELS, pd_labels_setting, pd_labels_toggle},
     {ACT_STANDBY, kp_standby, kp_standby_toggle},
     {ACT_ROTATE, disp_rotate, disp_rotate_toggle},

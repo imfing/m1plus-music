@@ -37,7 +37,7 @@ struct sf_file {
     char kind;
 };
 
-/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 57 setting files from SF_SETTING on. */
+/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 58 setting files from SF_SETTING on. */
 static const struct sf_file sf_files[] = {
     {START_FILE, K_CHAR},
     {MARKER, K_PRESENT},
@@ -97,6 +97,7 @@ static const struct sf_file sf_files[] = {
     {STEREO_MONO_FILE, K_CHAR},
     {STEREO_XFEED_FILE, K_CHAR},
     {SWAPKEYS_FILE, K_CHAR},
+    {VOLTAP_FILE, K_CHAR},
     {GS_FILE, K_CHAR},
     {PDLABELS_FILE, K_CHAR},
     {XFADE_SET_FILE, K_CHAR},

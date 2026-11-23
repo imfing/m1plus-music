@@ -54,7 +54,9 @@ the fallback, and the strip that the hardware volume keys open over other pages 
   pickers) are closed and it is restacked, whatever else is above it; else opened (rooted: no
   opener). Stock's
   `navigator_to_with_context` runs when ours will not open, and when stock's own volume dialog is the
-  window in front (its strip keeps stock's behaviour).
+  window in front (its strip keeps stock's behaviour). The Tap for Volume switch (Settings > Buttons &
+  Power, `volume-tap`, default on, read at each tap) off makes the tap do nothing, unless stock's
+  strip is in front.
 - **Keys:** the hardware volume keys keep working on the page: a wrapper on the window's
   `EVT_KEY_UP` runs stock's key handler (`RET_STOP` when it stepped).
 - **Refresh:** `volume_showpage` is set to 2, then stock's refresh (`0x47d664`) runs, then our number,

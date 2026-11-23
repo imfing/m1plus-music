@@ -198,8 +198,16 @@ static int vp_top_is(const char *name) {
     return nm && !strcmp(nm, name);
 }
 
-/* The hook at on_wm_tsup_fun's navigator_to_with_context("dialog/volume_dialog", 2): our page, else stock's call (the arguments are stock's: the delay slot still loads the name). */
+/* Tap for Volume (VOLTAP_FILE, ours): 0 off, anything else on (the default). */
+int vol_tap_on(void) { return set_read(VOLTAP_FILE, '1') != '0'; }
+
+int vol_tap_toggle(void) { return home_set_digit(VOLTAP_FILE, !vol_tap_on(), 1); }
+
+/* The hook at on_wm_tsup_fun's navigator_to_with_context("dialog/volume_dialog", 2) (the arguments are stock's: the delay slot still loads the name).
+ * Stock's strip in front: stock's call. Tap for Volume off: nothing. Else our page, or stock's call if it will not open. */
 int vol_tap_open(const char *name, int ctx) {
-    if (!vp_top_is("volume_dialog") && pd_open_page(VOLP_WINDOW, pod_open_volume, 1)) return RET_OK;
+    if (vp_top_is("volume_dialog")) return navigator_to_with_context(name, (const void *)(long)ctx);
+    if (!vol_tap_on()) return RET_OK;
+    if (pd_open_page(VOLP_WINDOW, pod_open_volume, 1)) return RET_OK;
     return navigator_to_with_context(name, (const void *)(long)ctx);
 }

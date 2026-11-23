@@ -260,6 +260,14 @@ def open_tests(ctx):
     m = VM(('home_page',), open_fail=True)
     m.tap()
     expect(m.seen('nav_ctx') == [('nav_ctx', 'dialog/volume_dialog', 2)] and m.names_() == ['home_page'], f'when our page will not open stock\'s dialog call is made with its own arguments ({m.calls})')
+    # Tap for Volume off: the tap does nothing, except over stock's own strip
+    for stack, nav in ((('home_page',), 0), (('home_page', 'playing_page'), 0), (('home_page', 'volume_dialog'), 1)):
+        m = VM(stack); m.fs['/mnt/data/m1plus/volume-tap'] = b'0\n'
+        m.tap()
+        expect(not m.seen('window_open', 'switch_to', 'window_close') and len(m.seen('nav_ctx')) == nav and m.names_() == list(stack), f'with Tap for Volume off the tap opens nothing over {stack}, stock only for its own strip ({m.calls})')
+    for val in (b'1\n', b'2\n', b'x\n'):
+        m = VM(('home_page',)); m.fs['/mnt/data/m1plus/volume-tap'] = val; m.tap()
+        expect(m.names_() == ['home_page', NAME], f'with the file {val!r} the page opens: only 0 turns it off')
     # stock's strip in front: stock
     m = VM(('home_page', 'volume_dialog'))
     m.tap()
