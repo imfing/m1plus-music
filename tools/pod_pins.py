@@ -1511,6 +1511,16 @@ GPIO_OPEN, GPIO_GET = 0x556c, 0x57bc
 GPIO_LIB_WORDS = ((0x5580, 0x24050002, 'gpio_open: addiu a1, zero, 2 (O_RDWR)'), (0x57d4, 0x3c052000, 'gpio_get_value: lui a1, 0x2000'), (0x57e8, 0x24a5477a, 'gpio_get_value: addiu a1, a1, 0x477a (delay slot)'))
 GPIO_NAME_ADDR = 0x74a8ec   # demo: the "PD17" string usb_detect passes (BATTERY_PINS)
 
+# The saved play type of spoken audio (patch/pcmodel.c pc_mem_type, payload hook 42): save_memoryplay_info's `jalr mclGetPlayType` (after mclGetPlayStatus and mclGetPlayPos) becomes `jal pc_mem_type`. The
+# result is moved to s2 at once (0x4e338c) and stored to the Memory Playback record's first word at 0x4e3440 (sw s2, (a0)); the delay slot (move s0, v0) keeps the position.
+MEMTYPE_SITE = 0x4e3384
+MEMTYPE_PINS = (   # (address, stock word, what it proves)
+    (0x4e3340, 0x3c1c0052, 'save_memoryplay_info prologue (1/3)'), (0x4e3344, 0x279c0b90, 'save_memoryplay_info prologue (2/3)'), (0x4e3348, 0x0399e021, 'save_memoryplay_info prologue (3/3)'),
+    (0x4e3380, 0x8f99aa98, 'save_memoryplay_info: lw t9, GOT mclGetPlayType'), (MEMTYPE_SITE, 0x0320f809, 'save_memoryplay_info: jalr mclGetPlayType (the hook replaces it)'),
+    (MEMTYPE_SITE + 4, 0x00408025, 'its delay slot: move s0, v0 (the position)'), (MEMTYPE_SITE + 8, 0x00409025, 'save_memoryplay_info: move s2, v0 (the type)'),
+    (0x4e3430, 0x8f84b7cc, 'save_memoryplay_info: lw a0, GOT g_memory_info'), (0x4e3440, 0xac920000, 'save_memoryplay_info: sw s2, (a0): the type into the record'),
+)
+
 # The Volume page (patch/volume.c, docs/modules/volume.md, payload hook 33): the status bar tap's `bal navigator_to_with_context("dialog/volume_dialog", 2)` in on_wm_tsup_fun (0x4cd8dc; a0 comes in the delay slot,
 # a1 = 2 before it, `lw gp` after) becomes `jal vol_tap_open`. The page runs stock's own dialog code on its window: the refresh 0x47d664 (volume_showpage 0x97c790: 1 is the strip, otherwise the page: vol_label "VOL: n"
 # and the slider from volume, or btsource_volume while headset_output is 2), the - / + / slider / key handlers, and the stop 0x47d9f8 of the 3 s auto-close timer the handlers' reset 0x47de2c adds (the id in the

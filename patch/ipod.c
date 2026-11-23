@@ -2966,8 +2966,8 @@ static void ip_pc_play(int at) {
     pc_root(root);
     queue = pg_episode_queue(root, &ip.pc_shows[ip.st[d - 1].sel], ip.pc_eps, ip.pc_neps, at, &idx);
     if (!queue) return;
-    *(int *)G_CLASS_TYPE = 1;
-    start_player(queue, idx, 1, PLAY_MODE);
+    *(int *)G_CLASS_TYPE = CLASS_ALL_SONGS;
+    start_player(queue, idx, CLASS_ALL_SONGS, PLAY_MODE);
     *(unsigned char *)FORCE_REFRESH = 1;
     ip_pend_drop();
     if ((unsigned)idx < deque_size(queue))

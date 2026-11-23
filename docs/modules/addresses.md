@@ -132,6 +132,7 @@ widget name is its decimal id, which the dispatcher `0x533b80` `atoi`s; `get_hom
 | 14 | `playlist` | `playlist_page` |
 | 15 | `cdripper` | `cdripper_page` (sets GPIO `PA11`; needs the CD drive) |
 | 16 / 17 | `playset` / `sysset` | `playset/playset_page` / `systemset/sysset_page` |
+| 42 saved play type | `0x4e3384` | `jalr mclGetPlayType` in `save_memoryplay_info` `0x4e3340`; the result goes to `s2` (`0x4e338c`) and `g_memory_info[0]` (`0x4e3440`) |
 
 - `reset_homemenu_index(0)` `0x4d8114` pushes every id of `main_allmenu` (`0x97ca88`, `0..17`),
   skipping id 0 when the `language` global (`0xa05ab8`) is non-zero.

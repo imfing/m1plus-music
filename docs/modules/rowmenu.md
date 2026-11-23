@@ -55,7 +55,7 @@ The menu also closes when the page reads its list again (`sg_load` / `ab_load`: 
 | `UPNEXT_STARTED` | none: nothing was playing, the row is the queue and plays; the page stays (opens nothing, unlike a row tap, which opens Now Playing) |
 | `UPNEXT_EMPTY` | "Adding Failed" (the stock `msg_addfailed`; cannot happen from a row) |
 | `UPNEXT_STREAM` (also while a Radio station connects, plays or is paused) | "Not available while streaming" |
-| `UPNEXT_FOLDER` | "Not available for folder playback" (also Podcasts' play type) |
+| `UPNEXT_FOLDER` | "Not available for folder playback" |
 | `UPNEXT_PODCAST` | "Not available for podcasts" |
 | `UPNEXT_MISSING` | "File not found" with the card in, "Storage unavailable" without it (`so_missing`) |
 | `UPNEXT_FULL` | "Queue is full" |

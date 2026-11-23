@@ -40,6 +40,7 @@ BTHUB_SITE = (pod.BTHUB_SITE, 4)  # the Bluetooth row of the same hub: its jalr 
 AUTOCHANGE_SITE = (pod.AUTOCHANGE_SITE, 4)  # on_wm_idle_status's `jalr mclAutoChange`, now jal rd_auto_change (patch/radio.c, docs/modules/payload.md hook 36)
 USBPOLL_SITE = (pod.USBPOLL_SITE, 4)  # on_wm_idle_status's `bal check_usb_status`, now jal pd_usb_poll (patch/pulldown.c, docs/modules/payload.md hook 38)
 NOTICE_SITES = [(a, 4) for a in pod.NOTICE_SITES]  # on_wm_timer_dialogresponse's `jalr access` of /tmp/notfile and /tmp/notsupport, now jal rd_notice (patch/radio.c, hook 37)
+MEMTYPE_SITE = (pod.MEMTYPE_SITE, 4)  # save_memoryplay_info's `jalr mclGetPlayType`, now jal pc_mem_type (patch/pcmodel.c, docs/modules/payload.md hook 42)
 VOLUME_SITE = (pod.VOLUME_SITE, 4)  # on_wm_tsup_fun's `bal navigator_to_with_context("dialog/volume_dialog", 2)`, now jal vol_tap_open (patch/volume.c, docs/modules/payload.md hook 33)
 LIBUPDATE_BATCH_SITE = pod.LIBUPDATE_BATCH_SITE  # toolsInsertDbTable's batch COMMIT call, now jal lu_batch_exec (hook 34)
 LIBUPDATE_COMMIT_SITES = pod.LIBUPDATE_COMMIT_SITES  # both scan functions' jalr toolsDatabaseCommit, now jal lu_commit (hook 34)
@@ -121,6 +122,7 @@ def main():
     allow(va_to_off(s, LIBUPDATE_SITE[0]), LIBUPDATE_SITE[1], 'scan dialog finish hook')
     for a in LIBUPDATE_COMMIT_SITES + (LIBUPDATE_BATCH_SITE,): allow(va_to_off(s, a), 4, 'scan commit hook')
     allow(va_to_off(s, VOLUME_SITE[0]), VOLUME_SITE[1], 'Volume page hook (the status bar tap)')
+    allow(va_to_off(s, MEMTYPE_SITE[0]), MEMTYPE_SITE[1], 'saved play type hook (Memory Playback record)')
     allow(va_to_off(s, AUTOCHANGE_SITE[0]), AUTOCHANGE_SITE[1], 'radio auto change hook (the idle pass)')
     allow(va_to_off(s, USBPOLL_SITE[0]), USBPOLL_SITE[1], 'USB poll hook (the idle pass)')
     for a, n in NOTICE_SITES: allow(va_to_off(s, a), n, 'radio notice hook (hciplayer failure markers)')
@@ -248,6 +250,10 @@ def main():
     o = va_to_off(s, VOLUME_SITE[0]); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
     good = sw == 0x041110f8 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
     print(f'Volume page hook {VOLUME_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
+    ok = ok and good
+    o = va_to_off(s, MEMTYPE_SITE[0]); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
+    good = sw == 0x0320f809 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))
+    print(f'saved play type hook {MEMTYPE_SITE[0]:#x}: {sw:#010x} -> {mw:#010x}', 'ok' if good else 'WRONG')
     ok = ok and good
     o = va_to_off(s, USBPOLL_SITE[0]); sw = struct.unpack_from('<I', s, o)[0]; mw = struct.unpack_from('<I', m, o)[0]
     good = sw == 0x0411fcb7 and mw >> 26 == 3 and 0xb00000 <= (mw & 0x3ffffff) << 2 < 0xb00000 + (len(m) - len(s))

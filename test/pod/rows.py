@@ -259,6 +259,7 @@ def rows_tests(expect):
     allowed.add(pod.fileoff(built, pod.USBPOLL_SITE))                                                  # on_wm_idle_status's check_usb_status call (patch/pulldown.c pd_usb_poll)
     allowed.add(pod.fileoff(built, pod.AUTOCHANGE_SITE))                                               # on_wm_idle_status's mclAutoChange call (patch/radio.c rd_auto_change)
     allowed.update(pod.fileoff(built, a) for a in pod.NOTICE_SITES)                                       # the home timer's access of hciplayer's markers (patch/radio.c rd_notice)
+    allowed.add(pod.fileoff(built, pod.MEMTYPE_SITE))                                                  # save_memoryplay_info's mclGetPlayType call (patch/pcmodel.c pc_mem_type)
     allowed.add(pod.fileoff(built, pod.VOLUME_SITE))                                                   # on_wm_tsup_fun's navigator_to_with_context call (patch/volume.c vol_tap_open)
     allowed.add(pod.fileoff(built, pod.LIBUPDATE_BATCH_SITE))                                              # toolsInsertDbTable's batch COMMIT call (patch/libupdate.c lu_batch_exec)
     allowed.update(pod.fileoff(built, a) for a in pod.LIBUPDATE_COMMIT_SITES)                              # both scan functions' toolsDatabaseCommit call (patch/libupdate.c lu_commit)

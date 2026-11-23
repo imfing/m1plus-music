@@ -1082,15 +1082,15 @@ def touch_tests(ctx):
     m.calls = []
     act(m, 1)   # Bravo 2: the second cell's pill
     nav = [c for c in m.calls if c[0] == 'navigator_to_with_context']
-    expect(len(nav) == 1 and nav[0][1] == 'playing_page' and nav[0][2:] == (1, 1, O['PLAY_MODE']), f'a tap on an episode opens Now Playing with the queue: index 1, class 1 (folder play), mode 2 ({nav})')
+    expect(len(nav) == 1 and nav[0][1] == 'playing_page' and nav[0][2:] == (1, O['CLASS_ALL_SONGS'], O['PLAY_MODE']), f'a tap on an episode opens Now Playing with the queue: index 1, the All Songs class (not folder play), mode 2 ({nav})')
     q, idx = m.played
     field = lambda r, off: m.read_cstr(m.word(r + off))
     expect([field(r, O['REC_PATH']) for r in q] == [f'{ROOT}/bravo/b3.mp3', f'{ROOT}/bravo/b2.mp3', f'{ROOT}/bravo/b1.mp3'] and idx == 1,
            'the queue is the show\'s episodes in the list\'s order, from the first cell; the tapped one starts (the ones after it play next)')
     r = q[1]
     expect((field(r, O['REC_NAME']), field(r, O['REC_TITLE']), field(r, O['REC_ALBUM']), field(r, O['REC_ARTIST'])) == ('b2.mp3', 'Bravo 2', 'bravo', 'bravo')
-           and m.word(r + O['REC_TYPE']) == 8 and m.word(r + O['REC_CLASS']) == 1, 'a record: the file name, the title, the show as album and artist, a song (type 8), class 1')
-    expect(m.word(pod.DATA['G_CLASS_TYPE'][0]) == 1, 'the browsing class is 1 (folder play)')
+           and m.word(r + O['REC_TYPE']) == 8 and m.word(r + O['REC_CLASS']) == O['CLASS_ALL_SONGS'], 'a record: the file name, the title, the show as album and artist, a song (type 8), the All Songs class')
+    expect(m.word(pod.DATA['G_CLASS_TYPE'][0]) == O['CLASS_ALL_SONGS'], 'the browsing class is All Songs (not folder playback: no rebuild at the end, Clear works)')
     m.mode = O['MODE_SHUFFLE']; m.calls = []; act(m, 0)
     expect(m.mode == O['MODE_ORDER'] and ('mclSetPlayMode', O['MODE_ORDER']) in m.calls, 'a tap on a cell\'s pill plays it in order: a shuffle mode is turned off')
     expect(('deque_destroy',) in m.calls and not [c for c in m.calls if c[0] == 'loadSongList'], 'the queue is the page\'s own: no stock list query is made, the page frees its copy')
@@ -1486,4 +1486,32 @@ def book_tests(ctx):
     expect(r == 0 and m2.state(pc_hash(p1)) == (1, 400, 36000) and '/mnt/data/m1plus-recent' not in m2.fs, 'recent_note: the place is noted; the shelf does not take a book part')
 
 
-SECTIONS = [when_tests, width_tests, tag_tests, text_tests, scan_tests, ring_tests, resume_tests, speed_tests, order_tests, strip_tests, book_tests, cover_tests, open_tests, level_tests, touch_tests, lifecycle_tests, asset_tests, integration_tests]
+def memtype_tests(ctx):
+    """Hook 42, pc_mem_type: Memory Playback saves type 1 for a spoken file playing as the Songs class, and stock's type otherwise."""
+    expect = ctx.expect
+    stock_demo, built = stock_demo_bytes(), built_demo_bytes()
+    w = lambda b, a: struct.unpack_from('<I', b, pod.fileoff(b, a))[0]
+    site = pod.MEMTYPE_SITE
+    expect(site == 0x4e3384 and w(stock_demo, site) == 0x0320f809 and w(built, site) >> 26 == 3 and (w(built, site) & 0x3ffffff) << 2 == PSYMS['pc_mem_type'], 'the build replaced stock\'s `jalr mclGetPlayType` at 0x4e3384 by `jal pc_mem_type`')
+    expect(MANIFEST['hook_memtype'] == {'addr': site, 'target': PSYMS['pc_mem_type']}, 'the manifest records the hook')
+
+    class MT(PM):
+        play_type = 0xf001
+        def _hook(self, u, address, size, _):
+            if self.handlers.get(address, '') == 'mclGetPlayType':
+                u.reg_write(UC_MIPS_REG_V0, self.play_type); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+            return super()._hook(u, address, size, _)
+
+    def save_type(t, path=None):
+        m = MT(); m.play_type = t
+        if path is not None: m.track(path)
+        return m.call(PSYMS['pc_mem_type'], count=200000)
+    expect(save_type(0xf001, f'{ROOT}/Alpha Show/ep1.mp3') == 1, 'Songs class playing a podcast episode: saved as type 1')
+    expect(save_type(0xf001, '/mnt/mmc/Audiobooks/Dune/01.mp3') == 1, 'Songs class playing an audiobook part: saved as type 1')
+    expect(save_type(0xf001, '/mnt/mmc/Music/a.flac') == 0xf001, 'Songs class playing music: 0xf001')
+    expect(save_type(1, f'{ROOT}/Alpha Show/ep1.mp3') == 1, 'type 1 stays 1')
+    expect(save_type(2, f'{ROOT}/Alpha Show/ep1.mp3') == 2, 'a stream type (2) is not changed, even on a spoken path')
+    expect(save_type(0xf001) == 0xf001, 'an empty queue: 0xf001')
+
+
+SECTIONS = [when_tests, width_tests, tag_tests, text_tests, scan_tests, ring_tests, resume_tests, speed_tests, order_tests, strip_tests, book_tests, memtype_tests, cover_tests, open_tests, level_tests, touch_tests, lifecycle_tests, asset_tests, integration_tests]

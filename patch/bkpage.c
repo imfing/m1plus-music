@@ -11,7 +11,7 @@
  *   Book     a header (the cover, the title, Part 3 of 12 - 42%, a white capsule Play / Resume / Play Again and the speed pill that cycles 1x 1.25x 1.5x 2x), then one row per part in reading
  *            order: the title and a grey line (Played / 12m left / the size). The part the player is on has the playing wave before its grey line; played parts are grey.
  *
- * Playing builds stSongInfo records of our own (class 1, the queue handed to playing_page, as Podcasts does): the parts from the one tapped to the end. A part with an MP4 extension is asked of
+ * Playing builds stSongInfo records of our own (class 0xf001 as Podcasts' (not folder playback), the queue handed to playing_page): the parts from the one tapped to the end. A part with an MP4 extension is asked of
  * bk_mp4_fits first, every part of the queue: one the guard refuses means nothing starts and a toast says so (a book too long for one file can stall the player, and Memory Playback would stall it
  * again at boot). Covers are decoded one per 16 ms tick (pc_cover_ok first). The page's 1 s timer calls pc_note, like the other pages that already look at the playing track. No hook.
  */
@@ -1507,7 +1507,7 @@ static void bk_record(unsigned *rec, const bk_part_t *p, const char *path) {
     *(char **)((char *)rec + REC_ALBUM) = strdup(b->title);
     *(char **)((char *)rec + REC_ARTIST) = strdup(b->title);
     *(int *)((char *)rec + REC_TYPE) = 8;
-    *(int *)((char *)rec + REC_CLASS) = 1;
+    *(int *)((char *)rec + REC_CLASS) = CLASS_ALL_SONGS;
 }
 
 static void bk_record_free(unsigned *rec) {
@@ -1560,8 +1560,8 @@ static void bk_play(int from, int again) {
         pc_restart(bk.parts[from].hash);
     pc_speed_apply(b->hash);
     pod_set_in_order();
-    *(int *)G_CLASS_TYPE = 1;
-    context.dq = queue, context.idx = 0, context.cls = 1, context.mode = PLAY_MODE;
+    *(int *)G_CLASS_TYPE = CLASS_ALL_SONGS;
+    context.dq = queue, context.idx = 0, context.cls = CLASS_ALL_SONGS, context.mode = PLAY_MODE;
     navigator_to_with_context("playing_page", &context); /* start_player copies the queue */
     deque_destroy(queue);
 }

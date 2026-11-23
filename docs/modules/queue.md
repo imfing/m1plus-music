@@ -105,8 +105,10 @@ no DLNA service running); otherwise hidden. `qp_clear_sync` re-reads this on eve
 - **Decision: no confirmation.** A tap calls `pod_clear_upnext`, then the page reloads: Up Next
   shows "No upcoming songs". The playing track keeps playing; the play position and the tracks
   before it stay.
-- **Hidden in folder playback** (play type 1, also Podcasts and Audiobooks): stock rebuilds a folder
-  queue at its end, so a cleared Up Next would come back on the next Next.
+- **Hidden in folder playback** (play type 1): stock rebuilds a folder queue at its end, so a
+  cleared Up Next would come back on the next Next. Podcasts and Audiobooks play as class
+  `0xf001` ([podcasts](podcasts.md) "Playback, resume and speed"), so Clear shows for them; an
+  episode resumed at boot is a folder queue again until it is played from its page.
 - **Decision: hidden while DLNA runs.** The UPnP threads read the queue without a lock, so a freed
   tail record would be a use-after-free. The gate is stock's `dmr_serverflag` (1 while the
   service runs), read again under the lock. Clear shows with the DLNA switch off or Wi-Fi off.
@@ -165,7 +167,7 @@ int upnext_add(void *rows, int after);   /* rows: a deque_t of stSongInfo, copie
 | `UPNEXT_STARTED` | 2 | nothing was playing: the rows are the queue | none |
 | `UPNEXT_EMPTY` | -1 | no rows | none |
 | `UPNEXT_STREAM` | -2 | stream playing, or Radio running | "Not available while streaming" |
-| `UPNEXT_FOLDER` | -3 | folder playback (play type 1, also Podcasts) | "Not available for folder playback" |
+| `UPNEXT_FOLDER` | -3 | folder playback (play type 1) | "Not available for folder playback" |
 | `UPNEXT_PODCAST` | -4 | a podcast episode among the rows | "Not available for podcasts" |
 | `UPNEXT_MISSING` | -5 | a row has no file | "File not found" / "Storage unavailable" (`so_missing`) |
 | `UPNEXT_FULL` | -6 | queue would pass 65536 songs | "Queue is full" |

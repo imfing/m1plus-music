@@ -88,8 +88,9 @@ Open the Queue page to see tracks in their playback order, including when Shuffl
 - Tap **…** on an Up Next row to move it to Play Next or Play After, or remove it from the queue.
   Removing it does not delete the file.
 - Tap **Clear** to remove all songs after the playing one.
-- Row actions and Clear are unavailable during folder playback (from Folders, Podcasts or
-  Audiobooks) or while DLNA is on.
+- Row actions and Clear are unavailable during folder playback (from Folders, or an episode
+  or audiobook resumed after a restart) or while DLNA is on. Podcasts and Audiobooks played from
+  their pages have them.
 
 ## Artist photos
 

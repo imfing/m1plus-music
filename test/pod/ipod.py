@@ -2290,8 +2290,8 @@ def podcasts_tests(ctx):
     m.calls = []
     m.tap(CX, CY)
     sp = [c for c in m.calls if c[0] == 'start_player']
-    expect(len(sp) == 1 and sp[0][2:] == (1, O['PLAY_MODE']) and m.played and len(m.played[0]) == 2 and m.played[1] == 1, f'a tap starts the show\'s episodes as a class 1 queue at that row ({sp}, {m.played and m.played[1]})')
-    expect(m.word(G_CLASS) == 1 and 'Now Playing' in texts_of(m.paint()), 'the class is the folder class and the Pod\'s own Now Playing is in front')
+    expect(len(sp) == 1 and sp[0][2:] == (O['CLASS_ALL_SONGS'], O['PLAY_MODE']) and m.played and len(m.played[0]) == 2 and m.played[1] == 1, f'a tap starts the show\'s episodes as an All Songs class queue at that row ({sp}, {m.played and m.played[1]})')
+    expect(m.word(G_CLASS) == O['CLASS_ALL_SONGS'] and 'Now Playing' in texts_of(m.paint()), 'the class is All Songs (not folder playback) and the Pod\'s own Now Playing is in front')
     # the show's Episode Order: copied files by natural name (a10 is later than a2 whatever the dates), either way; the queue follows the rows
     def alpha(oldest):
         m = PCIM()

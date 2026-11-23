@@ -303,7 +303,16 @@ first).
 
 ## Playback, resume and speed
 
-- Episodes use class-1 folder queues with copied song records; playback needs no library scan. The
+- Episodes and book parts play as class `0xf001` (All Songs, as Daily Mix) with copied song
+  records; playback needs no library scan. Not folder playback (class 1): stock rebuilds a folder
+  queue at its end, so the Queue page's Clear and row actions would not hold. The queue ends after
+  its last episode (Repeat All wraps).
+- **Boot resume:** stock's Memory Playback reloads a class 1 track's folder from disk, but for
+  `0xf001` runs `getAllMusic`, which never lists spoken audio. Hook 42 `pc_mem_type`
+  ([payload](payload.md), `patch/pcmodel.c`) saves type 1 in the record when the play type is
+  `0xf001` and the playing path is spoken audio; anything else is saved as stock does. The resumed
+  track is therefore a folder queue (the show's folder in file order) until played from its page.
+- The
   tag-reader hook supplies show and episode text only for podcast paths. Library query filtering
   removes podcast and audiobook paths from music lists and Favourites; Daily Mix, Recently Played
   and custom Shuffle queues exclude them too. Folders and stock history tables can still contain

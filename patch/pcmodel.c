@@ -1418,6 +1418,16 @@ static void pm_speed_back(void) {
     mclSetPlaySpeed(pcs.orig);
 }
 
+/* Hook 42: save_memoryplay_info's mclGetPlayType (0x4e3384). Spoken audio plays as the Songs class (0xf001, so the Queue page's Clear works), but boot's memeory_startplayer reloads
+ * a class 1 track's folder from disk and, for 0xf001, runs getAllMusic, which never holds an episode or a book part. The saved record keeps type 1 for a spoken path. Bounded, no
+ * allocation; any other type, and a track that is not spoken, saves stock's value. */
+int pc_mem_type(void) {
+    int t = mclGetPlayType();
+    void *rec;
+    if (t == CLASS_ALL_SONGS && (rec = cc_playing()) && pc_spoken_path(cc_str(rec, REC_PATH))) return 1;
+    return t;
+}
+
 /* ---------------------------------------------------------------------------
  * The tag reader's hook (the one hook of Podcasts; docs/modules/podcasts.md). Stock get_id3info (0x4dfd58) fills playsong_id3info (0xa0d88c: album +0x404, artist
  * +0x504, title +0x684) from the FILE'S TAGS (toolsGetMusicInfo 0x5ec6a8, taglib; the record's own strings are used only when the CUE flag is set), then copies the parsed path

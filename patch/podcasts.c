@@ -15,8 +15,8 @@
  *              line with its badges, the title, the description, the state pill and the "..."). The navbar is "... | Now Playing" (the sheet of the show's actions) and, scrolled, the small
  *              title. A tap on a cell's pill plays an episode that is on the card (and the ones after it in the list's order: from the first second, or from the saved place: pc_note jumps there); a tap on its body opens the episode page (pcdetail.c).
  *
- * Playing builds stSongInfo records of our own for the show's files (the library may not have scanned them) and starts them as the stock Folders page does: class 1, the
- * queue handed to playing_page (start_player copies it). Cover pictures are decoded one per 16 ms tick (pc_cover_ok first: a picture that is too large for the stock decoder is
+ * Playing builds stSongInfo records of our own for the show's files (the library may not have scanned them) and starts them in class 0xf001 (All Songs, not folder
+ * playback: stock would rebuild a class 1 queue from the folder at its end), the queue handed to playing_page (start_player copies it); hook_memtype saves the boot resume as class 1. Cover pictures are decoded one per 16 ms tick (pc_cover_ok first: a picture that is too large for the stock decoder is
  * refused). The page's 1 s timer calls pc_note, like the other pages that already look at the playing track. No hook.
  */
 #include "offsets.inc"
@@ -4065,7 +4065,7 @@ static void pg_record(unsigned *rec, const pc_show_t *s, const pc_ep_t *e, const
     *(char **)((char *)rec + REC_ALBUM) = strdup(s->title);
     *(char **)((char *)rec + REC_ARTIST) = strdup(s->title);
     *(int *)((char *)rec + REC_TYPE) = 8;
-    *(int *)((char *)rec + REC_CLASS) = 1;
+    *(int *)((char *)rec + REC_CLASS) = CLASS_ALL_SONGS;
 }
 
 static void pg_record_free(unsigned *rec) {
@@ -4151,8 +4151,8 @@ static void pg_play(int at) {
                  *)0; /* (an episode opened from the search inside the show: the search does not know the Filter, its queue is the show's whole order) */
     queue = pg_queue_of(pg.root, &pg.shows[pg.sel], pg.eps, pg.neps, vis, vis ? pg.nvis : pg.neps, at, &idx);
     if (!queue) return;
-    *(int *)G_CLASS_TYPE = 1;
-    pod_start_player(queue, idx, 1);
+    *(int *)G_CLASS_TYPE = CLASS_ALL_SONGS;
+    pod_start_player(queue, idx, CLASS_ALL_SONGS);
     deque_destroy(queue);
 }
 

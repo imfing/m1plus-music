@@ -391,12 +391,12 @@ def play_tests(ctx):
     tap(m, pod_books.btn_x() + 40, H['y_btn'] + 20)
     n = nav(m)
     q, idx = m.played
-    expect(len(n) == 1 and n[0][2:] == (0, 1, O['PLAY_MODE']) and idx == 0 and ids_of(m, q) == [part_path('Gamma', f'Part {i:02}.mp3') for i in range(1, 13)],
-           f'Play: Now Playing with the twelve parts in order, from the first (index 0, class 1, mode 2): {n}')
+    expect(len(n) == 1 and n[0][2:] == (0, O['CLASS_ALL_SONGS'], O['PLAY_MODE']) and idx == 0 and ids_of(m, q) == [part_path('Gamma', f'Part {i:02}.mp3') for i in range(1, 13)],
+           f'Play: Now Playing with the twelve parts in order, from the first (index 0, class 0xf001, mode 2): {n}')
     r = q[0]
     expect((field(m, r, O['REC_NAME']), field(m, r, O['REC_TITLE']), field(m, r, O['REC_ALBUM']), field(m, r, O['REC_ARTIST'])) == ('Part 01.mp3', 'Part 01', 'Gamma', 'Gamma')
-           and m.word(r + O['REC_TYPE']) == 8 and m.word(r + O['REC_CLASS']) == 1 and m.word(pod.DATA['G_CLASS_TYPE'][0]) == 1,
-           'a record: the file name, the title, the book as album and artist, a song (type 8), class 1; the browsing class is 1')
+           and m.word(r + O['REC_TYPE']) == 8 and m.word(r + O['REC_CLASS']) == O['CLASS_ALL_SONGS'] and m.word(pod.DATA['G_CLASS_TYPE'][0]) == O['CLASS_ALL_SONGS'],
+           'a record: the file name, the title, the book as album and artist, a song (type 8), the All Songs class (not folder playback: Clear works); the browsing class too')
     expect(('deque_destroy',) in m.calls and not [c for c in m.calls if c[0] == 'loadSongList'], 'the queue is the page\'s own: no stock list query is made, the page frees its copy')
     # Resume: the current part (the one in progress) and the ones after it
     ring = ring_alpha()
