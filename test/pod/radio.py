@@ -1220,6 +1220,11 @@ def open_tests(ctx):
     expect(('navigator_back',) in m.calls, 'an asset that is not ours: the page leaves again')
     m = opened()
     expect(m.call(PSYMS['radio_open'], count=900000000) == 0xffffffff and 'window_open' not in m.names(), 'a page already open is not opened twice')
+    # the Control Center's shortcuts (radio_open_at): a page left under Radio Now Playing (and the Queue) is uncovered and used, from whatever level it showed
+    m2 = opened(); hs = m2.cover('m1plus_radio_np', 'm1plus_queue'); tap_row(m2, 0, root=True); m2.calls.clear()
+    ret = m2.call(PSYMS['radio_open_at'], a0=1, count=900000000)
+    expect(ret == 0 and 'window_open' not in m2.names() and [c for c in m2.calls if c[0] == 'window_close'] == [('window_close', hs[1]), ('window_close', hs[0])]
+           and text_of(m2, 'label_title') == 'Recently Played', f'a page in the stack: what covers it is closed (top first), no second page, the shortcut\'s level shows ({text_of(m2, "label_title")!r})')
     m.call(PSYMS['rp_on_destroy'], count=4000000)
     expect(m.destroyed >= len(ICONS) + 2, f'destroy frees the glyphs and the chevron ({m.destroyed} bitmaps)')
     # the root level

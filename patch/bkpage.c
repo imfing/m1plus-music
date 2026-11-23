@@ -1901,3 +1901,22 @@ int books_open(void) {
     bk_load_library(0);
     return 0;
 }
+
+/* The Control Center's Audiobooks shortcuts (patch/pulldown.c, after the dialog has quit): the Library (path 0) or the Book level of the book the part at path is in. A page already in the stack is used as
+ * podcasts_go does (what covers it is closed) and put back to the Library first, so it can be at any level. A book that is gone leaves the Library. 0 once the page is up, -1 if it could not open. */
+int books_goto(const char *path) {
+    unsigned key = path ? bk_book_of(path) : 0;
+    int b;
+    if (bk.win) {
+        m1_uncover(bk.win);
+        bk_load_library(0);
+    } else if (books_open() != 0 || !bk.win)
+        return -1;
+    if (!key) return 0;
+    for (b = 0; b < bk.nbooks; ++b)
+        if (bk.books[b].hash == key) {
+            bk_show_book(b);
+            break;
+        }
+    return 0;
+}

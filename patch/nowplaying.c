@@ -1304,21 +1304,19 @@ static void np_mode_sync(void) {
     np.speedon = 1;
 }
 
-/* A tap on the speed button: the show's or the book's next speed is saved (pc_speed_set) and put in the player (pc_speed_apply). The decoder takes a speed only when it starts, so a player that
- * plays or is paused is restarted at its place as stock's Multiple Speed handlers do (0x4799c8: save_stop_player, then save_start_player(1) when it was paused, else (0)). */
-static int np_on_mode(void *ctx, void *e) {
+/* The next speed: the show's or the book's, saved (pc_speed_set) and put in the player (pc_speed_apply). The decoder takes a speed only when it starts, so a player that plays or is paused is restarted at
+ * its place as stock's Multiple Speed handlers do (0x4799c8: save_stop_player, then save_start_player(1) when it was paused, else (0)). 0 when nothing spoken plays or the speed could not be saved (the toast is shown). */
+int np_speed_step(void) {
     void *rec = cc_playing();
     const char *path;
     unsigned key;
     int st;
-    (void)ctx;
-    (void)e;
-    if (!np.speedon || !rec) return RET_OK;
+    if (!rec || !pc_spoken_path(cc_str(rec, REC_PATH))) return 0;
     path = cc_str(rec, REC_PATH);
     key = bk_is_path(path) ? bk_book_of(path) : pc_show_of(path);
     if (!key || !pc_speed_set(key, (np_speed_mode() + 1) % PC_SPEEDS)) {
         pod_toast(TR("Storage unavailable"));
-        return RET_STOP;
+        return 0;
     }
     pc_speed_apply(key);
     st = mclGetPlayStatus();
@@ -1326,6 +1324,15 @@ static int np_on_mode(void *ctx, void *e) {
         save_stop_player();
         save_start_player(mclGetSavePlayStatus() == NP_PAUSED);
     }
+    return 1;
+}
+
+/* A tap on the speed button. */
+static int np_on_mode(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (!np.speedon || !cc_playing()) return RET_OK;
+    np_speed_step();
     np_mode_sync();
     return RET_STOP;
 }
@@ -1378,20 +1385,25 @@ static void np_pages_sync(void) {
     np.pageoff = on;
 }
 
-/* A tap on btn_prev (ctx 0) or btn_next (ctx 1). A stopped player or one with no length yet takes no skip (seek_time does nothing when stopped); the tap is still ours. */
-static int np_on_skip(void *ctx, void *e) {
+/* The skip: forward (NP_SKIP_FWD s on) or back (NP_SKIP_BACK s). A stopped player or one with no length yet takes no skip (seek_time does nothing when stopped): 0 then, 1 otherwise. */
+int np_spoken_seek(int fwd) {
     int pos = 0, len = 0, to;
-    (void)e;
-    if (!np.skipon) return RET_OK;
-    if (get_playtimeandlength(&pos, &len) != 1 || len <= 0 || pos < 0) return RET_STOP;
-    if (ctx) {
+    if (get_playtimeandlength(&pos, &len) != 1 || len <= 0 || pos < 0) return 0;
+    if (fwd) {
         to = pos + NP_SKIP_FWD;
         if (to > len - NP_SKIP_END) to = len - NP_SKIP_END;
-        if (to <= pos) return RET_STOP; /* already in the last seconds */
+        if (to <= pos) return 1; /* already in the last seconds */
     } else
         to = pos > NP_SKIP_BACK ? pos - NP_SKIP_BACK : 0;
     seek_time(to);
-    np_time();
+    return 1;
+}
+
+/* A tap on btn_prev (ctx 0) or btn_next (ctx 1); the tap is ours even when there is nothing to seek in. */
+static int np_on_skip(void *ctx, void *e) {
+    (void)e;
+    if (!np.skipon) return RET_OK;
+    if (np_spoken_seek(ctx != (void *)0)) np_time();
     return RET_STOP;
 }
 

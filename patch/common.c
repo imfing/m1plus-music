@@ -367,6 +367,20 @@ void *m1_restack_window(const char *name) {
     return (void *)0;
 }
 
+/* The opened windows above win in the window manager closed by handle, top first, so win is in front once they go (AWTK destroys a closed window later). Dialogs and the status bar stay: a sheet's
+ * owner closes it (Now Playing's More sheet, patch/playmore.c pm_on_goep, after podcasts_go). The Control Center's shortcuts reuse a page left in the stack this way, whatever covers it (Now Playing,
+ * the Queue over it, ..). */
+void m1_uncover(void *win) {
+    void *wm = window_manager();
+    unsigned n;
+    if (!wm || !win) return;
+    for (n = widget_count_children(wm); n--;) {
+        void *w = widget_get_child(wm, n);
+        if (w == win) return;
+        if (w && m1_is_type(w, "window") && widget_is_window_opened(w)) window_close(w);
+    }
+}
+
 /* A stock page opened the way the stock lists would, without stacking a second window of a page that has no single_instance property: the opened window is restacked, else navigator_to(path).
  * window is NULL for a page that must be opened afresh because its init starts or reads something that a restack does not redo: stock's restack sends EVT_WINDOW_TO_FG (0x12d) to the page and EVT_WINDOW_TO_BG (0x12c) to the window it leaves, and
  * only a new open runs init. Wi-Fi (init 0x4b1048 calls wifi_scan on every open, its 0x12d handler 0x4b0a34 only rebuilds the list), Bluetooth (its 0x12c handler 0x4a2a20 calls btStopSearch, its 0x12d handler 0x4a3a28 does not restart discovery, init 0x4a411c does) are opened afresh. */

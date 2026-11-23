@@ -84,7 +84,8 @@ ACCENT_FILL = ('vol_progress', 'volume_fg', 'drop_fg', 'eq_plan', 'other_progres
 ACCENT_SWITCH = ('sset_on',)
 ACCENT_PRESS = tuple(f'pod_cd_{p}_down' for p in ('single', 'top', 'mid', 'bot')) + tuple(f'pod_cdl_{p}_down' for p in ('single', 'top', 'mid', 'bot'))
 # DISC: the pull-down's ON tiles, a filled white disc with a #141414 glyph (or a glyph cut out of the disc): white to the accent, the dark glyph stays dark (ACC_KNOB_R), a pixel between moves by its lightness.
-ACCENT_DISC = ('drop_wifiopen', 'drop_btopen', 'drop_keylockopen', 'drop_eqopen', 'drop_usbaudio', 'drop_usbdac', 'drop_usbstorage', 'drop_playsetdown', 'drop_syssetdown', 'drop_highgain', 'drop_lo', 'drop_sleepopen', 'drop_airplayopen', 'drop_dlnaopen')
+ACCENT_DISC = ('drop_wifiopen', 'drop_btopen', 'drop_keylockopen', 'drop_eqopen', 'drop_usbaudio', 'drop_usbdac', 'drop_usbstorage', 'drop_playsetdown', 'drop_syssetdown', 'drop_highgain', 'drop_lo', 'drop_sleepopen', 'drop_airplayopen', 'drop_dlnaopen',
+               'drop_cc_pm_one', 'drop_cc_pm_shuffle', 'drop_cc_pm_all', 'drop_cc_eq_on', 'drop_cc_sleep_on', 'drop_cc_speed_on', 'drop_cc_station_on')
 # GLYPH, by name prefix: every row glyph is white art, tinted at decode: every colour becomes the accent, alpha kept. The M1+ Music rows' (the main menu, Shuffle, Extras and Main Menu pages), the Folders list's own
 # (fo_ic_sd, pod_ic_usbmode, fo_ic_file), the track rows' "..." sheet's (rm_ic_*: Play Next, Play After, Add to Playlist, Favorite, Undo Favorite, Get Info; patch/rowmenu.c: a prefix, cheaper through the hook than six exact names) and the Settings cards' (pod_ci_*, tools/mod_icons.py CARD_GLYPHS; the accent swatches pod_sw* are not). The two tiles (a rounded square with its own colour behind the glyph,
 # patch/podcasts.c) are not glyphs. GLYPH_STOCK, by exact name (plain white art, alpha kept): the More sheet's stock row glyphs (Look up album, Look up artist, Add to playlist, Speed, A-B repeat; patch/playmore.c),

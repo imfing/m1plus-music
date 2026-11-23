@@ -1525,3 +1525,34 @@ int radio_open(void) {
     rp_show_level(L_ROOT, 0);
     return 0;
 }
+
+/* The page left in the stack (a station started from it stays under Radio Now Playing) back at the root, whatever it showed: the sheet, the card, the select mode, Add by URL, the search and a
+ * transfer end first. */
+static void rp_to_root(void) {
+    rp_sheet_close();
+    rp_card(0);
+    rp_select(0);
+    rp_entry_leave();
+    if (rp.search) rp_search_leave();
+    rd_fetch_cancel();
+    rp_timer_off();
+    rp.loading = 0, rp.retry = 0;
+    rp_show_level(L_ROOT, 0);
+}
+
+int radio_open_at(int where) {
+    if (rp.win) { /* reused and uncovered as podcasts_goto does: radio_open refuses a second page */
+        m1_uncover(rp.win);
+        rp_to_root();
+    } else if (radio_open() != 0)
+        return -1;
+    if (where == RD_AT_MY)
+        rp_root_action(RR_MY);
+    else if (where == RD_AT_RECENT)
+        rp_root_action(RR_RECENT);
+    else {
+        rp_root_action(RR_BROWSER);
+        if (rp.view && !rp.note && rp_find_on()) rp_search_enter();
+    }
+    return 0;
+}

@@ -41,7 +41,7 @@ Red `#FF453A`, Orange `#FF9F0A`, Green `#30D158`, Teal `#40C8E0`, Purple `#BF5AF
 | row glyphs (M1+ Music, Folders, Settings cards, the track sheet) | the accent at rest |
 | switch on | track is the accent, knob white |
 | Podcasts Library tiles | glyph is the accent; the `#1C1C1E` square stays |
-| pull-down ON tiles | disc is the accent, glyph stays `#141414` (white on Orange or Teal would be about 2:1) |
+| pull-down ON tiles and page 2's lit discs | disc is the accent, glyph stays `#141414` (white on Orange or Teal would be about 2:1) |
 | pressed Play / Shuffle | see below |
 | slider fill, progress fills, picker check, playing wave marker | the accent |
 | **never accent** | chevrons, secondary text, the navbar, body text, card backgrounds |
@@ -103,7 +103,7 @@ change. `tools/palette_audit.py WORKDIR` lists the tinted names.
 | FILL | slider and progress fills, `pod_check`, `np_row_playing` | each pixel goes from its colour to the accent by how light its red is (51 to 238): the grey track stays and edges blend |
 | SWITCH | `sset_on` | the `#EEEEEC` track becomes the accent, the `#141414` knob white |
 | PRESS | `pod_cd_*_down` (pressed settings card) | `mix(#1C1C1E, accent, 22 %)` |
-| DISC | the pull-down's ON tiles | `#141414` stays, white becomes the accent, by lightness; off (`#2C2C2E`) and disabled (`#1E1E1E`) tiles are untouched |
+| DISC | the pull-down's ON tiles and page 2's lit discs | `#141414` stays, white becomes the accent, by lightness; off (`#3A3A3C`) and disabled (`#2C2C2E`) tiles are untouched |
 | GLYPH | row glyphs (below) | every colour becomes the accent, alpha kept |
 | TILE | the four Podcasts Library tiles | the disc rule with `#1C1C1E` as the fixed end: white becomes the accent, the square stays exactly |
 | SHUFDOWN | the Shuffle disc's pressed image | the disc becomes `mix(rest, accent, 22 %)`, the glyph stays |

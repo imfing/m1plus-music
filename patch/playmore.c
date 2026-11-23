@@ -332,6 +332,10 @@ static int pm_is_album(void *win) {
     return !strcmp(name, "albuminfo_page") || !strcmp(name, AB_WINDOW);
 }
 
+/* songerinfoflag for a page about to open: 1 (a track tap or Play on it unwinds to the Now Playing in the stack), but from the Control Center (pm_goto) with no Now Playing in the stack it stays as it was. */
+static unsigned char pm_no_np __attribute__((section(".scratch")));
+static unsigned char pm_flag_set(unsigned char prev) { return pm_no_np ? prev : 1; }
+
 /* The page just opened above `below` holds songerinfoflag until it ends (pm_on_album_gone); a page that cannot be watched does not keep the flag. */
 static void pm_flag_hold(void *below, unsigned char prev) {
     void *top = window_manager_get_top_window(window_manager());
@@ -370,7 +374,7 @@ static void pm_pend_drop(void) {
 static int pm_src_open(void *d, int artist, void *below) {
     unsigned char prev = *(unsigned char *)SONGER_FLAG;
     int r;
-    *(unsigned char *)SONGER_FLAG = 1;
+    *(unsigned char *)SONGER_FLAG = pm_flag_set(prev);
     r = artist ? albums_open_src(&lib_nd, deque_at(d, 0)) : album_open_src(&lib_nd, 0, deque_at(d, 0));
     if (r != 0)
         *(unsigned char *)SONGER_FLAG = prev;
@@ -401,7 +405,7 @@ static int pm_lookup_src(void *dlg, int artist) {
     }
     pm_pend_drop();
     closed = navigator_window_is_exist(AB_WINDOW) || (artist && navigator_window_is_exist(PM_ALBUMS_WINDOW));
-    window_close(dlg);
+    if (dlg) window_close(dlg);
     pm_close_albums();
     if (artist && navigator_window_is_exist(PM_ALBUMS_WINDOW)) navigator_close(PM_ALBUMS_WINDOW);
     below = window_manager_get_top_window(window_manager());
@@ -420,7 +424,7 @@ static int pm_lookup_src(void *dlg, int artist) {
 static void pm_local_open(int row) {
     void *top;
     unsigned char prev = *(unsigned char *)SONGER_FLAG;
-    *(unsigned char *)SONGER_FLAG = 1;
+    *(unsigned char *)SONGER_FLAG = pm_flag_set(prev);
     if (cc_open_album((void *)0, 0, row) < 0) {
         *(unsigned char *)SONGER_FLAG = prev;
         return; /* the list changed between the two reads: the sheet is closed, nothing opened */
@@ -452,12 +456,10 @@ static int pm_local_tick(const void *unused) {
     return RET_OK;
 }
 
-static int pm_on_lookup_album(void *ctx, void *e) {
+static int pm_go_album(void *ctx) {
     void *track;
     const char *name;
     int row, wait;
-    (void)e;
-    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
     track = cc_playing();
     if (!track) return RET_OK;
     if (sbs_playing_ours()) return pm_lookup_src(ctx, 0);
@@ -466,7 +468,7 @@ static int pm_on_lookup_album(void *ctx, void *e) {
     if (row < 0) return RET_OK;
     pm_pend_drop();
     wait = album_page_up() && snprintf(pm_pend.name, sizeof pm_pend.name, "%s", name) < (int)sizeof pm_pend.name;
-    window_close(ctx);
+    if (ctx) window_close(ctx);
     pm_close_albums();
     if (wait) { /* our album page is in the stack: the new one opens once that window is destroyed */
         pm_pend.local = 1, pm_pend.below = window_manager_get_top_window(window_manager());
@@ -478,6 +480,13 @@ static int pm_on_lookup_album(void *ctx, void *e) {
     return RET_STOP;
 }
 
+static int pm_on_lookup_album(void *ctx, void *e) {
+    (void)e;
+    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
+    pm_no_np = 0;
+    return pm_go_album(ctx);
+}
+
 /* Look up artist (listitem5): our Albums page scoped to the artist (albums_open_artist, what the Artists list opens; Cover Flow if that window will not open) instead of the stock album_page.
  * Same mechanism as Look up album: bound after the stock init, so it runs first; RET_STOP keeps the stock handler (0x4793ac) from running, RET_OK
  * lets it run. The artist is the playing track's REC_ARTIST, looked up in the Artists list the stock page would show (loadLocalClassList(0xf004):
@@ -486,13 +495,11 @@ static int pm_on_lookup_album(void *ctx, void *e) {
  * failure (nothing playing, no artist tag, not in the list, Cover Flow already open, the page will not open) leaves everything as it was for the
  * stock handler. Like the stock one it sets songerinfoflag (a track tap or Play on an album page above then unwinds to the Now Playing that is
  * in the stack) and closes an albuminfo_page in the stack; the flag is released by the destroy of that page (pm_on_album_gone). */
-static int pm_on_lookup_artist(void *ctx, void *e) {
+static int pm_go_artist(void *ctx) {
     void *track, *one, *top, *below;
     const char *name;
     int ret;
     unsigned char prev;
-    (void)e;
-    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
     track = cc_playing();
     if (!track) return RET_OK;
     if (sbs_playing_ours()) return pm_lookup_src(ctx, 1);
@@ -502,7 +509,7 @@ static int pm_on_lookup_artist(void *ctx, void *e) {
         artists_find(name); /* (the artist split on: the first name of the field, never the joined name's empty page) */
     if (!one) return RET_OK;
     prev = *(unsigned char *)SONGER_FLAG;
-    *(unsigned char *)SONGER_FLAG = 1;
+    *(unsigned char *)SONGER_FLAG = pm_flag_set(prev);
     below = window_manager_get_top_window(window_manager());
     ret = albums_open_artist(one, 0, CLASS_ARTISTS);
     if (ret == -1) ret = coverflow_artist(one, 0, CLASS_ARTISTS);
@@ -517,9 +524,23 @@ static int pm_on_lookup_artist(void *ctx, void *e) {
         pm_flag_owner = top;
     } else
         *(unsigned char *)SONGER_FLAG = prev;
-    window_close(ctx);
+    if (ctx) window_close(ctx);
     pm_close_albums();
     return RET_STOP;
+}
+
+static int pm_on_lookup_artist(void *ctx, void *e) {
+    (void)e;
+    if (!pm.dlg || ctx != pm.dlg) return RET_OK;
+    pm_no_np = 0;
+    return pm_go_artist(ctx);
+}
+
+/* The Control Center's Go to Artist / Go to Album (patch/pulldown.c, after the dialog has quit): the same lookups as the sheet's rows, with no sheet to close. 1 when the page was opened (or the track is a
+ * Subsonic one, whose miss has shown its own "Not found"), 0 when nothing was opened. */
+int pm_goto(int artist) {
+    pm_no_np = !navigator_window_is_exist("playing_page");
+    return (artist ? pm_go_artist((void *)0) : pm_go_album((void *)0)) == RET_STOP;
 }
 
 /* The player is on a Subsonic stream at this moment (not when the sheet opened): Add to playlist and Delete are refused, and the rows are laid out again so that they show it (a sheet opened on a

@@ -231,7 +231,7 @@ def vol_ink():
 
 
 BT_VOL_IMAGES = ['pod_ic_btvol_dn','pod_ic_btvol_dn_down', 'pod_ic_btvol_up', 'pod_ic_btvol_up_down']
-DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + BT_VOL_IMAGES + VOLBAR_IMAGES + ['drop_grabber', 'drop_sleep', 'drop_sleepopen', 'drop_settings', 'drop_equalizer', 'drop_power', 'drop_airplay', 'drop_airplayopen', 'drop_dlna', 'drop_dlnaopen', 'drop_transfer', 'drop_shot', 'pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_vu', 'pod_ic_art', 'pod_ic_mode'] + sorted(ES_ICONS) + sorted(HERO_ICONS)   # (pod_ic_sleep is not here: the Sleep Timer row is also a row of the Control Center page, so apply_pod_rows adds it; pod_ic_tape, pod_ic_vinyl, pod_ic_vu: Now Playing's More sheet's Cassette Mode, Vinyl Mode and VU Meter Mode rows, tools/mod_lists.py: no row page uses them)
+DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + BT_VOL_IMAGES + VOLBAR_IMAGES + ['drop_grabber', 'drop_dot_on', 'drop_dot_off', 'drop_sleep', 'drop_sleepopen', 'drop_settings', 'drop_equalizer', 'drop_power', 'drop_airplay', 'drop_airplayopen', 'drop_dlna', 'drop_dlnaopen', 'drop_transfer', 'drop_shot', 'pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_vu', 'pod_ic_art', 'pod_ic_mode', 'pod_ic_lyrics'] + sorted(ES_ICONS) + sorted(HERO_ICONS)   # (pod_ic_sleep is not here: the Sleep Timer row is also a row of the Control Center page, so apply_pod_rows adds it; pod_ic_tape, pod_ic_vinyl, pod_ic_vu: Now Playing's More sheet's Cassette Mode, Vinyl Mode and VU Meter Mode rows, tools/mod_lists.py: no row page uses them)
 # M1+ Music menu and Shuffle page rows: label -> (added image, glyph). A bare white glyph (BARE_PX canvas) left of the title.
 # '@shanling' = the brand mark cut out of a stock image (shanling_mark below), not a glyph.
 POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': ('pod_ic_coverflow', '+coverflow'),   # audio-lines: the wave of the navbar's Now Playing button
@@ -247,7 +247,7 @@ POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': (
             'Composers': ('pod_ic_composers', 'feather'), 'Hi-Res': ('pod_ic_hires', '+badge-hr'),
             'Update Library': ('pod_ic_update', 'refresh-cw'), 'Tidal': ('pod_ic_tidal', 'T:brand-tidal'),
             'CD Ripper': ('pod_ic_cdripper', 'disc'), 'Pod': ('pod_ic_ipod', '+ipod'), 'Podcasts': ('pod_ic_podcasts', 'podcast'), 'Search': ('pod_ic_search', 'search'), 'Audiobooks': ('pod_ic_audiobooks', 'book-headphones'), 'Radio': ('pod_ic_radio', 'radio'),
-            'Cassette Mode': ('pod_ic_tape', '+cassette-tape'), 'Vinyl Mode': ('pod_ic_vinyl', '+turntable'), 'VU Meter Mode': ('pod_ic_vu', 'gauge'), 'Cover & Lyrics': ('pod_ic_art', '+cover-lyrics'), 'Sleep Timer': ('pod_ic_sleep', 'moon'), 'Display Mode': ('pod_ic_mode', 'smartphone'),   # Now Playing's More sheet rows (tools/mod_lists.py)
+            'Cassette Mode': ('pod_ic_tape', '+cassette-tape'), 'Vinyl Mode': ('pod_ic_vinyl', '+turntable'), 'VU Meter Mode': ('pod_ic_vu', 'gauge'), 'Cover & Lyrics': ('pod_ic_art', '+cover-lyrics'), 'Sleep Timer': ('pod_ic_sleep', 'moon'), 'Display Mode': ('pod_ic_mode', 'smartphone'), 'Lyrics': ('pod_ic_lyrics', 'mic-vocal'),   # Now Playing's More sheet rows (tools/mod_lists.py)
             # the Control Center page (pod_pages.PULLDOWN_TILES): each tile's own glyph (PULLDOWN below); Output's tile shows the text PO / LO, so its row has stock's Output glyph (sset_outputway)
             'Wi-Fi': ('pod_ic_wifi', 'wifi'), 'Bluetooth': ('pod_ic_bt', 'bluetooth'), 'Button Lock': ('pod_ic_lock', 'lock'), 'Gain': ('pod_ic_gain', '+gain-high'),
             'USB Mode': ('pod_ic_usbmode', 'usb'), 'Output': ('pod_ic_output', 'headphones'), 'Playback': ('pod_ic_prefs', 'sliders-horizontal'), 'System': ('pod_ic_sysset', 'settings'),
@@ -353,7 +353,7 @@ GLYPHS = [
     ('rename', 'pencil', None), ('bt_del', 'trash', None), ('bt_scan', 'refresh-cw', None), ('datetime', 'calendar', None),
     ('wifi_add', 'circle-plus', None), ('kb_visible', 'eye', None), ('kb_invisible', 'eye-off', None),
     ('p_abrepeat', 'T:a-b', None), ('p_add', 'list-plus', None), ('p_delete', 'trash', None),    # a-b: no Lucide glyph (Playback speed: the Podcasts sheet's gauge)
-    ('p_multiple', 'gauge', None), ('p_onlinesearch', 'globe', None),
+    ('p_multiple', 'circle-gauge', None), ('p_onlinesearch', 'globe', None),
     ('player_albuminfo', 'disc-3', None), ('player_songerinfo', 'mic-vocal', None),
     ('batchadd_fav', 'star', None), ('batchadd_playlist', 'list-plus', None),
 ]
@@ -628,6 +628,26 @@ def swatch(i):
 
 
 DROP_GRABBER = ('drop_grabber', 36, 5)   # name, w, h (= GRABBER's pill)
+DROP_CC = (('drop_cc_prev', 'prev', 'white'), ('drop_cc_prev_off', 'prev', 'off'), ('drop_cc_play', 'play', 'white'), ('drop_cc_play_off', 'play', 'off'), ('drop_cc_pause', 'pause', 'white'), ('drop_cc_stop', 'stop', 'white'),
+           ('drop_cc_next', 'next', 'white'), ('drop_cc_next_off', 'next', 'off'))   # the Control Center Now Playing card's transport (patch/pulldown.c): the solid glyph at 24 px centred on a 44 px canvas (the touch target), white or the disabled grey
+DROP_CC_SKIP = (('drop_cc_back15', 'back15', 'white'), ('drop_cc_fwd30', 'fwd30', 'white'))   # an episode's or a part's transport on page 2 (patch/pulldown.c cc2_look): Now Playing's skip back 15 s / forward 30 s at 30 px on the 44 px canvas (the digits need the room 24 px does not give)
+DROP_CC_SKIP_PX = 30
+DROP_CC_FAV = (('drop_cc_fav', 'star', 'white'), ('drop_cc_fav_on', 'star:filled', 'white'), ('drop_cc_fav_off', 'star', 'off'))   # its favourite button: a 32 px #3A3A3C disc with a 16 px star (outline; filled white for a favourite; the disabled grey)
+DROP_CC_PX, DROP_CC_CANVAS, DROP_CC_DISC, DROP_CC_STAR, DROP_CC_DISC_RGB = 24, 44, 32, 16, (0x3A, 0x3A, 0x3C)
+DAILY = DAILY + [n for n, *_ in DROP_CC + DROP_CC_SKIP + DROP_CC_FAV]
+CC_L, CC_R = (54, 24), (44, 22)   # page 2's lower cards: a left disc and its glyph px, a right card's
+DROP_CC_DISCS = {'drop_cc_pm_order': ('repeat-off', CC_L, 'off'), 'drop_cc_pm_one': ('repeat-1', CC_L, 'on'), 'drop_cc_pm_shuffle': ('shuffle', CC_L, 'on'), 'drop_cc_pm_all': ('repeat', CC_L, 'on'),
+                 'drop_cc_pm_off': ('repeat-off', CC_L, 'dis'), 'drop_cc_upnext': ('list-music', CC_L, 'off'), 'drop_cc_queue': ('list', CC_L, 'off'), 'drop_cc_upnext_off': ('list-music', CC_L, 'dis'),
+                 'drop_cc_artist': ('mic-vocal', CC_L, 'off'), 'drop_cc_artist_off': ('mic-vocal', CC_L, 'dis'), 'drop_cc_album': ('disc-3', CC_L, 'off'), 'drop_cc_album_off': ('disc-3', CC_L, 'dis'),
+                 'drop_cc_eq': ('sliders-vertical', CC_R, 'off'), 'drop_cc_eq_on': ('sliders-vertical', CC_R, 'on'), 'drop_cc_sleep': ('moon', CC_R, 'off'), 'drop_cc_sleep_on': ('moon', CC_R, 'on'),
+                 'drop_cc_speed': ('circle-gauge', CC_R, 'off'), 'drop_cc_speed_on': ('circle-gauge', CC_R, 'on'), 'drop_cc_podhome': ('podcast', CC_L, 'off'), 'drop_cc_bkhome': ('book-headphones', CC_L, 'off'),
+                 'drop_cc_notes': ('info', CC_L, 'off'), 'drop_cc_nextep': ('skip-forward', CC_L, 'off')}   # page 2's discs (patch/pulldown.c cc2_*), name -> (glyph, (disc px, glyph px), state): page 1's tile look (disc_tile) at the card's sizes; the lit ones are white
+DROP_CC_DISCS.update({'drop_cc_rd_my': ('radio', CC_L, 'off'), 'drop_cc_rd_recent': ('history', CC_L, 'off'), 'drop_cc_rd_info': ('info', CC_L, 'off'), 'drop_cc_rd_search': ('search', CC_L, 'off'),
+                      'drop_cc_station': ('list-plus', CC_R, 'off'), 'drop_cc_station_on': ('list-plus', CC_R, 'on')})   # the radio layout's four discs (My Stations, Recently Played, Station Info, Search) and its Station card's (lit while the station is saved)
+DROP_CC_LIVE = (('drop_cc_live_l', False), ('drop_cc_live_r', True))   # radio's LIVE capsules on page 2: Radio Now Playing's (mod_nowplaying.live_bar_image) at the card's 54 px
+DROP_CC_LIVE_W = 54
+DAILY = DAILY + list(DROP_CC_DISCS) + [n for n, _ in DROP_CC_LIVE]
+DROP_DOTS = (('drop_dot_on', 0xEB), ('drop_dot_off', 0x46), 4)   # the pull-down's page dots (patch/pulldown.c): the current page's and the other's, Now Playing's page dots (mod_nowplaying DOTS / DOT_ON / DOT_OFF: 4 px, white at alpha 0xEB / 0x46), antialiased discs (a tiny round fill renders square on the device)
 SLIDER_THUMB = ('pod_sl_thumb', 38, 24, 46, 34)   # the settings slider's thumb (name, the capsule's width and height, the canvas)
 
 
@@ -839,6 +859,20 @@ def generate_all(sizes):
     f[SLIDER_THUMB[0]] = slider_thumb()
     f[XF_DOTS[0]] = xf_dots()
     f['pod_vol_track'], f['pod_vol_fill'], f['pod_vol_ink'] = vol_capsule(VOLBAR_TRACK), vol_capsule(WHITE), vol_ink()
+    for n, a in DROP_DOTS[:2]:
+        d = disc(DROP_DOTS[2], (255, 255, 255)); d.putalpha(d.getchannel('A').point(lambda v: v * a // 255)); f[n] = d
+    for n, kind, tone in DROP_CC:
+        c = Image.new('RGBA', (DROP_CC_CANVAS,) * 2, (0, 0, 0, 0)); g = pil_glyph(kind, 44, *NP_TONES[tone]).resize((DROP_CC_PX,) * 2, Image.LANCZOS)   # Now Playing's 44 px glyph scaled down whole (drawn at 24 the shapes fill and clip the box)
+        c.alpha_composite(g, ((DROP_CC_CANVAS - DROP_CC_PX) // 2 + (kind == 'play'), (DROP_CC_CANVAS - DROP_CC_PX) // 2)); f[n] = c   # the play triangle 1 px right: its weight sits left of its box, so centred by box it looked off centre
+    for n, kind, tone in DROP_CC_SKIP:
+        c = Image.new('RGBA', (DROP_CC_CANVAS,) * 2, (0, 0, 0, 0)); g = pil_glyph(kind, 44, *NP_TONES[tone]).resize((DROP_CC_SKIP_PX,) * 2, Image.LANCZOS)
+        c.alpha_composite(g, ((DROP_CC_CANVAS - DROP_CC_SKIP_PX) // 2,) * 2); f[n] = c
+    for n, (g, (dpx, gpx), st) in DROP_CC_DISCS.items(): f[n] = cc_disc(g, dpx, gpx, st)
+    import mod_nowplaying
+    for n, right in DROP_CC_LIVE: f[n] = mod_nowplaying.live_bar_image(DROP_CC_LIVE_W, right)
+    for n, g, tone in DROP_CC_FAV:
+        d = disc(DROP_CC_DISC, DROP_CC_DISC_RGB); st = glyph_fit(g, DROP_CC_STAR, DROP_CC_STAR, NP_TONES[tone][0], 0, 1.5)
+        d.alpha_composite(st, ((DROP_CC_DISC - st.width) // 2, (DROP_CC_DISC - st.height) // 2)); f[n] = d
     f[DROP_GRABBER[0]] = pil_glyph('drop_grabber', DROP_GRABBER[1:], *NP_TONES['ghost'])   # the pull-down's grabber: Now Playing's pill (GRABBER, the ghost tone) on a canvas of just the pill
     for n, (g, px, rgb) in WIFI_GLYPHS.items(): f[n] = glyph_fit(g, px, px, rgb, 1, 2.0 if px >= 22 else 1.5)
     for n in range(4): f[f'wf_sig{n}'] = wifi_signal(n)
@@ -983,7 +1017,7 @@ PC_SRCH_TILE = 'pod_ic_discovertile'                       # the Search row's ti
 PC_LIB_TILE = 'pod_ic_subtile'                           # the Subscriptions row's tile: the same square (an image of its own, so the atlas stays as it is: test/pod/navbars.py ignores pod_ic_) with the Lucide podcast glyph
 PA_PLAYB_X, PA_PLAYB_Y, PA_PLAYB_PX, PA_PLAYB_RIM_A, PA_PLAYB_GLYPH = 48, 112, 28, 90, 12   # Continue Listening's play disc: 28 px, a white 26 px disc inside a 1 px black rim (35 %, so it reads on a white cover too), the dark play triangle (12 px) nudged 1 px right to look centred
 PC_ATLAS = 'pc_atlas'
-PC_SHEET_ICONS = (('pc_ic_import', 'file-input', WHITE), ('pc_ic_speed', 'gauge', WHITE), ('pc_ic_refresh', 'refresh-cw', WHITE), ('pc_ic_select', 'list-checks', WHITE), ('pc_ic_check', '+check', WHITE),
+PC_SHEET_ICONS = (('pc_ic_import', 'file-input', WHITE), ('pc_ic_speed', 'circle-gauge', WHITE), ('pc_ic_refresh', 'refresh-cw', WHITE), ('pc_ic_select', 'list-checks', WHITE), ('pc_ic_check', '+check', WHITE),
                   ('pc_ic_unsub', 'x', PA_RED), ('pc_ic_down', 'arrow-down', WHITE), ('pc_ic_trash', 'trash', WHITE), ('pod_ic_trash_red', 'trash', PA_RED), ('pc_ic_undo', 'rotate-ccw', WHITE),
                   ('pod_ic_export', 'file-output', WHITE), ('pod_ic_save', 'bookmark', WHITE), ('pod_ic_order', 'arrow-down-wide-narrow', WHITE), ('pod_ic_filter', 'list-filter', WHITE), ('pod_ic_pause', 'pause', WHITE), ('pod_ic_play', 'play', WHITE), ('pod_ic_cancel', 'x', WHITE),
                   ('pod_ic_rd_add', 'plus', WHITE), ('pod_ic_rd_remove', 'minus', WHITE), ('pod_ic_rd_import', 'import', WHITE), ('pod_ic_rd_link', 'link', WHITE))   # the Radio sheets: Add to / Remove from Stations and Station Info (Now Playing), Import from Card (Stations; the red pod_ic_trash_red is the destructive rows' trash: Delete Book, Delete Played Episodes, Clear Recently Played)   # (pod_ic_ names: the images the stock pages' digest test ignores, test/pod/navbars.py NEW_IMAGES; a new pc_ image would change test/navbars-stock.sha256 in every branch)
@@ -1668,8 +1702,8 @@ def np_images():
 
 # ---------------------------------------------------------------- one flat disc style for every pull-down tile (docs/modules/pulldown.md "Look")
 TILE_N = 56                              # the disc's px: the tile widgets are 56 x 56 (tools/mod_pulldown.py TILE_PX) round the stock tiles' centres
-TILE_OFF, TILE_DIS = (0x2C, 0x2C, 0x2E), (0x1E,) * 3          # the off and disabled discs (the on disc is white)
-TILE_GLYPH_ON, TILE_GLYPH_DIS = (0x14,) * 3, (0x55,) * 3     # the glyph on the on disc, on the disabled disc (off: white)
+TILE_OFF, TILE_DIS = (0x3A, 0x3A, 0x3C), (0x2C, 0x2C, 0x2E)         # the off and disabled discs (the on disc is white)
+TILE_GLYPH_ON, TILE_GLYPH_DIS = (0x14,) * 3, (0x63, 0x63, 0x66)    # the glyph on the on disc, on the disabled disc (off: white)
 TILE_GLYPH, TILE_TEXT = 26, 20      # glyph px (24 grid, stroke 2, scaled) and "PO" / "LO" text px inside the disc
 TILE_FONT = os.path.join(ROOT, 'assets', 'fonts', 'Inter-m1plus.ttf')
 # tile image -> (glyph or 'text:XX', state); the disc touches the bounds of the TILE_N x TILE_N image
@@ -1685,8 +1719,16 @@ TILES = {
     'drop_po': ('text:PO', 'off'), 'drop_lo': ('text:LO', 'on')}
 TILES_NEW = ['drop_lowgain', 'drop_highgain', 'drop_lowgaindisable', 'drop_highgaindisable', 'drop_po', 'drop_lo']
 
+
+def cc_disc(g, n, gpx, state):
+    """Page 2's disc: an n px disc (off #2C2C2E, dis #1E1E1E, on white) with the glyph at gpx, the colours of disc_tile."""
+    d = disc(n, {'off': TILE_OFF, 'dis': TILE_DIS, 'on': WHITE}[state]); gi = glyph(g, gpx, 'tile', {'off': WHITE, 'dis': TILE_GLYPH_DIS, 'on': TILE_GLYPH_ON}[state])
+    gi = ink_crop(gi)   # every glyph's ink box is centred in the disc
+    d.alpha_composite(gi, ((n - gi.width) // 2, (n - gi.height) // 2)); return d
+
+
 def disc_tile(g, state):
-    """TILE_N x TILE_N tile, flat: off = #2C2C2E disc + white glyph, dis = #1E1E1E disc + #555555 glyph, on = white disc + #141414 glyph
+    """TILE_N x TILE_N tile, flat: off = #3A3A3C disc + white glyph, dis = #2C2C2E disc + #636366 glyph (lighter than the #1C1C1E cards: the panel crushes near-blacks), on = white disc + #141414 glyph
     (no ring, no gradient). The on discs are in palette.ACCENT_DISC: an accent recolours them."""
     from PIL import Image, ImageDraw, ImageFont
     ss, N = 4, TILE_N

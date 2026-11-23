@@ -210,6 +210,9 @@
 #define KEY_NEXT 0xd7
 #define EVT_POINTER_DOWN 0xff  /* input_device_status_on_input_event jump table @0x88f120 */
 #define EVT_POINTER_MOVE 0x101
+#define EVT_POINTER_DOWN_BEFORE 0x100 /* widget_on_pointer_down / _move / _up first dispatch a copy of the event with these types to the widget's own emitter, before the children and before */
+#define EVT_POINTER_MOVE_BEFORE 0x102 /* the widget's own EVT_POINTER_*; RET_STOP there ends the dispatch (@0x6712e4, @0x671668, @0x6718f0) */
+#define EVT_POINTER_UP_BEFORE 0x104
 #define EVT_POINTER_UP 0x103
 #define EVT_POINTER_ABORT 0x107 /* widget_on_pointer_up/move dispatch it @0x6719b8 */
 #define PE_X 0x18               /* pointer_event_t: x, y (screen coordinates, widget_to_local turns them local); event_t.time u64 @0x8 */

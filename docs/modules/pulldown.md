@@ -38,9 +38,9 @@ dialog's init and one on touch down ([payload](payload.md)).
   stays. The tool refuses a Latin word wider than the box, or a caption that does not fit two
   lines, in English or Chinese. A few long captions in other languages still overflow, clipped as
   in stock.
-- **Tile art:** every tile image is one flat 56 x 56 disc, 26 px glyph, no ring. Off is a `#2C2C2E`
-  disc with a white glyph, on a white disc with a `#141414` glyph, disabled a `#1E1E1E` disc with a
-  `#555555` glyph. Gain has custom 2- and 5-bar glyphs, Output the text "PO" / "LO" in Inter Medium
+- **Tile art:** every tile image is one flat 56 x 56 disc, 26 px glyph, no ring. Off is a `#3A3A3C`
+  disc with a white glyph, on a white disc with a `#141414` glyph, disabled a `#2C2C2E` disc with a
+  `#636366` glyph (lighter than the `#1C1C1E` cards for the panel). Gain has custom 2- and 5-bar glyphs, Output the text "PO" / "LO" in Inter Medium
   20 px. With an accent the ON disc is the accent ([accent](accent.md)).
 - **Grabber:** `pod_grabber`, an image widget showing `drop_grabber` (a baked, antialiased 36 x 5 pill) at
   (142, 328) in the dialog, white at alpha 110 like Now Playing's grabber (`mod_icons.GRABBER`, the `ghost` tone), insensitive.
@@ -225,6 +225,160 @@ Tiles `c` and `d` are **switches** for the two service settings the Network Serv
 - **Lit look:** when the dialog is built, a shown switch tile gets its picture from the byte. The on
   pictures are the disc style's on look and are in `ACCENT_DISC`, so with an accent the lit disc is
   the accent. The picture shows the setting, not whether the service is running yet.
+
+## Two pages
+
+The pull-down has two pages side by side; a left / right swipe slides between them, the pages following
+the finger as Now Playing's do. The dialog always opens on page 1.
+
+- **Page 1** is the dialog as above: `view_switchs` (the tiles and their captions) and
+  `view_backlight` (the brightness card). **Page 2** is `pod_cc2`, a view at (10, 44), 300 x 274
+  (x 10 .. 309, y 44 .. 317), hidden and insensitive in the asset, holding the Now Playing card
+  `pod_cc2_top` and the lower cards `pod_cc2_left`, `_right1`, `_right2` (flat `#1C1C1E`, radius 26 / 22;
+  below). The status bar copy and the grabber are on both pages.
+- **Dots:** `pod_cc2_dot0` / `pod_cc2_dot1`, 4 px images, Now Playing's page dots (`drop_dot_on` white at alpha
+  `0xEB`, `drop_dot_off` at `0x46`, baked: a tiny round fill renders square on the device) at (153 / 163, 320), centres 155
+  and 165, hidden in the asset. The hook shows them; the first is the current page 1.
+- **Now Playing card** (`cc2_*` in `patch/pulldown.c`): `pod_cc2_top` is a button over the dialog's
+  (10, 44)-(309, 163), `#1C1C1E`, radius 26. In it: the 96 px cover at (22, 56), painted in the
+  card's `EVT_AFTER_PAINT` from a `mb_art_t` (size 96, corner radius 8; the Home bar's `mb_art_*`,
+  made once per track on `mb_track_key`, freed with the dialog); `pod_cc2_title` (18 px white) and
+  `pod_cc2_artist` (15 px `#8A8A8E`), 134 px wide from x 130, ellipsis; the favourite disc
+  `pod_cc2_fav` (32 px, centre (282, 70)); the transport `pod_cc2_prev` / `_play` / `_next`
+  (centres x 170 / 214 / 258, y 113; 24 px glyphs on 44 px images, `drop_cc_*`); the progress bar
+  (130, 134)-(297, 138), track `#48484A`, fill `#F2F2F2` by elapsed / length, drawn by rows so its
+  ends are round; `pod_cc2_elapsed` and `pod_cc2_remain` (12 px `#8A8A8E`, "1:47" and "-1:26") at
+  y centre 151.
+  - One 500 ms timer (`cc2_tick` -> `cc2_work`) runs only while page 2 shows: a swipe's start or
+    `pd_page_set(1)` runs `cc2_work` once and arms it; landing on page 1, the dialog's `EVT_DESTROY` and `pd_open_dialog` stop it.
+    `cc2_work` is the only code that reads the player and changes the card.
+  - **Local track** (`cc_playing`): title (else the file name), artist, cover, play / pause by
+    `mclGetPlayStatus`, the bar and times from `get_playtimeandlength` (none when it has no length).
+    The star is filled white (`drop_cc_fav_on`) for a favourite (`checkFavExist`, asked on a track
+    change and after a tap) and an outline otherwise; a tap does what Now Playing's star does for a
+    local track (`checkFavExist`, then `deleteMusicFromFav` or `addMyFav`). A server track
+    (`sba_rec_track`) has no star here (hidden, so also insensitive): stock's would write its stream
+    record, whose address carries the login token, into the local favourites.
+  - Buttons: play / pause `playpause_quick_click`; next / prev `next_quick_click` /
+    `prev_quick_click` with the click's own event (a synthesized one stamped `time_now_ms` when
+    there is none); a tap elsewhere on the card quits the dialog with 0xd like a tile, and
+    `pd_run` opens Now Playing (`m1_open_now_playing`: Radio's page while a station plays).
+  - **Nothing queued:** "Not Playing", no artist, a grey (`#3A3A3C`) cover, the three transport
+    buttons and the star greyed (`drop_cc_*_off`) and insensitive, an empty bar, no times.
+  - **Radio** (`mb_radio_active`): the station and its two lines as Radio Now Playing shows them
+    (`rd_meta_head`, `mb_radio_line`), the station's logo as the Home bar gets it (`mb_radio_art`
+    at 96 px, else Radio Now Playing's grey card with the broadcast glyph; re-made when the logo
+    file appears), no star, no previous / next (hidden): the one button at x 214 is the stop square
+    (`drop_cc_stop`) while connecting or playing and the play triangle otherwise
+    (`mb_radio_play_click`). In the bar's place stands Radio Now Playing's LIVE divider: the two
+    fading capsules (`drop_cc_live_l` / `_r`, 54 px, `mod_nowplaying.live_bar_image`) and a 13 px
+    white LIVE (`pod_cc2_live`), shown only while connecting or playing. A tap on the card opens
+    Radio Now Playing (`rn_open`, also for a stopped station).
+  - **Episode or book part** (`cc2.kind` 1 / 2, from the track's path: `pc_is_path` / `bk_is_path`, read at
+    every tick, so a change of kind restyles the page within 500 ms): title and sub line as the queue
+    record has them (an episode: its title, then the show; a part: the book, then the part's name); no
+    star (hidden); the transport is Now Playing's spoken-audio row at the same centres: back 15 s, play /
+    pause, forward 30 s (`drop_cc_back15` / `drop_cc_fwd30`: Now Playing's glyphs at 30 px on the 44 px
+    image, so the digits read). The skip buttons seek with `np_spoken_seek` (`patch/nowplaying.c`, the
+    function Now Playing's own buttons use) and stay on the pull-down.
+- **Lower cards** (`cc2_lower`, on the same timer): the left card (10, 173)-(153, 317) holds four 54 px
+  discs centred at (46, 209) (117, 209) (46, 281) (117, 281), the two right cards (162, 173) and
+  (162, 250), 148 x 68, a 44 px disc 12 px in from the card, a 17 px white title at x + 66 and a 14 px
+  `#8A8A8E` sub line under it (`hscroll_label`s 74 px wide, centres 10 above and 12 below the card's
+  middle). The discs are baked images (`drop_cc_*`, `tools/mod_icons.py DROP_CC_DISCS`; a small round
+  fill renders square on the device) in page 1's tile look: off `#3A3A3C` with a white glyph, lit
+  white with a `#141414` glyph, disabled `#2C2C2E` with `#636366`. Their images and the sub lines
+  change only when the state does; the Equalizer's name is read (`peq_playing_name`) at most every
+  2 s. Lit discs (`drop_cc_pm_one`, `_pm_shuffle`, `_pm_all`, `_eq_on`, `_sleep_on`, `_speed_on`, `_station_on`) are in
+  `palette.ACCENT_DISC` like page 1's ON tiles: an accent recolours them ([accent](accent.md)); the
+  favourite star stays white. `cc_disc` places every glyph by its ink box.
+  - **Play Mode** (`pod_cc2_playmode`): shows `pod_play_mode()` (List play `repeat-off` unlit, Repeat
+    one, Shuffle, Repeat all lit). A tap sets the next of Now Playing's four modes (0, 1, 2, 3) with
+    `pod_set_mode`, which keeps the Shuffle flag ([shuffle](shuffle.md)); the pull-down stays.
+  - **Up Next, Go to Artist, Go to Album** (`pod_cc2_upnext`, `_artistgo`, `_albumgo`): quit the dialog
+    with 0xd; `pd_run` then calls `queue_open` (our Queue page; the stock drawer when its window will
+    not open, as Now Playing's queue button) or `pm_goto` (`patch/playmore.c`: the More sheet's Look
+    up artist / album with no sheet to close; a Subsonic track goes to the source's page; a miss
+    toasts "Not found"). From the pull-down `pm_goto` holds `songerinfoflag` only when a
+    `playing_page` is in the stack.
+  - These four discs are live for a queued local or server track; with nothing queued they are greyed
+    and insensitive. For a station they take the radio layout below.
+  - **Equalizer** (`pod_cc2_right1`): lit while the Equalizer switch (`EQ_FLAG`) is on, the sub line
+    the preset or curve name, else "Off". **Sleep** (`pod_cc2_right2`): lit while a sleep timer runs,
+    the sub line the minutes left ("25m left", `pc_left_text`), else "Off". Both cards are buttons and
+    always live; a tap quits the dialog and `pd_run` runs page 1's Equalizer / Sleep Timer tile
+    action (`PD_EQ`, `PD_SLEEP`: same window-stack handling).
+  - **Lower half for an episode or a part** (`cc2_spoken_lower`; the widgets are the same, the images, the
+    taps and the Equalizer card's texts change): the Equalizer card is **Speed** (`circle-gauge`, title
+    "Speed", sub line 1x / 1.25x / 1.5x / 2x from `playspeed_mode`; lit when it is not 1x); a tap calls
+    `np_speed_step` (Now Playing's speed button: the next speed saved for the show or the book, applied,
+    the player restarted at its place) and stays. Sleep is the music's. There is no Equalizer card. The
+    four discs, all live:
+
+    | | Podcast episode | Audiobook part |
+    |---|---|---|
+    | top left | Podcasts (`podcast`) -> `podcasts_goto(0, 0)`: the Shows level | Audiobooks (`book-headphones`) -> `books_goto(0)`: the Library |
+    | top right | the queue (`drop_cc_queue`, Lucide `list`, Now Playing's queue glyph for an episode, `np_playlist`) -> `queue_open`, as music's Up Next | the same |
+    | bottom left | Show Notes (`info`) -> `podcasts_goto(path, 1)`: the episode's own page | Book Info (`info`) -> `books_goto(path)`: the book's page (it has no page of its own for info) |
+    | bottom right | Next Episode (`skip-forward`): `next_quick_click` as the next key does; stays | Next Part: the same |
+
+    The page-opening discs quit the dialog like the music ones; `pd_run` then opens the page from the
+    track playing at that moment (`PD_ACT_PODS`, `_BOOKS`, `_NOTES`; "Not found" for a track of
+    neither kind). `podcasts_goto` / `books_goto` use a page already in the stack as `podcasts_go` does
+    (every window above it is closed, `m1_uncover`; the page is put back to its root, then opened to the show, the episode or the book), else open the page; a
+    show or book no longer on the card leaves the root.
+  - **Radio layout** (`cc2_radio_*`, `cc2.mode` 2): the same slots, restyled at the next tick when
+    the player kind changes (`cc2.mode` 2 is a station, `cc2.mode` 1 with `cc2.kind` 1 / 2 an episode or a part). Discs: My Stations (top left, `radio`), Recently Played (`history`),
+    Station Info (`info`), Search (`search`), images `drop_cc_rd_*`. Each quits the dialog and
+    `pd_run` calls `radio_open_at` (`patch/radiopage.c`: the Radio page opened on My Stations, on
+    Recently Played, or on Radio Browser with its search field up; Back returns to the Radio root)
+    or `sinfo_open` (Station Info). The Equalizer card becomes the **Station** card (`list-plus`):
+    "Saved" with a lit disc when the station is in My Stations (`rd_fav_has`, read when the station
+    or `rd_serial` changes), else "Not Saved" unlit; a tap runs Radio Now Playing's Add to /
+    Remove from My Stations (`rd_fav_toggle`, the same toasts) and the pull-down stays. There is
+    no Equalizer card for a station. Sleep is as for music. A Radio page already in the stack (a
+    station started from it stays under Radio Now Playing) is uncovered and put back to its root
+    (`rp_to_root`) first.
+  - The two cards' discs are insensitive pictures: a tap on one reaches the card.
+- **Slide:** page 1's containers (`view_switchs`, `view_backlight`) and page 2's (`pod_cc2`) move
+  together by one offset (`pd_slide_place`): page 1 at its asset x plus the offset, page 2 320 px to
+  its right, both at their asset y. A page entirely off the dialog is hidden (`m1_show`: also
+  insensitive). Only the containers move, so what the tile hook set inside `view_switchs` (tiles
+  shown, places, Control Labels) returns exactly as it was. The status bar copy, the grabber and the
+  dots stay.
+  - During a swipe the pages follow the finger; past either end they move a third as far.
+  - On release (`pd_slide_release`) a flick faster than 300 px/s picks the page in its direction,
+    otherwise the page more than half in view wins. A finger that stood 100 ms before the release
+    has no speed; an abort is a release with no speed. The dots change at once.
+  - The pages then slide there with an ease-out cubic, 300 ms for a whole page and its share for
+    less, at least 120 ms, one frame every `NP_FRAME_MS` (16 ms, `pd_slide_frame`). On landing
+    `pd_page_set` puts them in place, hides the other page and starts or stops page 2's timer. A
+    refused frame timer lands at once; the dialog's end (`cc2_stop`) stops the slide.
+  - A press above y 280 on sliding pages catches them where they are: it is swallowed (no tile under
+    it sees it), its moves drag at once, and its release picks the page again.
+  - Page 2's timer starts as soon as a swipe begins, so its card is current while it slides in.
+- **Swipe rule:** `pd_on_swipe` is bound on the dialog's *before children* pointer events
+  (`EVT_POINTER_DOWN_BEFORE` 0x100, `_MOVE_BEFORE` 0x102, `_UP_BEFORE` 0x104, which
+  `widget_on_pointer_down / _move / _up` dispatch ahead of the children and the dialog's own
+  listeners; `RET_STOP` ends the dispatch) and `EVT_POINTER_ABORT`. A press above y 280 is watched.
+  Once its travel exceeds 20 px horizontally and more than vertically it is a page swipe: that
+  move, the later moves and the release return `RET_STOP`, so the tile or slider under the finger
+  gets no move and no release (no click, no hold) and stock's handlers see nothing. A press that goes vertical first is
+  left to stock whole. The Wi-Fi / Bluetooth long-press timer is stopped when the swipe is
+  recognised.
+- **Stock's drag:** the dialog's handlers (`0x47514c` down, `0x4755e8` move, `0x4752f0` up) act only
+  for a press at y >= 280 (`0x118`, `pressdown_y`) moving up: the down only cancels the 10 ms slide
+  timer (`0x47535c`), the move drags the dialog (states 1, 2), the up starts the slide timer only in
+  states 1 and 2. A press above 280 never puts stock there, so swallowing its moves and release
+  leaves nothing to settle. A press at y >= 280 (the lower brightness card, the dots, the grabber)
+  is stock's drag-to-close zone and is not a page swipe. The tiles' long press, `RET_STOP` clicks and
+  the swipe gates below are unchanged.
+- **Fallback:** the kill switch (`/mnt/mmc/m1plus-off`), a missing widget (the dots, the card's
+  widgets) or a refused bind (the card's, the swipe's): no swipe is bound, the dots stay hidden and page 2 is never shown, the dialog is exactly the stock one. The
+  down is bound last, so a half-bound swipe cannot start. A swipe that ends in an abort (the dialog
+  goes to the background) is read like a release.
+- **Known limitation:** a swipe's pressed tile never gets its release, so it keeps its pressed
+  state until the next press; the tiles have no pressed look.
 
 ## Swipe gates and the window stack
 

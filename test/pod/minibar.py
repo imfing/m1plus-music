@@ -502,11 +502,11 @@ def run(ctx):
     m = BM(); m.status = 2; m.track(); m.start(); m.first()
     m.timers = []; m.calls = []
     m.fire(EVT_BG)
-    expect(('timer_remove', 0x777) in m.calls, 'to-background removes the timer')
-    r = m.tick()
-    expect(r == 0 and m.names() == [], 'a tick that still arrives ends itself and does nothing')
+    expect(('timer_remove', 0x777) not in m.calls, 'to-background leaves the timer to its next tick')
+    m.calls = []; r = m.tick()
+    expect(r == 0 and [n for n in m.names() if n != 'window_manager_get_top_window'] == [], 'a tick with no dialog in front ends itself and does nothing')
     m.calls = []; m.fire(EVT_BG)
-    expect(m.names().count('timer_remove') <= 1, 'a second to-background has nothing to remove')
+    expect('timer_remove' not in m.names(), 'a second to-background removes nothing')
     m.timers = []; m.calls = []
     m.fire(EVT_FG)
     expect(m.timers == [(PSYMS['mb_first'], O['MB_FIRST_MS'])], 'to-foreground arms the short one-shot again')
@@ -527,6 +527,15 @@ def run(ctx):
     nt = len(m.timers)
     m.call(PSYMS['mb_on_background'], a0=WIN, a1=0); a = m.names(); m.call(PSYMS['mb_on_foreground'], a0=WIN, a1=0)
     expect(a + m.names() == [] and len(m.timers) == nt, 'and the window events of a finished page are ignored')
+    # a dialog in front (the Control Center): the bar keeps its tick, so a skip there shows at once; a window over it ends the tick
+    m = BM(); m.status = 2; m.track(); m.start(); m.first()
+    dlg = 0x25000000; m.types[dlg] = 'dialog'; m.top_window = dlg; m.fire(EVT_BG)
+    m.track('Another'); m.calls = []
+    expect(m.tick() == O['RET_REPEAT'] and (m.widgets['pod_mb_title'], 'Another') in m.texts_set(), f'under a dialog: the tick goes on and the next track shows ({m.texts_set()})')
+    m.timers = []; m.fire(EVT_FG)
+    expect(not m.timers, 'the dialog closed: the running tick is kept, no second one-shot')
+    m.top_window = 0x25000100; m.types[0x25000100] = 'window'; m.fire(EVT_BG)
+    expect(m.tick() == 0, 'a page over the menu: the tick ends')
     # a tick returns RET_REPEAT while it lives
     m = BM(); m.track(); m.start(); m.first()
     expect(m.tick() == O['RET_REPEAT'], 'the tick answers RET_REPEAT')

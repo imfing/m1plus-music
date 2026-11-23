@@ -168,6 +168,9 @@ void *pc_strip(void *queue, int *idx);
 void *pg_episode_queue(const char *root, const pc_show_t *s, const pc_ep_t *eps, int neps, int at, int *idx);
 int podcasts_open(void); /* the shows on the card and their episodes */
 int podcasts_go(void);
+int podcasts_goto(
+    const char *path,
+    int notes); /* the Control Center's shortcuts: the Shows level (path 0), the Show page of the episode path, or (notes) its own page */
 void pg_relight(void); /* the open cover-tinted pages tint again (see ab_relight, patch/entries.h) */
 int pg_has_tone(void); /* the Show page shows a cover's tone now (not the shows list or an episode) */
 

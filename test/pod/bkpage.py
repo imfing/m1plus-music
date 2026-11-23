@@ -677,6 +677,22 @@ def lifecycle_tests(ctx):
     expect(m.names().count('timer_remove') == 3 and m.names().count('free') >= 3, f'destroy: the three timers go, the memory is freed ({m.names()})')
 
 
+def shortcut_tests(ctx):
+    """The Control Center's Audiobooks shortcuts (patch/bkpage.c books_goto): the Library, the Book level of the playing part's book, a page already in the stack."""
+    expect = ctx.expect
+    def go(m, path): return m.call(PSYMS['books_goto'], a0=m.cstr(path) if path else 0, count=200000000)
+    lib_h = pod_books.library(5)['h']
+    m = machine()
+    expect(go(m, None) == 0 and ('window_open', 'm1plus_books') in m.calls and m.props.get((m.sv, 'virtual_h')) == lib_h, 'Audiobooks disc: the page opens at the Library')
+    m = machine(); go(m, part_path('Alpha', 'Part 2.mp3'))
+    expect(m.props.get((m.sv, 'virtual_h')) == header(m, 'Alpha', 3)['h'], 'the book disc: the Book level of the playing part\'s book')
+    m = opened(None); hs = m.cover('playing_page', 'm1plus_queue'); open_book(m, 'Beta'); m.calls = []
+    expect(go(m, part_path('Alpha', 'Part 2.mp3')) == 0 and [c for c in m.calls if c[0] == 'window_close'] == [('window_close', hs[1]), ('window_close', hs[0])] and ('window_open', 'm1plus_books') not in m.calls
+           and m.props.get((m.sv, 'virtual_h')) == header(m, 'Alpha', 3)['h'], 'a page below Now Playing and the Queue, on another book: both are closed (top first) and the page shows this book')
+    m = machine(); go(m, part_path('Nope', 'x.mp3'))
+    expect(m.props.get((m.sv, 'virtual_h')) == lib_h, 'a book that is not on the card leaves the Library')
+
+
 def art_key(d): return album_key('\x01audiobooks/', d)
 def art_path(d): return art_file(art_key(d))
 
@@ -847,7 +863,7 @@ def width_tests(ctx):
     expect(not over, f'every text fits its place in the 13 languages: {over}')
 
 
-SECTIONS = [open_tests, library_tests, shelf_tests, seeall_tests, book_tests, play_tests, guard_tests, speed_tests, key_tests, lifecycle_tests, art_tests, asset_tests, width_tests]
+SECTIONS = [open_tests, library_tests, shelf_tests, seeall_tests, book_tests, play_tests, guard_tests, speed_tests, key_tests, lifecycle_tests, shortcut_tests, art_tests, asset_tests, width_tests]
 
 
 def run(ctx):

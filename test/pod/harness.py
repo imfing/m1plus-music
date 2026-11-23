@@ -387,6 +387,13 @@ class Machine:
     def cstr(self, s):
         a = self.alloc(len(s.encode()) + 1); self.u.mem_write(a, s.encode() + b'\0'); return a
 
+    def cover(self, *names):
+        """The page window under opened windows named names (bottom first) in the window manager's stack (patch/common.c m1_uncover); their handles, in that order."""
+        hs = [0x23000000 + 0x100 * i for i in range(len(names))]
+        self.children[self.wm] = [self.window] + hs
+        for h in hs: self.types[h] = 'window'
+        return hs
+
     def read_cstr(self, a):
         out = b''
         while a:
@@ -1449,7 +1456,9 @@ class Machine:
         # (doubles in $f12 / $f14, the result in $f0: the payload is -mfp64, so the machine needs FR set, fpu())
         elif name == 'set_equalizer_value':
             self.calls.append(('set_equalizer_value', a0, self.u.mem_read(pod.DATA['EQ_FLAG'][0], 1)[0]))
-        elif name in ('ferror', 'window_manager_get_top_window'):   # (no window in front: the rows that open a shared page ask, patch/pulldown.c pd_open_page)
+        elif name == 'window_manager_get_top_window':   # (no window in front unless a test sets top_window: the rows that open a shared page ask, patch/pulldown.c pd_open_page)
+            ret = getattr(self, 'top_window', 0)
+        elif name == 'ferror':
             ret = 0
         elif name in ('show_sysbar_face', 'window_manager_check_and_layout', 'window_manager_paint', 'toolSetBackLight'):   # patch/battery.c bp_light_on / bp_light_off: recorded with the argument
             self.calls.append((name, a0))

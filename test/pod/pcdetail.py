@@ -682,11 +682,29 @@ def goto_tests(ctx):
     def go(m): return m.call(PSYMS['podcasts_go'], count=80000000)
     m = PCS.machine(up=False)
     expect(go(m) == 0 and ('window_open', 'm1plus_podcasts') in m.calls and PCP.title_text(m) == 'Podcasts', 'Go to Podcasts: the page opens at the Shows level')
-    m = PCS.machine(); m.windows = {'playing_page'}; m.calls = []
-    expect(go(m) == 0 and ('navigator_close', 'playing_page') in m.calls and ('window_open', 'm1plus_podcasts') not in m.calls and ('navigator_close', 'm1plus_podcasts') not in m.calls,
-           f'a Podcasts page below Now Playing: Now Playing is closed, the page is kept as it was ({m.calls})')
+    m = PCS.machine(); hs = m.cover('playing_page', 'm1plus_queue'); m.calls = []
+    expect(go(m) == 0 and [c for c in m.calls if c[0] == 'window_close'] == [('window_close', hs[1]), ('window_close', hs[0])] and ('window_open', 'm1plus_podcasts') not in m.calls,
+           f'a Podcasts page below Now Playing and the Queue over it: both are closed (top first), the page is kept as it was ({m.calls})')
     m = PCS.machine(); m.calls = []
     expect(go(m) == 0 and not [c for c in m.calls if c[0] in ('navigator_close', 'window_open')], 'a Podcasts page in front already: nothing is closed or opened')
 
 
-SECTIONS = [parser_tests, notes_file_tests, page_tests, pill_tests, show_row_tests, tint_page_tests, local_tests, preview_tests, width_tests, screen_off_tests, goto_tests]
+def shortcut_tests(ctx):
+    """The Control Center's Podcasts shortcuts (patch/podcasts.c podcasts_goto): the Shows level, the Show page of the playing episode, the episode's own page; a page already in the stack is used."""
+    expect = ctx.expect
+    path = f'{RP}/{DEEP}/e0.mp3'
+    def go(m, p, notes=0): return m.call(PSYMS['podcasts_goto'], a0=m.cstr(p) if p else 0, a1=notes, count=80000000)
+    m = PCS.machine(up=False)
+    expect(go(m, None) == 0 and ('window_open', 'm1plus_podcasts') in m.calls and PCP.title_text(m) == 'Podcasts', 'Podcasts disc: the page opens at the Shows level')
+    m = PCS.machine(up=False)
+    expect(go(m, path) == 0 and PCP.title_text(m).startswith(PCS.SHOW_TITLE[:6]), f'the show disc: the Show page of the playing episode ({PCP.title_text(m)!r})')
+    h_show = m.props[(m.sv, 'virtual_h')]
+    m = PCS.machine(up=False); go(m, path, 1)
+    expect(m.props[(m.sv, 'virtual_h')] != h_show, 'the notes disc: the episode\'s own page')
+    m = PCS.machine(); hs = m.cover('playing_page'); PCS.open_show(m); h0 = m.props[(m.sv, 'virtual_h')]; m.calls = []
+    expect(go(m, path, 1) == 0 and ('window_close', hs[0]) in m.calls and ('window_open', 'm1plus_podcasts') not in m.calls and m.props[(m.sv, 'virtual_h')] != h0, 'a Podcasts page below Now Playing, in a show: Now Playing is closed and the page goes to the episode')
+    m = PCS.machine(up=False); go(m, f'{RP}/Gone/x.mp3')
+    expect(PCP.title_text(m) == 'Podcasts', 'a show that is not on the card leaves the Shows level')
+
+
+SECTIONS = [parser_tests, notes_file_tests, page_tests, pill_tests, show_row_tests, tint_page_tests, local_tests, preview_tests, width_tests, screen_off_tests, goto_tests, shortcut_tests]

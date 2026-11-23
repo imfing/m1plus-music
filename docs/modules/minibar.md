@@ -81,9 +81,12 @@ Played shelf as a dark band, since the Home instance hides the navbar but not th
 the widgets, registers its events and arms a one-shot `MB_FIRST_MS` (120 ms). It shows and decodes
 nothing, so the menu's first paint at boot is unchanged.
 
-- **Timer:** `mb_first` arms the repeating `mb_tick` (500 ms lit, 1000 ms dark). It runs only while
-  the window is in front: `EVT_WINDOW_TO_BG` removes it, `EVT_WINDOW_TO_FG` re-arms the one-shot,
-  `EVT_DESTROY` removes it and frees the cover.
+- **Timer:** `mb_first` arms the repeating `mb_tick` (500 ms lit, 1000 ms dark). It runs while the
+  window is in front or only a dialog covers it (`mb_live`: the Control Center shows the bar under
+  its panel, so a skip from page 2 shows at once). After `EVT_WINDOW_TO_BG` the next tick ends it
+  when the top window is not a dialog (read on the tick: the event can come before the new window
+  is the top one); `EVT_WINDOW_TO_FG` re-arms the one-shot if none runs, `EVT_DESTROY` removes it and
+  frees the cover.
 - **`mb_work`:** if nothing is queued (`cc_playing()` is NULL) the bar is hidden and the list is
   430 px again. Otherwise the bar shows and the list is 366 px. Labels and cover are redone only
   when the track changes (a hash of path, title, file name and cue start). The play / pause glyph

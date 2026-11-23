@@ -728,10 +728,10 @@ def accent_image_tests(ctx):
     m.call(PSYMS['m1plus_image_add'], a0=1, a1=0, a2=b, count=40000)
     m.call(PSYMS['m1plus_image_add'], a0=1, a1=m.cstr('pod_check'), a2=0, count=40000)
     expect('bitmap_lock_buffer_for_write' not in [c[0] for c in m.calls], 'a bitmap that is not 32 bit, a null name and a null bitmap are left alone')
-    # the cost of the hook on a name it does not tint (3750: the Equalizer's tall card pieces pod_cdl_* joined the lists, ~3500; the AirPlay and DLNA lit tiles ~3650; the lit Sleep Timer tile ~3700)
+    # the cost of the hook on a name it does not tint (4250: page 2's seven lit discs ~4100; the Equalizer's tall card pieces pod_cdl_* joined the lists, ~3500; the AirPlay and DLNA lit tiles ~3650; the lit Sleep Timer tile ~3700)
     m = LM(acc=b'1\n').count()
     n0 = m.icount; m.image('np_play', 2, 2, [(0, 0, 0, 0)] * 4); c = m.icount - n0
-    expect(c < 3750, f'an image the accent does not tint costs {c} instructions through the hook (the name lists)')
+    expect(c < 4250, f'an image the accent does not tint costs {c} instructions through the hook (the name lists)')
     print(f'  hook on an untinted image: {c} instructions')
 
 
@@ -1028,7 +1028,7 @@ def tinted_tests(ctx):
     expect(c_dark < 1200 and c_other < 1000, f'a style call costs {c_dark} instructions on a dark colour and {c_other} on any other with Tinted on (stock\'s own part included)')
     print(f'  style call, Tinted: {c_dark} (dark neutral), {c_other} (other)')
     c = LM(b'1\n', acc=b'4\n').count(); c.image('np_play', 4, 4, dark); c_miss = c.icount
-    expect(c_miss < 4000, f'an image that is not a surface costs {c_miss} instructions through the hook with Tinted on')
+    expect(c_miss < 4500, f'an image that is not a surface costs {c_miss} instructions through the hook with Tinted on')
     print(f'  image hook, Tinted: {c_miss} on a non-surface name, {costs.get("pod_cd_mid", 0):,} to tint pod_cd_mid')
     # the setting: applies at once, persists, the kill switch
     m = LM(acc=b'4\n', hook=True)

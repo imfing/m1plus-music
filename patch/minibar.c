@@ -11,7 +11,7 @@
  *            card's EVT_AFTER_PAINT, and arms a one-shot MB_FIRST_MS later (the menu's first paint does nothing extra).
  *            Any widget missing, any registration or the timer failing: nothing is shown or moved, the menu is as it was.
  *   timer    mb_first (the one-shot) starts the MB_TICK_MS repeating mb_tick; both call mb_work. Only while the window is in
- *            front: EVT_WINDOW_TO_BG removes the timer, EVT_WINDOW_TO_FG arms the one-shot again, EVT_DESTROY removes it and
+ *            front or only a dialog covers it (mb_live: the Control Center's skip shows at once): after EVT_WINDOW_TO_BG the next tick ends the timer when a window covers it, EVT_WINDOW_TO_FG arms the one-shot again, EVT_DESTROY removes it and
  *            frees the cover bitmap. mb_work is the only code that changes anything:
  *              nothing queued (cc_playing NULL)  the bar is hidden (hidden and insensitive) and the list's spacer row is
  *                                                hidden again: the menu is as it was.
@@ -494,7 +494,12 @@ int mb_radio_art(mb_art_t *a, void *win, int *pending) {
     const rd_list_t *l = rd_list();
     int at = rd_at();
     char fav[RD_FAV_MAX + 1], path[48], url[64];
-    unsigned *px, g[MB_GLYPH * MB_GLYPH], i, x, y, o;
+    unsigned *px, g[36 * 36], i, x, y, o,
+        S = MBS(a),
+        gs = S == MB_ART ? MB_GLYPH
+             : S * 96 / 264 > 36
+                 ? 36
+                 : S * 96 / 264; /* a bigger cover (Control Center's 96 px) keeps Radio Now Playing's 96 of 264 */
     int ok = 0, st;
     px = mb_art_begin(a);
     if (!px) return 0;
@@ -505,27 +510,27 @@ int mb_radio_art(mb_art_t *a, void *win, int *pending) {
         st = rd_logo_file(rd_logo_hash(fav), path, sizeof path);
         if (st == 1 && pc_cover_ok(path)) {
             snprintf(url, sizeof url, "file://%s", path);
-            ok = cc_decode(win, url, 1, MB_ART, 1, px);
+            ok = cc_decode(win, url, 1, S, 1, px);
         } else if (st == 0) {
             if (pending) *pending = 1;
             if (m1_screen_lit() && !rd_logo_running()) rd_logo_start(fav);
         }
     }
     if (!ok) {
-        for (i = 0; i < MB_ART * MB_ART; ++i) px[i] = MB_RADIO_CARD;
-        memset(g, 0, sizeof g);
-        if (cc_decode(win, "pod_ic_rd_art", 0, MB_GLYPH, 1,
+        for (i = 0; i < S * S; ++i) px[i] = MB_RADIO_CARD;
+        memset(g, 0, gs * gs * sizeof *g);
+        if (cc_decode(win, "pod_ic_rd_art", 0, gs, 1,
                       g)) { /* decoded over black: per channel the lighter of the glyph and the card */
-            o = (MB_ART - MB_GLYPH) / 2;
-            for (y = 0; y < MB_GLYPH; ++y)
-                for (x = 0; x < MB_GLYPH; ++x) {
-                    unsigned ap = g[y * MB_GLYPH + x], b = px[(o + y) * MB_ART + o + x], c = 0xff000000u, k;
+            o = (S - gs) / 2;
+            for (y = 0; y < gs; ++y)
+                for (x = 0; x < gs; ++x) {
+                    unsigned ap = g[y * gs + x], b = px[(o + y) * S + o + x], c = 0xff000000u, k;
                     for (k = 0; k < 24; k += 8) c |= ((ap >> k & 255) > (b >> k & 255) ? ap : b) & (255u << k);
-                    px[(o + y) * MB_ART + o + x] = c;
+                    px[(o + y) * S + o + x] = c;
                 }
         } else {
-            for (i = 0; i < MB_ART * MB_ART; ++i) px[i] = MB_GREY;
-            cc_decode(win, "p_default", 0, MB_ART, 1, px);
+            for (i = 0; i < S * S; ++i) px[i] = MB_GREY;
+            cc_decode(win, "p_default", 0, S, 1, px);
         }
     }
     mb_art_end(a, px);
@@ -633,10 +638,21 @@ static void mb_work(void) {
 /* ---------------------------------------------------------------------------
  * The timer and the window's events
  */
+/* A dialog in front of the menu (the Control Center, a sheet): the menu still shows round it and under its translucent panel, so out of front the bar keeps its tick while the top window is a
+ * dialog (a track skipped from the Control Center's page 2 shows at once). Read on the tick, not at EVT_WINDOW_TO_BG, which can arrive before the new window is the top one. */
+static int mb_live(void) {
+    void *wm, *top;
+    if (!mb.win) return 0;
+    if (mb.fg) return 1;
+    wm = window_manager();
+    top = wm ? window_manager_get_top_window(wm) : (void *)0;
+    return top && top != mb.win && m1_is_type(top, "dialog");
+}
+
 static int mb_tick(const void *timer) {
     unsigned want;
     (void)timer;
-    if (!mb.win || !mb.fg) {
+    if (!mb_live()) {
         mb.timer = 0;
         return RET_OK;
     }
@@ -653,7 +669,7 @@ static int mb_tick(const void *timer) {
 static int mb_first(const void *timer) {
     (void)timer;
     mb.timer = 0; /* this one ends with the return */
-    if (!mb.win || !mb.fg) return RET_OK;
+    if (!mb_live()) return RET_OK;
     mb.timer = timer_add(mb_tick, (void *)0, MB_TICK_MS);
     mb.interval = MB_TICK_MS;
     if (mb.timer) {
@@ -683,8 +699,7 @@ static int mb_on_destroy(void *ctx, void *e) {
 static int mb_on_background(void *ctx, void *e) {
     (void)e;
     if (!mb.win || ctx != mb.win) return RET_OK;
-    mb.fg = 0;
-    mb_unarm();
+    mb.fg = 0; /* the timer ends at its next tick unless a dialog is what covers the menu (mb_live) */
     return RET_OK;
 }
 

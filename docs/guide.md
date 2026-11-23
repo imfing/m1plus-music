@@ -87,6 +87,14 @@ Tap the mini player's cover on Home, or tap the Now Playing button in a page's t
 - Swipe across the cover to see lyrics, then swipe again for song details.
 - Tap **…** for more options, including display modes and the Sleep Timer (a moon icon appears in the status bar while a timer is running, when the bar has room for it).
 
+### Control Center
+
+Pull down from the top edge, then swipe left for a second page with the playing track, its controls and a few shortcuts. Play Mode cycles List play, Repeat one, Shuffle and Repeat all; Up Next, Go to Artist and Go to Album open those pages; the Equalizer and Sleep cards show their state and open their pages.
+
+While a podcast episode or an audiobook plays, the page shows its own controls instead: back 15 seconds, play / pause and forward 30 seconds on the card; a Speed card (tap to step through the speeds; it stays on the pull-down) in place of the Equalizer; and four shortcuts for Podcasts (or Audiobooks), Up Next, the episode's notes (or the book's page) and the next episode or part. The lit buttons take the accent colour.
+
+While a radio station is up, the page shows the station's logo, name and line with one Stop / Play button and a LIVE divider. The four buttons open My Stations, Recently Played, Station Info and Search; the Station card adds or removes the station in My Stations; Sleep stays, and there is no Equalizer card.
+
 ### Change the volume
 
 Tap the status bar at the top of any page to open **Volume**. Use the **−** and **+** buttons, drag

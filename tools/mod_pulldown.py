@@ -14,6 +14,8 @@ dropdown_dialog.bin) carries its own copy of the status bar (view_sysbar) and th
                  16 px #B0B0B0 (disabled #555555; stock 18 / 16 px white)
   img_*, label_* the tile images 56 x 56 (stock 50) round the stock centres, rows 100 apart as stock: x 21 / 95 / 169 / 243, y 11 / 111; no card under them, the discs sit on the panel
   pod_grabber    an image (drop_grabber: Now Playing's 36 x 5 pill, white at alpha 110, baked) at (142, 328) in the dialog, insensitive
+  pod_cc2        page 2 (the pull-down has two pages, a left / right swipe swaps them whole): a view at (10, 44) 300 x 274 holding the cards pod_cc2_top (Now Playing), _left (four discs), _right1 (Equalizer),
+                 _right2 (Sleep) (flat #1C1C1E, radius 26 / 22) with their widgets (CC2_LABELS, CC2_IMAGES, CC2_DISCS, CC2_TEXTS), and pod_cc2_dot0 / _dot1: 6 px page dots at (151 / 163, 319), images drop_dot_on / drop_dot_off; all hidden and insensitive, patch/pulldown.c shows them
   the dialog     background black at 92 % (PANEL_ALPHA; stock #141414); the status bar copy stays opaque black
 
 pgbar_battery shows no number there (show_text false, stock), the slider and the icons have no text.
@@ -159,7 +161,23 @@ def add_own(root):
             w.set('visible', 'false'); w.set('sensitive', 'false'); view.children.append(w)
 
 
-NEW = (GRAB[0],)   # the widgets this step adds besides the tiles of ours
+CC2 = ('pod_cc2', 10, 44, 300, 274)    # page 2's container (name, x, y, w, h in the dialog): the area from the status bar to the brightness card's bottom; hidden and insensitive, patch/pulldown.c shows it
+CC2_CARDS = (('pod_cc2_top', 0, 0, 300, 120, 26), ('pod_cc2_left', 0, 129, 144, 145, 26),
+             ('pod_cc2_right1', 152, 129, 148, 68, 22), ('pod_cc2_right2', 152, 206, 148, 68, 22))   # the placeholder cards (name, x, y, w, h, radius) in the container's coordinates
+DOTS = (('pod_cc2_dot0', 153, 320, 4, 4), ('pod_cc2_dot1', 163, 320, 4, 4))   # the page dots (name, x, y, w, h) side by side over the grabber, Now Playing's size and pitch (4 px, 10 apart; centres 155 and 165); drop_dot_on / drop_dot_off, hidden and insensitive
+CC2_LABELS = (('pod_cc2_title', 120, 11, 134, 22, 18, '#FFFFFF', 'left'), ('pod_cc2_artist', 120, 33, 134, 20, 15, '#8A8A8E', 'left'),
+              ('pod_cc2_elapsed', 120, 99, 80, 16, 12, '#8A8A8E', 'left'), ('pod_cc2_remain', 207, 99, 80, 16, 12, '#8A8A8E', 'right'))   # the Now Playing card's labels (name, x, y, w, h, px, colour, align) in the container: title and artist clip at 134 px, the times 12 px (y centres 66, 87, 151 of the dialog)
+CC2_IMAGES = (('pod_cc2_fav', 256, 10, 32, 32, 'drop_cc_fav'), ('pod_cc2_prev', 138, 47, 44, 44, 'drop_cc_prev'), ('pod_cc2_play', 182, 47, 44, 44, 'drop_cc_play'),
+              ('pod_cc2_next', 226, 47, 44, 44, 'drop_cc_next'))   # the favourite disc (centre (282, 70) of the dialog) and the transport (centres x 170 / 214 / 258, 44 apart so the touch targets meet, y 113); baked images, clickable
+CC2_TOP = ('pod_cc2_top', 'button')   # the Now Playing card is a button (a tap opens Now Playing); its cover and progress bar are painted by patch/pulldown.c
+CC2_BUTTONS = ('pod_cc2_top', 'pod_cc2_right1', 'pod_cc2_right2')   # the cards that take a tap (buttons with the same look pressed); the left card is a plain view under its four discs
+CC2_DISCS = (('pod_cc2_playmode', 9, 138, 54, 'drop_cc_pm_order'), ('pod_cc2_upnext', 80, 138, 54, 'drop_cc_upnext'), ('pod_cc2_artistgo', 9, 210, 54, 'drop_cc_artist'),
+             ('pod_cc2_albumgo', 80, 210, 54, 'drop_cc_album'), ('pod_cc2_eqdisc', 164, 141, 44, 'drop_cc_eq'), ('pod_cc2_sleepdisc', 164, 218, 44, 'drop_cc_sleep'))   # the lower cards' discs (name, x, y, px, image) in the container: four 54 px discs centred at (46, 209) (117, 209) (46, 281) (117, 281) of the dialog (the first three clickable, the card's two are not: the card is the button), a 44 px disc 12 px in from each right card
+CC2_TEXTS = (('pod_cc2_eqtitle', 218, 142, 17, '#FFFFFF'), ('pod_cc2_eqsub', 218, 166, 14, '#8A8A8E'), ('pod_cc2_sleeptitle', 218, 219, 17, '#FFFFFF'), ('pod_cc2_sleepsub', 218, 243, 14, '#8A8A8E'))   # the right cards' two lines (name, x, y, px, colour), 74 px wide: the title centred 10 px above the card's middle, the sub line 12 below
+CC2_LIVE = (('pod_cc2_live_l', 120, 90, 54, 4, 'drop_cc_live_l'), ('pod_cc2_live_r', 234, 90, 54, 4, 'drop_cc_live_r'))   # radio's LIVE divider at the progress bar's place (Radio Now Playing's two fading capsules, name, x, y, w, h, image in the container): the bar's x 130 .. 297 of the dialog less the LIVE label's 44 px and an 8 px gap each side
+CC2_LIVE_TEXT = ('pod_cc2_live', 182, 84, 44, 16, 13)   # the LIVE label (name, x, y, w, h, px), white, centred on the bar's middle x 214; the three are hidden and insensitive until a station connects or plays
+CC2_TITLES = {'pod_cc2_eqtitle': 'Equalizer', 'pod_cc2_sleeptitle': 'Sleep'}   # their fixed words (tr_text keys); the sub lines are set by patch/pulldown.c
+NEW = (GRAB[0], CC2[0]) + tuple(c[0] for c in CC2_CARDS) + tuple(d[0] for d in CC2_DISCS) + tuple(t[0] for t in CC2_TEXTS) + tuple(l[0] for l in CC2_LABELS) + tuple(i[0] for i in CC2_IMAGES) + tuple(d[0] for d in DOTS) + tuple(l[0] for l in CC2_LIVE) + (CC2_LIVE_TEXT[0],)   # the widgets this step adds besides the tiles of ours
 
 
 def add_cards(root):
@@ -173,7 +191,51 @@ def add_cards(root):
     restyle_backlight(root)
     name, x, y, w, h, image = GRAB
     grab = Widget('image', x, y, w, h, [('name', name), ('draw_type', 'default'), ('image', image), ('sensitive', 'false')])
+    add_page2(root)   # (before the grabber: it stays the last child)
     root.children.append(grab)
+
+
+def add_page2(root):
+    """Control Center page 2: a container over x 10 .. 309, y 44 .. 317 holding placeholder cards, and the two page dots; all hidden and insensitive (the hook shows them on a swipe).
+    The status bar copy and the grabber stay on both pages. The dots are baked images: a 6 px round fill renders square on the device."""
+    from awtk_ui import Widget
+    name, x, y, w, h = CC2
+    box = Widget('view', x, y, w, h, [('name', name)])
+    for cname, cx, cy, cw, ch, r in CC2_CARDS:
+        top = cname in CC2_BUTTONS
+        card = Widget(CC2_TOP[1] if top else 'view', cx, cy, cw, ch, [('name', cname)] + ([('enable', 'true')] if top else []))
+        for st in STATES + (('pressed', 'over', 'selected') if top else ()):
+            card.set(f'style:{st}:bg_color', SURFACE_RGB); card.set(f'style:{st}:border_width', '0'); card.set(f'style:{st}:round_radius', str(r))
+            if top: card.set(f'style:{st}:text_color', '#FFFFFF')
+        box.children.append(card)
+    for lname, lx, ly, lw, lh, px, rgb, align in CC2_LABELS:
+        lab = Widget('hscroll_label', lx, ly, lw, lh, [('name', lname), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
+        for st in STATES:
+            lab.set(f'style:{st}:font_size', str(px)); lab.set(f'style:{st}:text_color', rgb); lab.set(f'style:{st}:text_align_h', align); lab.set(f'style:{st}:text_align_v', 'middle')
+        box.children.append(lab)
+    for dname, dx, dy, dpx, image in CC2_DISCS:
+        click = dname in ('pod_cc2_playmode', 'pod_cc2_upnext', 'pod_cc2_artistgo', 'pod_cc2_albumgo')
+        box.children.append(Widget('image', dx, dy, dpx, dpx, [('name', dname), ('draw_type', 'default'), ('image', image)] + ([('clickable', 'true')] if click else [('sensitive', 'false')])))
+    for tname, tx, ty, px, rgb in CC2_TEXTS:
+        lab = Widget('hscroll_label', tx, ty, 74, 22 if px == 17 else 18, [('name', tname), ('text', ''), ('only_parent_focus', 'true'), ('ellipses', 'true'), ('sensitive', 'false')])
+        if tname in CC2_TITLES: lab.props.append(pod_i18n.text_prop(CC2_TITLES[tname]))
+        for st in STATES:
+            lab.set(f'style:{st}:font_size', str(px)); lab.set(f'style:{st}:text_color', rgb); lab.set(f'style:{st}:text_align_h', 'left'); lab.set(f'style:{st}:text_align_v', 'middle')
+        box.children.append(lab)
+    for iname, ix, iy, iw, ih, image in CC2_IMAGES:
+        box.children.append(Widget('image', ix, iy, iw, ih, [('name', iname), ('draw_type', 'default'), ('image', image), ('clickable', 'true')]))
+    for lname, lx, ly, lw, lh, image in CC2_LIVE:
+        box.children.append(Widget('image', lx, ly, lw, lh, [('name', lname), ('draw_type', 'default'), ('image', image), ('sensitive', 'false'), ('visible', 'false')]))
+    tname, tx, ty, tw, th, tpx = CC2_LIVE_TEXT
+    lab = Widget('label', tx, ty, tw, th, [('name', tname), pod_i18n.text_prop('LIVE'), ('sensitive', 'false'), ('visible', 'false')])
+    for st in STATES:
+        lab.set(f'style:{st}:font_size', str(tpx)); lab.set(f'style:{st}:text_color', '#FFFFFF'); lab.set(f'style:{st}:text_align_h', 'center'); lab.set(f'style:{st}:text_align_v', 'middle')
+    box.children.append(lab)
+    root.children.append(box)
+    for dname, dx, dy, dw, dh in DOTS:
+        root.children.append(Widget('image', dx, dy, dw, dh, [('name', dname), ('draw_type', 'default'), ('image', 'drop_dot_off')]))
+    for n in (name,) + tuple(d[0] for d in DOTS):   # (the cards inside the container stay visible: the container is what is hidden)
+        root.find(n).set('visible', 'false'); root.find(n).set('sensitive', 'false')
 
 
 def restyle_backlight(root):

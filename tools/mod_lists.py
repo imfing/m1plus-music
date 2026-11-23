@@ -313,8 +313,8 @@ def edit_playmore(root, pal):
         awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_mode_icon'), ('draw_type', 'default'), ('image', 'pod_ic_mode'), ('sensitive', 'false')]),
         awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_mode_label'), ('style', 'srlabel_item_white_style')]),
         awtk_ui.Widget('image', 285, 14, 13, 22, [('name', 'pod_mode_chev'), ('draw_type', 'default'), ('image', 'right_arrow'), ('sensitive', 'false')])])
-    row('pod_lyr', [   # the Display Mode page's last row: the full-screen lyrics page (patch/idlelyrics.c); the glyph is the Lucide mic-vocal (the Artists row's image); the payload dims it and takes its touches away while the track has no lyrics
-        awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_lyr_icon'), ('draw_type', 'default'), ('image', 'pod_ic_artists'), ('sensitive', 'false')]),
+    row('pod_lyr', [   # the Display Mode page's last row: the full-screen lyrics page (patch/idlelyrics.c); the glyph is the Lucide mic-vocal (pod_ic_lyrics); the payload dims it and takes its touches away while the track has no lyrics
+        awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_lyr_icon'), ('draw_type', 'default'), ('image', 'pod_ic_lyrics'), ('sensitive', 'false')]),
         awtk_ui.Widget('hscroll_label', 48, 15, 200, 20, [('name', 'pod_lyr_label'), ('style', 'srlabel_item_white_style')])])
     row('pod_vu', [   # the Display Mode page, between Vinyl Mode and Lyrics Mode: the VU Meter page (patch/vupage.c); the glyph is the Lucide gauge
         awtk_ui.Widget('image', 14, 13, 24, 24, [('name', 'pod_vu_icon'), ('draw_type', 'default'), ('image', 'pod_ic_vu'), ('sensitive', 'false')]),

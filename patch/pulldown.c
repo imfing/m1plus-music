@@ -35,6 +35,13 @@
 #include "battery.h"
 #include "lineout.h"
 #include "shot.h"
+#include "covercache.h"
+#include "palette.h"
+#include "minibar.h"
+#include "radio.h"
+#include "sbapi.h"
+#include "peqlib.h"
+#include "podcasts.h"
 
 #define PD_N 16 /* every tile: the eight stock ones, then ours (ids '8', '9', 'a' ... 'f') */
 #define PD_STOCK 8 /* ids 0-7 are the stock tiles: the default shows them in this order */
@@ -56,6 +63,23 @@ enum {
 
 #define PD_ACT_WIFI (PD_N + 0u) /* long press on the Wi-Fi tile (img_wifiswitch) */
 #define PD_ACT_BT (PD_N + 1u) /* long press on the Bluetooth tile (img_btswitch) */
+#define PD_ACT_NP (PD_N + 2u) /* a tap on page 2's Now Playing card */
+#define PD_ACT_QUEUE (PD_N + 3u) /* page 2's Up Next, Go to Artist and Go to Album discs */
+#define PD_ACT_ARTIST (PD_N + 4u)
+#define PD_ACT_ALBUM (PD_N + 5u)
+#define PD_ACT_MODE (PD_N + 6u) /* Play Mode: not a page, the pull-down stays */
+#define PD_ACT_PODS \
+    (PD_N + \
+     7u) /* page 2's podcast and audiobook discs: the Podcasts and Audiobooks pages, the episode's notes (the show's or the book's page) */
+#define PD_ACT_BOOKS (PD_N + 8u)
+#define PD_ACT_NOTES (PD_N + 10u)
+#define PD_ACT_RD_NP \
+    (PD_N + \
+     20u) /* page 2 for a radio station: its card (Radio Now Playing), the four discs (My Stations, Recently Played, Station Info, Search) */
+#define PD_ACT_RD_MY (PD_N + 21u)
+#define PD_ACT_RD_RECENT (PD_N + 22u)
+#define PD_ACT_RD_INFO (PD_N + 23u)
+#define PD_ACT_RD_SEARCH (PD_N + 24u)
 
 /* Our tiles' widgets are in the asset (tools/mod_pulldown.py), hidden and insensitive, named pod_tile_* / pod_cap_*. */
 static const char *const PD_IMG[PD_N] = {"img_wifiswitch",   "img_btswitch",      "img_keylockswitch", "img_gainswitch",
@@ -457,8 +481,39 @@ static void pd_run(unsigned id) {
     } else if (id == PD_ACT_BT) {
         if (access(KILL_SD, F_OK) == 0 || !pd_open_page("m1plus_bluetooth_page", btpage_open, 1))
             navigator_to("systemset/bluetooth_page");
-    }
+    } else if (id == PD_ACT_NP)
+        m1_open_now_playing(); /* Radio's page while a station plays, else stock's player (the Home bar's card) */
+    else if (id == PD_ACT_QUEUE) {
+        if (queue_open() == -2)
+            navigator_to(
+                "dialog/playqueue_dialog"); /* Now Playing's queue button: our page, the stock drawer when its window will not open */
+    } else if (id == PD_ACT_ARTIST || id == PD_ACT_ALBUM) {
+        if (!pm_goto(id == PD_ACT_ARTIST)) pod_toast(TR("Not found")); /* the More sheet's Look up rows */
+    } else if (id == PD_ACT_PODS)
+        podcasts_goto((const char *)0, 0);
+    else if (id == PD_ACT_BOOKS)
+        books_goto((const char *)0);
+    else if (
+        id ==
+        PD_ACT_NOTES) { /* the playing episode's show and notes, the playing part's book (its page is its info too) */
+        void *t = cc_playing();
+        const char *path = t ? cc_str(t, REC_PATH) : "";
+        if (bk_is_path(path))
+            books_goto(path);
+        else if (pc_is_path(path))
+            podcasts_goto(path, id == PD_ACT_NOTES);
+        else
+            pod_toast(TR("Not found"));
+    } else if (id == PD_ACT_RD_NP)
+        rn_open(); /* the Home bar's card for a station (a stopped one too) */
+    else if (id == PD_ACT_RD_MY || id == PD_ACT_RD_RECENT || id == PD_ACT_RD_SEARCH)
+        radio_open_at(id == PD_ACT_RD_MY ? RD_AT_MY : id == PD_ACT_RD_RECENT ? RD_AT_RECENT : RD_AT_SEARCH);
+    else if (id == PD_ACT_RD_INFO && sinfo_open() != 0)
+        pod_toast(TR("Not found")); /* Radio Now Playing's sheet row */
 }
+
+static void cc2_stop(void);
+static void pd_slide_stop(void);
 
 /* The hook at on_wm_tsmove_fun's navigator_to("dialog/dropdown_dialog") (tools/pod.py PULLDOWN_DIALOG_SITE): the stock call, then, when the dialog was quit by one of our tiles (its result is
  * PD_QUIT, as for stock's tiles), the tile's action. Stock's own code that follows (the two flag tests) sees the result unchanged. */
@@ -467,6 +522,7 @@ int pd_open_dialog(const char *name) {
     unsigned act;
     ret = navigator_to(name);
     pd_hold_reset();
+    cc2_stop(); /* (the dialog's destroy has run it; this one only makes sure) */
     act = pd_pending;
     pd_pending = 0;
     if (ret == PD_QUIT && act) pd_run(act - 1);
@@ -650,6 +706,747 @@ static void pd_clock(void *dlg) {
     if (w) digit_clock_set_format(w, PD_CLOCK_12H);
 }
 
+/* ---- page 2's Now Playing card
+ *
+ * The card pod_cc2_top (a button, so a tap on it is an EVT_CLICK) holds, in the asset, the labels pod_cc2_title / _artist / _elapsed / _remain, the favourite disc pod_cc2_fav and the transport
+ * pod_cc2_prev / _play / _next (baked images, the play slot shows drop_cc_play or drop_cc_pause); the cover and the progress bar are painted in the card's EVT_AFTER_PAINT, cover first (the Home bar's
+ * mb_art_*: one 96 px bitmap with rounded corners, made once per track, never in paint). One 500 ms timer runs only while page 2 shows (pd_page_set) and ends with the dialog (EVT_DESTROY; pd_open_dialog
+ * makes sure). cc2_work is the only code that changes anything and looks at the player:
+ *   nothing queued       "Not Playing", no artist, a grey cover, the three transport buttons and the star greyed and insensitive, the bar empty, no times
+ *   a local track        title (else the file name) and artist; the cover (mb_art_cover on the track key); the star (checkFavExist, on a track change and after a tap); play / pause by mclGetPlayStatus;
+ *                        the bar and the times from get_playtimeandlength. A server track (sba_rec_track) has no star here: stock's star would write its stream record, whose address carries the login token,
+ *                        into the local favourites (Now Playing sends it to the server; this card leaves it)
+ *   a radio station      (mb_radio_active) the station and its line as the Home bar shows them, a grey cover, play / stop by the bar's rule (mb_radio_play_click), no skip, no star, no bar
+ * The buttons are the stock calls of the Home bar: playpause_quick_click, next_quick_click / prev_quick_click with a synthesized click event (stock ignores a click within a second of the last), the star's
+ * checkFavExist / deleteMusicFromFav / addMyFav (what Now Playing's star does for a local track). A tap on the card elsewhere quits the dialog (as a tile does) and pd_run opens Now Playing. */
+#define CC2_COVER 96
+#define CC2_COVER_R 8
+#define CC2_COVER_X 12 /* in the card: the dialog's (22, 56) less the card's (10, 44) */
+#define CC2_COVER_Y 12
+#define CC2_BAR_X 120 /* the bar (130, 134) .. (297, 138) of the dialog */
+#define CC2_BAR_Y 90
+#define CC2_BAR_W 168
+#define CC2_BAR_H 5
+#define CC2_TICK_MS 500
+#define CC2_GREY 0xff3c3a3au /* #3A3A3C: the placeholder cover (the favourite disc's grey) */
+#define CC2_TRACK 0xff4a4848u /* #48484A */
+#define CC2_FILL 0xfff2f2f2u /* #F2F2F2 */
+
+static struct {
+    void *dlg, *card, *title, *artist, *el, *rem, *fav, *prev, *play, *next;
+    void *pm, *up, *goart, *goalb, *eq, *eqdisc, *eqsub, *sl, *sldisc,
+        *slsub; /* the lower cards: the four discs, the Equalizer and the Sleep cards */
+    void *eqtitle; /* the Equalizer card's title: Speed for an episode or a book part */
+    unsigned eqhash, slhash, eqthash; /* the sub lines and the Equalizer title shown (hashes), 0 none yet */
+    int kind; /* what plays (mode 1): 0 music, 1 a podcast episode, 2 an audiobook part */
+    int lsig, ltick; /* the discs' look (-1 none yet); the ticks since the Equalizer's name was read */
+    unsigned timer;
+    mb_art_t art;
+    unsigned key; /* the track key the cover and the star were made for, 0 none */
+    unsigned thash, ahash; /* the title and artist shown (hashes), 0 none yet */
+    int mode; /* -1 nothing shown yet, 0 not playing, 1 a local track, 2 a radio station */
+    int sig; /* the buttons' look: mode, playing, favourite, server (-1 none yet) */
+    int favd; /* the star: the playing track is a favourite */
+    int pos, len; /* the seconds shown; len 0: no bar, no times */
+    void *livel, *liver, *livetx; /* a station's LIVE divider (three widgets) */
+    unsigned rser,
+        rkey; /* the card's title shown (hash); the favourites serial and the station the Saved state was read for */
+    int live, saved, rpend; /* LIVE shown; the station is in My Stations; its logo is not cached yet */
+} cc2 __attribute__((section(".scratch")));
+
+static const unsigned char cc2_in8[8] = {
+    5, 3, 2, 1, 1, 0, 0, 0}; /* the cover's corner: the columns a row starts in from the left (radius 8) */
+static const unsigned char cc2_in2[2] = {1, 0}; /* the bar's (radius 2) */
+
+/* A rectangle with round corners: row i of the top r rows (and the same from the bottom) starts in[i] px in (a small round fill renders square on the device, so it is drawn by rows). */
+static void cc2_rrect(void *canvas, unsigned color, int x, int y, int w, int h, const unsigned char *in, int r) {
+    int i, d;
+    canvas_set_fill_color(canvas, color);
+    for (i = 0; i < h; i++) {
+        d = i < r ? in[i] : h - 1 - i < r ? in[h - 1 - i] : 0;
+        canvas_fill_rect(canvas, x + d, y + i, w - 2 * d, 1);
+    }
+}
+
+static int cc2_on_paint(void *ctx, void *e) {
+    void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
+    int fw;
+    (void)ctx;
+    if (!canvas || !cc2.dlg) return RET_OK;
+    if ((cc2.mode == 1 || cc2.mode == 2) && cc2.art.bmp)
+        mb_art_paint_at(&cc2.art, canvas, CC2_COVER_X, CC2_COVER_Y);
+    else
+        cc2_rrect(canvas, CC2_GREY, CC2_COVER_X, CC2_COVER_Y, CC2_COVER, CC2_COVER, cc2_in8, CC2_COVER_R);
+    if (cc2.mode == 2) return RET_OK; /* a station has LIVE in the bar's place */
+    cc2_rrect(canvas, CC2_TRACK, CC2_BAR_X, CC2_BAR_Y, CC2_BAR_W, CC2_BAR_H, cc2_in2, 2);
+    fw = cc2.len > 0 ? CC2_BAR_W * cc2.pos / cc2.len : 0;
+    if (fw >=
+        2 * CC2_BAR_H) /* the fill takes the accent, as Now Playing's progress fill does (the track stays neutral) */
+        cc2_rrect(canvas, pal_accent() ? pal_fill() : CC2_FILL, CC2_BAR_X, CC2_BAR_Y, fw, CC2_BAR_H, cc2_in2, 2);
+    return RET_OK;
+}
+
+static int cc2_server(void *rec) { return rec && sba_rec_track(*(int *)((char *)rec + REC_ID))[0] != 0; }
+
+/* A button's picture and whether it takes touches. */
+static void cc2_img(void *w, const char *image, int on) {
+    image_base_set_image(w, image);
+    widget_set_sensitive(w, on);
+    widget_invalidate_force(w, (void *)0);
+}
+
+/* The transport and the star for what plays. */
+static void cc2_look(int playing, int server) {
+    int sig = cc2.mode | playing << 2 | cc2.favd << 3 | server << 4 | cc2.kind << 5, skip = cc2.mode == 1;
+    if (sig == cc2.sig) return;
+    cc2.sig = sig;
+    m1_show(cc2.prev, cc2.mode != 2); /* a station has no skip: the play button alone, centred */
+    m1_show(cc2.next, cc2.mode != 2);
+    cc2_img(cc2.prev, cc2.kind ? "drop_cc_back15" : skip ? "drop_cc_prev" : "drop_cc_prev_off", skip);
+    cc2_img(cc2.next, cc2.kind ? "drop_cc_fwd30" : skip ? "drop_cc_next" : "drop_cc_next_off", skip);
+    if (cc2.mode == 0)
+        cc2_img(cc2.play, "drop_cc_play_off", 0);
+    else
+        cc2_img(cc2.play, playing ? (cc2.mode == 2 ? "drop_cc_stop" : "drop_cc_pause") : "drop_cc_play", 1);
+    m1_show(
+        cc2.fav,
+        cc2.mode != 2 &&
+            !(cc2.mode == 1 &&
+              (server ||
+               cc2.kind))); /* a station, a server track, an episode and a part have no star here: it is not shown (hidden is also insensitive) */
+    if (cc2.mode == 1 && !server && !cc2.kind)
+        cc2_img(cc2.fav, cc2.favd ? "drop_cc_fav_on" : "drop_cc_fav", 1);
+    else
+        cc2_img(cc2.fav, "drop_cc_fav_off", 0);
+}
+
+static void cc2_text(void *w, unsigned *hash, const char *s) {
+    unsigned h = cc_fnv(FNV_SEED, s) | 1;
+    if (h == *hash) return;
+    *hash = h;
+    widget_set_text_utf8(w, s);
+}
+
+/* An episode's or a part's speed (playspeed_mode 0..3, the one Now Playing's speed button shows); 0 for anything else. */
+static const char *const cc2_speed_name[PC_SPEEDS] = {"1\xc3\x97", "1.25\xc3\x97", "1.5\xc3\x97", "2\xc3\x97"};
+
+static int cc2_speed(void) {
+    int mode = *(volatile int *)PLAYSPEED_MODE;
+    return cc2.kind && mode > 0 && mode < PC_SPEEDS ? mode : 0;
+}
+
+/* The lower half's pictures for an episode or a part (sig: the look cc2_lower computed): Podcasts (or Audiobooks), Up Next, its notes (info), the next episode (part); the Equalizer card is
+ * Speed, lit when it is not 1x. The Sleep card is the music's. The texts are cc2_lower's. */
+static void cc2_spoken_lower(int sig, int sl) {
+    if (sig == cc2.lsig) return;
+    cc2.lsig = sig;
+    cc2_text(cc2.eqtitle, &cc2.eqthash, TR("Speed"));
+    cc2_img(cc2.pm, cc2.kind == 1 ? "drop_cc_podhome" : "drop_cc_bkhome", 1);
+    cc2_img(
+        cc2.up, "drop_cc_queue",
+        1); /* the queue as Now Playing shows it for an episode or a part: a plain list (np_playlist), not music's list-music */
+    cc2_img(cc2.goart, "drop_cc_notes", 1);
+    cc2_img(cc2.goalb, "drop_cc_nextep", 1);
+    cc2_img(cc2.eqdisc, cc2_speed() ? "drop_cc_speed_on" : "drop_cc_speed",
+            0); /* the card is the button: its disc takes no touches */
+    cc2_img(cc2.sldisc, sl ? "drop_cc_sleep_on" : "drop_cc_sleep", 0);
+}
+
+/* ---- a station on page 2 (docs/modules/pulldown.md "Radio"): the four discs are My Stations, Recently Played, Station Info and Search, the Equalizer card becomes the Station card (Saved: in My Stations),
+ * LIVE stands in the bar's place while it connects or plays; the cover is the station's logo (mb_radio_art, the Home bar's). */
+static void cc2_radio_discs(void) {
+    cc2_img(cc2.pm, "drop_cc_rd_my", 1);
+    cc2_img(cc2.up, "drop_cc_rd_recent", 1);
+    cc2_img(cc2.goart, "drop_cc_rd_info", 1);
+    cc2_img(cc2.goalb, "drop_cc_rd_search", 1);
+    cc2_img(cc2.eqdisc, cc2.saved ? "drop_cc_station_on" : "drop_cc_station", 0);
+}
+
+/* The logo: made when the station changes, and again once a logo that was not cached yet is (the worker is started as the Home bar does). */
+static void cc2_radio_cover(const rd_list_t *l, int at) {
+    char fav[RD_FAV_MAX + 1], path[48];
+    unsigned key = cc_fnv(FNV_SEED, at < l->n ? rd_url(l, at) : "") | 1;
+    int redo = key != cc2.key;
+    if (!redo && cc2.rpend && at < l->n) {
+        rd_favicon(rd_info(l, at), fav, sizeof fav);
+        if (fav[0]) {
+            redo = rd_logo_file(rd_logo_hash(fav), path, sizeof path) != 0;
+            if (!redo && !rd_logo_running()) rd_logo_start(fav);
+        }
+    }
+    if (!redo) return;
+    cc2.key = key;
+    if (mb_radio_art(&cc2.art, cc2.dlg, &cc2.rpend)) widget_invalidate_force(cc2.card, (void *)0);
+}
+
+/* Saved: read from the card file when the station or the favourites change (rd_serial), not at every tick. */
+static void cc2_radio_saved(const rd_list_t *l, int at) {
+    unsigned key = cc_fnv(FNV_SEED, at < l->n ? rd_url(l, at) : "") | 1, ser = rd_serial();
+    if (key == cc2.rkey && ser == cc2.rser) return;
+    cc2.rkey = key, cc2.rser = ser;
+    cc2.saved = at < l->n && rd_fav_has(rd_url(l, at));
+}
+
+/* LIVE (the two capsules and the word) shows while the station connects or plays, as Radio Now Playing's divider. */
+static void cc2_live(int on) {
+    if (on == cc2.live) return;
+    cc2.live = on;
+    m1_show(cc2.livel, on);
+    m1_show(cc2.liver, on);
+    m1_show(cc2.livetx, on);
+    widget_invalidate_force(cc2.card, (void *)0);
+}
+
+/* The Station card: Add to / Remove from My Stations as Radio Now Playing's sheet does, the same toasts; the pull-down stays. */
+static void cc2_radio_toggle(void) {
+    const rd_list_t *l = rd_list();
+    int r;
+    if (!l->n || rd_at() >= l->n) return;
+    r = rd_fav_toggle(l, rd_at());
+    pod_toast(TR(r < 0 ? "Could not save My Stations" : r ? "Added to My Stations" : "Removed from My Stations"));
+    cc2.rkey = 0; /* read again */
+}
+
+/* The lower cards for what plays and the settings: the four discs (live for a queued track, grey and insensitive otherwise; the Play Mode disc shows the mode, lit unless it is List play) and the Equalizer
+ * and Sleep cards (always live: lit while the switch is on / a timer runs, the sub line the preset or Off / the minutes left). The images are set when the look changes, the texts when they differ. */
+static void cc2_lower(void) {
+    static const char *const pm_img[4] = {"drop_cc_pm_order", "drop_cc_pm_one", "drop_cc_pm_shuffle", "drop_cc_pm_all"};
+    char buf[64], line[40];
+    int on = cc2.mode == 1, pm = pod_play_mode() & 3, eq = *(volatile unsigned char *)EQ_FLAG != 0, rd = cc2.mode == 2;
+    int sl = *(volatile unsigned char *)SLEEP_FLAG != 0 && *(volatile int *)SLEEP_TIME > 0, spd = cc2_speed(),
+        sig = on | pm << 1 | eq << 3 | sl << 4 | rd << 5 | (rd && cc2.saved) << 6 | cc2.kind << 7 | spd << 9;
+    if (cc2.kind)
+        cc2_spoken_lower(sig, sl);
+    else if (sig != cc2.lsig) {
+        cc2.lsig = sig;
+        cc2_text(cc2.eqtitle, &cc2.eqthash, rd ? TR("Station") : TR("Equalizer"));
+        if (rd)
+            cc2_radio_discs();
+        else {
+            cc2_img(cc2.pm, on ? pm_img[pm] : "drop_cc_pm_off", on);
+            cc2_img(cc2.up, on ? "drop_cc_upnext" : "drop_cc_upnext_off", on);
+            cc2_img(cc2.goart, on ? "drop_cc_artist" : "drop_cc_artist_off", on);
+            cc2_img(cc2.goalb, on ? "drop_cc_album" : "drop_cc_album_off", on);
+            cc2_img(cc2.eqdisc, eq ? "drop_cc_eq_on" : "drop_cc_eq", 0);
+        }
+        cc2_img(cc2.sldisc, sl ? "drop_cc_sleep_on" : "drop_cc_sleep", 0);
+        cc2.ltick = 0;
+    }
+    if (cc2.kind)
+        cc2_text(cc2.eqsub, &cc2.eqhash, cc2_speed_name[spd]);
+    else if (rd)
+        cc2_text(cc2.eqsub, &cc2.eqhash, TR(cc2.saved ? "Saved" : "Not Saved"));
+    else if (!eq)
+        cc2_text(cc2.eqsub, &cc2.eqhash, TR("Off"));
+    else if (cc2.ltick++ % 4 == 0 || !cc2.eqhash) { /* the state file is read now and then, not at every tick */
+        cc2_text(cc2.eqsub, &cc2.eqhash, peq_playing_name(buf, sizeof buf) ? TR(buf) : TR("Off"));
+    }
+    if (sl)
+        pc_left_text(line, sizeof line, (unsigned)*(volatile int *)SLEEP_TIME), cc2_text(cc2.slsub, &cc2.slhash, line);
+    else
+        cc2_text(cc2.slsub, &cc2.slhash, TR("Off"));
+}
+
+/* The bar and the times: pos / len seconds, len 0 for none. */
+static void cc2_time(int pos, int len) {
+    char a[16], b[16];
+    if (len > 0 && pos > len) pos = len;
+    if (pos < 0) pos = 0;
+    if (len <= 0) pos = len = 0;
+    if (pos == cc2.pos && len == cc2.len) return;
+    cc2.pos = pos, cc2.len = len;
+    a[0] = b[0] = 0;
+    if (len > 0) {
+        snprintf(a, sizeof a, "%d:%02d", pos / 60, pos % 60);
+        snprintf(b, sizeof b, "-%d:%02d", (len - pos) / 60, (len - pos) % 60);
+    }
+    widget_set_text_utf8(cc2.el, a);
+    widget_set_text_utf8(cc2.rem, b);
+    widget_invalidate_force(cc2.card, (void *)0);
+}
+
+static void cc2_work(void) {
+    void *t = (void *)0;
+    char line[200];
+    int mode, playing, server = 0, pos = 0, len = 0, kind = 0;
+    unsigned key = 0;
+    if (!cc2.dlg) return;
+    if (mb_radio_active())
+        mode = 2;
+    else
+        mode = (t = cc_playing()) ? 1 : 0;
+    if (mode == 1) { /* an episode or a book part: Now Playing's spoken-audio controls (docs/modules/nowplaying.md) */
+        const char *path = cc_str(t, REC_PATH);
+        kind = pc_is_path(path) ? 1 : bk_is_path(path) ? 2 : 0;
+    }
+    if (kind != cc2.kind) cc2.lsig = -1;
+    if (mode != cc2.mode || kind != cc2.kind) {
+        cc2.mode = mode;
+        cc2.kind = kind;
+        cc2.sig = -1;
+        cc2.key = cc2.rkey = cc2.rpend = 0;
+        widget_invalidate_force(cc2.card, (void *)0); /* the cover place: the picture or the grey */
+    }
+    if (mode == 1) {
+        const char *title = cc_str(t, REC_TITLE), *sub = cc_str(t, REC_ARTIST);
+        if (!*title) title = cc_str(t, REC_NAME);
+        if (kind == 2 && *sub) { /* a book: its title, then the part's name */
+            const char *book = sub;
+            sub = title;
+            title = book;
+        }
+        cc2_text(cc2.title, &cc2.thash, title);
+        cc2_text(cc2.artist, &cc2.ahash, sub);
+        key = mb_track_key(t);
+        server = cc2_server(t);
+        if (key != cc2.key) {
+            cc2.key = key;
+            cc2.favd = !server && checkFavExist(t) != 0;
+            if (mb_art_cover(&cc2.art, cc2.dlg, t, 1)) widget_invalidate_force(cc2.card, (void *)0);
+        } else if (cc2.art.settle > 0 && mb_art_settle(&cc2.art, cc2.dlg, t))
+            widget_invalidate_force(cc2.card, (void *)0);
+        playing = mclGetPlayStatus() == MB_PLAYING;
+        if (get_playtimeandlength(&pos, &len) != 1) len = 0;
+    } else if (mode == 2) {
+        const rd_list_t *l = rd_list();
+        int at = rd_at();
+        const char *name = l->n && at < l->n ? rd_name(l, at) : "";
+        mb_radio_line(line, sizeof line);
+        cc2_text(cc2.title, &cc2.thash, rd_meta_head(name[0] ? name : TR("Radio")));
+        cc2_text(cc2.artist, &cc2.ahash, line);
+        cc2.favd = 0;
+        playing = mb_radio_playing();
+        cc2_radio_cover(l, at);
+        cc2_radio_saved(l, at);
+    } else {
+        cc2_text(cc2.title, &cc2.thash, TR("Not Playing"));
+        cc2_text(cc2.artist, &cc2.ahash, "");
+        cc2.favd = 0;
+        playing = 0;
+    }
+    cc2_live(mode == 2 && rd_running() && rd_state() != RD_PAUSED);
+    cc2_look(playing, server);
+    cc2_lower();
+    cc2_time(pos, len);
+}
+
+static int cc2_tick(const void *timer) {
+    (void)timer;
+    if (!cc2.dlg) return RET_OK;
+    cc2_work();
+    return RET_REPEAT;
+}
+
+/* Page 2 shows: the card at once, then every tick. A refused timer leaves the card as it was made. */
+static void cc2_arm(void) {
+    if (!cc2.dlg) return;
+    cc2_work();
+    if (!cc2.timer) cc2.timer = timer_add(cc2_tick, (void *)0, CC2_TICK_MS);
+}
+
+static void cc2_stop(void) {
+    pd_slide_stop();
+    if (!cc2.dlg) return;
+    m1_timer_stop(&cc2.timer);
+    mb_art_free(&cc2.art);
+    memset(&cc2, 0, sizeof cc2);
+}
+
+static int cc2_on_destroy(void *ctx, void *e) {
+    (void)e;
+    if (ctx == cc2.dlg) cc2_stop(); /* an earlier dialog's end leaves the new one alone */
+    return RET_OK;
+}
+
+static int cc2_on_play(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (!cc2.dlg) return RET_OK;
+    if (cc2.mode == 2)
+        mb_radio_play_click();
+    else if (cc2.mode == 1)
+        playpause_quick_click();
+    cc2_work();
+    return RET_OK;
+}
+
+/* next_quick_click / prev_quick_click read the event's time: the click's own event is what the stock handlers pass (a synthesized one when there is none). */
+static int cc2_skip(int next, void *e) {
+    unsigned ev[4];
+    if (!cc2.dlg || cc2.mode != 1) return RET_OK;
+    if (cc2.kind) { /* an episode or a part: back 15 s, forward 30 s (Now Playing's buttons) */
+        np_spoken_seek(next);
+        cc2_work();
+        return RET_OK;
+    }
+    if (!e) {
+        memset(ev, 0, sizeof ev);
+        ev[2] = time_now_ms();
+        e = ev;
+    }
+    if (next)
+        next_quick_click(e, 0);
+    else
+        prev_quick_click(e, 0);
+    cc2_work();
+    return RET_OK;
+}
+
+/* The next episode or part in the queue, as the next key does (stock's next_quick_click with a synthesized click). */
+static void cc2_next_track(void) {
+    unsigned ev[4];
+    memset(ev, 0, sizeof ev);
+    ev[2] = time_now_ms();
+    next_quick_click(ev, 0);
+    cc2_work();
+}
+
+static int cc2_on_next(void *ctx, void *e) {
+    (void)ctx;
+    return cc2_skip(1, e);
+}
+
+static int cc2_on_prev(void *ctx, void *e) {
+    (void)ctx;
+    return cc2_skip(0, e);
+}
+
+static int cc2_on_fav(void *ctx, void *e) {
+    void *t = cc_playing();
+    (void)ctx;
+    (void)e;
+    if (!cc2.dlg || cc2.mode != 1 || !t || cc2_server(t)) return RET_OK;
+    if (checkFavExist(t))
+        deleteMusicFromFav(t);
+    else
+        addMyFav(t);
+    cc2.favd = checkFavExist(t) != 0;
+    cc2_work();
+    return RET_OK;
+}
+
+/* Quit the dialog with the action act (pd_open_dialog runs it once the dialog is gone); the dialog stays as it was when it will not quit. */
+static void cc2_leave(unsigned act) {
+    if (!cc2.dlg || pd_blocked()) return;
+    pd_pending = act + 1;
+    if (dialog_quit(cc2.dlg, PD_QUIT) != RET_OK) pd_pending = 0;
+}
+
+static int cc2_on_card(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    cc2_leave(cc2.mode == 2 ? PD_ACT_RD_NP : PD_ACT_NP);
+    return RET_OK;
+}
+
+/* The lower cards' taps (ctx: the action). Play Mode stays on the pull-down: the next of Now Playing's four modes (List play, Repeat one, Shuffle, Repeat all; pod_set_mode is what the Play settings page does
+ * and keeps the Shuffle flag, docs/modules/shuffle.md). The discs of the queued track and the two cards quit the dialog; pd_run opens the page. */
+static int cc2_on_act(void *ctx, void *e) {
+    unsigned act = (unsigned)(long)ctx;
+    (void)e;
+    if (!cc2.dlg) return RET_OK;
+    if (cc2.kind &&
+        act !=
+            PD_SLEEP) { /* an episode or a part: the four discs are Podcasts / Audiobooks, Up Next, its notes and the next one; the Equalizer card is Speed */
+        if (cc2.mode != 1) return RET_OK;
+        if (act == PD_EQ) {
+            np_speed_step();
+            cc2.lsig = -1;
+            cc2_work();
+        } else if (act == PD_ACT_ALBUM)
+            cc2_next_track();
+        else
+            cc2_leave(act == PD_ACT_MODE    ? (cc2.kind == 1 ? PD_ACT_PODS : PD_ACT_BOOKS)
+                      : act == PD_ACT_QUEUE ? act
+                                            : PD_ACT_NOTES);
+        return RET_OK;
+    }
+    if (cc2.mode == 2 && act != PD_SLEEP) { /* a station: the same slots, other places */
+        if (act == PD_EQ)
+            cc2_radio_toggle(), cc2_work();
+        else
+            cc2_leave(act == PD_ACT_MODE     ? PD_ACT_RD_MY
+                      : act == PD_ACT_QUEUE  ? PD_ACT_RD_RECENT
+                      : act == PD_ACT_ARTIST ? PD_ACT_RD_INFO
+                                             : PD_ACT_RD_SEARCH);
+        return RET_OK;
+    }
+    if (act == PD_ACT_MODE) {
+        if (cc2.mode != 1) return RET_OK;
+        pod_set_mode((pod_play_mode() + 1) & 3);
+        cc2.lsig = -1;
+        cc2_work();
+    } else if (act == PD_SLEEP || act == PD_EQ || cc2.mode == 1)
+        cc2_leave(act);
+    return RET_OK;
+}
+
+/* The card's lookups and handlers; 0 when anything is missing or refused (page 2 is then never shown). The timer starts when page 2 does. */
+static int cc2_start(void *dlg) {
+    memset(&cc2, 0, sizeof cc2);
+    cc2.card = widget_lookup(dlg, "pod_cc2_top", 1);
+    cc2.title = widget_lookup(dlg, "pod_cc2_title", 1);
+    cc2.artist = widget_lookup(dlg, "pod_cc2_artist", 1);
+    cc2.el = widget_lookup(dlg, "pod_cc2_elapsed", 1);
+    cc2.rem = widget_lookup(dlg, "pod_cc2_remain", 1);
+    cc2.fav = widget_lookup(dlg, "pod_cc2_fav", 1);
+    cc2.prev = widget_lookup(dlg, "pod_cc2_prev", 1);
+    cc2.play = widget_lookup(dlg, "pod_cc2_play", 1);
+    cc2.next = widget_lookup(dlg, "pod_cc2_next", 1);
+    cc2.pm = widget_lookup(dlg, "pod_cc2_playmode", 1);
+    cc2.up = widget_lookup(dlg, "pod_cc2_upnext", 1);
+    cc2.goart = widget_lookup(dlg, "pod_cc2_artistgo", 1);
+    cc2.goalb = widget_lookup(dlg, "pod_cc2_albumgo", 1);
+    cc2.eq = widget_lookup(dlg, "pod_cc2_right1", 1);
+    cc2.eqdisc = widget_lookup(dlg, "pod_cc2_eqdisc", 1);
+    cc2.eqtitle = widget_lookup(dlg, "pod_cc2_eqtitle", 1);
+    cc2.eqsub = widget_lookup(dlg, "pod_cc2_eqsub", 1);
+    cc2.sl = widget_lookup(dlg, "pod_cc2_right2", 1);
+    cc2.sldisc = widget_lookup(dlg, "pod_cc2_sleepdisc", 1);
+    cc2.slsub = widget_lookup(dlg, "pod_cc2_sleepsub", 1);
+    cc2.livel = widget_lookup(dlg, "pod_cc2_live_l", 1);
+    cc2.liver = widget_lookup(dlg, "pod_cc2_live_r", 1);
+    cc2.livetx = widget_lookup(dlg, "pod_cc2_live", 1);
+    if (cc2.pm && cc2.up && cc2.goart && cc2.goalb && cc2.eq && cc2.eqdisc && cc2.eqsub && cc2.sl && cc2.sldisc &&
+        cc2.slsub && cc2.eqtitle && cc2.livel && cc2.liver && cc2.livetx && cc2.card && cc2.title && cc2.artist &&
+        cc2.el && cc2.rem && cc2.fav && cc2.prev && cc2.play && cc2.next &&
+        widget_on(dlg, EVT_DESTROY, cc2_on_destroy, dlg) &&
+        widget_on(cc2.card, EVT_AFTER_PAINT, cc2_on_paint, (void *)0) &&
+        widget_on(cc2.card, EVT_CLICK, cc2_on_card, (void *)0) &&
+        widget_on(cc2.fav, EVT_CLICK, cc2_on_fav, (void *)0) &&
+        widget_on(cc2.prev, EVT_CLICK, cc2_on_prev, (void *)0) &&
+        widget_on(cc2.play, EVT_CLICK, cc2_on_play, (void *)0) &&
+        widget_on(cc2.next, EVT_CLICK, cc2_on_next, (void *)0) &&
+        widget_on(cc2.pm, EVT_CLICK, cc2_on_act, (void *)(long)PD_ACT_MODE) &&
+        widget_on(cc2.up, EVT_CLICK, cc2_on_act, (void *)(long)PD_ACT_QUEUE) &&
+        widget_on(cc2.goart, EVT_CLICK, cc2_on_act, (void *)(long)PD_ACT_ARTIST) &&
+        widget_on(cc2.goalb, EVT_CLICK, cc2_on_act, (void *)(long)PD_ACT_ALBUM) &&
+        widget_on(cc2.eq, EVT_CLICK, cc2_on_act, (void *)(long)PD_EQ) &&
+        widget_on(cc2.sl, EVT_CLICK, cc2_on_act, (void *)(long)PD_SLEEP)) {
+        mb_art_size(&cc2.art, CC2_COVER, CC2_COVER_R);
+        cc2.dlg = dlg;
+        cc2.mode = cc2.sig = cc2.lsig = -1;
+        return 1;
+    }
+    memset(&cc2, 0, sizeof cc2); /* (a handler that was registered finds no dialog of ours any more) */
+    return 0;
+}
+
+/* ---- the two pages
+ *
+ * The pull-down has two pages side by side; a left / right swipe slides between them (the pages follow the finger, then ease to the page a flick or the nearer half picks). Page 1 is the dialog as stock and the tiles' hook leave it (view_switchs: the tiles and their captions; view_backlight: the
+ * brightness card); page 2 is the asset's container pod_cc2 (hidden and insensitive there) with its dots pod_cc2_dot0 / _dot1. The status bar copy and the grabber belong to both. A slide only moves
+ * those three containers by one offset (page 2 PD_PAGE_W right of page 1) and hides the page entirely off the dialog (m1_show: hidden is also insensitive), so what the hook set inside view_switchs (the
+ * tiles shown, their places, the Control Labels) comes back exactly as it was. The dialog is built
+ * afresh at each open: always page 1 (the dots show the page).
+ *
+ * The gesture is read on the dialog's "before children" pointer events (EVT_POINTER_*_BEFORE, dispatched ahead of the children and of the dialog's own listeners; RET_STOP ends the dispatch). A press
+ * above PD_SWIPE_YMAX is watched: once it moved PD_SWIPE_PX horizontally and more than vertically it is a page swipe, and from then on its moves and its release are swallowed, so the tile or the slider
+ * under the finger never gets them (no click, no hold) and stock's own handlers never see them. A vertical-dominant press is left to stock whole. Stock's
+ * handlers (dialog_dropdown_dialog_init binds 0xff: 0x47514c, 0x101: 0x4755e8, 0x103: 0x4752f0): the down only cancels the 10 ms slide timer; the move drags the dialog (state 1, 2) only for a press that
+ * began at y >= 0x118 (280) and moved up, and the up starts the slide timer only in states 1 and 2: a press above PD_SWIPE_YMAX = 280 never gets stock into them, so swallowing its moves and its release leaves
+ * stock with nothing to settle. A press at or below 280 (the brightness card's lower part, the grabber, the dots) is stock's drag-to-close zone and is not watched. The Wi-Fi / Bluetooth long press timer is
+ * stopped when the swipe is recognised (the tile does not see the move that decided it). Fails soft: any lookup or bind that fails leaves the dialog as it was (the dots stay hidden, page 2 never shows). */
+#define PD_SWIPE_PX 20 /* the horizontal travel that makes a page swipe */
+#define PD_SWIPE_YMAX 280 /* a press from here down is stock's drag-to-close zone (0x118, stock's move handler) */
+#define PD_PAGE_W 320 /* a page's travel: the screen's width (page 2 sits this far right of page 1) */
+#define PD_SLIDE_MS \
+    300 /* a whole page's slide after the release; a shorter way takes its share, at least PD_SLIDE_MIN_MS */
+#define PD_SLIDE_MIN_MS 120
+#define PD_FLICK 300 /* px/s: a release this fast turns the page its way, whatever the travel */
+#define PD_FLICK_STALE_MS 100 /* a finger that stood this long before the release has no speed */
+static struct {
+    void *pg[3], *dot[2]; /* view_switchs and view_backlight (page 1), pod_cc2 (page 2); the dots */
+    int px[3], py[3]; /* the three containers' places in the asset */
+    int page; /* 0 = tiles, 1 = page 2: the page shown, or the one a slide goes to */
+    int mode; /* 0 not watched, 1 undecided, 2 page swipe (swallowed), 3 vertical (stock's) */
+    int x0, y0, x; /* the press and the latest finger x */
+    int off, off0,
+        vis; /* page 1's offset (0 page 1 in place, -PD_PAGE_W page 2 in place), the offset at the press; the pages shown (bit 0 page 1, bit 1 page 2) */
+    int vx, lx; /* the finger's speed (px/s) and its last x */
+    unsigned lt; /* that move's time (time_now_ms) */
+    int from, to; /* the slide's offsets */
+    unsigned t0, dur, anim; /* its start, length (ms), frame timer (0 none) */
+} pd_pg __attribute__((section(".scratch")));
+
+/* Both pages at page 1's offset `off` (page 2 PD_PAGE_W to its right); a page entirely off the dialog is hidden (m1_show: and insensitive). */
+static void pd_slide_place(int off) {
+    int vis = (off > -PD_PAGE_W ? 1 : 0) | (off < 0 ? 2 : 0);
+    unsigned i;
+    for (i = 0; i < 3; i++) widget_move(pd_pg.pg[i], pd_pg.px[i] + off + (i == 2 ? PD_PAGE_W : 0), pd_pg.py[i]);
+    if (vis != pd_pg.vis) {
+        m1_show(pd_pg.pg[0], vis & 1);
+        m1_show(pd_pg.pg[1], vis & 1);
+        m1_show(pd_pg.pg[2], (vis & 2) != 0);
+        pd_pg.vis = vis;
+    }
+    pd_pg.off = off;
+}
+
+static void pd_dots(int page) {
+    unsigned i;
+    for (i = 0; i < 2; i++) {
+        image_base_set_image(pd_pg.dot[i], (int)i == page ? "drop_dot_on" : "drop_dot_off");
+        widget_invalidate_force(pd_pg.dot[i], (void *)0);
+    }
+}
+
+/* The slide has landed on `page`: the pages in place, the other one hidden, the dots, page 2's timer. */
+static void pd_page_set(int page) {
+    m1_timer_stop(&pd_pg.anim);
+    pd_slide_place(page ? -PD_PAGE_W : 0);
+    pd_dots(page);
+    pd_pg.page = page;
+    if (page)
+        cc2_arm();
+    else
+        m1_timer_stop(&cc2.timer); /* the card keeps its picture; the timer runs on page 2 only */
+}
+
+/* Ease-out cubic: the share (of 1024) of the way done after el of dur ms. */
+static int pd_ease(unsigned el, unsigned dur) {
+    int r = el >= dur ? 0 : (int)((dur - el) * 1024 / dur);
+    return 1024 - r * r / 1024 * r / 1024;
+}
+
+static int pd_slide_frame(const void *timer) {
+    unsigned el;
+    (void)timer;
+    if (!pd_pg.anim || !cc2.dlg) return RET_OK;
+    el = time_now_ms() - pd_pg.t0;
+    if (el >= pd_pg.dur) {
+        pd_pg.anim = 0; /* RET_OK ends this timer */
+        pd_page_set(pd_pg.page);
+        return RET_OK;
+    }
+    pd_slide_place(pd_pg.from + (pd_pg.to - pd_pg.from) * pd_ease(el, pd_pg.dur) / 1024);
+    return RET_REPEAT;
+}
+
+/* The finger left (or the gesture was aborted, vx 0): a flick turns the page its way, else the nearer page wins. The dots show the page at once; the pages slide there, or land at once when no frame
+ * timer is had or they are there. */
+static void pd_slide_release(int vx) {
+    int page = vx < -PD_FLICK  ? 1
+               : vx > PD_FLICK ? 0
+                               : pd_pg.off < -PD_PAGE_W / 2,
+        to = page ? -PD_PAGE_W : 0, d = to - pd_pg.off;
+    unsigned dur;
+    if (d < 0) d = -d;
+    dur = (unsigned)(PD_SLIDE_MS * d / PD_PAGE_W);
+    if (dur < PD_SLIDE_MIN_MS) dur = PD_SLIDE_MIN_MS;
+    pd_pg.page = page;
+    pd_dots(page);
+    m1_timer_stop(&pd_pg.anim);
+    if (d && (pd_pg.anim = timer_add(pd_slide_frame, (void *)0, NP_FRAME_MS)) != 0) {
+        pd_pg.from = pd_pg.off;
+        pd_pg.to = to;
+        pd_pg.t0 = time_now_ms();
+        pd_pg.dur = dur;
+        return;
+    }
+    pd_page_set(page);
+}
+
+/* The dialog is going (cc2_stop): no frame after it. */
+static void pd_slide_stop(void) { m1_timer_stop(&pd_pg.anim); }
+
+/* A move of a page swipe: the pages follow the finger, a third as far past either end; the speed is the mean of the last two moves'. */
+static void pd_slide_drag(void) {
+    unsigned t = time_now_ms(), dt = t - pd_pg.lt;
+    int off = pd_pg.off0 + pd_pg.x - pd_pg.x0;
+    if (dt) pd_pg.vx = (pd_pg.vx + (pd_pg.x - pd_pg.lx) * 1000 / (int)dt) / 2;
+    pd_pg.lx = pd_pg.x;
+    pd_pg.lt = t;
+    if (off > 0)
+        off /= 3;
+    else if (off < -PD_PAGE_W)
+        off = -PD_PAGE_W + (off + PD_PAGE_W) / 3;
+    pd_slide_place(off);
+}
+
+static void pd_swipe_begin(void) {
+    pd_pg.mode = 2;
+    pd_pg.off0 = pd_pg.off;
+    pd_pg.vx = 0;
+    m1_timer_stop(&pd_hold.timer); /* the tile under the finger will not see this move */
+    pd_hold.down = 0;
+    if (!cc2.timer) cc2_arm(); /* page 2 comes into view: its card up to date */
+}
+
+static int pd_on_swipe(void *ctx, void *e) {
+    int type = e ? *(int *)e : 0, dx, dy;
+    (void)ctx;
+    if (type == EVT_POINTER_DOWN_BEFORE) {
+        pd_pg.mode = 0;
+        if (!e || *(int *)((char *)e + PE_Y) >= PD_SWIPE_YMAX) return RET_OK;
+        pd_pg.x0 = pd_pg.x = *(int *)((char *)e + PE_X);
+        pd_pg.y0 = *(int *)((char *)e + PE_Y);
+        pd_pg.lx = pd_pg.x0; /* the speed's first sample */
+        pd_pg.lt = time_now_ms();
+        if (pd_pg
+                .anim) { /* a press on sliding pages catches them where they are: it is a swipe from the start, and no tile under it sees it */
+            m1_timer_stop(&pd_pg.anim);
+            pd_swipe_begin();
+            return RET_STOP;
+        }
+        pd_pg.mode = 1;
+    } else if (type == EVT_POINTER_MOVE_BEFORE) {
+        if (!e || pd_pg.mode == 0 || pd_pg.mode == 3) return RET_OK;
+        pd_pg.x = *(int *)((char *)e + PE_X);
+        if (pd_pg.mode == 1) {
+            dx = pd_pg.x - pd_pg.x0;
+            dy = *(int *)((char *)e + PE_Y) - pd_pg.y0;
+            if (dx < 0) dx = -dx;
+            if (dy < 0) dy = -dy;
+            if (dx > PD_SWIPE_PX && dx > dy) {
+                pd_swipe_begin();
+            } else if (dy > PD_SWIPE_PX && dy >= dx) {
+                pd_pg.mode = 3;
+                return RET_OK;
+            } else
+                return RET_OK;
+        }
+        pd_slide_drag();
+        return RET_STOP;
+    } else if (type == EVT_POINTER_UP_BEFORE || type == EVT_POINTER_ABORT) {
+        int swipe = pd_pg.mode == 2;
+        pd_pg.mode = 0;
+        if (!swipe) return RET_OK;
+        pd_slide_release(type == EVT_POINTER_ABORT || time_now_ms() - pd_pg.lt > PD_FLICK_STALE_MS ? 0 : pd_pg.vx);
+        return type == EVT_POINTER_ABORT ? RET_OK : RET_STOP;
+    }
+    return RET_OK;
+}
+
+/* The dialog's init, kill switch off: look up page 2 and bind the swipe, then show the dots (page 1 current). */
+static void pd_pages_start(void *dlg) {
+    unsigned i;
+    memset(&pd_pg, 0, sizeof pd_pg);
+    pd_pg.pg[0] = widget_lookup(dlg, "view_switchs", 1);
+    pd_pg.pg[1] = widget_lookup(dlg, "view_backlight", 1);
+    pd_pg.pg[2] = widget_lookup(dlg, "pod_cc2", 1);
+    pd_pg.dot[0] = widget_lookup(dlg, "pod_cc2_dot0", 1);
+    pd_pg.dot[1] = widget_lookup(dlg, "pod_cc2_dot1", 1);
+    if (!pd_pg.pg[0] || !pd_pg.pg[1] || !pd_pg.pg[2] || !pd_pg.dot[0] || !pd_pg.dot[1] || !cc2_start(dlg)) return;
+    /* DOWN last: if an earlier listener cannot be bound, no gesture starts. */
+    if (!widget_on(dlg, EVT_POINTER_MOVE_BEFORE, pd_on_swipe, (void *)0) ||
+        !widget_on(dlg, EVT_POINTER_UP_BEFORE, pd_on_swipe, (void *)0) ||
+        !widget_on(dlg, EVT_POINTER_ABORT, pd_on_swipe, (void *)0) ||
+        !widget_on(dlg, EVT_POINTER_DOWN_BEFORE, pd_on_swipe, (void *)0)) {
+        cc2_stop(); /* page 2 never shows: the card's handlers find no dialog of ours */
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        pd_pg.px[i] = widget_get_prop_int(pd_pg.pg[i], "x", 0);
+        pd_pg.py[i] = widget_get_prop_int(pd_pg.pg[i], "y", 0);
+    }
+    pd_pg.vis = 1; /* page 1 shown, page 2 hidden: as the asset has them */
+    for (i = 0; i < 2; i++) {
+        image_base_set_image(pd_pg.dot[i], i == 0 ? "drop_dot_on" : "drop_dot_off");
+        m1_show(pd_pg.dot[i], 1);
+    }
+}
+
 /* The hook (tools/pod.py PULLDOWN_INIT): the flags, then stock, then ours. */
 int m1plus_pulldown_init(void *dlg, void *ctx) {
     int ret;
@@ -663,6 +1460,7 @@ int m1plus_pulldown_init(void *dlg, void *ctx) {
                 dlg); /* the Battery Percentage and the EQ mark of the bar copy at once, before the first paint */
             lo_bar_refresh(dlg);
             pd_clock(dlg);
+            pd_pages_start(dlg);
         }
     }
     return ret;

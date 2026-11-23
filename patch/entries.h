@@ -56,12 +56,20 @@ const char *np_book_cover(void);
 unsigned np_file_key(const char *path); /* a hash of the picture file, 0 if unreadable */
 void np_relight(void);
 void *np_window(void); /* Now Playing's window, 0 when it has none (patch/idlelyrics.c) */
+/* An episode's or a part's skip and speed buttons (the Control Center's page 2 uses them too): np_spoken_seek(fwd) seeks 30 s on / 15 s back as Now Playing's buttons do (1 when the player had a length to seek in); np_speed_step()
+ * saves and applies the show's or the book's next speed (the player restarts at its place as stock's Multiple Speed handlers do), 0 when it could not be saved (the toast is shown) */
+int np_spoken_seek(int fwd);
+int np_speed_step(void);
 unsigned np_idle_color(void); /* the window's colour (a color_t word) after the cover's tone is looked at again */
 
 /* patch/idlelyrics.c */
 int idlelyrics_open_idle(
     void); /* Now Playing's idle timer: 0 once the page is up (or already open), -1 when it could not open (nothing left of it) */
 int idlelyrics_up(void); /* 1 while the page is open */
+
+/* patch/playmore.c */
+int pm_goto(
+    int artist); /* the Control Center's Go to Artist (1) / Go to Album (0) for the playing track: 1 once a page was opened or the Subsonic miss was told, 0 nothing opened */
 
 /* patch/queuepage.c */
 int queue_open(void); /* our Queue page; 0 once it is open, else the stock drawer should open */
@@ -109,6 +117,9 @@ int ft_statx(int dirfd, const char *path, int flags, unsigned mask,
 /* patch/ipod.c */
 int ipod_open(void); /* the virtual iPod Classic, a fullscreen page with a touch click wheel */
 int books_open(void); /* patch/bkpage.c: the books in Audiobooks on the card and their parts */
+int books_goto(
+    const char *
+        path); /* the Control Center's shortcut: the Library (path 0) or the Book level of the book path is in; 0 once the page is up, -1 when it could not open */
 unsigned ip_fit(void *canvas, unsigned *s, int maxw); /* the wide string cut with an ellipsis to maxw px */
 
 /* patch/ipod_cf.c */

@@ -5493,13 +5493,40 @@ int podcasts_open(void) {
     return 0;
 }
 
-/* Go to Podcasts (Now Playing's More sheet, patch/playmore.c): a Podcasts page already in the stack (the episode was started from it) is shown as it was by closing the Now Playing over it (AWTK destroys
+/* Go to Podcasts (Now Playing's More sheet, patch/playmore.c): a Podcasts page already in the stack (the episode was started from it) is shown as it was by closing what covers it (Now Playing, the Queue over it: m1_uncover; AWTK destroys
  * a closed window later, so closing that page and opening a new one in the same call finds the old one still there: V2.1zCQUGAAAE did nothing); else the page opens at the Shows level. 0 once it is up or
  * uncovered, -1 if it could not open. */
 int podcasts_go(void) {
     if (pg.win) {
-        if (navigator_window_is_exist("playing_page")) navigator_close("playing_page");
+        m1_uncover(pg.win);
         return 0;
     }
     return podcasts_open();
+}
+
+/* The Control Center's Podcasts shortcuts (patch/pulldown.c, after the dialog has quit): the Podcasts page at its Shows level (path 0), at the Show page of the episode path belongs to (notes 0), or at that
+ * episode's own page (notes 1). A page already in the stack is used as podcasts_go does (what covers it is closed) and put back to the Shows level first, so it can be in any state. A show or
+ * an episode the page does not list (the folder is gone) leaves it at the level it reached. 0 once the page is up, -1 if it could not open. */
+int podcasts_goto(const char *path, int notes) {
+    int si, k;
+    unsigned key;
+    if (pg.win) {
+        m1_uncover(pg.win);
+        pg_load_shows(0);
+    } else if (podcasts_open() != 0 || !pg.win)
+        return -1;
+    key = path && pc_is_path(path) ? pc_show_of(path) : 0;
+    if (!key) return 0;
+    for (si = 0; si < pg.nshows && pg.shows[si].hash != key; ++si) {
+    }
+    if (si >= pg.nshows) return 0;
+    pg_open_show(si, 0);
+    if (!notes || pg.level != L_EPS) return 0;
+    key = pc_hash(path);
+    for (k = 0; k < pg.neps; ++k)
+        if (pg.eps[k].state == PC_LOCAL && pg.eps[k].hash == key) {
+            pg_det_open(k);
+            break;
+        }
+    return 0;
 }

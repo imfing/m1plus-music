@@ -83,6 +83,8 @@ unsigned m1_urlenc(char *out, unsigned cap, unsigned used, const char *s);
 int m1_free_kb(const char *path, unsigned *kb);
 /* The topmost opened window called name (the asset's root name, not the navigator_to path) brought to the front by stock's own restack, nothing closed. The window, or NULL (no such window, it is closing, or stock refused) with the stack as it was. */
 void *m1_restack_window(const char *name);
+/* The opened windows above win closed (top first, dialogs stay), so win is in front once they go. */
+void m1_uncover(void *win);
 /* A stock page: its opened window called window (the asset's root name; NULL: none) restacked as m1_restack_window does, else stock's navigator_to(path) (always, for NULL: a page whose init a restack would not redo). RET_OK, or navigator_to's result. */
 int m1_open_stock(const char *path, const char *window);
 int m1_is_type(void *w, const char *type); /* w is a widget of exactly this type name */

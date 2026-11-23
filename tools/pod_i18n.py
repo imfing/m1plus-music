@@ -2193,6 +2193,9 @@ TEXT.update([
 ])
 # Sleep Timer page (patch/sleeptimer.c, docs/modules/sleeptimer.md): the check rows' times and the note under them. (Off and the page title, stock's powerm_sleep, are above.) Machine translations, checked for fit only.
 TEXT.update([
+    _t('Sleep', '睡眠', '睡眠', 'スリープ', '수면', 'Veille', 'Ruhemodus', 'Reposo', 'Pausa', 'ตั้งเวลาปิด', 'Uśpienie', 'Сон', 'Сон'),   # the Control Center's page 2 Sleep card (patch/pulldown.c)
+    _t('Station', '电台', '電台', 'ステーション', '방송국', 'Station', 'Sender', 'Emisora', 'Stazione', 'สถานี', 'Stacja', 'Станция', 'Станція'),   # the Control Center's page 2 radio Station card (patch/pulldown.c)
+    _t('Not Saved', '未保存', '未儲存', '未保存', '저장 안 됨', 'Non enregistrée', 'Nicht gesichert', 'No guardada', 'Non salvata', 'ยังไม่บันทึก', 'Niezapisana', 'Не сохранена', 'Не збережена'),
     _t('15 minutes', '15 分钟', '15 分鐘', '15分', '15분', '15 min', '15 Min.', '15 min', '15 min', '15 นาที', '15 min', '15 мин', '15 хв'),
     _t('30 minutes', '30 分钟', '30 分鐘', '30分', '30분', '30 min', '30 Min.', '30 min', '30 min', '30 นาที', '30 min', '30 мин', '30 хв'),
     _t('45 minutes', '45 分钟', '45 分鐘', '45分', '45분', '45 min', '45 Min.', '45 min', '45 min', '45 นาที', '45 min', '45 мин', '45 хв'),

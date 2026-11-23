@@ -202,3 +202,6 @@ extern int rd_auto_change(void);
 extern int rd_notice(const char *path, int mode);
 
 extern int radio_open(void); /* patch/radiopage.c: Radio's stations page */
+enum { RD_AT_MY, RD_AT_RECENT, RD_AT_SEARCH };
+/* The Radio page opened on My Stations, Recently Played or the Radio Browser's search (Back returns to the root); a page already in the stack is uncovered and used from its root. 0 once it is up, -1 when it could not open. */
+extern int radio_open_at(int where);

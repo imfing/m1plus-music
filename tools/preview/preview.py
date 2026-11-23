@@ -26,9 +26,9 @@ from awtk_ui import RAW
 def run(script, *args):
     subprocess.run([sys.executable, '-I', os.path.join(HERE, script), *args], check=True, stdout=subprocess.DEVNULL)
 
-def controls(s, work, bg=(0, 0, 0, 255), ink=lambda c: c):
-    """The pull-down laid out from the tree's ui/dialog/dropdown_dialog.bin (tile images in a sample state,
-    captions word-wrapped with mod_pulldown's model), then the toggle and slider images at 1:1."""
+def controls(s, work, bg=(0, 0, 0, 255), ink=lambda c: c, page=0, kind=0):
+    """The pull-down (page 2: the cards instead of the tiles and the brightness card; the page dots on both) laid out from the tree's ui/dialog/dropdown_dialog.bin (tile images in a sample state,
+    captions word-wrapped with mod_pulldown's model), then the toggle and slider images at 1:1. kind (page 2): 0 music, 1 a podcast episode, 2 an audiobook part (Now Playing's spoken-audio controls), 3 a radio station (LIVE divider, one Stop button, no star)."""
     import awtk_ui, mod_pulldown as MP
     from awtk_text import Ttf
     raw = os.path.join(work, RAW)
@@ -42,16 +42,53 @@ def controls(s, work, bg=(0, 0, 0, 255), ink=lambda c: c):
              'img_playset': ('drop_playset', 'label_playset', 'playset'), 'img_sysset': ('drop_sysset', 'label_sysset', 'sysset')}
     sw = root.find('view_switchs')
     grab = root.find('pod_grabber')   # (the panel itself is black at 92 %, drawn here as black; the discs sit on it)
-    for name, (img, label, key) in tiles.items():
-        w, lb = root.find(name), root.find(label)
-        im.alpha_composite(s.img(img), (w.x, sw.y + w.y))
-        px = int(lb.get('style:normal:font_size'))
-        for i, line in enumerate(MP.wrap(ttf, en[key], px, lb.w)):   # top aligned: from the top margin, rows font + spacer apart (left and right margins 0)
-            s.text(im, lb.x + lb.w / 2, sw.y + lb.y + MP.CAP_MT + i * (px + MP.CAP_SPACER) + px / 2, line, px, ink((0xB0, 0xB0, 0xB0)), anchor='m')
-    im.alpha_composite(s.img(grab.get('image')), (grab.x, grab.y))
-    bl = root.find('view_backlight')   # the brightness card (flat, radius 26) with the stock widgets in it, the slider at 60 %
-    ImageDraw.Draw(im).rounded_rectangle((bl.x, bl.y, bl.x + bl.w - 1, bl.y + bl.h - 1), int(bl.get('style:normal:round_radius')), fill=ink((0x1C, 0x1C, 0x1E)))
-    PS.draw_brightness(im, bl, bl.y, s.img, 60, card=False)
+    if page:   # page 2: the container's placeholder cards, and the Now Playing card (sample data: a track at 1:47 of 3:13, a favourite, playing)
+        box = root.find('pod_cc2')
+        kids = {c.name: c for c in box.children}
+        for c in box.children:
+            if c.type in ('view', 'button'):
+                ImageDraw.Draw(im).rounded_rectangle((box.x + c.x, box.y + c.y, box.x + c.x + c.w - 1, box.y + c.y + c.h - 1), int(c.get('style:normal:round_radius')), fill=ink((0x1C, 0x1C, 0x1E)))
+        cover = Image.new('RGBA', (96, 96))
+        for yy in range(96):
+            k = yy / 95; cover.paste(tuple(int(a + (b - a) * k) for a, b in zip((70, 110, 190), (20, 30, 70))) + (255,), (0, yy, 96, yy + 1))
+        mask = Image.new('L', (96 * 4, 96 * 4), 0); ImageDraw.Draw(mask).rounded_rectangle((0, 0, 96 * 4 - 1, 96 * 4 - 1), 8 * 4, fill=255); cover.putalpha(mask.resize((96, 96), Image.LANCZOS))
+        im.alpha_composite(cover, (box.x + 12, box.y + 12))
+        texts = (('Blue in Green', 'Miles Davis'), ('The Long Game, Part 2', 'Hardcore History'), ('Moby-Dick', 'Chapter 3: The Spouter-Inn'), ('Radio Paradise', 'Mellow Mix'))[kind]
+        for n, text in (('pod_cc2_title', texts[0]), ('pod_cc2_artist', texts[1])) + (() if kind == 3 else (('pod_cc2_elapsed', '1:47'), ('pod_cc2_remain', '-1:26'))):
+            c = kids[n]; px = int(c.get('style:normal:font_size')); rgb = tuple(int(c.get('style:normal:text_color')[i:i + 2], 16) for i in (1, 3, 5)); text = s.clip(text, px, c.w)
+            s.text(im, box.x + c.x + (c.w if c.get('style:normal:text_align_h') == 'right' else 0), box.y + c.y + c.h / 2, text, px, ink(rgb), anchor='r' if c.get('style:normal:text_align_h') == 'right' else 'l')
+        fav = (('pod_cc2_fav', 'drop_cc_fav_on'),) if not kind else ()   # an episode, a part and a station have no star
+        skips = () if kind == 3 else (('pod_cc2_prev', ('drop_cc_prev', 'drop_cc_back15', 'drop_cc_back15')[kind]), ('pod_cc2_next', ('drop_cc_next', 'drop_cc_fwd30', 'drop_cc_fwd30')[kind]))
+        for n, image in fav + skips + (('pod_cc2_play', 'drop_cc_stop' if kind == 3 else 'drop_cc_pause'),):
+            im.alpha_composite(s.img(image), (box.x + kids[n].x, box.y + kids[n].y))
+        lower = (('drop_cc_pm_shuffle', 'drop_cc_upnext', 'drop_cc_artist', 'drop_cc_album', 'drop_cc_eq_on'), ('drop_cc_podhome', 'drop_cc_queue', 'drop_cc_notes', 'drop_cc_nextep', 'drop_cc_speed_on'),
+                 ('drop_cc_bkhome', 'drop_cc_queue', 'drop_cc_notes', 'drop_cc_nextep', 'drop_cc_speed'),
+                 ('drop_cc_rd_my', 'drop_cc_rd_recent', 'drop_cc_rd_info', 'drop_cc_rd_search', 'drop_cc_station_on'))[kind]
+        for n, image in tuple(zip(('pod_cc2_playmode', 'pod_cc2_upnext', 'pod_cc2_artistgo', 'pod_cc2_albumgo', 'pod_cc2_eqdisc'), lower)) + (('pod_cc2_sleepdisc', 'drop_cc_sleep_on'),):
+            im.alpha_composite(s.img(image), (box.x + kids[n].x, box.y + kids[n].y))   # the lower cards: Shuffle on, the Equalizer (an episode's Speed 1.5x lit, a part's 1x) and a sleep timer lit (sample data)
+        for n, text in (('pod_cc2_eqtitle', ('Equalizer', 'Speed', 'Speed', 'Station')[kind]), ('pod_cc2_eqsub', ('AutoEq', '1.5\u00d7', '1\u00d7', 'Saved')[kind]), ('pod_cc2_sleeptitle', 'Sleep'), ('pod_cc2_sleepsub', '25m left')):
+            c = kids[n]; px = int(c.get('style:normal:font_size')); rgb = tuple(int(c.get('style:normal:text_color')[i:i + 2], 16) for i in (1, 3, 5))
+            s.text(im, box.x + c.x, box.y + c.y + c.h / 2, s.clip(text, px, c.w), px, ink(rgb), anchor='l')
+        if kind == 3:   # LIVE in the bar's place: the two capsules and the word
+            for n in ('pod_cc2_live_l', 'pod_cc2_live_r'): im.alpha_composite(s.img(kids[n].get('image')), (box.x + kids[n].x, box.y + kids[n].y))
+            c = kids['pod_cc2_live']; px = int(c.get('style:normal:font_size')); s.text(im, box.x + c.x + c.w / 2, box.y + c.y + c.h / 2, 'LIVE', px, ink((255, 255, 255)), anchor='m')
+        else:
+            d.rounded_rectangle((130, 134, 297, 138), 2, fill=ink((0x48, 0x48, 0x4A))); d.rounded_rectangle((130, 134, 130 + 168 * 107 // 193 - 1, 138), 2, fill=ink((0xF2, 0xF2, 0xF2)))
+        im.alpha_composite(s.img(grab.get('image')), (grab.x, grab.y))
+    else:
+        for name, (img, label, key) in tiles.items():
+            w, lb = root.find(name), root.find(label)
+            im.alpha_composite(s.img(img), (w.x, sw.y + w.y))
+            px = int(lb.get('style:normal:font_size'))
+            for i, line in enumerate(MP.wrap(ttf, en[key], px, lb.w)):   # top aligned: from the top margin, rows font + spacer apart (left and right margins 0)
+                s.text(im, lb.x + lb.w / 2, sw.y + lb.y + MP.CAP_MT + i * (px + MP.CAP_SPACER) + px / 2, line, px, ink((0xB0, 0xB0, 0xB0)), anchor='m')
+        im.alpha_composite(s.img(grab.get('image')), (grab.x, grab.y))
+        bl = root.find('view_backlight')   # the brightness card (flat, radius 26) with the stock widgets in it, the slider at 60 %
+        ImageDraw.Draw(im).rounded_rectangle((bl.x, bl.y, bl.x + bl.w - 1, bl.y + bl.h - 1), int(bl.get('style:normal:round_radius')), fill=ink((0x1C, 0x1C, 0x1E)))
+        PS.draw_brightness(im, bl, bl.y, s.img, 60, card=False)
+    for i in range(2):   # the page dots
+        dw = root.find(f'pod_cc2_dot{i}')
+        im.alpha_composite(s.img('drop_dot_on' if i == page else 'drop_dot_off'), (dw.x, dw.y))
     y = 340 + 18
     # toggles: on / off / the two-state words
     x = 14

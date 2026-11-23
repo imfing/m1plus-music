@@ -10,6 +10,7 @@ SAME_AS_ENGLISH = {'Cover Flow', 'Playlists', 'Playlist', 'Genres', 'Gain', 'Ext
 SAME_AS_ENGLISH |= {'USB DAC', 'Max'}    # the Volume page's grey line: the product term USB DAC in every table, Max in French, German and Italian
 SAME_AS_ENGLISH |= {'m1plus-run.sh'}    # the file name, the View Script page's title
 SAME_AS_ENGLISH |= {'Crossfeed', 'Crossfade', '2 s', '3 s', '8 s'}    # audio terms and second labels kept as English in Latin-script tables
+SAME_AS_ENGLISH |= {'Station'}    # French writes Station as English does (the Control Center's radio Station card)
 SAME_AS_ENGLISH |= {'Standby'}    # German and Italian write Standby as English does (the Battery History page's Since Last Charge card)
 SAME_AS_ENGLISH |= {'AutoEq'}    # the brand name (the Presets page's section header)
 SAME_AS_ENGLISH |= {'%d minute', '%d minutes'}    # French writes minute(s) as English does
@@ -155,6 +156,8 @@ def run(ctx):
             lab = next(c for c in tree.find(f'pod_row{i}').children if c.type == 'hscroll_label')
             expect(pod_i18n.shown_english(lab) == r.label, f'{page.key}:pod_row{i} reads {r.label!r}')
     expect(tree is not None and used, 'the pages use keys')
+    dropdown = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', 'dialog', 'dropdown_dialog.bin'), 'rb').read())   # the pull-down's page 2 cards carry keys of ours too
+    used |= {w.get('tr_text') for w in dropdown.walk() if w.get('tr_text') in pod_i18n.TEXT}
     cover = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', 'm1plus_cover.bin'), 'rb').read())
     expect(cover.find('btn_cancel').get('tr_text') == 'Cancel', 'the Cancel button is translated')
     expect(pod_i18n.key_for('Settings') == 'Settings' and pod_i18n.key_for('Hi-Res') == 'hr' and pod_i18n.key_for('M1+ Music') is None

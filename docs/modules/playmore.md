@@ -70,7 +70,7 @@ Online search is never shown. Hidden rows are `visible=false` and `sensitive=fal
   episode or audiobook part (no album or song to look up; `pm_on_art` refuses them too).
 - **Playback speed** row: the label reads **Speed** (box 96 px) and the four badges move right
   (36 px each, 40 px apart); the note reads **Files below 48 kHz only** in a 262 px box. Both fit
-  in all 13 languages (`tools/pod_i18n.py`). The row's glyph is the Lucide `gauge`.
+  in all 13 languages (`tools/pod_i18n.py`). The row's glyph is the Lucide `circle-gauge`.
 - **Row height:** every row is resized to `PM_ROW_H` 50, so pages are exact and nothing scrolls.
 - **Accent:** the stock row glyphs (`player_albuminfo`, `player_songerinfo`, `p_add`, `p_multiple`,
   `p_abrepeat`, `p_delete`) are tinted by exact name (`ACCENT_GLYPH_STOCK`, [accent](accent.md)).
@@ -132,7 +132,7 @@ only the new `pod_more*`, `pod_back*`, `pod_tape*`, `pod_vinyl*`, `pod_goep*`, `
 (`PM_SPEED`). New rows are `list_item`s styled as the Add to playlist row (icon 24 x 24 at 14,13;
 label 200 px at x 48; chevrons 13 x 22 at 285,14, ink x 288..298); the first row of each page has no
 hairline. The dialog gets `highlight`. New row glyphs: `pod_ic_tape`, `pod_ic_vinyl`, `pod_ic_art`
-(custom SVG in `assets/icons/custom/`), `pod_ic_sleep`, `pod_ic_mode`; `pod_ic_vu` is the Lucide `gauge`.
+(custom SVG in `assets/icons/custom/`), `pod_ic_sleep`, `pod_ic_mode`; `pod_ic_vu` is the Lucide `gauge`; `pod_ic_lyrics` (Lyrics Mode) is the Lucide `mic-vocal`.
 
 ## Delete and Add to playlist
 

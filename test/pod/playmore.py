@@ -1401,9 +1401,9 @@ def run(ctx):
         expect({c.get('image') for c in row.children if c.type == 'image'} <= imgs, f'the images {name} uses exist')
     expect(built_ui.find('pod_more_chev').get('image') == 'right_arrow' and built_ui.find('pod_back_chev').get('image') == 'return', 'the stock chevrons: right_arrow (grey) for More, return for the back header')
     expect(built_ui.find('pod_mode_chev').get('image') == 'right_arrow' and (built_ui.find('pod_mode_chev').x, built_ui.find('pod_mode_chev').y) == (built_ui.find('pod_more_chev').x, built_ui.find('pod_more_chev').y)
-           and built_ui.find('pod_mode_icon').get('image') == 'pod_ic_mode' and built_ui.find('pod_lyr_icon').get('image') == 'pod_ic_artists' and built_ui.find('pod_vu_icon').get('image') == 'pod_ic_vu'
-           and mod_icons.POD_ROWS['Display Mode'] == ('pod_ic_mode', 'smartphone') and mod_icons.POD_ROWS['Artists'] == ('pod_ic_artists', 'mic-vocal') ,
-           'Display Mode: More\'s grey chevron at the same place, the Lucide smartphone glyph; Lyrics Mode: the Lucide mic-vocal glyph (the Artists row\'s image, one file per glyph)')
+           and built_ui.find('pod_mode_icon').get('image') == 'pod_ic_mode' and built_ui.find('pod_lyr_icon').get('image') == 'pod_ic_lyrics' and built_ui.find('pod_vu_icon').get('image') == 'pod_ic_vu'
+           and mod_icons.POD_ROWS['Display Mode'] == ('pod_ic_mode', 'smartphone') and mod_icons.POD_ROWS['Artists'] == ('pod_ic_artists', 'mic-vocal') and mod_icons.POD_ROWS['Lyrics'] == ('pod_ic_lyrics', 'mic-vocal') ,
+           'Display Mode: More\'s grey chevron at the same place, the Lucide smartphone glyph; Lyrics Mode: the Lucide mic-vocal glyph (pod_ic_lyrics)')
     expect([(k, v) for k, v in built_ui.find('pod_mode').props if k.startswith('style')] == [(k, v) for k, v in built_ui.find('pod_more').props if k.startswith('style')]
            and [(k, v) for k, v in built_ui.find('pod_lyr').props if k.startswith('style')] == [(k, v) for k, v in built_ui.find('pod_vinyl').props if k.startswith('style')] == [(k, v) for k, v in built_ui.find('pod_vu').props if k.startswith('style')],
            'pod_mode is styled as the More row, pod_lyr as the Vinyl Mode row')

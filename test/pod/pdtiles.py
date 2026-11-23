@@ -16,6 +16,10 @@ IMG = ('img_wifiswitch', 'img_btswitch', 'img_keylockswitch', 'img_gainswitch', 
 LAB = ('label_wifi', 'label_bt', 'label_lock', 'label_gain', 'label_usbmode', 'label_outputway', 'label_playset', 'label_sysset', 'pod_cap_sleep', 'pod_cap_settings', 'pod_cap_eq', 'pod_cap_power', 'pod_cap_airplay', 'pod_cap_dlna', 'pod_cap_transfer', 'pod_cap_shot')
 UI = os.path.join('rootfs', 'release/assets/default/raw/ui/dialog/dropdown_dialog.bin')
 N = 8    # the stock tiles (and the slots: the pull-down holds eight)
+PAGE1, PAGE2 = ('view_switchs', 'view_backlight'), ('pod_cc2', 'pod_cc2_dot0', 'pod_cc2_dot1')   # page 1's containers; page 2's container and the dots
+CARD = ('pod_cc2_top', 'pod_cc2_title', 'pod_cc2_artist', 'pod_cc2_elapsed', 'pod_cc2_remain', 'pod_cc2_fav', 'pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next')   # page 2's Now Playing card (inside the container)
+LOWER = ('pod_cc2_playmode', 'pod_cc2_upnext', 'pod_cc2_artistgo', 'pod_cc2_albumgo', 'pod_cc2_right1', 'pod_cc2_right2', 'pod_cc2_eqdisc', 'pod_cc2_eqtitle', 'pod_cc2_eqsub', 'pod_cc2_sleepdisc', 'pod_cc2_sleepsub')   # page 2's lower cards (the discs, the two cards and their sub lines)
+RADIO = ('pod_cc2_live_l', 'pod_cc2_live_r', 'pod_cc2_live')   # what a station adds: the LIVE divider
 NT = 16  # every tile: the stock ones and the eight of ours
 
 
@@ -28,7 +32,7 @@ def geometry():
 class PD(Machine):
     """The dialog's thirty widgets (the tiles and captions, at the built asset's places; ours hidden and insensitive as the asset has them) and the stock init's resume point."""
 
-    def __init__(self, fs=None, gone=()):
+    def __init__(self, fs=None, gone=(), pages=False):
         super().__init__()
         self.handlers[pod.PULLDOWN_INIT + 12] = 'stock_pulldown_resume'
         self.geo = geometry()
@@ -38,6 +42,16 @@ class PD(Machine):
             hd = self.widget(n); self.props[(hd, 'x')], self.props[(hd, 'y')] = x, y
             if n.startswith(('pod_tile_', 'pod_cap_')): self.props[(hd, 'visible')] = self.props[(hd, 'sensitive')] = 0
         if fs is not None: self.fs[FILE] = fs
+        if pages:   # the two pages' widgets (the asset: the containers of page 1 shown, page 2 and the dots hidden and insensitive; the containers at the asset's places)
+            tree = awtk_ui.parse(open(os.path.join(WORK, UI), 'rb').read())
+            for n in PAGE1 + PAGE2:
+                if n not in gone: self.widget(n); self.props[(self.widgets[n], 'visible')] = self.props[(self.widgets[n], 'sensitive')] = int(n in PAGE1)
+            for n in PAGE1 + PAGE2[:1]:
+                if n not in gone: self.props[(self.widgets[n], 'x')], self.props[(self.widgets[n], 'y')] = tree.find(n).x, tree.find(n).y
+            for n in CARD + LOWER + RADIO:
+                if n not in gone: self.widget(n); self.props[(self.widgets[n], 'sensitive')] = 1
+            for n in RADIO:   # (the LIVE divider: hidden and insensitive in the asset)
+                if n not in gone: self.props[(self.widgets[n], 'visible')] = self.props[(self.widgets[n], 'sensitive')] = 0
 
     def _hook(self, u, address, size, _):
         if self.handlers.get(address) == 'stock_pulldown_resume':
@@ -161,7 +175,7 @@ def hook_tests(ctx):
            and all(c[2] == 0 for c in m.calls if c[0] in ('widget_set_visible', 'widget_set_sensitive')),
            'every tile not listed is hidden, ours too (a listed hidden id adds nothing)')
     lookups = {c[1] for c in m.calls if c[0] == 'widget_lookup'}
-    expect(lookups - {'view_bar_left', 'pod_sleep', 'bar_dclock'} == set(IMG + LAB) and not any(c[0] in ('widget_destroy_children', 'widget_set_prop_str', 'widget_set_text_utf8', 'widget_set_tr_text') for c in m.calls),
+    expect(lookups - {'view_bar_left', 'pod_sleep', 'bar_dclock', *PAGE1, *PAGE2} == set(IMG + LAB) and not any(c[0] in ('widget_destroy_children', 'widget_set_prop_str', 'widget_set_text_utf8', 'widget_set_tr_text') for c in m.calls),
            'only the thirty tiles and captions (and the bar refresh: view_bar_left, pod_sleep; the 12 h clock: bar_dclock) are looked up; nothing is renamed, destroyed or re-labelled')
 
     # -- 3b. the bar copy at the dialog's init: the Battery Percentage and the EQ mark are there in the first frame, not one timer tick later ---------
@@ -787,8 +801,8 @@ def own_tests(ctx):
     expect(asset_image('drop_sleepopen').size == (56, 56) and 'drop_sleepopen' in palette.ACCENT_DISC and 'drop_sleep' not in palette.ACCENT_DISC,
            'drop_sleepopen.png is a 56 x 56 disc image and takes the accent disc like the other lit tiles')
     a = asset_image('drop_sleepopen').convert('RGBA'); b = asset_image('drop_sleep').convert('RGBA')
-    expect(a.getpixel((28, 4))[:3] == (255, 255, 255) and a.getpixel((28, 4))[3] == 255 and b.getpixel((28, 4))[:3] == (0x2C, 0x2C, 0x2E) and b.getpixel((28, 4))[3] == 255,
-           'drop_sleepopen: flat white disc; drop_sleep: flat #2C2C2E disc')
+    expect(a.getpixel((28, 4))[:3] == (255, 255, 255) and a.getpixel((28, 4))[3] == 255 and b.getpixel((28, 4))[:3] == (0x3A, 0x3A, 0x3C) and b.getpixel((28, 4))[3] == 255,
+           'drop_sleepopen: flat white disc; drop_sleep: flat #3A3A3C disc')
     for flag, secs, want_pic in ((0, 0, 'drop_sleep'), (1, 0, 'drop_sleep'), (0, 900, 'drop_sleep'), (1, 900, 'drop_sleepopen')):
         m = PT([H]); m.u.mem_write(pod.DATA['SLEEP_FLAG'][0], bytes([flag])); m.setword(pod.DATA['SLEEP_TIME'][0], secs)
         m.swipe(b'8\n')
@@ -908,7 +922,7 @@ def own_tests(ctx):
         expect(asset_image(off).size == (56, 56) and asset_image(on).size == (56, 56) and on in palette.ACCENT_DISC and off not in palette.ACCENT_DISC,
                f'{off}.png and {on}.png are 56 x 56 disc images; the lit one takes the accent disc like the stock lit tiles')
         a = asset_image(on).convert('RGBA'); b = asset_image(off).convert('RGBA')
-        expect(a.getpixel((28, 4))[:3] == (255, 255, 255) and a.getpixel((28, 4))[3] == 255 and b.getpixel((28, 4))[:3] == (0x2C, 0x2C, 0x2E) and b.getpixel((28, 4))[3] == 255 and b.getpixel((0, 0))[3] == 0, f'{on}: a flat white disc, {off} a flat #2C2C2E disc (no ring)')
+        expect(a.getpixel((28, 4))[:3] == (255, 255, 255) and a.getpixel((28, 4))[3] == 255 and b.getpixel((28, 4))[:3] == (0x3A, 0x3A, 0x3C) and b.getpixel((28, 4))[3] == 255 and b.getpixel((0, 0))[3] == 0, f'{on}: a flat white disc, {off} a flat #3A3A3C disc (no ring)')
         addr = pod.DATA[flag][0]
         for byte in (0, 1):
             m = PT([H]); m.u.mem_write(addr, bytes([byte])); m.swipe(P.PULLDOWN_CHARS[tid].encode() + b'\n')
@@ -1688,4 +1702,556 @@ def labels_tests(ctx):
     expect(m.fs.get(LABELS_FILE) == b'0\n' and LABELS_TMP not in m.fs and sw_img(m) == [], 'failed save leaves file and switch unchanged')
 
 
-SECTIONS = [hook_tests, page_tests, labels_tests, files_tests, own_tests, hold_tests, flags_tests, playtile_tests, stockopen_tests, gate_tests, close_tests]
+def pages_tests(ctx):
+    """The pull-down's second page (patch/pulldown.c "the two pages", docs/modules/pulldown.md): the asset's containers, the swipe read on the dialog's before-children pointer events, the swap and the fallback."""
+    expect = ctx.expect
+    DOWN, MOVE, UP, ABORT = (O[n] for n in ('EVT_POINTER_DOWN_BEFORE', 'EVT_POINTER_MOVE_BEFORE', 'EVT_POINTER_UP_BEFORE', 'EVT_POINTER_ABORT'))
+    STOP, OK = O['RET_STOP'], O['RET_OK']
+    expect((DOWN, MOVE, UP) == (0x100, 0x102, 0x104) and ABORT == 0x107, 'the before-children pointer events are 0x100, 0x102, 0x104 (widget_on_pointer_down / _move / _up @0x6712e4, @0x671668, @0x6718f0)')
+
+    # -- the asset
+    tree = awtk_ui.parse(open(os.path.join(WORK, UI), 'rb').read())
+    box, d0, d1, grab = (tree.find(n) for n in ('pod_cc2', 'pod_cc2_dot0', 'pod_cc2_dot1', 'pod_grabber'))
+    hidden = lambda w: w.get('visible') == 'false' and w.get('sensitive') == 'false'
+    cards = {c.name: (c.x, c.y, c.w, c.h, c.get('style:normal:round_radius'), c.get('style:normal:bg_color')) for c in box.children if c.name in ('pod_cc2_top', 'pod_cc2_left', 'pod_cc2_right1', 'pod_cc2_right2')}
+    expect((box.x, box.y, box.w, box.h) == (10, 44, 300, 274) and hidden(box) and box in tree.children and tree.children[-1] is grab,
+           'pod_cc2 covers x 10 .. 309, y 44 .. 317 of the dialog, hidden and insensitive; the grabber stays the last child')
+    expect(cards == {'pod_cc2_top': (0, 0, 300, 120, '26', '#1C1C1E'), 'pod_cc2_left': (0, 129, 144, 145, '26', '#1C1C1E'),
+                     'pod_cc2_right1': (152, 129, 148, 68, '22', '#1C1C1E'), 'pod_cc2_right2': (152, 206, 148, 68, '22', '#1C1C1E')},
+           f'the cards are the four opaque #1C1C1E ones in the container ({cards})')
+    expect([(d.x, d.y, d.w, d.h, d.get('image')) for d in (d0, d1)] == [(153, 320, 4, 4, 'drop_dot_off'), (163, 320, 4, 4, 'drop_dot_off')] and hidden(d0) and hidden(d1)
+           and d0.type == d1.type == 'image', 'the dots are 4 px images centred at x 155 and 165, y 320 .. 323, hidden and insensitive')
+    expect(not hidden(tree.find('view_switchs')) and not hidden(tree.find('view_backlight')) and not hidden(tree.find('view_sysbar')) and not hidden(grab),
+           'page 1 (the tiles, the brightness card), the status bar copy and the grabber are as before')
+    for n, alpha in (('drop_dot_on', 0xEB), ('drop_dot_off', 0x46)):
+        im = asset_image(n); px = im.getpixel((1, 1))
+        expect(im.size == (4, 4) and px[:3] == (255, 255, 255) and abs(px[3] - alpha) <= 3 and im.getpixel((0, 0))[3] < px[3], f'{n} is Now Playing\'s 4 px white page dot at alpha {alpha:#x}: {px}')
+
+    # -- the machine
+    def opened(**kw):
+        m = PD(pages=True, **kw); m.open(); return m
+    vis = lambda m, n: (m.props[(m.widgets[n], 'visible')], m.props[(m.widgets[n], 'sensitive')])
+    dots = lambda m: [c[2] for c in m.calls if c[0] == 'image_base_set_image' and c[1] in (m.widgets['pod_cc2_dot0'], m.widgets['pod_cc2_dot1'])]
+    state = lambda m: {n: vis(m, n) for n in PAGE1 + PAGE2}
+    ON, OFF = (1, 1), (0, 0)
+    P1 = {'view_switchs': ON, 'view_backlight': ON, 'pod_cc2': OFF, 'pod_cc2_dot0': ON, 'pod_cc2_dot1': ON}
+    P2 = {'view_switchs': OFF, 'view_backlight': OFF, 'pod_cc2': ON, 'pod_cc2_dot0': ON, 'pod_cc2_dot1': ON}
+
+    def ev(m, kind, x, y):
+        if kind == MOVE: m.clock += 16   # a move every 16 ms: the finger's speed
+        fn, ctx_ = m.bound[(m.dlg, kind)]
+        e = m.alloc(0x30); m.u.mem_write(e, bytes(0x30)); m.setword(e, kind); m.setword(e + 0x18, x); m.setword(e + 0x1c, y)
+        r = m.call(fn, a0=ctx_, a1=e, count=2000000); m.seen = getattr(m, 'seen', []) + m.calls   # (call() keeps only its own calls)
+        return r
+
+    def gesture(m, path, up=True):
+        """Press at path[0], move along the rest, release at the last point: the handlers' results, and the releases's."""
+        res = [ev(m, DOWN, *path[0])] + [ev(m, MOVE, *p) for p in path[1:]]
+        if up: res.append(ev(m, UP, *path[-1])); settle(m)
+        return res
+
+    def settle(m):
+        """Run the slide's frames (16 ms apart) until it lands; m.calls keeps the release's calls and the frames'."""
+        acc = list(m.calls)
+        for n in range(1, 100):   # (a frame with no slide running answers RET_OK at once)
+            m.clock += 16; r = m.call(PSYMS['pd_slide_frame'], a0=0, count=2000000); acc += m.calls
+            if r != O['RET_REPEAT']: break
+        m.calls = acc; return n
+
+    m = opened()
+    expect(state(m) == P1 and dots(m) == ['drop_dot_on', 'drop_dot_off'], f'the dialog opens on page 1 with the dots shown (the first lit): {state(m)}')
+    expect(all((m.dlg, k) in m.bound for k in (DOWN, MOVE, UP, ABORT)) and [c[2] for c in m.calls if c[0] == 'widget_on' and c[1] == m.dlg].count(DOWN) == 1, 'the swipe is bound on the dialog: down, move, up and abort (before children)')
+
+    # a left swipe on page 1: undecided moves pass, the deciding move and everything after are swallowed, the release swaps the page
+    r = gesture(m, [(250, 100), (240, 101), (225, 103), (150, 105), (120, 105)])
+    expect(r == [OK, OK, STOP, STOP, STOP, STOP] and state(m) == P2 and dots(m)[-2:] == ['drop_dot_off', 'drop_dot_on'], f'a left swipe on page 1 swaps to page 2, swallowing the gesture from the 20 px on ({r}, {state(m)})')
+    expect(vis(m, 'pod_cc2_dot0') == ON and vis(m, 'pod_cc2_dot1') == ON, 'the dots follow the page and stay shown')
+    r = gesture(m, [(100, 100), (90, 100), (60, 100)])
+    expect(state(m) == P2 and r[-1] == STOP, 'a left swipe on page 2 does nothing (the release is still swallowed)')
+    r = gesture(m, [(100, 120), (110, 119), (140, 118), (200, 118)])
+    expect(r == [OK, OK, STOP, STOP, STOP] and state(m) == P1 and dots(m)[-2:] == ['drop_dot_on', 'drop_dot_off'], f'a right swipe on page 2 returns to page 1, exactly as the hook left it ({r}, {state(m)})')
+    r = gesture(m, [(100, 120), (140, 118), (200, 118)])
+    expect(state(m) == P1 and r[-1] == STOP, 'a right swipe on page 1 does nothing')
+    r = gesture(m, [(250, 100), (200, 100), (240, 100)])
+    expect(state(m) == P1 and r[-1] == STOP, 'a swipe whose finger came back within 20 px of the press leaves the page')
+    r = gesture(m, [(250, 100), (200, 100)], up=False); ev(m, ABORT, 0, 0); settle(m)
+    r = gesture(m, [(250, 100), (240, 100)])
+    expect(r == [OK, OK, OK] and state(m) == P1, 'an abort ends a swipe: the next press starts clean')
+
+    # not a swipe: vertical, small, or from stock's zone (a press at y >= 280)
+    for name, path in (('vertical', [(160, 100), (162, 130), (165, 200)]), ('diagonal, more vertical', [(160, 100), (190, 140)]), ('a tap with small moves', [(160, 100), (165, 104), (158, 99)]),
+                       ('a drag up from the grabber', [(160, 330), (150, 300), (140, 200)]), ('a horizontal move from y 280', [(250, 280), (150, 281), (100, 281)]), ('from the dots', [(250, 320), (100, 320)])):
+        m = opened(); r = gesture(m, path)
+        expect(STOP not in r and state(m) == P1, f'{name}: stock keeps the whole gesture ({r})')
+    m = opened(); r = gesture(m, [(160, 100), (162, 130), (260, 135), (330, 135)])
+    expect(STOP not in r and state(m) == P1, 'a gesture that went vertical first stays stock\'s, whatever it does after')
+    m = opened(); r = gesture(m, [(250, 279), (150, 279)])
+    expect(r[-2:] == [STOP, STOP] and state(m) == P2, 'a press at y 279 is still watched')
+
+    # the slide: the pages follow the finger, a release slides them (ease-out, NP_FRAME_MS frames) to the page a flick or the nearer half picks
+    sx = lambda v: v - (1 << 32) if v >= 1 << 31 else v
+    spos = lambda m, n: tuple(sx(v) for v in m.pos(n))
+    m = opened(); base = {n: spos(m, n) for n in ('view_switchs', 'view_backlight', 'pod_cc2')}
+    at = lambda m, off: {n: (base[n][0] + off + (320 if n == 'pod_cc2' else 0), base[n][1]) for n in base}
+    places = lambda m: {n: spos(m, n) for n in base}
+    expect(base == {'view_switchs': base['view_switchs'], 'view_backlight': (10, 265), 'pod_cc2': (10, 44)}, f'the containers start at the asset\'s places ({base})')
+    r = gesture(m, [(250, 100), (225, 100), (150, 100)], up=False)
+    expect(places(m) == at(m, -100) and state(m) == {**P1, 'pod_cc2': ON}, f'mid-swipe both pages show, page 2 320 px right of page 1, both 100 px left with the finger ({places(m)}, {state(m)})')
+    m.clock += 500; ev(m, UP, 150, 100)
+    expect(dots(m) == ['drop_dot_on', 'drop_dot_off'] and (PSYMS['pd_slide_frame'], O['NP_FRAME_MS']) in m.timers, 'a slow release short of half: the dots stay on page 1 and a frame timer starts')
+    xs = []
+    for _ in range(40):
+        m.clock += 16; rr = m.call(PSYMS['pd_slide_frame'], a0=0, count=2000000); xs.append(spos(m, 'view_switchs')[0] - base['view_switchs'][0])
+        if rr != O['RET_REPEAT']: break
+    steps = [b - a for a, b in zip(xs, xs[1:])]
+    expect(xs[-1] == 0 and all(d >= 0 for d in steps) and steps[0] >= steps[-1] and len(xs) == -(-120 // 16), f'it slides back in 120 ms (PD_SLIDE_MIN_MS) (100 px: under the shortest slide), fast then slow, and lands on page 1 ({xs})')
+    expect(state(m) == P1 and places(m) == at(m, 0), 'landed: page 2 hidden again, everything at its place')
+    m = opened(); gesture(m, [(250, 100), (225, 100), (60, 100)], up=False); m.clock += 500; ev(m, UP, 60, 100); settle(m)
+    expect(state(m) == P2 and places(m) == at(m, -320), f'a slow release past half lands on page 2 ({places(m)})')
+    m = opened(); gesture(m, [(100, 100), (130, 100), (190, 100)], up=False)
+    expect(places(m) == at(m, 30), f'past the first page the pages move a third as far ({places(m)})')
+    ev(m, UP, 190, 100); settle(m)
+    expect(state(m) == P1 and places(m) == at(m, 0), 'and spring back')
+    # a press on sliding pages catches them: swallowed, no tile under it; its release picks the page again
+    m = opened(); gesture(m, [(250, 100), (225, 100), (200, 100)], up=False); ev(m, UP, 200, 100)
+    for _ in range(3): m.clock += 16; m.call(PSYMS['pd_slide_frame'], a0=0, count=2000000)
+    mid = spos(m, 'view_switchs')
+    r = [ev(m, DOWN, 160, 100)]
+    expect(r == [STOP] and ('timer_remove', 0x777) in m.calls and spos(m, 'view_switchs') == mid, f'a press mid-slide stops the slide where it is and is swallowed ({r})')
+    m.clock += 16; r.append(ev(m, MOVE, 150, 100))
+    expect(r[-1] == STOP and spos(m, 'view_switchs')[0] == mid[0] - 10, 'its moves drag the pages from there at once (no 20 px wait)')
+    m.clock += 500; r.append(ev(m, UP, 150, 100)); settle(m)
+    expect(r[-1] == STOP and state(m) in (P1, P2), 'its release settles on a page')
+    # a refused frame timer: the release lands at once; the dialog's end stops a slide
+    m = opened(); m.timer_fail = True; gesture(m, [(250, 100), (225, 100), (150, 100)], up=False); ev(m, UP, 150, 100)
+    expect(state(m) == P2 and places(m) == at(m, -320), 'no frame timer: the pages land at once')
+    m = opened(); gesture(m, [(250, 100), (225, 100), (150, 100)], up=False); ev(m, UP, 150, 100)
+    fn, c = m.bound[(m.dlg, O['EVT_DESTROY'])]; m.calls = []; m.call(fn, a0=c, a1=0, count=2000000)
+    expect(('timer_remove', 0x777) in m.calls and m.call(PSYMS['pd_slide_frame'], a0=0, count=2000000) == OK and not [x for x in m.calls if x[0] == 'widget_move'], 'the dialog\'s destroy stops the slide: no frame after it')
+
+    # a swipe that starts on a tile does not click or hold it: its moves never reach the tile, and the hold timer of the Wi-Fi tile stops
+    m = opened(); m.call(PSYMS['m1plus_pulldown_init'], a0=m.dlg, a1=0, count=3000000); m.calls.clear()
+    fn, c = m.bound[(m.widgets['img_wifiswitch'], O['EVT_POINTER_DOWN'])]
+    e = m.alloc(0x30); m.u.mem_write(e, bytes(0x30)); m.setword(e, O['EVT_POINTER_DOWN']); m.setword(e + 0x18, 49); m.setword(e + 0x1c, 65); m.call(fn, a0=c, a1=e, count=2000000)
+    expect([x for x in m.calls if x[0] == 'timer_add'] == [('timer_add', PSYMS['pd_on_hold_fire'], O['RM_LONG_MS'])], 'the press on the Wi-Fi tile armed its hold timer')
+    m.seen = []; r = gesture(m, [(49, 65), (20, 66)])
+    expect(r == [OK, STOP, STOP] and ('timer_remove', 0x777) in m.seen and state(m) == P2, f'the swipe from the tile stops the hold timer and is swallowed whole: no tile click reaches it ({r})')
+
+    # a refused bind or a missing widget: the dialog as it was
+    for what, kw in (('a refused move bind', dict(widget_on_fail=frozenset({MOVE}))), ('a refused up bind', dict(widget_on_fail=frozenset({UP}))), ('a refused abort bind', dict(widget_on_fail=frozenset({ABORT}))),
+                     ('a refused down bind', dict(widget_on_fail=frozenset({DOWN}))), ('no page 2 container', dict(gone=('pod_cc2',))), ('no dot', dict(gone=('pod_cc2_dot1',))),
+                     ('no view_backlight', dict(gone=('view_backlight',))), ('no view_switchs', dict(gone=('view_switchs',)))):
+        m = PD(pages=True, gone=kw.get('gone', ())); m.widget_on_fail = kw.get('widget_on_fail', frozenset()); m.open()
+        gone = kw.get('gone', ())
+        expect(all(vis(m, n) == OFF for n in PAGE2 if n not in gone) and not dots(m), f'{what}: the dots and page 2 stay hidden')
+        expect((m.dlg, DOWN) not in m.bound, f'{what}: the down is not bound, no gesture can start')
+    m = PD(pages=True); m.present.add('/mnt/mmc/m1plus-off'); m.open()
+    expect(state(m) == {**P1, 'pod_cc2_dot0': OFF, 'pod_cc2_dot1': OFF} and not any((m.dlg, k) in m.bound for k in (DOWN, MOVE, UP, ABORT)) and not {*PAGE1, *PAGE2} & {c[1] for c in m.calls if c[0] == 'widget_lookup'},
+           'kill switch: no bind, the dots stay hidden, page 2 is never shown, nothing looked up')
+    m = PD(pages=True); m.open(); m.open()
+    expect(dots(m)[:2] == ['drop_dot_on', 'drop_dot_off'], 'the dialog is built again on page 1 whatever the last one showed')
+
+
+class CC(PT):
+    """The pull-down over page 2's Now Playing card: the player's quick clicks are recorded (a click toggles pause, as mclSetPause / mclSetResume store the status at once)."""
+
+    def __init__(self, **kw):
+        super().__init__(pages=True, **kw)
+        self.cmds, self.play_status = [], 1
+        self.pmode, self.queue_ret, self.goto_ret, self.eq_name, self.sbtrack = 0, 0, 1, 'Flat', {}   # the play mode, queue_open's and pm_goto's answers, the Equalizer's name, server track REC_ID -> track id
+        for n in ('pod_play_mode', 'pod_set_mode', 'queue_open', 'pm_goto', 'pod_toast', 'peq_playing_name', 'sba_rec_track', 'np_spoken_seek', 'np_speed_step', 'podcasts_goto', 'books_goto'): self.handlers[PSYMS[n]] = n
+        for n in ('radio_open_at', 'sinfo_open', 'rn_open'): self.handlers[PSYMS[n]] = n   # the radio pages a station's discs open: recorded, not run
+        self.RADIO_C = ('strlen', 'strstr', 'strchr', 'strrchr', 'strncasecmp', 'rd_logo_running', 'rd_logo_start', 'mclStop', 'mcl_tidalStartPlayer', 'stop_player', 'set_outputchannel', 'mclSetPcmMode', 'mclSetMute', 'set_devicevolume', 'mclSetDacPwr', 'mclGetHciplayerStatus', 'mclGetOutputWay')
+        self.favs = set()   # My Stations' addresses: rd_fav_has / rd_fav_toggle are mocked (the card file is tested in radio.py)
+        for n in ('rd_fav_has', 'rd_fav_toggle', 'rd_logo_running', 'rd_logo_start'): self.handlers[PSYMS[n]] = n   # the radio engine's own calls (a station's play / stop tap, its list parser): as the mini bar's test machine has them
+
+    def _hook(self, u, address, size, _):
+        name = self.handlers.get(address)
+        if name in ('playpause_quick_click', 'next_quick_click', 'prev_quick_click'):
+            a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+            self.cmds.append((name, self.word(a0 + 8) if name != 'playpause_quick_click' else None, a1)); self.calls.append((name,))
+            if name == 'playpause_quick_click': self.play_status = 3 if self.play_status == 2 else 2
+            u.reg_write(UC_MIPS_REG_V0, 1); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        elif name in self.RADIO_C:
+            a0, a1, a2 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2)); ret = 1
+            if name == 'strlen': ret = len(self.read_cstr(a0).encode('latin-1'))
+            elif name == 'strstr': h, n = self.read_cstr(a0), self.read_cstr(a1); i = h.find(n); ret = a0 + i if i >= 0 else 0
+            elif name in ('strchr', 'strrchr'):
+                h = self.read_cstr(a0); f = h.find if name == 'strchr' else h.rfind; i = f(chr(a1 & 0xff)) if a1 & 0xff else len(h); ret = a0 + i if i >= 0 else 0
+            elif name == 'strncasecmp': x, y = self.read_cstr(a0)[:a2].lower(), self.read_cstr(a1)[:a2].lower(); ret = (x > y) - (x < y)
+            elif name in ('rd_logo_running', 'mclGetHciplayerStatus', 'mclGetOutputWay'): ret = 0
+            elif name == 'rd_logo_start': self.calls.append(('rd_logo_start', self.read_cstr(a0)))
+            elif name == 'mclStop': self.calls.append(('mclStop',)); ret = 0
+            elif name == 'mcl_tidalStartPlayer': self.calls.append(('mcl_tidalStartPlayer', self.read_cstr(a0)))
+            u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        elif name in ('rd_fav_has', 'rd_fav_toggle'):
+            a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+            if name == 'rd_fav_has': ret = int(self.read_cstr(a0) in self.favs)
+            else:
+                url = self.read_cstr(self.word(a0) + self.word(a0 + 16 + 301 * 4 + 4 * a1)); ret = 0 if url in self.favs else 1
+                self.favs ^= {url}; self.calls.append(('rd_fav_toggle', url))
+            u.reg_write(UC_MIPS_REG_V0, ret); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        elif name in ('radio_open_at', 'sinfo_open', 'rn_open'):
+            self.calls.append((name, u.reg_read(UC_MIPS_REG_A0)) if name == 'radio_open_at' else (name,)); u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        elif name in ('pod_play_mode', 'pod_set_mode', 'queue_open', 'pm_goto', 'pod_toast', 'peq_playing_name', 'sba_rec_track', 'np_spoken_seek', 'np_speed_step', 'podcasts_goto', 'books_goto'):
+            a0, a1 = u.reg_read(UC_MIPS_REG_A0), u.reg_read(UC_MIPS_REG_A1)
+            if name == 'pod_play_mode': ret = self.pmode
+            elif name == 'np_spoken_seek': self.calls.append((name, a0)); ret = 1   # (Now Playing's seek: patch/nowplaying.c, tested in nowplaying)
+            elif name == 'np_speed_step': self.calls.append((name,)); self.setword(pod.DATA['PLAYSPEED_MODE'][0], (self.word(pod.DATA['PLAYSPEED_MODE'][0]) + 1) % 4); ret = 1
+            elif name == 'podcasts_goto': self.calls.append((name, self.read_cstr(a0) if a0 else None, a1)); ret = 0
+            elif name == 'books_goto': self.calls.append((name, self.read_cstr(a0) if a0 else None)); ret = 0
+            elif name == 'pod_set_mode': self.calls.append((name, a0)); self.pmode = a0; ret = 0
+            elif name == 'queue_open': self.calls.append((name,)); ret = self.queue_ret
+            elif name == 'pm_goto': self.calls.append((name, a0)); ret = self.goto_ret
+            elif name == 'pod_toast': self.calls.append((name, self.read_cstr(a0))); ret = 0
+            elif name == 'peq_playing_name': self.u.mem_write(a0, self.eq_name.encode() + b'\0'); ret = 1
+            else: rid = a0 - (1 << 32) if a0 >= 1 << 31 else a0; ret = self.cstr(self.sbtrack.get(rid, ''))
+            u.reg_write(UC_MIPS_REG_V0, ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
+        super()._hook(u, address, size, _)
+
+    def fire(self, name, kind=None, e=0):
+        fn, ctx_ = self.bound[(self.widgets[name], O['EVT_CLICK'] if kind is None else kind)]
+        return self.call(fn, a0=ctx_, a1=e, count=40000000)
+
+    def swipe_to(self, page):
+        """The page swap by a swipe (left for page 2, right for page 1)."""
+        pts = [(250, 100), (240, 101), (225, 103), (150, 105)] if page else [(100, 120), (110, 119), (140, 118), (200, 118)]
+        acc = list(self.calls)
+        for kind, (x, y) in zip([O['EVT_POINTER_DOWN_BEFORE']] + [O['EVT_POINTER_MOVE_BEFORE']] * (len(pts) - 1) + [O['EVT_POINTER_UP_BEFORE']], pts + [pts[-1]]):
+            fn, c = self.bound[(self.dlg, kind)]
+            e = self.alloc(0x30); self.u.mem_write(e, bytes(0x30)); self.setword(e, kind); self.setword(e + 0x18, x); self.setword(e + 0x1c, y)
+            if kind == O['EVT_POINTER_MOVE_BEFORE']: self.clock += 16
+            self.call(fn, a0=c, a1=e, count=2000000); acc += self.calls
+        for _ in range(100):   # the slide's frames, until it lands
+            self.clock += 16; r = self.call(PSYMS['pd_slide_frame'], a0=0, count=2000000); acc += self.calls
+            if r != O['RET_REPEAT']: break
+        self.calls = acc
+
+    def ctext(self, name): return [c[2] for c in self.calls if c[0] == 'widget_set_text_utf8' and c[1] == self.widgets[name]]
+    def cimg(self, name): return ([c[2] for c in self.calls if c[0] == 'image_base_set_image' and c[1] == self.widgets[name]] or [None])[-1]
+    def csens(self, name): return self.props.get((self.widgets[name], 'sensitive'))
+    def ctimers(self): return [c for c in self.calls if c[0] in ('timer_add', 'timer_remove') and c[1:] != (PSYMS['pd_slide_frame'], O['NP_FRAME_MS'])]   # (not the slide's frame timer)
+
+
+def card_tests(ctx):
+    """Page 2's Now Playing card (patch/pulldown.c "page 2's Now Playing card", docs/modules/pulldown.md): the asset, what each player state shows, the stock calls the buttons make, the timer's life."""
+    expect = ctx.expect
+    tree = awtk_ui.parse(open(os.path.join(WORK, UI), 'rb').read())
+    box = tree.find('pod_cc2')
+    kids = {c.name: c for c in box.children}
+    top = kids['pod_cc2_top']
+    expect(top.type == 'button' and (top.x, top.y, top.w, top.h) == (0, 0, 300, 120) and top.get('style:pressed:bg_color') == '#1C1C1E' and top.get('style:normal:round_radius') == '26',
+           'the card is a button over the dialog\'s (10, 44)-(309, 163), flat #1C1C1E, radius 26, with the same look pressed')
+    geo = {n: (kids[n].type, kids[n].x, kids[n].y, kids[n].w, kids[n].h) for n in CARD[1:]}
+    expect(geo == {'pod_cc2_title': ('hscroll_label', 120, 11, 134, 22), 'pod_cc2_artist': ('hscroll_label', 120, 33, 134, 20), 'pod_cc2_elapsed': ('hscroll_label', 120, 99, 80, 16),
+                   'pod_cc2_remain': ('hscroll_label', 207, 99, 80, 16), 'pod_cc2_fav': ('image', 256, 10, 32, 32), 'pod_cc2_prev': ('image', 138, 47, 44, 44),
+                   'pod_cc2_play': ('image', 182, 47, 44, 44), 'pod_cc2_next': ('image', 226, 47, 44, 44)}, f'the card\'s widgets sit where the mock has them ({geo})')
+    expect(10 + 256 + 16 == 282 and 44 + 10 + 16 == 70 and [10 + kids[n].x + 22 for n in ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next')] == [170, 214, 258]
+           and 44 + 47 + 22 == 113,
+           'the star disc is centred at (282, 70), the transport at x 170 / 214 / 258, y 113 of the dialog')
+    style = lambda n, k: kids[n].get(f'style:normal:{k}')
+    expect([(style(n, 'font_size'), style(n, 'text_color'), style(n, 'text_align_h')) for n in CARD[1:5]] == [('18', '#FFFFFF', 'left'), ('15', '#8A8A8E', 'left'), ('12', '#8A8A8E', 'left'), ('12', '#8A8A8E', 'right')]
+           and all(kids[n].get('ellipses') == 'true' and kids[n].get('sensitive') == 'false' for n in CARD[1:5]), 'title 18 px white, artist 15 px and the times 12 px #8A8A8E, ellipsis, insensitive')
+    for n, size in (('drop_cc_fav', 32), ('drop_cc_fav_on', 32), ('drop_cc_fav_off', 32), ('drop_cc_prev', 44), ('drop_cc_prev_off', 44), ('drop_cc_play', 44), ('drop_cc_play_off', 44), ('drop_cc_pause', 44),
+                    ('drop_cc_next', 44), ('drop_cc_next_off', 44)):
+        im = asset_image(n)
+        expect(im.size == (size, size) and im.getchannel('A').getbbox() is not None and im.getpixel((0, 0))[3] == 0, f'{n} is a {size} px image with a clear corner')
+    star = lambda n: asset_image(n).getpixel((16, 16))
+    expect(star('drop_cc_fav_on')[:3] == (255, 255, 255) and star('drop_cc_fav')[:3] == (0x3A, 0x3A, 0x3C), 'a favourite is a filled white star on the disc, else the outline')
+
+    # -- nothing queued
+    rec = lambda m, **kw: m.record(**kw)
+
+    def page2(m):
+        m.calls = []; m.swipe_to(1)
+
+    m = CC(); m.open(); page2(m)
+    expect(m.ctext('pod_cc2_title') == ['Not Playing'] and m.ctext('pod_cc2_artist') == [''], f'nothing queued: the title says Not Playing, no artist ({m.ctext("pod_cc2_title")})')
+    expect([m.cimg(n) for n in ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next', 'pod_cc2_fav')] == ['drop_cc_prev_off', 'drop_cc_play_off', 'drop_cc_next_off', 'drop_cc_fav_off']
+           and [m.csens(n) for n in ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next', 'pod_cc2_fav')] == [0, 0, 0, 0], 'nothing queued: the transport and the star are greyed and insensitive')
+    expect(m.ctext('pod_cc2_elapsed') == [] and m.ctext('pod_cc2_remain') == [], 'nothing queued: no times')
+    expect(m.ctimers() == [('timer_add', PSYMS['cc2_tick'], 500)], f'page 2 starts one 500 ms timer ({m.ctimers()})')
+
+    # -- the timer lives on page 2 only
+    m.calls = []; m.swipe_to(0)
+    expect(m.ctimers() == [('timer_remove', 0x777)], f'page 1: the timer stops ({m.ctimers()})')
+    m.calls = []; m.swipe_to(1)
+    expect(m.ctimers() == [('timer_add', PSYMS['cc2_tick'], 500)], 'page 2 again: one timer')
+    m.calls = []; fn, c = m.bound[(m.dlg, O['EVT_DESTROY'])]; m.call(fn, a0=c, a1=0, count=2000000)
+    expect(m.ctimers() == [('timer_remove', 0x777)], 'the dialog\'s destroy stops the timer')
+    m.calls = []; m.call(fn, a0=c, a1=0, count=2000000)
+    expect(not m.ctimers(), 'a second destroy has nothing left to stop')
+    m = CC(); m.open(); page2(m); m.calls = []
+    m.dialog_ret = 0; ret, calls = m.modal()
+    expect([c for c in calls if c[0] == 'timer_remove'] == [('timer_remove', 0x777)], 'the dialog\'s return stops the timer too (pd_open_dialog)')
+    m = CC(); m.open()
+    expect(not m.ctimers(), 'the dialog opens on page 1 with no timer')
+    m = CC(); m.timer_fail = True; m.open(); page2(m)
+    expect(m.ctext('pod_cc2_title') == ['Not Playing'], 'a refused timer leaves the card made once')
+
+    # -- a local track
+    m = CC(); m.open(); t = rec(m, title='Blue in Green', artist='Miles Davis', album='Kind of Blue'); m.play([t], 0); m.play_status = 2; m.pt = (107, 193, 1); m.calls = []; m.swipe_to(1)
+    expect(m.ctext('pod_cc2_title') == ['Blue in Green'] and m.ctext('pod_cc2_artist') == ['Miles Davis'], f'the track\'s title and artist ({m.ctext("pod_cc2_title")})')
+    expect(m.ctext('pod_cc2_elapsed') == ['1:47'] and m.ctext('pod_cc2_remain') == ['-1:26'], f'the times: elapsed and the remaining ({m.ctext("pod_cc2_elapsed")}, {m.ctext("pod_cc2_remain")})')
+    expect([m.cimg(n) for n in ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next', 'pod_cc2_fav')] == ['drop_cc_prev', 'drop_cc_pause', 'drop_cc_next', 'drop_cc_fav']
+           and [m.csens(n) for n in ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next', 'pod_cc2_fav')] == [1, 1, 1, 1], 'playing: pause glyph, prev, next and the star live')
+    made = [c for c in m.calls if c[0] == 'bitmap_create_ex']
+    expect(len(made) == 1 and [c for c in m.calls if c[0] == 'checkFavExist'], f'the cover bitmap and the star are made once when the card comes up ({len(made)})')
+    m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(not m.ctext('pod_cc2_title') and not m.ctext('pod_cc2_elapsed') and not [c for c in m.calls if c[0] in ('bitmap_create_ex', 'checkFavExist', 'widget_load_image')],
+           'a tick with nothing changed sets no text, makes no cover and asks no favourite')
+    m.pt = (108, 193, 1); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.ctext('pod_cc2_elapsed') == ['1:48'] and m.ctext('pod_cc2_remain') == ['-1:25'] and not m.ctext('pod_cc2_title'), 'a second later only the times change')
+    m.pt = (0, 0, 0); m.play_status = 3; m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.ctext('pod_cc2_elapsed') == [''] and m.cimg('pod_cc2_play') == 'drop_cc_play', 'paused with no time: the play glyph, no times')
+    m.setword(pod.DATA['PLAY_QUEUE'][0], 0); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.ctext('pod_cc2_title') == ['Not Playing'] and m.cimg('pod_cc2_prev') == 'drop_cc_prev_off', 'the queue emptied: back to Not Playing, greyed')
+
+    # -- the buttons
+    m = CC(); m.open(); t = rec(m, title='A', artist='B'); m.play([t], 0); m.play_status = 2; m.pt = (5, 100, 1); page2(m); m.clock = 5000; m.calls = []
+    m.fire('pod_cc2_play')
+    expect(m.cmds == [('playpause_quick_click', None, 0)] and m.cimg('pod_cc2_play') == 'drop_cc_play', f'play / pause calls playpause_quick_click and the glyph follows ({m.cmds})')
+    m.cmds = []; m.fire('pod_cc2_next')
+    expect(len(m.cmds) == 1 and m.cmds[0][0] == 'next_quick_click' and m.cmds[0][1] == 5000 and m.cmds[0][2] == 0, f'next calls next_quick_click with an event stamped with the time ({m.cmds})')
+    m.cmds = []; m.fire('pod_cc2_prev')
+    expect(len(m.cmds) == 1 and m.cmds[0][0] == 'prev_quick_click' and m.cmds[0][1] == 5000, f'prev calls prev_quick_click the same way ({m.cmds})')
+    m.cmds = []; e = m.alloc(16); m.u.mem_write(e, bytes(16)); m.setword(e + 8, 777); m.fire('pod_cc2_next', e=e)
+    expect(m.cmds == [('next_quick_click', 777, 0)], 'the click\'s own event is what stock gets')
+    m.calls = []; m.fire('pod_cc2_fav')
+    expect(len(m.fav_rows) == 1 and m.cimg('pod_cc2_fav') == 'drop_cc_fav_on', f'the star adds the track to the favourites and fills ({m.fav_rows})')
+    m.calls = []; m.fire('pod_cc2_fav')
+    expect(not m.fav_rows and m.cimg('pod_cc2_fav') == 'drop_cc_fav', 'the star again takes it out')
+    m = CC(); m.open(); t = rec(m, title='A', artist='B'); m.fav_rows.append((m.read_cstr(m.word(t + O['REC_NAME'])), m.read_cstr(m.word(t + O['REC_PATH'])), 'A')); m.play([t], 0); m.play_status = 2; page2(m)
+    expect(m.cimg('pod_cc2_fav') == 'drop_cc_fav_on', 'a favourite shows the filled star when the card comes up')
+    m = CC(); m.open(); page2(m); m.cmds = []
+    for n in ('pod_cc2_play', 'pod_cc2_next', 'pod_cc2_prev', 'pod_cc2_fav'): m.fire(n)
+    expect(not m.cmds and not m.fav_rows, 'nothing queued: no button calls the player')
+
+    # -- the lower cards (page 2, local music)
+    discs = {n: (kids[n].type, kids[n].x, kids[n].y, kids[n].w, kids[n].h, kids[n].get('image'), kids[n].get('clickable')) for n in LOWER[:4] + ('pod_cc2_eqdisc', 'pod_cc2_sleepdisc')}
+    expect(discs == {'pod_cc2_playmode': ('image', 9, 138, 54, 54, 'drop_cc_pm_order', 'true'), 'pod_cc2_upnext': ('image', 80, 138, 54, 54, 'drop_cc_upnext', 'true'),
+                     'pod_cc2_artistgo': ('image', 9, 210, 54, 54, 'drop_cc_artist', 'true'), 'pod_cc2_albumgo': ('image', 80, 210, 54, 54, 'drop_cc_album', 'true'),
+                     'pod_cc2_eqdisc': ('image', 164, 141, 44, 44, 'drop_cc_eq', None), 'pod_cc2_sleepdisc': ('image', 164, 218, 44, 44, 'drop_cc_sleep', None)}, f'the discs sit where the mock has them ({discs})')
+    expect([(10 + kids[n].x + 27, 44 + kids[n].y + 27) for n in LOWER[:4]] == [(46, 209), (117, 209), (46, 281), (117, 281)]
+           and [(10 + kids[n].x + 22, 44 + kids[n].y + 22) for n in ('pod_cc2_eqdisc', 'pod_cc2_sleepdisc')] == [(196, 207), (196, 284)], 'the four discs are centred at (46, 209) (117, 209) (46, 281) (117, 281), the cards\' at x 196 (12 px in from the card)')
+    expect(kids['pod_cc2_right1'].type == kids['pod_cc2_right2'].type == 'button' and kids['pod_cc2_left'].type == 'view', 'the two right cards are buttons (a tap anywhere on them), the left card a plain view')
+    sub = {n: (kids[n].x, kids[n].y, kids[n].w, kids[n].h, kids[n].get('style:normal:font_size'), kids[n].get('style:normal:text_color'), kids[n].get('sensitive')) for n in ('pod_cc2_eqtitle', 'pod_cc2_eqsub', 'pod_cc2_sleeptitle', 'pod_cc2_sleepsub')}
+    expect(sub == {'pod_cc2_eqtitle': (218, 142, 74, 22, '17', '#FFFFFF', 'false'), 'pod_cc2_eqsub': (218, 166, 74, 18, '14', '#8A8A8E', 'false'),
+                   'pod_cc2_sleeptitle': (218, 219, 74, 22, '17', '#FFFFFF', 'false'), 'pod_cc2_sleepsub': (218, 243, 74, 18, '14', '#8A8A8E', 'false')}, f'title 17 px white and sub line 14 px grey, 74 px wide ({sub})')
+    expect(10 + 218 == 228 and 162 + 66 == 228 and 44 + 142 + 11 == 197 and 44 + 129 + 34 - 10 == 197, 'the texts start at the card\'s x + 66, the title centred 10 px above the card\'s middle')
+    for n, size, disc, ink in (('drop_cc_pm_order', 54, (0x3A, 0x3A, 0x3C), 'white'), ('drop_cc_pm_one', 54, (255, 255, 255), 'dark'), ('drop_cc_pm_shuffle', 54, (255, 255, 255), 'dark'), ('drop_cc_pm_all', 54, (255, 255, 255), 'dark'),
+                               ('drop_cc_pm_off', 54, (0x2C, 0x2C, 0x2E), 'grey'), ('drop_cc_upnext', 54, (0x3A, 0x3A, 0x3C), 'white'), ('drop_cc_upnext_off', 54, (0x2C, 0x2C, 0x2E), 'grey'), ('drop_cc_artist', 54, (0x3A, 0x3A, 0x3C), 'white'),
+                               ('drop_cc_artist_off', 54, (0x2C, 0x2C, 0x2E), 'grey'), ('drop_cc_album', 54, (0x3A, 0x3A, 0x3C), 'white'), ('drop_cc_album_off', 54, (0x2C, 0x2C, 0x2E), 'grey'),
+                               ('drop_cc_eq', 44, (0x3A, 0x3A, 0x3C), 'white'), ('drop_cc_eq_on', 44, (255, 255, 255), 'dark'), ('drop_cc_sleep', 44, (0x3A, 0x3A, 0x3C), 'white'), ('drop_cc_sleep_on', 44, (255, 255, 255), 'dark')):
+        im = asset_image(n).convert('RGBA'); px = {p[:3] for p in im.getdata() if p[3] == 255}
+        want = {'white': (255, 255, 255), 'dark': (0x14, 0x14, 0x14), 'grey': (0x63, 0x63, 0x66)}[ink]
+        expect(im.size == (size, size) and im.getpixel((0, 0))[3] == 0 and im.getpixel((size // 2, 2))[:3] == disc and disc in px and any(abs(a - b) < 40 for q in px if q != disc for a, b in zip(q, want)),
+               f'{n} is a {size} px disc {disc} with the {ink} glyph, round corners')
+
+    LB = ('pod_cc2_playmode', 'pod_cc2_upnext', 'pod_cc2_artistgo', 'pod_cc2_albumgo')
+    live = lambda m: ([m.cimg(n) for n in LB], [m.csens(n) for n in LB])
+    m = CC(); m.open(); page2(m)
+    expect(live(m) == (['drop_cc_pm_off', 'drop_cc_upnext_off', 'drop_cc_artist_off', 'drop_cc_album_off'], [0, 0, 0, 0]), f'nothing queued: the four discs are greyed and insensitive ({live(m)})')
+    expect(m.cimg('pod_cc2_eqdisc') == 'drop_cc_eq' and m.cimg('pod_cc2_sleepdisc') == 'drop_cc_sleep' and m.csens('pod_cc2_eqdisc') == 0 and m.csens('pod_cc2_sleepdisc') == 0 and m.ctext('pod_cc2_eqsub') == ['Off'] and m.ctext('pod_cc2_sleepsub') == ['Off'],
+           'nothing queued: Equalizer and Sleep stay live, both Off; the cards\' discs are pictures (insensitive): a tap on them reaches the card')
+    m.calls = []; m.fire('pod_cc2_playmode'); m.fire('pod_cc2_upnext'); m.fire('pod_cc2_artistgo'); m.fire('pod_cc2_albumgo')
+    expect(not [c for c in m.calls if c[0] in ('pod_set_mode', 'dialog_quit')], 'nothing queued: the four discs do nothing')
+
+    m = CC(); m.open(); t = rec(m, title='A', artist='B'); m.play([t], 0); m.play_status = 2; page2(m)
+    expect(live(m) == (['drop_cc_pm_order', 'drop_cc_upnext', 'drop_cc_artist', 'drop_cc_album'], [1, 1, 1, 1]), f'a local track: the four discs are live, List play unlit ({live(m)})')
+    for mode, img in ((1, 'drop_cc_pm_one'), (2, 'drop_cc_pm_shuffle'), (3, 'drop_cc_pm_all'), (0, 'drop_cc_pm_order')):
+        m.calls = []; m.fire('pod_cc2_playmode')
+        expect([c for c in m.calls if c[0] == 'pod_set_mode'] == [('pod_set_mode', mode)] and m.cimg('pod_cc2_playmode') == img and not [c for c in m.calls if c[0] == 'dialog_quit'],
+               f'Play Mode: the next mode {mode} is set, the glyph is {img}, the pull-down stays ({[c for c in m.calls if c[0] in ("pod_set_mode", "dialog_quit")]})')
+    m.pmode = 2; m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.cimg('pod_cc2_playmode') == 'drop_cc_pm_shuffle', 'a mode changed elsewhere shows at the next tick')
+    def playing(**kw):
+        mm = CC(); mm.open(); tt = rec(mm, title='A', artist='B'); mm.play([tt], 0); mm.play_status = 2
+        for k, v in kw.items(): setattr(mm, k, v)
+        page2(mm); return mm   # (a dialog that has been quit is over: each tap below has its own)
+    for disc, act, want in (('pod_cc2_upnext', 'queue', [('queue_open',)]), ('pod_cc2_artistgo', 'artist', [('pm_goto', 1)]), ('pod_cc2_albumgo', 'album', [('pm_goto', 0)])):
+        m = playing(); m.fire(disc)
+        expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)] and not [c for c in m.calls if c[0] in ('queue_open', 'pm_goto')], f'{act}: the tap quits the dialog and opens nothing itself')
+        m.calls = []; ret, calls = m.modal()
+        expect(ret == QUIT and [c for c in calls if c[0] in ('queue_open', 'pm_goto', 'pod_toast', 'navigator_to')] == [('navigator_to', 'dialog/dropdown_dialog')] + want, f'{act}: after the dialog it calls {want} ({calls})')
+    m = playing(goto_ret=0); m.fire('pod_cc2_artistgo'); m.calls = []; ret, calls = m.modal()
+    expect(('pod_toast', 'Not found') in calls, 'a Go to that opened nothing says Not found')
+    m = playing(queue_ret=-2); m.fire('pod_cc2_upnext'); m.calls = []; ret, calls = m.modal()
+    expect(('navigator_to', 'dialog/playqueue_dialog') in calls, 'Up Next falls back to the stock drawer when our page will not open')
+    m = playing(queue_ret=-1); m.fire('pod_cc2_upnext'); m.calls = []; ret, calls = m.modal()
+    expect(('navigator_to', 'dialog/playqueue_dialog') not in calls, 'Up Next does nothing when the queue page is not to open')
+    m = playing(quit_ret=-1); m.fire('pod_cc2_albumgo'); m.quit_ret = 0; m.calls = []; ret, calls = m.modal()
+    expect(not [c for c in calls if c[0] == 'pm_goto'], 'a dialog that cannot be quit leaves nothing pending')
+
+    # -- Equalizer and Sleep
+    m = CC(); m.open(); m.u.mem_write(pod.DATA['EQ_FLAG'][0], b'\1'); m.u.mem_write(pod.DATA['SLEEP_FLAG'][0], b'\1'); m.setword(pod.DATA['SLEEP_TIME'][0], 1500); m.eq_name = 'Harman'; page2(m)
+    expect(m.cimg('pod_cc2_eqdisc') == 'drop_cc_eq_on' and m.ctext('pod_cc2_eqsub') == ['Harman'] and m.cimg('pod_cc2_sleepdisc') == 'drop_cc_sleep_on' and m.ctext('pod_cc2_sleepsub') == ['25m left'],
+           f'EQ on: lit with the preset\'s name; a sleep timer: lit with the minutes left ({m.ctext("pod_cc2_eqsub")}, {m.ctext("pod_cc2_sleepsub")})')
+    m.setword(pod.DATA['SLEEP_TIME'][0], 1439); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.ctext('pod_cc2_sleepsub') == ['24m left'] and not m.ctext('pod_cc2_eqsub'), 'the minutes follow the countdown, the unchanged name is not set again')
+    m.u.mem_write(pod.DATA['EQ_FLAG'][0], b'\0'); m.u.mem_write(pod.DATA['SLEEP_FLAG'][0], b'\0'); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(m.cimg('pod_cc2_eqdisc') == 'drop_cc_eq' and m.cimg('pod_cc2_sleepdisc') == 'drop_cc_sleep' and m.ctext('pod_cc2_eqsub') == ['Off'] and m.ctext('pod_cc2_sleepsub') == ['Off'], 'both off: unlit, Off')
+    for card, tile, want in (('pod_cc2_right1', 'a', ('window_open', 'm1plus_peq')), ('pod_cc2_right2', '8', ('window_open', 'm1plus_sleeptimer'))):
+        m = CC(stack=['home_page']); m.open(); page2(m); m.calls = []; m.fire(card)
+        expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)], f'{card}: the tap quits the dialog')
+        m.calls = []; ret, calls = m.modal()
+        expect(ret == QUIT and want in calls, f'{card}: the page opens as page 1\'s tile {tile} does ({[c for c in calls if c[0] == "window_open"]})')
+
+    # -- a server track: no star at all
+    m = CC(); m.open(); t = rec(m, title='A', artist='B', rid=7); m.sbtrack[7] = 'tr-1'; m.play([t], 0); m.play_status = 2; page2(m)
+    expect(m.hidden('pod_cc2_fav') and live(m)[1] == [1, 1, 1, 1], 'a server track: the star is hidden (not greyed), the discs are live')
+    m = CC(); m.open(); t = rec(m, title='A', artist='B'); m.play([t], 0); m.play_status = 2; page2(m)
+    expect(not m.hidden('pod_cc2_fav'), 'a local track: the star shows')
+
+    # -- an episode and a book part: Now Playing's spoken-audio controls
+    for n, size in (('drop_cc_back15', 44), ('drop_cc_fwd30', 44), ('drop_cc_speed', 44), ('drop_cc_speed_on', 44), ('drop_cc_podhome', 54), ('drop_cc_bkhome', 54), ('drop_cc_queue', 54), ('drop_cc_notes', 54), ('drop_cc_nextep', 54)):
+        im = asset_image(n)
+        expect(im.size == (size, size) and im.getpixel((0, 0))[3] == 0, f'{n} is a {size} px image with a clear corner')
+    bb = asset_image('drop_cc_back15').getchannel('A').getbbox()
+    expect(bb and 22 <= bb[2] - bb[0] <= 30 and 22 <= bb[3] - bb[1] <= 30, f'the skip glyphs fill a 30 px box (ink 24 px or more, music glyphs are 19) on the 44 px target ({bb})')
+    EP, BKP = '/mnt/mmc/Podcasts/Hardcore History/ep2.mp3', '/mnt/mmc/Audiobooks/Moby Dick/part03.mp3'
+    PS = pod.DATA['PLAYSPEED_MODE'][0]
+    def spoken(path, title, artist, speed=0, **kw):
+        mm = CC(**kw); mm.open(); tt = rec(mm, title=title, artist=artist, path=path, name=os.path.basename(path)); mm.play([tt], 0); mm.play_status = 2; mm.setword(PS, speed); page2(mm); return mm
+    TR3 = ('pod_cc2_prev', 'pod_cc2_play', 'pod_cc2_next')
+    m = spoken(EP, 'The Long Game', 'Hardcore History')
+    expect(m.ctext('pod_cc2_title') == ['The Long Game'] and m.ctext('pod_cc2_artist') == ['Hardcore History'], f'an episode: its title and the show ({m.ctext("pod_cc2_title")}, {m.ctext("pod_cc2_artist")})')
+    expect([m.cimg(n) for n in TR3] == ['drop_cc_back15', 'drop_cc_pause', 'drop_cc_fwd30'] and [m.csens(n) for n in TR3] == [1, 1, 1] and m.hidden('pod_cc2_fav'), 'an episode: back 15 s, pause, forward 30 s, no star')
+    expect(live(m) == (['drop_cc_podhome', 'drop_cc_queue', 'drop_cc_notes', 'drop_cc_nextep'], [1, 1, 1, 1]) and m.cimg('pod_cc2_eqdisc') == 'drop_cc_speed' and m.csens('pod_cc2_eqdisc') == 0 and m.csens('pod_cc2_sleepdisc') == 0 and m.ctext('pod_cc2_eqtitle') == ['Speed'] and m.ctext('pod_cc2_eqsub') == ['1\xc3\x97'],
+           f'an episode: Podcasts, the show, its notes, the next episode; the Equalizer card is Speed, unlit at 1x ({live(m)}, {m.ctext("pod_cc2_eqsub")})')
+    seeks = []
+    for n in ('pod_cc2_prev', 'pod_cc2_next'): m.fire(n); seeks += [c for c in m.calls if c[0] in ('np_spoken_seek', 'dialog_quit')]
+    expect(seeks == [('np_spoken_seek', 0), ('np_spoken_seek', 1)] and not m.cmds, f'the transport seeks 15 s back and 30 s on and stays ({m.cmds}, {seeks})')
+    m.calls = []; m.fire('pod_cc2_albumgo')
+    expect(m.cmds == [('next_quick_click', m.clock, 0)] and not [c for c in m.calls if c[0] == 'dialog_quit'], f'the next-episode disc skips as the key does and the pull-down stays ({m.cmds})')
+    m.calls = []; m.fire('pod_cc2_right1')
+    expect([c for c in m.calls if c[0] in ('np_speed_step', 'dialog_quit')] == [('np_speed_step',)] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_speed_on' and m.ctext('pod_cc2_eqsub') == ['1.25\xc3\x97'],
+           f'the Speed card steps the speed, lights and stays ({m.ctext("pod_cc2_eqsub")})')
+    for disc, want in (('pod_cc2_playmode', ('podcasts_goto', None, 0)), ('pod_cc2_artistgo', ('podcasts_goto', EP, 1))):
+        m = spoken(EP, 'T', 'S'); m.fire(disc)
+        expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)] and not [c for c in m.calls if c[0] == 'podcasts_goto'], f'{disc}: the tap quits the dialog first')
+        m.calls = []; ret, calls = m.modal()
+        expect(ret == QUIT and [c for c in calls if c[0] in ('podcasts_goto', 'books_goto', 'navigator_to')] == [('navigator_to', 'dialog/dropdown_dialog'), want], f'{disc}: then {want} ({calls})')
+    for path in (EP, BKP):
+        m = spoken(path, 'T', 'S'); m.fire('pod_cc2_upnext'); m.calls = []; ret, calls = m.modal()
+        expect([c for c in calls if c[0] in ('queue_open', 'podcasts_goto', 'books_goto')] == [('queue_open',)], f'{path}: the top-right disc is Up Next, the queue page ({calls})')
+    m = spoken(EP, 'T', 'S'); m.fire('pod_cc2_right2')
+    expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)], 'Sleep stays the Sleep card for an episode')
+    m = spoken(BKP, 'Chapter 3', 'Moby-Dick', speed=2)
+    expect(m.ctext('pod_cc2_title') == ['Moby-Dick'] and m.ctext('pod_cc2_artist') == ['Chapter 3'] and [m.cimg(n) for n in TR3] == ['drop_cc_back15', 'drop_cc_pause', 'drop_cc_fwd30'], f'a part: the book, then the part ({m.ctext("pod_cc2_title")}, {m.ctext("pod_cc2_artist")})')
+    expect(live(m)[0] == ['drop_cc_bkhome', 'drop_cc_queue', 'drop_cc_notes', 'drop_cc_nextep'] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_speed_on' and m.ctext('pod_cc2_eqsub') == ['1.5\xc3\x97'], 'a part: Audiobooks, the book, its info, the next part; Speed lit at 1.5x')
+    for disc, want in (('pod_cc2_playmode', ('books_goto', None)), ('pod_cc2_artistgo', ('books_goto', BKP))):
+        m = spoken(BKP, 'T', 'B'); m.fire(disc); m.calls = []; ret, calls = m.modal()
+        expect([c for c in calls if c[0] in ('podcasts_goto', 'books_goto')] == [want], f'a part, {disc}: {want} ({calls})')
+    m = spoken(EP, 'T', 'S'); m.setword(PS, 0); m.pmode = 2
+    t2 = rec(m, title='Song', artist='Artist'); m.play([t2], 0); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect([m.cimg(n) for n in TR3] == ['drop_cc_prev', 'drop_cc_pause', 'drop_cc_next'] and live(m)[0] == ['drop_cc_pm_shuffle', 'drop_cc_upnext', 'drop_cc_artist', 'drop_cc_album'] and m.ctext('pod_cc2_eqtitle') == ['Equalizer']
+           and not m.hidden('pod_cc2_fav') and m.cimg('pod_cc2_eqdisc') in ('drop_cc_eq', 'drop_cc_eq_on'), f'music after an episode: the music layout is back at the next tick ({[m.cimg(n) for n in TR3]}, {live(m)})')
+    m.calls = []; m.fire('pod_cc2_next'); m.fire('pod_cc2_albumgo')
+    expect([c[0] for c in m.cmds] == ['next_quick_click'] and not [c for c in m.calls if c[0] == 'np_spoken_seek'], 'music again: next skips the track (no seek)')
+    m = spoken(EP, 'T', 'S'); t3 = m.record(title='B', artist='A', path=BKP, name='b.mp3'); m.play([t3], 0); m.calls = []; m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+    expect(live(m)[0][0] == 'drop_cc_bkhome' and m.ctext('pod_cc2_title') == ['A'], 'an episode, then a part: the book layout at the next tick')
+
+    # -- a tap on the card quits the dialog and opens Now Playing
+    m = CC(); m.open(); t = rec(m, title='A', artist='B'); m.play([t], 0); page2(m); m.calls = []
+    m.fire('pod_cc2_top')
+    expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)], f'a tap on the card quits the dialog with 0xd ({[c[0] for c in m.calls]})')
+    m.calls = []; ret, calls = m.modal()
+    expect(ret == QUIT and ('on_backtoplayer_onclick',) in calls, f'and Now Playing opens once the dialog is gone ({calls})')
+    m = CC(); m.open(); page2(m); m.quit_ret = -1; m.calls = []; m.fire('pod_cc2_top'); m.calls = []; ret, calls = m.modal()
+    expect(('on_backtoplayer_onclick',) not in calls, 'a dialog that cannot be quit leaves nothing pending')
+
+    # -- fallback: a missing card widget or a refused bind leaves page 2 unreachable
+    for what, kw in (('no title', dict(gone=('pod_cc2_title',))), ('no card', dict(gone=('pod_cc2_top',))), ('no play button', dict(gone=('pod_cc2_play',)))):
+        m = CC(gone=kw['gone']); m.open()
+        expect((m.dlg, O['EVT_POINTER_DOWN_BEFORE']) not in m.bound and m.hidden('pod_cc2') and m.hidden('pod_cc2_dot0'), f'{what}: no swipe, the dots and page 2 stay hidden')
+    for ev in ('EVT_CLICK', 'EVT_AFTER_PAINT', 'EVT_DESTROY'):
+        m = CC(); m.widget_on_fail = frozenset({O[ev]}); m.open()
+        expect((m.dlg, O['EVT_POINTER_DOWN_BEFORE']) not in m.bound and m.hidden('pod_cc2'), f'a refused {ev} bind: no swipe, page 2 stays hidden')
+
+
+def radio_tests(ctx):
+    """Page 2 for a radio station (patch/pulldown.c "a station on page 2", docs/modules/pulldown.md "Radio"): the card, LIVE, the four discs, the Station card, the switch from and to music."""
+    expect = ctx.expect
+    ST_ = dict(IDLE=0, CONNECTING=1, PLAYING=2, ERROR=3, STOPPED=4, PAUSED=5)
+    STAT = '#EXTM3U\n#EXTINF:-1,Alpha FM\n#M1+:DE\tMP3\t128\thttp://logo.example/a.png\nhttp://one.example/a\n#EXTINF:-1,Beta\nhttp://two.example/b\n'
+
+    def radio(m, st, at=0, err='', own=1):
+        l = m.call(PSYMS['rd_list']); rd = l - 36
+        b = m.alloc(len(STAT) + 1); m.u.mem_write(b, STAT.encode() + b'\0')
+        if not m.word(l + 8): m.call(PSYMS['rd_list_set'], a0=l, a1=b, a2=len(STAT), a3=0, count=40000000)
+        m.setword(rd, st); m.setword(rd + 4, at); m.u.mem_write(l + 3628, err.encode().ljust(72, b'\0')); m.setword(l + 3628 + 72, own); m.play_status = 3 if st == ST_['PAUSED'] else 2   # (a paused stream: stock's status 3)
+
+    def page2(m):
+        m.calls = []; m.swipe_to(1)
+
+    def tick(m):
+        m.call(PSYMS['cc2_tick'], a0=0x777, count=40000000)
+
+    def shown(m, *names): return [m.props.get((m.widgets[n], 'visible'), 1) == 1 for n in names]
+    DISCS = ('pod_cc2_playmode', 'pod_cc2_upnext', 'pod_cc2_artistgo', 'pod_cc2_albumgo')
+    LIVE = ('pod_cc2_live_l', 'pod_cc2_live_r', 'pod_cc2_live')
+
+    # -- the asset: the LIVE divider where the progress bar is, the capsules at Radio Now Playing's look
+    tree = awtk_ui.parse(open(os.path.join(WORK, UI), 'rb').read())
+    kids = {c.name: c for c in tree.find('pod_cc2').children}
+    geo = {n: (kids[n].type, kids[n].x, kids[n].y, kids[n].w, kids[n].h, kids[n].get('visible'), kids[n].get('sensitive')) for n in LIVE}
+    expect(geo == {'pod_cc2_live_l': ('image', 120, 90, 54, 4, 'false', 'false'), 'pod_cc2_live_r': ('image', 234, 90, 54, 4, 'false', 'false'), 'pod_cc2_live': ('label', 182, 84, 44, 16, 'false', 'false')},
+           f'LIVE: two 54 px capsules and a 44 px label across the bar\'s x 130 .. 297, hidden and insensitive in the asset ({geo})')
+    expect(10 + 120 == 130 and 10 + 234 + 54 == 298 and 10 + 182 + 22 == 214 and 44 + 90 + 2 == 136 and kids['pod_cc2_live'].get('style:normal:font_size') == '13' and kids['pod_cc2_live'].get('style:normal:text_color') == '#FFFFFF',
+           'the divider spans the bar, centred on x 214 and y 136, a 13 px white LIVE')
+    for n, size in (('drop_cc_live_l', (54, 4)), ('drop_cc_live_r', (54, 4)), ('drop_cc_stop', (44, 44)), ('drop_cc_rd_my', (54, 54)), ('drop_cc_rd_recent', (54, 54)), ('drop_cc_rd_info', (54, 54)), ('drop_cc_rd_search', (54, 54)),
+                    ('drop_cc_station', (44, 44)), ('drop_cc_station_on', (44, 44))):
+        im = asset_image(n)
+        expect(im.size == size and im.getchannel('A').getbbox() is not None, f'{n} is a {size[0]} x {size[1]} image')
+    expect(asset_image('drop_cc_station_on').getpixel((22, 3))[:3] == (255, 255, 255) and asset_image('drop_cc_station').getpixel((22, 3))[:3] == (0x3A, 0x3A, 0x3C), 'the Station disc is white when saved, else #3A3A3C')
+    # -- a station playing
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m)
+    expect(m.ctext('pod_cc2_title') == ['Alpha FM'] and m.ctext('pod_cc2_artist') == ['Live'], f'the station and its line as the Home bar shows them ({m.ctext("pod_cc2_title")}, {m.ctext("pod_cc2_artist")})')
+    expect(m.cimg('pod_cc2_play') == 'drop_cc_stop' and m.csens('pod_cc2_play') == 1 and shown(m, 'pod_cc2_prev', 'pod_cc2_next', 'pod_cc2_fav') == [False] * 3 and m.hidden('pod_cc2_prev') and m.hidden('pod_cc2_next') and m.hidden('pod_cc2_fav'),
+           'playing: the stop square, no previous / next, no star')
+    expect(m.ctext('pod_cc2_elapsed') == [] and m.ctext('pod_cc2_remain') == [] and shown(m, *LIVE) == [True] * 3, 'no times; LIVE shows in the bar\'s place')
+    expect([m.cimg(n) for n in DISCS] == ['drop_cc_rd_my', 'drop_cc_rd_recent', 'drop_cc_rd_info', 'drop_cc_rd_search'] and [m.csens(n) for n in DISCS] == [1] * 4, 'the four discs: My Stations, Recently Played, Station Info, Search')
+    expect(m.ctext('pod_cc2_eqtitle') == ['Station'] and m.ctext('pod_cc2_eqsub') == ['Not Saved'] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_station' and m.csens('pod_cc2_eqdisc') == 0 and m.ctext('pod_cc2_sleepsub') == ['Off'] and m.cimg('pod_cc2_sleepdisc') == 'drop_cc_sleep',
+           f'the Equalizer card is the Station card, not saved and unlit; Sleep is as for music ({m.ctext("pod_cc2_eqtitle")}, {m.ctext("pod_cc2_eqsub")})')
+    # -- LIVE follows the state: connecting and playing show it, stopped and paused do not
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); radio(m, ST_['PAUSED']); tick(m)
+    expect(shown(m, *LIVE) == [False] * 3 and m.cimg('pod_cc2_play') == 'drop_cc_play', 'a station paused while page 2 shows: LIVE goes at the next tick, the play glyph')
+    for st, lv, glyph in (('CONNECTING', True, 'drop_cc_stop'), ('PAUSED', False, 'drop_cc_play'), ('PLAYING', True, 'drop_cc_stop'), ('STOPPED', False, 'drop_cc_play')):
+        m = CC(); m.open(); radio(m, ST_[st]); page2(m)
+        expect(shown(m, *LIVE) == [lv] * 3 and m.cimg('pod_cc2_play') == glyph, f'{st}: LIVE {"shown" if lv else "hidden"}, the {glyph[8:]} glyph ({shown(m, *LIVE)}, {m.cimg("pod_cc2_play")})')
+    # -- taps
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); m.cmds = []; m.calls = []; m.fire('pod_cc2_play')
+    expect(m.call(PSYMS['rd_state']) == ST_['STOPPED'] and not [c for c in m.calls if c[0] == 'dialog_quit'], 'the stop button stops the station and stays on the pull-down')
+    m.calls = []; m.fire('pod_cc2_play')
+    expect(m.call(PSYMS['rd_state']) == ST_['CONNECTING'], 'and play starts it again')
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); m.fire('pod_cc2_top'); m.calls = []; ret, calls = m.modal()
+    expect(ret == QUIT and ('rn_open',) in calls and ('on_backtoplayer_onclick',) not in calls, f'the card opens Radio Now Playing ({[c for c in calls if c[0] in ("rn_open", "on_backtoplayer_onclick")]})')
+    for disc, want in (('pod_cc2_playmode', ('radio_open_at', 0)), ('pod_cc2_upnext', ('radio_open_at', 1)), ('pod_cc2_artistgo', ('sinfo_open',)), ('pod_cc2_albumgo', ('radio_open_at', 2))):
+        m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); m.calls = []; m.fire(disc)
+        expect([c for c in m.calls if c[0] == 'dialog_quit'] == [('dialog_quit', m.dlg, QUIT)] and not [c for c in m.calls if c[0] in ('radio_open_at', 'sinfo_open', 'pod_set_mode')], f'{disc}: the tap quits the dialog and opens nothing itself')
+        m.calls = []; ret, calls = m.modal()
+        expect(ret == QUIT and [c for c in calls if c[0] in ('radio_open_at', 'sinfo_open', 'queue_open', 'pm_goto')] == [want], f'{disc}: after the dialog it calls {want} ({calls})')
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); m.fire('pod_cc2_right2'); m.calls = []; ret, calls = m.modal()
+    expect(ret == QUIT and ('window_open', 'm1plus_sleeptimer') in calls, 'Sleep opens its page as for music')
+    # -- the Station card: Saved follows My Stations, a tap toggles with Radio Now Playing's toasts and the pull-down stays
+    m = CC(); m.open(); radio(m, ST_['PLAYING']); page2(m); m.calls = []; m.fire('pod_cc2_right1')
+    expect(not [c for c in m.calls if c[0] == 'dialog_quit'] and ('pod_toast', 'Added to My Stations') in m.calls and m.favs == {'http://one.example/a'}, f'Not Saved: a tap adds the station and says so ({[c for c in m.calls if c[0] == "pod_toast"]})')
+    expect(m.ctext('pod_cc2_eqsub') == ['Saved'] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_station_on', 'at once: Saved, the disc lit')
+    m.calls = []; m.fire('pod_cc2_right1')
+    expect(('pod_toast', 'Removed from My Stations') in m.calls and not m.favs and m.ctext('pod_cc2_eqsub') == ['Not Saved'] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_station', 'a second tap removes it: Not Saved, unlit')
+    m = CC(); m.favs = {'http://one.example/a'}; m.open(); radio(m, ST_['PLAYING']); page2(m)
+    expect(m.ctext('pod_cc2_eqsub') == ['Saved'] and m.cimg('pod_cc2_eqdisc') == 'drop_cc_station_on', 'a saved station shows Saved with the lit disc when the card comes up')
+    # -- music <-> radio while page 2 shows
+    m = CC(); m.open(); t = m.record(title='A', artist='B'); m.play([t], 0); m.play_status = 2; page2(m)
+    expect(m.cimg('pod_cc2_playmode') == 'drop_cc_pm_order' and m.ctext('pod_cc2_eqsub') == ['Off'] and shown(m, *LIVE) == [False] * 3, 'a local track first: the music layout')
+    radio(m, ST_['PLAYING']); tick(m)
+    expect(m.ctext('pod_cc2_title')[-1:] == ['Alpha FM'] and [m.cimg(n) for n in DISCS] == ['drop_cc_rd_my', 'drop_cc_rd_recent', 'drop_cc_rd_info', 'drop_cc_rd_search'] and m.ctext('pod_cc2_eqtitle')[-1:] == ['Station']
+           and shown(m, *LIVE) == [True] * 3 and m.hidden('pod_cc2_fav') and m.hidden('pod_cc2_prev'), 'a station starts: the radio layout at the next tick')
+    m.setword(m.call(PSYMS['rd_list']) - 36, ST_['STOPPED']); m.setword(m.call(PSYMS['rd_list']) + 3628 + 72, 0)   # (stopped, and local music is back)
+    m.calls = []; m.setword(pod.DATA['PLAY_QUEUE'][0], 0); m.setword(m.call(PSYMS['rd_list']) - 36, ST_['IDLE']); tick(m)
+    expect(m.ctext('pod_cc2_title')[-1:] == ['Not Playing'] and m.ctext('pod_cc2_eqtitle')[-1:] == ['Equalizer'] and shown(m, *LIVE) == [False] * 3 and [m.cimg(n) for n in DISCS] == ['drop_cc_pm_off', 'drop_cc_upnext_off', 'drop_cc_artist_off', 'drop_cc_album_off'],
+           f'the station ends: back to the greyed music layout, Equalizer again ({m.ctext("pod_cc2_title")}, {m.ctext("pod_cc2_eqtitle")})')
+
+
+SECTIONS = [hook_tests, pages_tests, card_tests, radio_tests, page_tests, labels_tests, files_tests, own_tests, hold_tests, flags_tests, playtile_tests, stockopen_tests, gate_tests, close_tests]
