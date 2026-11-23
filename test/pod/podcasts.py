@@ -320,6 +320,22 @@ def scan_tests(ctx):
     m7 = PM(); m7.put(f'{ROOT}/Z/z.mp3', b'', 5); m7.fail.add(('__xstat', f'{ROOT}/Z/z.mp3'))
     s7, a7 = m7.shows()
     expect(m7.episodes(a7)[0]['pub'] == 0 and m7.episodes(a7)[0]['title'] == 'z', 'a file whose stat fails is still an episode (date 0)')
+    # pc_ep_of: the playing file's entry (.episodes, else .archive), else the file's own facts
+    def ep_of(mm, path):
+        out = mm.alloc(O['PC_EP_SIZE']); mm.u.mem_write(out, b'\xff' * O['PC_EP_SIZE'])
+        r = mm.call(PSYMS['pc_ep_of'], a0=mm.cstr(path), a1=out, count=20000000)
+        return r, mm.ep(out)
+    r, e = ep_of(m, f'{ROOT}/bravo/b2.mp3')
+    expect(r == 1 and e['title'] == 'Bravo Two' and e['pub'] == 5000 and e['dur'] == 1200 and e['guid'] == guid_hash('g2') and e['file'] == 'b2.mp3', f'pc_ep_of: the .episodes entry by its f= name ({r}, {e})')
+    r, e = ep_of(m, f'{ROOT}/bravo/extra.mp3')
+    expect(r == 0 and e['title'] == 'extra.mp3' and e['pub'] == 3500 and e['dur'] == 0 and e['guid'] == 0 and e['desc'] == '', f'no entry: filled from the file, 0 ({r}, {e})')
+    r, e = ep_of(m, f'{ROOT}/bravo/b.mp3')
+    expect(r == 0 and e['title'] == 'b.mp3', 'a name that only prefixes an entry\'s is not that entry')
+    m.put(f'{ROOT}/bravo/.archive', (EPS_HEAD + 'g=a1\tp=77\td=90\tf=old.mp3\tt=Old One\tx=Long ago\n').encode())
+    r, e = ep_of(m, f'{ROOT}/bravo/old.mp3')
+    expect(r == 1 and e['title'] == 'Old One' and e['pub'] == 77 and e['dur'] == 90 and e['desc'] == 'Long ago' and e['guid'] == guid_hash('a1'), f'an episode only the archive lists: its entry ({r}, {e})')
+    r, e = ep_of(m, '/mnt/mmc/Audiobooks/Book/01.mp3')
+    expect(r == 0 and e['file'] == '' and e['pub'] == 0, 'not a podcast path: nothing')
     # the fresh count follows the ring
     m.call(PSYMS['pc_mark'], a0=pc_hash(f'{ROOT}/Alpha Show/ep1.mp3'), a1=1, count=20000000)
     m.call(PSYMS['pc_mark'], a0=pc_hash(f'{ROOT}/Alpha Show/ep2.mp3'), a1=1, count=20000000)

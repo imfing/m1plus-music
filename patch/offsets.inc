@@ -583,6 +583,8 @@
 #define NPI_TAP_PX 10
 #define NPI_FADE 16
 #define NPI_PAGE 2
+#define NPN_PAGE 1 /* the notes page: the slide view's second page, the lyrics slot while spoken audio plays (np_notes_layout: the hairline at NPI_ROW_Y plus the title shift, the notes NPN_GAP under it and NPN_GAP of air under the last line; its header, scrim, scroll and fades are the info page's) */
+#define NPN_GAP 12
 #define NP_SCRIM_Y 8
 #define NP_SCRIM_H 324
 #define NP_SCRIM_ALPHA 128

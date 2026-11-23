@@ -97,11 +97,30 @@ I_LOC_Y, I_LOC_LH, I_LOC_LINES, I_FOOT = 28, 20, 2, 8
 I_KEYS = ('Format', 'Sample Rate', 'Bit Depth', 'Bitrate', 'Genre', 'Year', 'File Size', 'Location')
 HAIR = '#FFFFFF26'                                 # 15 % white
 HAIR_RGBA = (255, 255, 255, 0x26)
+N_PAGE, N_GAP = 1, 12                               # the notes page (the lyrics slot while spoken audio plays): the slide view's page, and the air above and below the notes (patch/offsets.inc NPN_PAGE, NPN_GAP; N_NAMES: its widgets, patch/nowplaying.c np_nw_names)
+N_NAMES = ('np_n_scroll', 'np_n_art', 'np_n_title', 'np_n_title2', 'np_n_artist', 'np_n_album', 'np_n_hair', 'np_n_hint', 'np_n_body', 'img_np_scrim_notes')
+N_RGB, N_PX = '#DCDCDC', 16                         # the notes' colour and size (the episode page's description line; patch/pcdetail.h PD_PITCH 22, PD_PGAP 10 set the lines)
 I_RELAY = 3                                        # ticks after the page starts that lay the info page out again (patch/offsets.inc NP_RELAY)
 I_ROW_TAIL = 200                                   # bytes of a Location's end looked at
 I_UNITS = ('', 'kHz', 'bit', 'kbps')
 
 def i_box(y, px): return y - I_PAD, px + 2 * I_PAD
+
+N_PITCH, N_PGAP = 22, 10                           # the notes' line pitch and the extra air between paragraphs (patch/pcdetail.h PD_PITCH, PD_PGAP)
+
+def notes_layout(text, wrap, sh=0):
+    """The notes page's layout (patch/nowplaying.c np_notes_layout): the hairline's page y, the notes as [(line, page y of its top)] and the content's end. text: paragraphs split by newlines, wrap(paragraph) -> its lines;
+    sh the title's second line shift. The notes start N_GAP under the hairline, N_GAP of air follows the last line; no text: the hint takes one line's room."""
+    hair = I_ROW_Y + sh
+    y, out, para = hair + N_GAP, [], False
+    for par in text.split('\n'):
+        if not par: continue
+        if para: y += N_PGAP
+        for t in wrap(par):
+            out.append((t, y)); y += N_PITCH
+        para = True
+    if not out: y += N_PITCH
+    return hair, out, y + N_GAP
 
 def resampled(v, out):
     """patch/nowplaying.c np_resampled: the Sample Rate value v ("44.1 kHz") of a track the player converts to out Hz (the rate its output is kept at, Crossfade) as (full, alt): "44.1 \u2192 96 kHz", and
@@ -509,12 +528,12 @@ def apply_ui(root):
     for r, n in ((4, 'label_genre'), (5, 'label_year'), (6, 'label_size'), (7, 'label_location')):
         w = find(root, n); move(w, I_X, cy(ty(r) - I_PAD), I_W, I_ROW_PX + 2 * I_PAD); text_style(w, I_ROW_PX, GREY, 'left')
     own = []
-    def label(name, x, y, w, px, rgb, align):       # a plain label: the payload cuts a long text itself (m1_fit, np_loc_fit), an hscroll_label's clip does not follow the sliding page
+    def label(name, x, y, w, px, rgb, align, to=None):       # a plain label: the payload cuts a long text itself (m1_fit, np_loc_fit), an hscroll_label's clip does not follow the sliding page
         y0, h = i_box(cy(y), px)
         wd = awtk_ui.Widget('label', x, y0, w, h, [('name', name), ('visible', 'false'), ('sensitive', 'false')])
-        text_style(wd, px, rgb, align); each(wd, STATES, 'margin_left', '0'); each(wd, STATES, 'margin_right', '0'); own.append(wd)
-    def solid(name, x, y, w, h, rgb, shown):
-        wd = awtk_ui.Widget('view', x, cy(y), w, h, [('name', name), ('sensitive', 'false')] + ([] if shown else [('visible', 'false')])); each(wd, STATES, 'bg_color', rgb); own.append(wd)
+        text_style(wd, px, rgb, align); each(wd, STATES, 'margin_left', '0'); each(wd, STATES, 'margin_right', '0'); (own if to is None else to).append(wd)
+    def solid(name, x, y, w, h, rgb, shown, to=None):
+        wd = awtk_ui.Widget('view', x, cy(y), w, h, [('name', name), ('sensitive', 'false')] + ([] if shown else [('visible', 'false')])); each(wd, STATES, 'bg_color', rgb); (own if to is None else to).append(wd)
     hairs, _, _, _ = flow([True] * I_ROWS)
     for r in range(I_ROWS): solid(f'np_i_h{r}', I_X, hairs[r], I_W, 1, HAIR, True)
     art = awtk_ui.Widget('view', I_X, cy(I_ART_Y), I_ART, I_ART, [('name', 'np_i_art'), ('sensitive', 'false')]); each(art, STATES, 'bg_color', '#00000000'); own.append(art)
@@ -533,6 +552,21 @@ def apply_ui(root):
     scrim = info.children[0]; assert scrim.name == 'img_np_scrim_info'
     kids = info.children[1:] + own
     info.children[1:] = [awtk_ui.Widget('scroll_view', 0, I_TOP, W, I_BOTTOM - I_TOP, [('name', 'np_i_scroll'), ('floating', 'false')], kids)]
+
+    # ---- the notes page (patch/nowplaying.c np_notes_layout): while an episode or a book part plays it replaces the lyrics page; in the asset it is hidden and insensitive, so without the payload the lyrics page is as ever.
+    # The info page's scrim and header over one scroll_view of the same rectangle (the payload scrolls it as the info page's); the notes are one painted label np_n_body, the hint a label.
+    nk = []
+    lyr.children.insert(1, awtk_ui.Widget('image', *SCRIM, [('name', 'img_np_scrim_notes'), ('image', 'np_scrim'), ('draw_type', 'default'), ('clickable', 'false'), ('sensitive', 'false'), ('visible', 'false')]))
+    nart = awtk_ui.Widget('view', I_X, cy(I_ART_Y), I_ART, I_ART, [('name', 'np_n_art'), ('sensitive', 'false')]); each(nart, STATES, 'bg_color', '#00000000'); nk.append(nart)
+    label('np_n_title', I_TEXT_X, I_TITLE_Y, I_TEXT_W, I_TITLE_PX, TITLE_RGB, 'left', nk)
+    label('np_n_title2', I_TEXT_X, I_TITLE_Y + I_TITLE_LH, I_TEXT_W, I_TITLE_PX, TITLE_RGB, 'left', nk)
+    label('np_n_artist', I_TEXT_X, I_ARTIST_Y, I_TEXT_W, I_META_PX, GREY, 'left', nk)
+    label('np_n_album', I_TEXT_X, I_ALBUM_Y, I_TEXT_W, I_META_PX, GREY, 'left', nk)
+    solid('np_n_hair', I_X, I_ROW_Y, I_W, 1, HAIR, True, nk)
+    label('np_n_hint', I_X, I_ROW_Y + N_GAP, I_W, N_PX, GREY, 'left', nk)
+    nbody = awtk_ui.Widget('label', 0, 0, W, I_BOTTOM - I_TOP, [('name', 'np_n_body'), ('sensitive', 'false')])
+    text_style(nbody, N_PX, N_RGB, 'left'); each(nbody, STATES, 'margin_left', '0'); each(nbody, STATES, 'margin_right', '0'); nk.append(nbody)
+    lyr.children.append(awtk_ui.Widget('scroll_view', 0, I_TOP, W, I_BOTTOM - I_TOP, [('name', 'np_n_scroll'), ('floating', 'false'), ('visible', 'false'), ('sensitive', 'false')], nk))
 
     # ---- progress bar, times, page dots
     sl = find(root, 'slider_play'); move(sl, *SLIDER); sl.set('bar_size', str(BAR))
@@ -569,7 +603,7 @@ def apply_ui(root):
     for n in ('img_repeata', 'img_repeatb'): w = find(root, n); move(w, SLIDER[0], SLIDER[1] + SLIDER[3] // 2 + 7, w.w, w.h)
 
     after = [w.name for w in root.walk() if w.name]
-    assert sorted(set(names)) == sorted(set(after) - {'img_np_tint', 'np_remaining', 'np_elapsed', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_lyrics', 'np_i_scroll'} - {w.name for w in own}), 'a widget name was lost'
+    assert sorted(set(names)) == sorted(set(after) - {'img_np_tint', 'np_remaining', 'np_elapsed', 'img_np_scrim_lyrics', 'img_np_scrim_info', 'img_np_shadow', 'np_lyrics', 'np_i_scroll'} - set(N_NAMES) - {w.name for w in own}), 'a widget name was lost'
     assert album in find(root, 'np_i_scroll').children
     return root
 
@@ -641,6 +675,9 @@ def check_touch(root):
         assert find(root, n).get('sensitive') == 'false', f'{n} must be insensitive'
     for w in find(root, 'view_info').walk():
         if w.name and w.name.startswith(('np_i_', 'img_np_hair')) and w.name != 'np_i_scroll': assert w.get('sensitive') == 'false', f'{w.name} must be insensitive'
+    for n in N_NAMES: assert find(root, n).get('sensitive') == 'false', f'{n} must be insensitive in the asset (the payload makes the scroll_view sensitive while the notes page shows)'
+    for n in ('np_n_scroll', 'img_np_scrim_notes'): assert find(root, n).get('visible') == 'false', f'{n} is hidden in the asset: without the payload the lyrics page is as ever'
+    assert find(root, 'view_lyrics').children[0].name == 'img_np_scrim_lyrics' and find(root, 'view_lyrics').children[1].name == 'img_np_scrim_notes' and find(root, 'view_lyrics').children[-1].name == 'np_n_scroll', 'the notes page lies over the lyrics page'
     sc = find(root, 'np_i_scroll'); assert sc.get('sensitive') != 'false', 'np_i_scroll takes the touches'
     assert all(sc.get(k, 'false') == 'false' for k in ('xslidable', 'yslidable')), 'np_i_scroll never scrolls itself'
     assert [c.name for c in sv.children].index('view_info') == I_PAGE, 'the info page is the third page of the slide_view'

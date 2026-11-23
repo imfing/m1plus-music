@@ -84,7 +84,7 @@ add to a playlist, or delete (the trash can; in a playlist it removes the songs 
 Tap the mini player's cover on Home, or tap the Now Playing button in a page's top bar. On Now Playing:
 
 - Use the centre button to pause or resume, and the buttons beside it to skip tracks. The cover shrinks while paused and springs back when the music resumes; turn this off in Settings → Now Playing → Shrink on Pause.
-- Swipe across the cover to see lyrics, then swipe again for song details.
+- Swipe across the cover to see lyrics, then swipe again for song details. While a podcast episode or an audiobook plays, the first swipe shows the episode's notes instead of lyrics (scroll them with a finger); the file details are on the next page.
 - Tap **…** for more options, including display modes and the Sleep Timer (a moon icon appears in the status bar while a timer is running, when the bar has room for it).
 
 ### Control Center

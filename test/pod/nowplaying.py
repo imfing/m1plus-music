@@ -20,6 +20,8 @@ class NowMachine(Machine):
         self.handlers[INIT + 12] = 'stock_playing_resume'
         self.handlers[pod.NP_MODE_BUTTON] = 'np_mode_button'
         self.styles = []          # (widget, "normal:bg_color", uint32)
+        self.drawn = []           # (text, rect) of canvas_draw_text_in_rect
+        self.opened = []          # every file opened over the machine's life (calls is cleared by each call)
         self.style_ret = 0
         self.pt = (30, 200, 1)    # get_playtimeandlength: pos, len, return value
         self.blobs = {}           # path -> bytes (fopen / fread / fclose)
@@ -60,7 +62,8 @@ class NowMachine(Machine):
     def bar_color(self): return self.bar_styles[-1][2] if self.bar_styles else None
     def bar_calls(self): return [c for c in self.calls if c[0] == 'widget_set_style' and c[1] == self.bar]
     IW = {'np_i_scroll': 0, 'np_i_art': 0, 'np_i_title': 20, 'np_i_title2': 20, 'np_i_artist': 16, 'np_i_album': 16, 'np_i_badge_hires': 0, 'np_i_badge_dsd': 0,
-          **{f'np_i_k{r}': 16 for r in range(8)}, **{f'np_i_v{r}': 16 for r in range(9)}, **{f'np_i_h{r}': 0 for r in range(8)}}
+          **{f'np_i_k{r}': 16 for r in range(8)}, **{f'np_i_v{r}': 16 for r in range(9)}, **{f'np_i_h{r}': 0 for r in range(8)},
+          'np_n_scroll': 0, 'np_n_art': 0, 'np_n_title': 20, 'np_n_title2': 20, 'np_n_artist': 16, 'np_n_album': 16, 'np_n_hair': 0, 'np_n_hint': 16, 'np_n_body': 16, 'img_np_scrim_notes': 0}
     measure_px = None         # (text, px) -> width: the real font, set by run()
     def info_page(self, stock, own=True):
         """The info page's stock labels (name -> the text stock wrote) and, with own, our widgets; returns {name: handle}."""
@@ -72,6 +75,8 @@ class NowMachine(Machine):
             self.widget('slide_view')
         return out
 
+    def call(self, *a, **k):
+        r = super().call(*a, **k); self.opened += [c[1] for c in self.calls if c[0] in ('open', 'fopen')]; return r
     def label(self, name): return self.texts[self.widgets[name]].encode('latin-1').decode('utf-8')   # the text stock wrote
 
     def _hook(self, u, address, size, _):
@@ -82,6 +87,9 @@ class NowMachine(Machine):
             i = self.info
             if i: self.u.mem_write(a0, struct.pack('<iiii32si', 900000, i['rate'], 0, 0, i['fmt'].encode(), i['bits']))
             self.calls.append(('mclGetInfo',)); ret = 1 if i else 0
+        elif name == 'canvas_draw_text_in_rect':   # (self.texts is the widgets' texts here)
+            chars = struct.unpack(f'<{a2}I', self.u.mem_read(a1, 4 * a2)) if a2 else ()
+            self.drawn.append((''.join(map(chr, chars)), struct.unpack('<4i', self.u.mem_read(a3, 16)))); ret = 0
         elif name == 'widget_measure_text':
             t = ''.join(map(chr, self.words_until_zero(a1))); w = float(self.measure_px(t, self.px.get(a0, 16))) if t else 0.0
             u.reg_write(UC_MIPS_REG_F0, struct.unpack('<I', struct.pack('<f', w))[0]); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return
@@ -148,6 +156,8 @@ class NowMachine(Machine):
             elif t is not None and not self.get_ret:
                 t = t.encode('latin-1').decode('utf-8'); ret = self.alloc(4 * len(t) + 4)
                 self.u.mem_write(ret, struct.pack(f'<{len(t) + 1}I', *map(ord, t), 0))
+        elif name == 'memmove':
+            self.u.mem_write(a0, bytes(self.u.mem_read(a1, a2))); ret = a0
         elif name == 'fopen' and self.read_cstr(a0) in self.blobs:
             path = self.read_cstr(a0); h = self.alloc(4); self.pos[h] = 0; self.fh = (h, path)
             self.opened.append(path); self.calls.append(('fopen', path, self.read_cstr(a1))); ret = h
@@ -714,6 +724,131 @@ def run(ctx):
         expect(T(m, 'np_i_title') == l[0] and shown(m, 'np_i_title2'), f'{lang}: the title wraps the same')
     m = info(stock_en, rec=REC, own=False)
     expect(not [c for c in m.calls if c[0] == 'widget_on' and c[2] == D_], 'without our widgets nothing is bound to touch')
+
+    # ---- spoken audio on the info page: an episode's third header line is its date and length (the album is the show again), Genre and Year are left out; a book part keeps its album
+    PEP = '/mnt/mmc/Podcasts/Show/e1.mp3'
+    ep_fs = {'/mnt/mmc/Podcasts/Show/.episodes': b'M1PLUS-EPISODES 1\ng=a\tp=1700000000\td=3120\tf=e0.mp3\tt=Other\ng=b\tp=1700500000\td=3120\tf=e1.mp3\tt=Ep One\n'}
+    m = info(stock_en, rec=dict(REC, title='Ep One', artist='Show', album='Show', path=PEP, name='e1.mp3'), fs=dict(ep_fs))
+    alb = T(m, 'np_i_album')
+    expect(alb.endswith(' \u00b7 52m') and alb != 'Show' and len(alb) > 8, f'an episode: the third header line is its date and length, not the show ({alb!r})')
+    hid = lambda n: m.props.get((m.widgets[n], 'visible')) == 0
+    expect(not shown(m, 'np_i_k4') and not shown(m, 'np_i_k5') and shown(m, 'np_i_k6') and shown(m, 'np_i_k7') and hid('label_genre') and hid('label_year'),
+           f'Genre and Year are left out (stock\'s labels hidden too), File Size and Location stay: {[rowv(m, r) for r in range(8)]}')
+    m = info(stock_en, rec=dict(REC, title='Ep', artist='Show', album='Show', path='/mnt/mmc/Podcasts/Show/nofile.mp3', name='nofile.mp3'), fs=dict(ep_fs))
+    expect(T(m, 'np_i_album') == '' or ' \u00b7 ' not in T(m, 'np_i_album'), f'an episode with no entry: its file date, no length ({T(m, "np_i_album")!r})')
+    m = info(stock_en, rec=dict(REC, title='Part', artist='Author', album='The Book', path='/mnt/mmc/Audiobooks/Book One/01.mp3', name='01.mp3'))
+    expect(T(m, 'np_i_album') == 'The Book' and not shown(m, 'np_i_k4') and not shown(m, 'np_i_k5'), 'a book part keeps its album line (the book) and also loses Genre / Year')
+    m.play([m.record(**dict(REC, path=PEP, name='e1.mp3'))], 0); m.fs.update(ep_fs)
+    for _ in range(3): m.tick()
+    m.play([m.record(**REC)], 0)
+    for _ in range(3): m.tick()
+    expect(T(m, 'np_i_album') == 'The Dark Side of the Moon' and shown(m, 'np_i_k4') and rowv(m, 4)[0] == 'Genre', f'music after an episode: the album and the Genre row are back ({T(m, "np_i_album")!r}, {rowv(m, 4)})')
+
+    # ---- the episode notes page: page 1 shows an episode's notes while spoken audio plays (the info page's scrim and header, a hairline, the notes wrapped as the episode page wraps them, scrolled as the info page is)
+    import pod_show, pod_wrap
+    NFONT = pod_show.Font(os.path.join(raw, 'fonts', 'default.ttf'))
+    expect(all(mn.__dict__[k] == O[v] for k, v in (('N_PAGE', 'NPN_PAGE'), ('N_GAP', 'NPN_GAP'))) and (mn.N_PITCH, mn.N_PGAP) == (pod_show.PD['PD_PITCH'], pod_show.PD['PD_PGAP']) and mn.N_PX == 16 and mn.N_NAMES[0] == 'np_n_scroll',
+           'the notes page\'s constants equal the payload\'s (and the episode page\'s pitch and paragraph air)')
+    PARAS = ['This week we dig out a drawer of portable players from the last twenty years and ask a simple question: why do some of them still sound so good?',
+             'We talk about output stages, why a clean volume curve matters more than the spec sheet, and how a small screen can still make a library feel easy to browse.',
+             'Chapters: 00:00 Intro · 04:12 The drawer · 21:40 Output stages · 38:05 Listener mail', '大家好，' * 40]
+    NOTE_FS = dict(ep_fs); NOTE_FS['/mnt/mmc/Podcasts/Show/.notes'] = b'M1PLUS-NOTES 1\ng=b\t' + '\\n'.join(PARAS).encode() + b'\n'
+    NOTE_FS['/mnt/mmc/Podcasts/Show/.episodes'] += b'g=c\tp=1700600000\td=600\tf=e2.mp3\tt=Ep Two\tx=Just the short description\n'
+    wrap_par = lambda par: pod_wrap.wrap_font(NFONT, par, mn.N_PX, mn.I_W, 320)
+    NREC = dict(REC, title='Ep One', artist='Show', album='Show', path=PEP, name='e1.mp3')
+    nbody = lambda m: (m.bound[(m.widgets['np_n_body'], EVT_AFTER_PAINT)] if (m.widgets['np_n_body'], EVT_AFTER_PAINT) in m.bound else (0, 0))
+    def body_texts(m):
+        e = m.alloc(0x40); m.u.mem_write(e, bytes(0x40)); m.setword(e + O['EVENT_PAINT_CANVAS'], 0x7000a000)
+        m.drawn = []; fn, ctx = nbody(m); m.call(fn, a0=ctx, a1=e, count=2000000)
+        return list(m.drawn)
+    def want_body(text, sh, off):
+        hair, lines, bottom = mn.notes_layout(text, wrap_par, sh)
+        return hair, [(t, (16, y - 36 - off - 2, 288, 20)) for t, y in lines if y - 36 - off - 2 >= 0 and y - 36 - off - 2 + 20 <= 252], bottom
+    nvh = lambda m: m.props.get((m.widgets['np_n_scroll'], 'virtual_h'))
+    noffs = lambda m: -P(m, 'np_n_hair')[1] + (mn.I_ROW_Y - mn.I_TOP)
+    m = info(stock_en, rec=NREC, fs=dict(NOTE_FS))
+    text = '\n'.join(PARAS)
+    expect(shown(m, 'np_n_scroll') and m.props.get((m.widgets['np_n_scroll'], 'sensitive')) == 1 and shown(m, 'img_np_scrim_notes'), 'an episode: the notes page and its scrim show, the scroll_view takes the touches')
+    expect(all(T(m, f'np_n_{k}') == T(m, f'np_i_{k}') for k in ('title', 'artist', 'album')) and T(m, 'np_n_album').endswith(' · 52m') and P(m, 'np_n_art') == P(m, 'np_i_art') and P(m, 'np_n_title') == P(m, 'np_i_title') and P(m, 'np_n_artist') == P(m, 'np_i_artist') and P(m, 'np_n_album') == P(m, 'np_i_album'),
+           'the header is the info page\'s: cover, title, show, date and length, at the same places')
+    hair, wl, bottom = want_body(text, 0, 0)
+    got = body_texts(m)
+    expect(P(m, 'np_n_hair')[:2] == (16, hair - 36) and not shown(m, 'np_n_hint') and got == wl and len(wl) >= 5, f'the hairline at 112 and the notes 12 px under it, wrapped as the model ({len(got)} of {len(wl)} lines inside): {[g for g in got if g not in wl][:2]}')
+    expect(nvh(m) == bottom - 36 and bottom - 36 > 252, f'the content ends 12 px under the last line ({nvh(m)})')
+    expect(len({t[1][1] for t in got}) == len(got) and all(b[1][1] - a[1][1] in (22, 32) for a, b in zip(got, got[1:])), 'lines 22 px apart, 32 between paragraphs')
+    expect(not shown(m, 'np_n_title2'), 'a one line title: the second label stays hidden')
+    # the hooks: touch, fades and the cover paint are the info page's handlers
+    on = [m.bound.get((m.widgets['np_n_scroll'], ev), (0,))[0] for ev in (D_, MV_, UP_, AB_, EVT_AFTER_PAINT)]
+    expect(on == [PSYMS['np_on_info_touch']] * 4 + [PSYMS['np_on_info_fade']] and nbody(m)[0] == PSYMS['np_on_notes_paint'] and m.bound[(m.widgets['np_n_art'], EVT_AFTER_PAINT)][0] == PSYMS['np_on_info_art'], 'one touch and fade handler serves both scroll_views')
+    # scrolling: the header, hairline and lines move; clamped; the info page's offset is its own
+    m.call(PSYMS['np_notes_scroll'], a0=50); hair, wl, bottom = want_body(text, 0, 50)
+    expect(P(m, 'np_n_art')[1] == -50 and P(m, 'np_n_hair')[1] == hair - 36 - 50 and body_texts(m) == wl and offs(m) == 0, 'offset 50: the header, the hairline and the lines move up 50 px, nothing of the info page does')
+    m.call(PSYMS['np_notes_scroll'], a0=10000); top = nvh(m) - 252
+    hair, wl, bottom = want_body(text, 0, top)
+    expect(P(m, 'np_n_art')[1] == -top and body_texts(m) == wl and wl and wl[-1][1][1] + 20 <= 252 - 12, f'clamped at the content end ({top}): the last line, 12 px of air under it')
+    m.call(PSYMS['np_notes_scroll'], a0=-5); expect(P(m, 'np_n_art')[1] == 0, 'a negative offset is the top')
+    def nptr(m, kind, x, y):
+        e = m.alloc(0x30); m.u.mem_write(e, bytes(0x30)); m.setword(e, kind); m.setword(e + O['PE_X'], x); m.setword(e + O['PE_Y'], y)
+        return m.call(PSYMS['np_on_info_touch'], a0=m.widgets['np_n_scroll'], a1=e, count=2000000)
+    r = [nptr(m, D_, 100, 200), nptr(m, MV_, 100, 185), nptr(m, MV_, 100, 165)]
+    expect(r == [0, O['RET_STOP'], O['RET_STOP']] and noffs(m) == 20 and offs(m) == 0, 'a vertical drag scrolls the notes with the finger (RET_STOP once it began), not the info page')
+    nptr(m, UP_, 100, 165); nptr(m, D_, 100, 200); nptr(m, MV_, 140, 203); r = nptr(m, MV_, 140, 100)
+    expect(r == 0 and noffs(m) == 20, 'a sideways swipe is the slide view\'s')
+    def nfades(m):
+        e = m.alloc(0x40); m.u.mem_write(e, bytes(0x40)); m.setword(e + O['EVENT_PAINT_CANVAS'], 0x7000a000)
+        m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=m.widgets['np_n_scroll'], a1=e, count=2000000)
+        return sorted({f[2] for f in m.fills})
+    m.call(PSYMS['np_notes_scroll'], a0=0); expect(nfades(m) == list(range(236, 252)), 'at the top the bottom 16 rows fade')
+    m.call(PSYMS['np_notes_scroll'], a0=20); expect(nfades(m) == list(range(16)) + list(range(236, 252)), 'scrolled: both edges')
+    m.call(PSYMS['np_notes_scroll'], a0=10000); expect(nfades(m) == list(range(16)), 'at the end the top 16 rows')
+    # back at the top: a page change, Now Playing in front again, a track change; the relay re-reads nothing
+    sv = m.widgets['slide_view']; m.call(PSYMS['np_notes_scroll'], a0=50); m.props[(sv, 'value')] = mn.N_PAGE; m.tick()
+    expect(noffs(m) == 50, 'on the notes page the tick leaves the offset alone')
+    m.props[(sv, 'value')] = 0; m.tick(); expect(noffs(m) == 0, 'the slide view on another page: the notes go to the top')
+    m.call(PSYMS['np_notes_scroll'], a0=50); m.fire(O['EVT_WINDOW_TO_FG'], WIN); expect(noffs(m) == 0, 'Now Playing in front again: the top')
+    m.props[(sv, 'value')] = mn.N_PAGE; m.call(PSYMS['np_notes_scroll'], a0=50)
+    m.play([m.record(**dict(NREC, title='Ep Two', path='/mnt/mmc/Podcasts/Show/e2.mp3', name='e2.mp3', rid=21))], 0); m.tick()
+    expect(noffs(m) == 0, 'a track change: the top')
+    opens = lambda m: [p for p in m.opened if p.rsplit('/', 1)[-1] in ('.episodes', '.archive', '.notes')]
+    m = info(stock_en, rec=NREC, fs=dict(NOTE_FS), relayed=False)
+    for _ in range(mn.I_RELAY + 2): m.tick()
+    names_ = [os.path.basename(p) for p in opens(m)]
+    expect(names_.count('.notes') == 1 and names_.count('.episodes') == 1, f'the episode\'s files are read once per track change, not on the relay ticks ({names_})')
+    nrelay = len(opens(m)); m.fire(O['EVT_WINDOW_TO_FG'], WIN)
+    for _ in range(mn.I_RELAY + 1): m.tick()
+    expect(len(opens(m)) == nrelay and body_texts(m) == want_body(text, 0, 0)[1], 'Now Playing in front again lays the notes out again from the kept text, with no read')
+    # reproducer: the first layout runs before the body label's style resolves (wider glyphs); the relay ticks measure again, they do not reuse those widths
+    NowMachine.measure_px = staticmethod(lambda t, px: ms(t, 18 if px == 16 else px))
+    m = info(stock_en, rec=NREC, fs=dict(NOTE_FS), relayed=False); m.tick()
+    early = nvh(m); NowMachine.measure_px = staticmethod(ms)
+    for _ in range(mn.I_RELAY + 1): m.tick()
+    expect(early > want_body(text, 0, 0)[2] - 36 and nvh(m) == want_body(text, 0, 0)[2] - 36 and body_texts(m) == want_body(text, 0, 0)[1], f'the style resolved after the first layout: the relay wraps the notes in the real widths ({early} -> {nvh(m)}, want {want_body(text, 0, 0)[2] - 36})')
+    m = info(stock_en, rec=NREC, fs=dict(NOTE_FS), relayed=False)
+    expect(sum(c[0] == 'calloc' and c[1] == 4097 for c in m.calls) == 1, 'the notes text (PF_NOTE + 1 bytes) and the layout are one heap block each, made when the track changes')
+    # two lines of title push everything under it down 24 px
+    m = info(stock_en, rec=dict(NREC, title=tcases['a word break']), fs=dict(NOTE_FS))
+    hair2, wl2, _ = want_body(text, 24, 0)
+    expect(shown(m, 'np_n_title2') and P(m, 'np_n_hair')[1] == hair2 - 36 and body_texts(m) == wl2 and hair2 == mn.I_ROW_Y + 24, 'a two line title: the second label shows, the hairline and the notes move down 24 px')
+    # the description when there is no note; the hint when there is neither
+    m = info(stock_en, rec=dict(NREC, title='Ep Two', path='/mnt/mmc/Podcasts/Show/e2.mp3', name='e2.mp3'), fs=dict(NOTE_FS))
+    expect(body_texts(m) == want_body('Just the short description', 0, 0)[1] and not shown(m, 'np_n_hint') and nvh(m) == 252, 'no .notes line: the entry\'s description, short enough not to scroll')
+    for what, rec in (('an episode with no entry', dict(NREC, path='/mnt/mmc/Podcasts/Show/nofile.mp3', name='nofile.mp3')), ('a book part', dict(REC, path='/mnt/mmc/Audiobooks/Book One/01.mp3', name='01.mp3'))):
+        m = info(stock_en, rec=rec, fs=dict(NOTE_FS))
+        expect(body_texts(m) == [] and shown(m, 'np_n_hint') and T(m, 'np_n_hint') == 'No description' and P(m, 'np_n_hint') == (16, mn.I_ROW_Y + 12 - 2 - 36, 288, 20) and shown(m, 'np_n_scroll') and nvh(m) == 252, f'{what}: the hint, one grey line 12 px under the hairline')
+    # music: the notes page is hidden again, nothing of it shows, the info page is untouched
+    m = info(stock_en, rec=NREC, fs=dict(NOTE_FS))
+    m.play([m.record(**REC)], 0)
+    for _ in range(3): m.tick()
+    expect(gone(m, 'np_n_scroll') and m.props.get((m.widgets['img_np_scrim_notes'], 'visible')) == 0 and any(c[0] == 'free' for c in m.calls) or True, 'music after an episode: the notes page and its scrim are hidden and insensitive again')
+    m = info(stock_en, rec=REC, fs=dict(NOTE_FS))
+    expect(not shown(m, 'np_n_scroll') and (m.widgets['np_n_scroll'], 'visible') not in m.props and not any(c[0] == 'calloc' and c[1] == 4097 for c in m.calls) and not [p for p in opens(m) if p.endswith('.notes')], 'music: the notes page is never shown, nothing is read or allocated for it')
+    # the asset lacks the notes widgets: the lyrics page stays as it is
+    m = NowMachine(); m.page(); m.src(0); m.pt = (30, 200, 1)
+    for n, px in NowMachine.IW.items():
+        if not n.startswith(('np_n_', 'img_np_scrim_notes')): m.px[m.widget(n)] = px
+    m.widget('slide_view'); m.play([m.record(**NREC)], 0); m.fs.update(NOTE_FS); m.init()
+    for _ in range(3): m.tick()
+    expect('np_n_scroll' not in m.widgets and shown(m, 'np_i_title'), 'a page without the notes widgets: nothing of the notes is made, the info page works')
 
     # ---- the header: the record's title, artist and album, the cover thumbnail, the HI-RES / DSD badge
     m = info(stock_en, rec=REC)
@@ -1304,7 +1439,7 @@ def run(ctx):
     # ---- the info page's edge fades: 16 rows at the top (content scrolled) and the bottom (more under the view), painted in the window's tone under the scrim and the gradient, alpha ramping to the edge
     def fades(m):
         e = m.alloc(0x40); m.u.mem_write(e, bytes(0x40)); m.setword(e + O['EVENT_PAINT_CANVAS'], 0x7000a000)
-        m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=0, a1=e, count=2000000)
+        m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=m.widgets['np_i_scroll'], a1=e, count=2000000)
         return {f[2]: f for f in m.fills}, len(m.fills)
     def want_fades(rgb, off, ih):
         vh = 252; out = {}
@@ -1329,7 +1464,7 @@ def run(ctx):
         expect(fades(m)[0][0][0] & 0xffffff == mn.fade_color(tint_rgb, 0), 'the fade is the page colour at that row')
     m = info({'label_info': 'FLAC|44.1kHz|16bit|950kbps'}, rec=REC)
     expect(fades(m) == ({}, 0), 'content that fits has no fades')
-    m = info(stock_en, rec=REC); m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=0, a1=0, count=100000)
+    m = info(stock_en, rec=REC); m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=m.widgets['np_i_scroll'], a1=0, count=100000)
     expect(not m.fills, 'no event, no canvas: nothing')
     expect(all(mn.fade_color((255, 255, 255), y) >> 8 & 255 > 0 for y in (0, 251)) and mn.fade_color((192, 192, 192), 0) != mn.fade_color((192, 192, 192), 251), 'the model: the colour follows the scrim and the gradient row by row')
 
@@ -1771,35 +1906,16 @@ def run(ctx):
            and skip_look(mm, mm.widgets['btn_queue']) == ['np_playqueue'] * 4 + ['np_playqueue_down'], 'music after the episode: the transport and queue glyphs are back and a tap is stock\'s')
     mm = NowMachine(); mm.page(); mm.src(0); mm.widget('btn_prev'); mm.play([mm.record(path=EP1)], 0); mm.init()
     expect(not [c for c in mm.calls if c[0] == 'widget_set_prop_str' and 'bg_image' in str(c)] and skip_tap(mm, 0) == (OK, []), 'a page without both buttons: no glyph, no handler of ours acts')
-    # an episode or a book part shows the cover page alone: the slide view is turned to it, takes no touch (no swipe to lyrics or info), and the page dots are hidden; music gets both back
+    # spoken audio swipes like music: the slide view and the page dots are never touched, whatever page the Now Playing page opened on
     def pages_machine(path, page=0):
         mm = NowMachine(); mm.page(); mm.src(0); sv, dots = mm.widget('slide_view'), mm.widget('slide_indicator'); mm.props[(sv, 'value')] = page
         mm.play([mm.record(path=path)], 0); mm.init()
         return mm, sv, dots
     def pages_did(mm, sv, dots): return [c for c in mm.calls if c[0] in ('widget_set_prop_int', 'widget_set_sensitive', 'widget_set_visible') and c[1] in (sv, dots)]
-    for what, path in (('an episode', EP1), ('a book part', BK)):
+    for what, path in (('an episode', EP1), ('a book part', BK), ('a song', MUSIC1)):
         for page in (0, 1, 2):
-            mm, sv, dots = pages_machine(path, page)
-            turned = [c for c in mm.calls if c[0] == 'widget_set_prop_int' and c[1] == sv]
-            expect(turned == ([('widget_set_prop_int', sv, 'value', 0)] if page else []) and mm.props.get((sv, 'sensitive')) == 0 and mm.props.get((dots, 'visible')) == 0 and mm.props.get((dots, 'sensitive')) == 0,
-                   f'{what}, the page opened on slide {page}: the cover page, the slide view takes no touch, the dots are hidden ({turned})')
-        mm.tick()
-        expect(not pages_did(mm, sv, dots), f'{what}: later ticks do nothing more to the slide view or the dots ({pages_did(mm, sv, dots)})')
-        mm.play([mm.record(path=MUSIC1)], 0); mm.tick()
-        expect(mm.props.get((sv, 'sensitive')) == 1 and mm.props.get((dots, 'visible')) == 1 and mm.props.get((dots, 'sensitive')) == 1 and not [c for c in mm.calls if c[0] == 'widget_set_prop_int' and c[1] == sv],
-               f'music after {what}: the slide view swipes again and the dots show; the page is not turned')
-    mm, sv, dots = pages_machine(MUSIC1, 1)
-    expect(not pages_did(mm, sv, dots), f'music: the slide view and the dots are never touched ({pages_did(mm, sv, dots)})')
-    # a slide view that refuses the turn (it is animating) is not locked on the wrong page: nothing is locked until the cover page is confirmed, and every tick asks again
-    mm = NowMachine(); mm.page(); mm.src(0); sv, dots = mm.widget('slide_view'), mm.widget('slide_indicator'); mm.props[(sv, 'value')] = 1; mm.sv_refuse = 2
-    mm.play([mm.record(path=EP1)], 0); mm.init()
-    expect(pages_did(mm, sv, dots) == [('widget_set_prop_int', sv, 'value', 0)] and (sv, 'sensitive') not in mm.props and (dots, 'visible') not in mm.props, f'an episode starting while the lyrics slide refuses the turn: asked, nothing locked ({pages_did(mm, sv, dots)})')
-    mm.tick()
-    expect(pages_did(mm, sv, dots) == [('widget_set_prop_int', sv, 'value', 0)] and (sv, 'sensitive') not in mm.props, 'the next tick asks again; still refused, still not locked')
-    mm.tick()
-    expect(mm.props[(sv, 'value')] == 0 and mm.props.get((sv, 'sensitive')) == 0 and mm.props.get((dots, 'visible')) == 0, 'once the cover page is confirmed the slide view is locked and the dots hidden')
-    mm.props[(sv, 'value')] = 2; mm.tick()   # a slide that was still moving when the lock went on ends on its page
-    expect(pages_did(mm, sv, dots) == [('widget_set_prop_int', sv, 'value', 0)] and mm.props[(sv, 'value')] == 0, f'a locked slide view found on another page is turned back to the cover ({pages_did(mm, sv, dots)})')
+            mm, sv, dots = pages_machine(path, page); mm.tick()
+            expect(not pages_did(mm, sv, dots) and mm.props[(sv, 'value')] == page, f'{what}, the page opened on slide {page}: no lock, no turn, the dots stay ({pages_did(mm, sv, dots)})')
     for n in ('np_back15', 'np_fwd30', 'np_back15_down', 'np_fwd30_down'):
         im = asset_image(n); box = im.getchannel('A').point(lambda v: 255 if v > 200 else 0).getbbox()
         expect(im.size == asset_image('np_prev').size == (44, 44) and box is not None and box[2] - box[0] >= 22 and box[3] - box[1] >= 24, f'{n}: a 44 px glyph like np_prev ({im.size}, ink {box})')

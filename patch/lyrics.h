@@ -17,6 +17,9 @@ void ly_title_face(void *w, const char *s);
 void ly_tick(void);
 /* The page is over (or replaced): the animation timer goes, the state is cleared. */
 void ly_stop(void);
+/* Spoken audio plays: Now Playing shows its notes page in the lyrics page's place. With on = 1 the next ly_tick hides the lyrics box, the stock list and message and the lyrics scrim and does nothing else; with 0 it shows them
+ * again (the message as it was). Touch only Now Playing's own widgets: nothing while the idle page has the engine (ly_retarget). */
+void ly_standdown(int on);
 /* The playing track's lyrics were reloaded and stock's rows will be rebuilt (it clears force_refreshflag when it has): the next tick after that reads them as new lyrics even when
  * their handles, count and times are the same (the row signature has no text). No-op with the engine stopped; a pending mark survives ly_release and ly_retarget. */
 void ly_reload(void);

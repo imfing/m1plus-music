@@ -53,6 +53,9 @@ static int np_on_queue(void *ctx, void *e) {
 #include "minibar.h" /* mb_art_t: the header cover of the info page */
 #include "fnv.h"
 #include "xfade.h" /* xfade_out_rate: the output rate of a converted track */
+#include "pcfeed.h" /* PF_NOTE */
+#include "pcnotes.h" /* pno_read: the episode's long notes */
+#include "pcdetail.h" /* pd_paras: the notes wrapped as the episode page does */
 
 /* Our widgets of the page: the scroll_view that holds them all, the cover view, title, artist, album, the two badge pictures, then per row (label, value; the Location's second line is the value NPI_ROWS) and the
  * row hairlines. Names in the asset (tools/mod_nowplaying.py). */
@@ -70,6 +73,19 @@ enum {
     NI_HAIR = NI_VAL + NPI_ROWS + 1,
     NI_N = NI_HAIR + NPI_ROWS
 };
+/* The notes page's widgets (page 1 while spoken audio plays, tools/mod_nowplaying.py): the scroll_view, then the header's cover, title, second title line, artist and third line (in the order of NI_ART..NI_ALBUM, so one routine places both
+ * headers), the hairline, the hint and the painted body. */
+enum { NN_SCROLL, NN_ART, NN_TITLE, NN_TITLE2, NN_ARTIST, NN_ALBUM, NN_HAIR, NN_HINT, NN_BODY, NN_SCRIM, NN_N };
+static const char *const np_nw_names[NN_N] = {"np_n_scroll", "np_n_art",          "np_n_title", "np_n_title2",
+                                              "np_n_artist", "np_n_album",        "np_n_hair",  "np_n_hint",
+                                              "np_n_body",   "img_np_scrim_notes"};
+
+/* A scroll container (the info page's, the notes page's): its widget, the content's scroll offset in px (0 the top) and height, and the finger on it: down, moved (a vertical drag has begun), where it went down, where it was last. */
+typedef struct {
+    void *w;
+    int off, h, td, tm, tsx, tsy, tly;
+} np_scr_t;
+
 static const char *const np_iw_names[NI_N] = {
     "np_i_scroll",    "np_i_art", "np_i_title", "np_i_title2", "np_i_artist", "np_i_album", "np_i_badge_hires",
     "np_i_badge_dsd", "np_i_k0",  "np_i_k1",    "np_i_k2",     "np_i_k3",     "np_i_k4",    "np_i_k5",
@@ -84,8 +100,10 @@ static struct {
     void *prev, *next,
         *queue; /* btn_prev, btn_next: the skip buttons while an episode or a book part plays; btn_queue: a plain list then */
     int skipon; /* 1 while np_skip_sync has the skip glyphs on them: their taps seek */
-    void *dots; /* slide_indicator: hidden while an episode or a book part plays (the cover page alone) */
-    int pageoff; /* 1 while np_pages_sync holds the slide view on the cover page */
+    unsigned shid; /* bit i: stock's label i (Genre, Year) is hidden for spoken audio */
+    int spoken; /* 1: the header's track is a podcast episode or a book part (np_header): the info page leaves Genre and Year out */
+    pc_ep_t
+        ep; /* the playing podcast episode's .episodes entry (pc_ep_of), read when the track changes; zeroed for anything else */
     int favrec, favv; /* a server track's star: the REC_ID favv (1 starred) was read for, 0 none yet */
     unsigned favgen; /* sba_gen() at that read: the cache changed since when it differs */
     void *win, *rem, *tot; /* the window, np_remaining (ours), label_playlen (stock) */
@@ -117,11 +135,18 @@ static struct {
     unsigned ikey; /* mb_track_key of the track the header shows, 0 none */
     unsigned rkey; /* mb_track_key of the track the rows were laid out for (a stream's size comes from its record) */
     int ibadge; /* the badge shown: 0 none, 1 HI-RES, 2 DSD */
-    int ioff; /* the content's scroll offset in px (0 the top): every child of np_i_scroll is at its page y - NPI_TOP - ioff (np_info_scroll) */
-    int ih; /* the content's height in px, from NPI_TOP to the end of the last row (np_flow); the scroll_view's virtual_h */
+    np_scr_t
+        si; /* the info page's scroll_view np_i_scroll: every child is at its page y - NPI_TOP - si.off (np_info_scroll); h is the content's height from NPI_TOP to the end of the last row (np_flow), the virtual_h */
+    np_scr_t sn; /* the notes page's np_n_scroll, alike (np_notes_scroll); h from np_notes_layout */
+    void *nw[NN_N]; /* the notes page's widgets (np_nw_names), 0 for one the asset lacks */
+    int nok; /* 1: the asset has all of them, so spoken audio gets the notes page in the lyrics page's place */
+    int non; /* 1: the notes page is shown and the lyrics page stands down (np_notes_sync) */
+    unsigned epkey; /* mb_track_key of the track np.ep, np.ntext were read for */
+    char *ntext; /* the notes text (heap, PF_NOTE + 1 bytes): '\n' between paragraphs; "" none. 0 for music */
+    pd_t *
+        npd; /* the notes wrapped (heap): lines and their page y, laid out once a track change or relay (np_notes_layout) */
+    int nby; /* the notes' top (page y) */
     int tsh; /* 0, or NPI_TITLE_LH when the title takes two lines: the artist, the album and the rows are that much lower (m1_wrap2) */
-    int td, tm, tsx, tsy,
-        tly; /* the finger on np_i_scroll: down, moved (a vertical drag has begun), where it went down, where it was last (np_on_info_touch) */
     void *sv; /* slide_view: its page (value) says whether the info page is the one shown */
     int fdirty; /* 1: the rows are laid out again (np_flow) at the end of the tick */
     int rkw[NPI_ROWS], rvx[NPI_ROWS], rvw[NPI_ROWS]; /* per row: its label's text width, its value box's x and width */
@@ -642,7 +667,7 @@ static void np_index(void) {
  *   - eight rows (np_quality for the first four, np_row for the others; np_set_row, np_flow): Format, Sample Rate, Bit Depth, Bitrate (label_info's fields), Genre, Year, File Size, Location; a label and a right aligned
  *     value, the HI-RES / DSD badge (tape_badge, the cassette theme's rule) left of the Format value; the Location's path is under its label in up to two lines (np_loc_fit). A row stock has no value for is left out
  *     and the ones below move up;
- *   - all of it is a child of the scroll_view np_i_scroll, placed by np_cy (page y, minus the scroll_view's top, minus np.ioff): np_info_scroll moves the whole content.
+ *   - all of it is a child of the scroll_view np_i_scroll, placed by np_cy (page y, minus the scroll_view's top, minus np.si.off): np_info_scroll moves the whole content.
  * A label of ours is placed with widget_move / widget_resize from the measured text, never painted. The Genre, Year, File Size and
  * quality labels are our keys, the Location label stock's. np.done remembers the hash of each stock text after our last look, so a line is
  * laid out only when stock has written it again (or for NP_RELAY ticks after the page starts: a label measures in its own style only
@@ -762,14 +787,16 @@ static int np_tw(void *w) {
     return t && *t ? m1_text_w(w, t) : 0;
 }
 
-/* A page y as the scroll_view's: its top and the content offset taken off. */
-static int np_cy(int y) { return y - NPI_TOP - np.ioff; }
+/* A page y as a scroll_view's: its top and the content offset off taken off. */
+static int np_cyo(int off, int y) { return y - NPI_TOP - off; }
+static int np_cy(int y) { return np_cyo(np.si.off, y); }
 
-/* w at x, page y, ww wide and as high as a px line plus NPI_PAD above and below; y is the text's top. */
-static void np_place(void *w, int x, int y, int ww, int px) {
-    widget_move(w, x, np_cy(y) - NPI_PAD);
+/* w at x, page y, ww wide and as high as a px line plus NPI_PAD above and below; y is the text's top; the container is scrolled off. */
+static void np_placeo(int off, void *w, int x, int y, int ww, int px) {
+    widget_move(w, x, np_cyo(off, y) - NPI_PAD);
     widget_resize(w, ww, px + 2 * NPI_PAD);
 }
+static void np_place(void *w, int x, int y, int ww, int px) { np_placeo(np.si.off, w, x, y, ww, px); }
 
 static void np_vis(void *w, int on) {
     if (w) widget_set_visible(w, on, 0); /* all of ours are insensitive in the asset */
@@ -783,43 +810,172 @@ static int np_on_info_art(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* The header's places: the cover view, title, artist and album (the title has the whole column). */
-static void np_head_place(void) {
-    widget_move(np.iw[NI_ART], NPI_X, np_cy(NPI_ART_Y));
-    np_place(np.iw[NI_TITLE], NPI_TEXT_X, NPI_TITLE_Y, NPI_TEXT_W, NPI_TITLE_PX);
-    np_place(np.iw[NI_TITLE2], NPI_TEXT_X, NPI_TITLE_Y + NPI_TITLE_LH, NPI_TEXT_W, NPI_TITLE_PX);
-    np_vis(np.iw[NI_TITLE2], np.tsh != 0);
-    np_place(np.iw[NI_ARTIST], NPI_TEXT_X, NPI_ARTIST_Y + np.tsh, NPI_TEXT_W, NPI_META_PX);
-    np_place(np.iw[NI_ALBUM], NPI_TEXT_X, NPI_ALBUM_Y + np.tsh, NPI_TEXT_W, NPI_META_PX);
+/* The header's places in a container scrolled off: the cover view, title, second title line, artist and album/third line (w points at the cover; the title has the whole column). */
+static void np_head_place(void *const *w, int off) {
+    widget_move(w[0], NPI_X, np_cyo(off, NPI_ART_Y));
+    np_placeo(off, w[1], NPI_TEXT_X, NPI_TITLE_Y, NPI_TEXT_W, NPI_TITLE_PX);
+    np_placeo(off, w[2], NPI_TEXT_X, NPI_TITLE_Y + NPI_TITLE_LH, NPI_TEXT_W, NPI_TITLE_PX);
+    np_vis(w[2], np.tsh != 0);
+    np_placeo(off, w[3], NPI_TEXT_X, NPI_ARTIST_Y + np.tsh, NPI_TEXT_W, NPI_META_PX);
+    np_placeo(off, w[4], NPI_TEXT_X, NPI_ALBUM_Y + np.tsh, NPI_TEXT_W, NPI_META_PX);
 }
 
-/* The header: the playing record's title, artist and album, its cover; the badge of a Hi-Res or DSD track (the cassette theme's rule: tape_badge) is np_flow's, on the Format row.
- * New text and cover only when the track changed (mb_track_key) or the layout is redone. */
+/* The header's texts in a container (w as np_head_place's): the title in one or two lines, returning the second line's shift, the artist and the third line cut to the column. */
+static int np_head_text(void *const *w, const char *title, const char *artist, const char *third) {
+    int sh = m1_wrap2(w[1], w[2], title, NPI_TEXT_W) ? NPI_TITLE_LH : 0;
+    m1_fit(w[3], artist, NPI_TEXT_W);
+    m1_fit(w[4], third, NPI_TEXT_W);
+    return sh;
+}
+
+/* Both headers' covers painted again (the bitmap or its settle changed). */
+static void np_art_inval(void) {
+    widget_invalidate_force(np.iw[NI_ART], (void *)0);
+    if (np.nok) widget_invalidate_force(np.nw[NN_ART], (void *)0);
+}
+
+/* The playing track's episode entry (pc_ep_of) and, for spoken audio, the notes page's text: .notes' line of its guid (pno_read, the show folder's file), else the entry's description; "" for a book part or an episode with neither.
+ * The files are read here, once per track change (np_header); the text and the layout's heap block live while spoken audio plays. */
+static void np_ep_load(const char *path) {
+    memset(&np.ep, 0, sizeof np.ep);
+    free(np.ntext);
+    np.ntext = (char *)0;
+    if (pc_is_path(path)) pc_ep_of(path, &np.ep);
+    if (!np.spoken || !np.nok) {
+        free(np.npd);
+        np.npd = (pd_t *)0;
+        return;
+    }
+    np.ntext = calloc(PF_NOTE + 1, 1);
+    if (!np.npd) np.npd = calloc(1, sizeof *np.npd);
+    if (np.ntext && pc_is_path(path)) {
+        char f[PC_FILE * 3 + 24];
+        const char *q, *name = path;
+        unsigned dl;
+        for (q = path; *q; ++q)
+            if (*q == '/') name = q + 1;
+        dl = (unsigned)(name - path);
+        if (np.ep.guid && dl + 8 < sizeof f) {
+            memcpy(f, path, dl);
+            memcpy(f + dl, ".notes", 7);
+            pno_read(f, np.ep.guid, np.ntext, PF_NOTE + 1);
+        }
+        if (!np.ntext[0]) snprintf(np.ntext, PF_NOTE + 1, "%s", np.ep.desc);
+    }
+}
+
+/* The notes page's moving parts at the scroll offset np.sn.off: the header, the hairline under it, the hint. The body is painted (np_on_notes_paint) at that offset. */
+static void np_notes_place(void) {
+    int hy = NPI_ROW_Y + np.tsh;
+    np_head_place(np.nw + NN_ART, np.sn.off);
+    widget_move(np.nw[NN_HAIR], NPI_X, np_cyo(np.sn.off, hy));
+    np_placeo(np.sn.off, np.nw[NN_HINT], NPI_X, np.nby, PD_W, NPI_META_PX);
+    widget_invalidate_force(np.nw[NN_BODY], (void *)0);
+}
+
+/* The notes laid out for the header as it is now (np.tsh): the text wrapped once from the body label's own advances (pd_paras: the episode page's wrapper, pitch and paragraph air), the content's height, the hint when there is no
+ * text. The offset stays inside the new height. Called when the track changes and on the relay ticks, never per tick; no allocation of its own. */
+static void np_notes_layout(void) {
+    int end;
+    if (!np.nok) return;
+    np.nby = NPI_ROW_Y + np.tsh + NPN_GAP;
+    end = np.nby;
+    if (np.npd) { /* the advances are measured again: the body's style may have resolved since the last layout (same widget) */
+        np.npd->nl = 0;
+        np.npd->cache_st = (void *)0;
+    }
+    if (np.npd && np.ntext && np.ntext[0]) end = pd_paras(np.npd, np.nw[NN_BODY], np.ntext, np.nby);
+    if (np.npd && np.npd->nl > 0) {
+        np_vis(np.nw[NN_HINT], 0);
+    } else {
+        m1_fit(np.nw[NN_HINT], TR("No description"), PD_W);
+        np_vis(np.nw[NN_HINT], 1);
+        end = np.nby + PD_PITCH;
+    }
+    np.sn.h = end + NPN_GAP - NPI_TOP < NPI_VIEW_H ? NPI_VIEW_H : end + NPN_GAP - NPI_TOP;
+    widget_set_prop_int(np.nw[NN_SCROLL], "virtual_h", np.sn.h);
+    if (np.sn.off > np.sn.h - NPI_VIEW_H) np.sn.off = np.sn.h - NPI_VIEW_H;
+    np_notes_place();
+}
+
+/* The notes page's scroll offset set to off px (0 the top, at most np.sn.h - NPI_VIEW_H): the notes' side of np_scroll. */
+__attribute__((noinline)) void np_notes_scroll(int off) {
+    int max = np.sn.h - NPI_VIEW_H;
+    if (!np.nok) return;
+    np.sn.off = off > max ? max : off;
+    if (np.sn.off < 0) np.sn.off = 0;
+    np_notes_place();
+}
+
+/* The notes page shown in the lyrics page's place while spoken audio plays, the lyrics page standing down (ly_standdown, patch/lyrics.c), and back for music. */
+static void np_notes_sync(void) {
+    int on = np.nok && np.spoken;
+    if (on == np.non) return;
+    np.non = on;
+    widget_set_visible(np.nw[NN_SCROLL], on, 0);
+    widget_set_sensitive(np.nw[NN_SCROLL], on);
+    widget_set_visible(np.nw[NN_SCRIM], on, 0);
+    ly_standdown(on);
+}
+
+/* The notes page's painted body: the wrapped lines of np.npd that lie wholly inside the view (AWTK does not clip a text), in the body label's style, at the scroll offset. Never reads a file. */
+static int np_on_notes_paint(void *ctx, void *e) {
+    void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
+    int k;
+    (void)ctx;
+    if (!canvas || !np.win || !np.npd || np.npd->nl <= 0) return RET_OK;
+    widget_prepare_text_style(np.nw[NN_BODY], canvas);
+    for (k = 0; k < np.npd->nl; ++k) {
+        int y = np.npd->dy[k] - NPI_TOP - np.sn.off - NPI_PAD, rect[4];
+        if (y + NPI_META_PX + 2 * NPI_PAD <= 0) continue;
+        if (y + NPI_META_PX + 2 * NPI_PAD > NPI_VIEW_H) break;
+        if (y < 0 || np.npd->dl[k].len <= 0) continue;
+        rect[0] = NPI_X, rect[1] = y, rect[2] = PD_W, rect[3] = NPI_META_PX + 2 * NPI_PAD;
+        canvas_draw_text_in_rect(canvas, np.npd->text + np.npd->dl[k].start, (unsigned)np.npd->dl[k].len, rect);
+    }
+    return RET_OK;
+}
+
+/* The header: the playing record's title, artist and album, its cover; the badge of a Hi-Res or DSD track (the cassette theme's rule: tape_badge) is np_flow's, on the Format row. For spoken audio the notes page's header
+ * and notes are laid out with it. New text and cover only when the track changed (mb_track_key) or the layout is redone; the episode's files are read only when the track changed. */
 static unsigned np_header(int force) {
     void *t = cc_playing();
-    const char *title;
-    char b[200];
+    const char *title, *path;
+    char tb[200], ab[200], cb[200];
     unsigned key = t ? mb_track_key(t) : 0;
     int badge = t ? tape_badge(t) : 0;
     if (!np.ihead) return key;
     if (key == np.ikey && badge == np.ibadge && !force) {
-        if (t && np.ia.settle > 0 && mb_art_settle(&np.ia, np.win, t))
-            widget_invalidate_force(np.iw[NI_ART], (void *)0);
+        if (t && np.ia.settle > 0 && mb_art_settle(&np.ia, np.win, t)) np_art_inval();
         return key;
     }
     title = t ? cc_str(t, REC_TITLE) : "";
     if (t && !*title) title = cc_str(t, REC_NAME);
-    np_cut(b, sizeof b, title);
-    np.tsh = m1_wrap2(np.iw[NI_TITLE], np.iw[NI_TITLE2], b, NPI_TEXT_W) ? NPI_TITLE_LH
-                                                                        : 0; /* the title in one or two lines */
-    np_cut(b, sizeof b, t ? cc_str(t, REC_ARTIST) : "");
-    m1_fit(np.iw[NI_ARTIST], b, NPI_TEXT_W);
-    np_cut(b, sizeof b, t ? cc_str(t, REC_ALBUM) : "");
-    m1_fit(np.iw[NI_ALBUM], b, NPI_TEXT_W);
-    np_head_place();
+    np_cut(tb, sizeof tb, title);
+    np_cut(ab, sizeof ab, t ? cc_str(t, REC_ARTIST) : "");
+    np_cut(cb, sizeof cb, t ? cc_str(t, REC_ALBUM) : "");
+    path = t ? cc_str(t, REC_PATH) : "";
+    np.spoken = t && pc_spoken_path(path);
+    if (key != np.epkey) np.epkey = key, np_ep_load(path);
+    if (t && pc_is_path(path)) { /* an episode: its date and length (the show is the artist line already) */
+        char d[40], l[24];
+        d[0] = l[0] = 0;
+        if (np.ep.pub) pc_when(np.ep.pub, (unsigned)time((long *)0), d, sizeof d);
+        if (np.ep.dur) pc_len_text(l, sizeof l, np.ep.dur);
+        snprintf(cb, sizeof cb, "%s%s%s", d, d[0] && l[0] ? " \xc2\xb7 " : "", l);
+    }
+    np.tsh = np_head_text(np.iw + NI_ART, tb, ab, cb); /* the title in one or two lines */
+    np_head_place(np.iw + NI_ART, np.si.off);
     np_vis(np.iw[NI_TITLE], 1);
     np_vis(np.iw[NI_ARTIST], 1);
     np_vis(np.iw[NI_ALBUM], 1);
+    if (np.nok && np.spoken) {
+        np_head_text(np.nw + NN_ART, tb, ab, cb);
+        np_vis(np.nw[NN_TITLE], 1);
+        np_vis(np.nw[NN_ARTIST], 1);
+        np_vis(np.nw[NN_ALBUM], 1);
+        np_notes_layout();
+    }
     np.fdirty = 1; /* the badge */
     if (key != np.ikey || !np.ia.bmp) {
         if (t)
@@ -828,7 +984,7 @@ static unsigned np_header(int force) {
             mb_art_free(&np.ia);
     }
     np.ikey = key, np.ibadge = badge;
-    widget_invalidate_force(np.iw[NI_ART], (void *)0);
+    np_art_inval();
     return key;
 }
 
@@ -1016,42 +1172,57 @@ static void np_flow(void) {
         widget_move(img, bx, np_cy(by));
         widget_resize(img, bw, NPI_BADGE_H);
     }
-    np.ih = end - NPI_TOP < NPI_VIEW_H ? NPI_VIEW_H : end - NPI_TOP;
-    widget_set_prop_int(np.iw[NI_SCROLL], "virtual_h", np.ih);
+    np.si.h = end - NPI_TOP < NPI_VIEW_H ? NPI_VIEW_H : end - NPI_TOP;
+    widget_set_prop_int(np.iw[NI_SCROLL], "virtual_h", np.si.h);
 }
 
-/* The content's scroll offset set to off px (0 the top, at most np.ih - NPI_VIEW_H) and every child of np_i_scroll moved to it: the one place a scroll goes through. */
+/* The content's scroll offset set to off px (0 the top, at most np.si.h - NPI_VIEW_H) and every child of np_i_scroll moved to it: the one place a scroll goes through. */
 __attribute__((noinline)) void np_info_scroll(int off) {
-    int max = np.ih - NPI_VIEW_H;
+    int max = np.si.h - NPI_VIEW_H;
     if (!np.irow || !np.ihead) return;
-    np.ioff = off > max ? max : off;
-    if (np.ioff < 0) np.ioff = 0;
-    np_head_place();
+    np.si.off = off > max ? max : off;
+    if (np.si.off < 0) np.si.off = 0;
+    np_head_place(np.iw + NI_ART, np.si.off);
     np_flow();
 }
 
-/* DOWN, MOVE, UP and ABORT of np_i_scroll (listeners, as the lyrics page's). A vertical drag of NPI_TAP_PX or more scrolls the content with the finger; a sideways one is the slide view's page swipe, and a tap
+/* The container a listener's ctx (its scroll_view) belongs to, 0 for none. */
+static np_scr_t *np_scr_of(void *ctx) {
+    if (!ctx) return (np_scr_t *)0;
+    return ctx == np.si.w ? &np.si : ctx == np.sn.w ? &np.sn : (np_scr_t *)0;
+}
+
+/* The one place a scroll of either container goes through. */
+static void np_scroll_to(np_scr_t *s, int off) {
+    if (s == &np.si)
+        np_info_scroll(off);
+    else
+        np_notes_scroll(off);
+}
+
+/* DOWN, MOVE, UP and ABORT of np_i_scroll and np_n_scroll (listeners, as the lyrics page's). A vertical drag of NPI_TAP_PX or more scrolls the content with the finger; a sideways one is the slide view's page swipe, and a tap
  * does nothing. Once the drag is vertical every MOVE of it answers RET_STOP, so the slide view gets an ABORT in its place (widget_on_pointer_move @0x6716f8) and turns no page however far the finger drifts sideways. */
 static int np_on_info_touch(void *ctx, void *e) {
     int type, x, y;
-    if (!e || !np.win || ctx != np.iw[NI_SCROLL]) return RET_OK;
+    np_scr_t *s = np_scr_of(ctx);
+    if (!e || !np.win || !s) return RET_OK;
     type = *(int *)e;
     x = *(int *)((char *)e + PE_X), y = *(int *)((char *)e + PE_Y);
     if (type == EVT_POINTER_DOWN) {
-        np.td = 1, np.tm = 0, np.tsx = x, np.tsy = y, np.tly = y;
-    } else if (type == EVT_POINTER_MOVE && np.td) {
-        if (!np.tm) {
-            if (m1_abs(y - np.tsy) >= NPI_TAP_PX && m1_abs(y - np.tsy) > m1_abs(x - np.tsx))
-                np.tm = 1, np.tly = y;
-            else if (m1_abs(x - np.tsx) >= NPI_TAP_PX)
-                np.td = 0; /* sideways: the slide view's */
+        s->td = 1, s->tm = 0, s->tsx = x, s->tsy = y, s->tly = y;
+    } else if (type == EVT_POINTER_MOVE && s->td) {
+        if (!s->tm) {
+            if (m1_abs(y - s->tsy) >= NPI_TAP_PX && m1_abs(y - s->tsy) > m1_abs(x - s->tsx))
+                s->tm = 1, s->tly = y;
+            else if (m1_abs(x - s->tsx) >= NPI_TAP_PX)
+                s->td = 0; /* sideways: the slide view's */
         } else {
-            np_info_scroll(np.ioff - (y - np.tly));
-            np.tly = y;
+            np_scroll_to(s, s->off - (y - s->tly));
+            s->tly = y;
         }
-        if (np.tm) return RET_STOP;
+        if (s->tm) return RET_STOP;
     } else if (type == EVT_POINTER_UP || type == EVT_POINTER_ABORT) {
-        np.td = 0;
+        s->td = 0;
     }
     return RET_OK;
 }
@@ -1072,9 +1243,11 @@ static void np_fade_row(void *canvas, int y, unsigned a) {
  * ramp, opaque at the edge. No decode or allocation: at most 2 x NPI_FADE one-row fills. */
 static int np_on_info_fade(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
-    int k, top = np.ioff > 0, bot = np.ioff < np.ih - NPI_VIEW_H;
-    (void)ctx;
-    if (!canvas || !np.win || (!top && !bot)) return RET_OK;
+    np_scr_t *s = np_scr_of(ctx);
+    int k, top, bot;
+    if (!s || !canvas || !np.win) return RET_OK;
+    top = s->off > 0, bot = s->off < s->h - NPI_VIEW_H;
+    if (!top && !bot) return RET_OK;
     for (k = 0; k < NPI_FADE; ++k) {
         unsigned a = 255u * (unsigned)(2 * (NPI_FADE - k) - 1) / (2 * NPI_FADE);
         if (top) np_fade_row(canvas, k, a);
@@ -1083,9 +1256,10 @@ static int np_on_info_fade(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* The slide view left the info page: the content is at the top when the page comes back. */
+/* The slide view left the info page or the notes page: its content is at the top when the page comes back. */
 static void np_page_reset(void) {
-    if (np.ioff && np.sv && widget_get_prop_int(np.sv, "value", NPI_PAGE) != NPI_PAGE) np_info_scroll(0);
+    if (np.si.off && np.sv && widget_get_prop_int(np.sv, "value", NPI_PAGE) != NPI_PAGE) np_info_scroll(0);
+    if (np.sn.off && np.sv && widget_get_prop_int(np.sv, "value", NPN_PAGE) != NPN_PAGE) np_notes_scroll(0);
 }
 
 static int np_on_page(void *ctx, void *e) {
@@ -1191,12 +1365,24 @@ static void np_info(void) {
     key = np_header(force);
     if (key != np.rkey) {
         force = 1, np.rkey = key; /* a new track: its rows again (a stream's stock text is the same for every record) */
-        if (np.ioff) np_info_scroll(0); /* and the page at the top */
+        if (np.si.off) np_info_scroll(0); /* and the page at the top */
+        if (np.sn.off) np_notes_scroll(0);
     }
+    np_notes_sync();
     np_quality(force);
     if (!np.irow) return;
     for (i = 2; i < NP_INFO_N; ++i) {
-        int need = np.info[i] ? m1_text_utf8(np.info[i], s, sizeof s) : -1;
+        int need;
+        if (i < 4 && np.info[i]) { /* Genre and Year: nothing of spoken audio's; stock's label of them is hidden too */
+            if (np.spoken) {
+                np_row_own((int)i + 2, 0);
+                widget_set_visible(np.info[i], 0, 0);
+                np.done[i] = 0, np.shid |= 1u << i;
+                continue;
+            }
+            if (np.shid >> i & 1) np.shid &= ~(1u << i), widget_set_visible(np.info[i], 1, 0), force = 1;
+        }
+        need = np.info[i] ? m1_text_utf8(np.info[i], s, sizeof s) : -1;
         /* none, empty, or too long for s (cut short): stock's label */
         if (need <= 0 || (unsigned)need >= sizeof s) {
             np_row_own((int)i + 2, 0);
@@ -1209,7 +1395,7 @@ static void np_info(void) {
         if (!np_row((int)i, s)) np_row_own((int)i + 2, 0);
     }
     if (np.fdirty) np_flow();
-    if (np.ioff > np.ih - NPI_VIEW_H) np_info_scroll(np.ioff); /* the content got shorter */
+    if (np.si.off > np.si.h - NPI_VIEW_H) np_info_scroll(np.si.off); /* the content got shorter */
 }
 
 /* The favourite button of an episode is a bookmark (docs/modules/podcasts.md "Saved"): stock's star toggles myfav and sets btn_imgfav_style / btn_imgunfav_style (its click handler at once, show_player_face on a
@@ -1369,24 +1555,6 @@ static void np_skip_sync(void) {
     np.skipon = on;
 }
 
-/* An episode or a book part has no lyrics, and its file facts say little: the page is the cover page alone. The slide view goes to the cover page and takes no touch (so no swipe turns it;
- * the controls are not its children), and the page dots are hidden. Music gets both back. */
-static void np_pages_sync(void) {
-    void *rec = cc_playing();
-    int on = rec && pc_spoken_path(cc_str(rec, REC_PATH));
-    if (!np.sv) return;
-    /* looked at every tick, locked or not: a slide still moving when the lock went on ends on its page afterwards, and a slide view that is
-     * animating can refuse the turn. Until the cover page is confirmed nothing is locked, and the turn is asked again at the next tick. */
-    if (on && widget_get_prop_int(np.sv, "value", NP_ART_PAGE) != NP_ART_PAGE) {
-        widget_set_prop_int(np.sv, "value", NP_ART_PAGE);
-        if (widget_get_prop_int(np.sv, "value", NP_ART_PAGE) != NP_ART_PAGE) return;
-    }
-    if (on == np.pageoff) return;
-    widget_set_sensitive(np.sv, !on);
-    if (np.dots) m1_show(np.dots, !on);
-    np.pageoff = on;
-}
-
 /* The skip: forward (NP_SKIP_FWD s on) or back (NP_SKIP_BACK s). A stopped player or one with no length yet takes no skip (seek_time does nothing when stopped): 0 then, 1 otherwise. */
 int np_spoken_seek(int fwd) {
     int pos = 0, len = 0, to;
@@ -1419,7 +1587,6 @@ static void np_work_lit(void) {
     np_fav_sync();
     np_mode_sync();
     np_skip_sync();
-    np_pages_sync();
 }
 
 static void np_work(void) {
@@ -1492,6 +1659,8 @@ static int np_tick(const void *timer) {
 static void np_stop(void) {
     np_bar_black();
     ly_stop();
+    free(np.ntext);
+    free(np.npd);
     m1_timer_stop(&np.timer);
     m1_timer_stop(&np.anim);
     m1_timer_stop(&np.pchk);
@@ -1521,6 +1690,7 @@ static int np_on_foreground(void *ctx, void *e) {
     if (!np.win || ctx != np.win) return RET_OK;
     np.relay = NP_RELAY; /* the info page is laid out again (a language or font change meanwhile) */
     np_info_scroll(0); /* and starts at the top */
+    np_notes_scroll(0);
     ly_refresh(); /* a lyrics text size changed in Settings is laid out now */
     np.idxon = np_pos_setting(); /* so is the Track Position switch */
     np.shrinkon = np_shrink_setting(); /* and Shrink on Pause (np_work puts the cover at its size: fg is still 0) */
@@ -1531,6 +1701,15 @@ static int np_on_foreground(void *ctx, void *e) {
     np.fg = 1;
     np_bar_apply();
     return RET_OK;
+}
+
+/* The touch and the fades of a scroll container sc (listeners with the widget as ctx: np_scr_of). */
+static void np_scroll_listen(void *sc) {
+    widget_on(sc, EVT_POINTER_DOWN, np_on_info_touch, sc);
+    widget_on(sc, EVT_POINTER_MOVE, np_on_info_touch, sc);
+    widget_on(sc, EVT_POINTER_UP, np_on_info_touch, sc);
+    widget_on(sc, EVT_POINTER_ABORT, np_on_info_touch, sc);
+    widget_on(sc, EVT_AFTER_PAINT, np_on_info_fade, sc);
 }
 
 static void np_start(void *win) {
@@ -1566,6 +1745,10 @@ static void np_start(void *win) {
     np.irow = np.iw[NI_SCROLL] && np.iw[NI_VAL + NPI_ROWS] && np.iw[NI_HIRES] && np.iw[NI_DSD];
     for (n = 0; n < NPI_ROWS; ++n)
         if (!np.iw[NI_KEY + n] || !np.iw[NI_VAL + n] || !np.iw[NI_HAIR + n]) np.irow = 0;
+    for (n = 0; n < NN_N; ++n) np.nw[n] = widget_lookup(win, np_nw_names[n], 1);
+    np.nok = np.ihead;
+    for (n = 0; n < NN_N; ++n)
+        if (!np.nw[n]) np.nok = 0;
     np.relay = NP_RELAY;
     np.color = NP_NEUTRAL & 0xffffff; /* the asset's window colour */
     if (!widget_on(win, EVT_DESTROY, np_on_destroy, win)) {
@@ -1590,15 +1773,14 @@ static void np_start(void *win) {
     m1_bind(win, "btn_queue", np_on_queue, (void *)0);
     np.sv = widget_lookup(win, "slide_view",
                           1); /* its page: the cover springs only while the art page shows; the info page's reset */
-    np.dots = widget_lookup(win, "slide_indicator", 1);
     ly_start(win);
-    if (np.irow && np.ihead) { /* the content's touch and fades */
-        void *sc = np.iw[NI_SCROLL];
-        widget_on(sc, EVT_POINTER_DOWN, np_on_info_touch, sc);
-        widget_on(sc, EVT_POINTER_MOVE, np_on_info_touch, sc);
-        widget_on(sc, EVT_POINTER_UP, np_on_info_touch, sc);
-        widget_on(sc, EVT_POINTER_ABORT, np_on_info_touch, sc);
-        widget_on(sc, EVT_AFTER_PAINT, np_on_info_fade, (void *)0);
+    np.si.w = np.iw[NI_SCROLL];
+    if (np.irow && np.ihead) np_scroll_listen(np.si.w); /* the content's touch and fades */
+    if (np.nok) {
+        np.sn.w = np.nw[NN_SCROLL];
+        np_scroll_listen(np.sn.w);
+        widget_on(np.nw[NN_BODY], EVT_AFTER_PAINT, np_on_notes_paint, (void *)0);
+        widget_on(np.nw[NN_ART], EVT_AFTER_PAINT, np_on_info_art, (void *)0);
     }
     if (np.ihead) {
         mb_art_size(&np.ia, NPI_ART, NPI_ART_R);

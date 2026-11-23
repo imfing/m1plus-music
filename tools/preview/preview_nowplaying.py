@@ -37,6 +37,19 @@ INFO = {'cd': dict(title='Money', artist='Pink Floyd', album='The Dark Side of t
                     location='SD:/Music/Pink Floyd/Wish You Were Here/04 Wish You Were Here.mp3', badge='')}
 INFO['long'] = dict(title='Wish You Were Here (2011 Remastered Version)', artist='Pink Floyd', album='Wish You Were Here', quality='FLAC|96kHz|24bit|2707kbps', genre='Progressive Rock', year='1975',
                     size='173.40MB', location='SD:/Music/Hi-Res/Pink Floyd/Wish You Were Here (2011 Remastered Version)/04 Wish You Were Here.flac', badge='HI-RES')
+INFO['episode'] = dict(title='112: Why Old Players Still Sound Great', artist='Night Shift Radio', album='Night Shift Radio', quality='MP3|44.1kHz|16bit|128kbps', genre='Podcast', year='2026', size='49.80MB',
+                       location='SD:/Podcasts/Night Shift Radio/nsr-112-old-players.mp3', badge='')
+# The episode notes page's samples (page=1 with notes=NAME): the header's three lines and the notes (paragraphs split by newlines; '' shows the hint)
+NOTES = {'feed': dict(title='112: Why Old Players Still Sound Great', show='Night Shift Radio', date='Nov 18 · 52m',
+                      text='This week we dig out a drawer of portable players from the last twenty years and ask a simple question: why do some of them still sound so good?\n'
+                           'We talk about output stages, why a clean volume curve matters more than the spec sheet, and how a small screen can still make a library feel easy to browse.\n'
+                           'Plus listener mail: replacing a worn headphone jack, the best way to tag a large collection, and whether gapless playback is worth fighting for.\n'
+                           'Chapters: 00:00 Intro · 04:12 The drawer · 21:40 Output stages · 38:05 Listener mail\n'
+                           'Thanks for listening. Leave us a review and tell a friend about the show.'),
+         'short': dict(title='111: Live from the Workshop', show='Night Shift Radio', date='Nov 11 · 47m',
+                       text='A recorded live session from the workshop, with questions from the audience about repairs and batteries.'),
+         'local': dict(title='nsr-098-interview', show='Night Shift Radio', date='Jun 2', text='')}
+NOTES_HINT = 'No description'
 INFO_LABELS = ('label_info', 'label_album', 'label_genre', 'label_year', 'label_size', 'label_location')    # stock's data labels: hidden while the payload's own show
 PROGRESS = 22    # % played in the mock-up
 
@@ -157,8 +170,8 @@ class Painter:
             rgb = tone(*self.cover_img.convert('RGB').resize((1, 1), Image.BOX).getpixel((0, 0)))
         win = Image.new('RGBA', (W, H), ('#%02X%02X%02X' % tuple(rgb)) if rgb else root.get('style:normal:bg_color', BG))
         self.walk(win, root, 0, 0, (0, 0, W, H), page, root)
-        if page == 2:
-            tall = self.info_page(win)
+        if page == 2 or page == 1 and self.notes:
+            tall = self.notes_page(win) if page == 1 else self.info_page(win)
             if tall: return tall
         im.alpha_composite(win, (0, BAR))
         return im
@@ -169,6 +182,7 @@ class Painter:
         adv = lambda t, px: self.stb(px).layout(t)[1] if t else 0
         rows = {r: (getattr(self, 'key1', None) if r == 1 and getattr(self, 'key1', None) else MN.I_KEYS[r], v) for r, v in MN.qparse(I['quality']).items()}
         for r, k, v in ((4, 'Genre', I['genre']), (5, 'Year', I['year']), (6, 'File Size', I['size'].replace('MB', ' MB')), (7, 'Location', I['location'])): rows[r] = (k, v)
+        if self.notes: rows.pop(4, None), rows.pop(5, None)      # spoken audio leaves Genre and Year out
         present = [r in rows for r in range(MN.I_ROWS)]
         loc = MN.loc_wrap(I['location'], MN.I_W, lambda t: adv(t, MN.I_ROW_PX)) if present[7] else []
         tl, cut = MN.title_wrap(I['title'], MN.I_TEXT_W, lambda t: adv(t, MN.I_TITLE_PX))
@@ -187,7 +201,8 @@ class Painter:
         cv.paste(c, (MN.I_X, MN.I_ART_Y), m)
         for i, t in enumerate(tl): put(MN.I_TEXT_X, MN.I_TITLE_Y + i * MN.I_TITLE_LH, end_fit(t, MN.I_TITLE_PX, MN.I_TEXT_W) if cut else t, MN.I_TITLE_PX, '#FFFFFF')
         put(MN.I_TEXT_X, MN.I_ARTIST_Y + sh, end_fit(I['artist'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
-        put(MN.I_TEXT_X, MN.I_ALBUM_Y + sh, end_fit(I['album'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
+        third = self.notes['date'] if self.notes else I['album']    # an episode: the notes page's "date · length" in place of the album (the show again)
+        put(MN.I_TEXT_X, MN.I_ALBUM_Y + sh, end_fit(third, MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
         for r, (k, v) in rows.items():
             cv.alpha_composite(Image.new('RGBA', (MN.I_W, 1), MN.HAIR_RGBA), (MN.I_X, hair[r]))
             put(MN.I_X, text[r], k, MN.I_ROW_PX, MN.GREY)
@@ -202,6 +217,38 @@ class Painter:
             if r == 0 and I['badge']:
                 bw = MN.I_BADGE_W[I['badge']]
                 cv.alpha_composite(self.image('np_i_badge_' + ('hires' if I['badge'] == 'HI-RES' else 'dsd')), (MN.badge_x(adv(v, MN.I_ROW_PX), bw), text[0] + (MN.I_ROW_PX - MN.I_BADGE_H) // 2))
+        return self.scroll_out(win, cv, bottom)
+
+    notes = None     # an episode's notes page sample (NOTES), drawn in the lyrics page's place
+    def notes_page(self, win):
+        """The proposed episode notes page (the lyrics page's place while an episode plays): the info page's scrim and header (cover, title up to two lines, show, date · length), one hairline, then the notes
+        wrapped by tools/pod_wrap.py (kinsoku, CJK anywhere) in the scroll area; no notes: the hint in grey."""
+        import pod_show, pod_wrap
+        N = self.notes
+        win.alpha_composite(MN.scrim_image().convert('RGBA'), MN.SCRIM[:2])   # (np_scrim.png as the build makes it)
+        adv = lambda t, px: self.stb(px).layout(t)[1] if t else 0
+        font = pod_show.Font(self.font_path)
+        tl, cut = MN.title_wrap(N['title'], MN.I_TEXT_W, lambda t: adv(t, MN.I_TITLE_PX))
+        sh = MN.I_TITLE_LH if len(tl) > 1 else 0
+        hair, body, bottom = MN.notes_layout(N['text'], lambda par: pod_wrap.wrap_font(font, par, MN.N_PX, MN.I_W, 320), sh)
+        if not body: body = [(NOTES_HINT, hair + MN.N_GAP)]      # no text: the hint, one grey line
+        cv = Image.new('RGBA', (W, max(H, bottom + 12)))
+        def put(x, y, t, px, rgb):
+            f = self.font(px); layer = Image.new('RGBA', cv.size); ld = ImageDraw.Draw(layer)
+            for ch, pen in self.stb(px).layout(t)[0]: ld.text((x + pen, y + f.getmetrics()[0]), ch, font=f, fill=rgb, anchor='ls')
+            cv.alpha_composite(layer)
+        fit = lambda t, px, room: MN.end_fit(t, room, lambda s: adv(s, px))
+        c = self.cover(MN.I_ART, MN.I_ART); m = Image.new('L', c.size, 0); ImageDraw.Draw(m).rounded_rectangle([0, 0, c.width - 1, c.height - 1], radius=MN.I_ART_R, fill=255)
+        cv.paste(c, (MN.I_X, MN.I_ART_Y), m)
+        for i, t in enumerate(tl): put(MN.I_TEXT_X, MN.I_TITLE_Y + i * MN.I_TITLE_LH, fit(t, MN.I_TITLE_PX, MN.I_TEXT_W) if cut else t, MN.I_TITLE_PX, '#FFFFFF')
+        put(MN.I_TEXT_X, MN.I_ARTIST_Y + sh, fit(N['show'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
+        put(MN.I_TEXT_X, MN.I_ALBUM_Y + sh, fit(N['date'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
+        cv.alpha_composite(Image.new('RGBA', (MN.I_W, 1), MN.HAIR_RGBA), (MN.I_X, hair))
+        for t, ty in body: put(MN.I_X, ty, t, MN.N_PX, MN.N_RGB if N['text'] else MN.GREY)
+        return self.scroll_out(win, cv, bottom)
+
+    def scroll_out(self, win, cv, bottom):
+        """The content canvas cv (page coordinates, bottom its end) shown through the 252 px scroll area at self.scroll with the edge fades, or with self.full the whole content as a taller window image."""
         if self.full:
             tall = Image.new('RGBA', (W, bottom + 12), win.getpixel((2, 2))); tall.alpha_composite(cv); return tall
         view = cv.crop((0, MN.I_TOP + self.scroll, W, MN.I_BOTTOM + self.scroll))
@@ -215,7 +262,7 @@ class Painter:
     def walk(self, im, wd, ox, oy, clip, page, root):
         if wd.name in ('np_remaining', 'np_elapsed'): pass       # the hook shows them and hides the stock times / quality line
         elif wd.name in INFO_LABELS or wd.name in ('label_playlen', 'label_playtime') or wd.get('visible') == 'false' or wd.get('disg:hide') == 'true': return
-        if wd.name in ('image_wait', 'img_repeata', 'img_repeatb'): return       # app-driven, normally hidden
+        if wd.name in ('image_wait', 'img_repeata', 'img_repeatb') or self.notes and wd.name == 'view_lyrics': return       # app-driven, normally hidden
         w, h = wd.w, wd.h
         x, y = wd.x, wd.y
         sl = wd.get('self_layout', '')
@@ -282,11 +329,12 @@ def main():
             if o.startswith('out='): p.info = dict(p.info, out=int(o[4:]))   # after info=: the rate the output is kept at
             if o.startswith('key1='): p.key1 = o[5:]   # another language's Sample Rate label
             if o.startswith('scroll='): p.scroll = int(o[7:])
+            if o.startswith('notes='): p.notes = NOTES[o[6:]]
             if o == 'full': p.full = True
-            if o == 'skip':   # an episode or a book part: the skip glyphs, as np_skip_sync sets them
+            if o == 'skip' or o.startswith('notes='):   # an episode or a book part: the skip glyphs, as np_skip_sync sets them
                 for n, g in (('btn_prev', 'np_back15'), ('btn_next', 'np_fwd30'), ('btn_queue', 'np_playlist')): root.find(n).set('style:normal:bg_image', g)
                 root.find('btn_playmode').set('style', 'btn_imgspeed0_style')   # the speed button at 1x (np_mode_sync)
-                root.find('slide_indicator').set('visible', 'false')            # the cover page alone: no page dots (np_pages_sync)
+                if o == 'skip': root.find('slide_indicator').set('visible', 'false')   # the cover page alone: no page dots (np_pages_sync)
             if o.startswith('tint='): p.tint = tone(*(int(o[5:][k:k + 2], 16) for k in (0, 2, 4)))
         shots.append((label, p.render(root, page)))
     top, pad = 18, 10

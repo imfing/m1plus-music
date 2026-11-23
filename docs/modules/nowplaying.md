@@ -35,6 +35,8 @@ has 12 px corners. Existing widget names are kept.
 - Art page: `np_tint.png`, a black gradient with alpha 38..235 over the window tone.
 - Info page: `np_scrim.png`, 320 x 324 at y 8, alpha 128 in the centre, 36-row linear edges.
 - Lyrics page: `np_scrim_lyrics.png`, 320 x 332 at y 0, alpha 68, 44-row smoothstep edges.
+- Notes page: `img_np_scrim_notes` (the info scrim again) and `np_n_scroll` in `view_lyrics`, both hidden and
+  insensitive in the asset, so without the payload the page is the lyrics page.
 - Decorative images and time labels are insensitive.
 - `label_index` (stock's `%d/%d` queue position) sits centred between the two 72 px time labels, 14 px grey,
   invisible and insensitive; only the payload shows it, see "Track position".
@@ -105,12 +107,9 @@ stock handlers; music keeps stock's buttons.
 **Queue** (`btn_queue`): `np_skip_sync` sets the plain list `np_playlist` (Lucide `list`) in place
 of `np_playqueue`; the tap is unchanged.
 
-**Pages:** `np_pages_sync` keeps the cover page alone, since an episode or a part has no lyrics.
-Every tick of spoken audio sets `slide_view`'s `value` to 0 when another page shows. Once the
-cover page is confirmed, the slide view is made insensitive (no swipe; the controls are not its
-children) and `slide_indicator` is hidden. A slide view that refuses the turn while it animates is
-left unlocked and asked again at the next tick; a page reached after the lock is turned back the
-same way. Music makes both live again; the page is not turned back.
+**Pages:** spoken audio swipes like music: the slide view and `slide_indicator` are never touched.
+Page 2 is the lyrics slot, which shows the [episode notes page](#episode-notes-page) instead of lyrics;
+page 3 is the [information page](#information-page), which differs for spoken audio (below).
 
 **Skip** (`btn_prev`, `btn_next`): back `NP_SKIP_BACK` (15) and forward `NP_SKIP_FWD` (30) seconds.
 
@@ -179,9 +178,9 @@ at offset 0.
 
 | part | layout |
 |---|---|
-| Header | cover (`mb_art_t`, 64 px, 8 px corners, at (16, 36), decoded on the tick, never in paint); title 20 px white at y 38, up to two lines 24 px apart; artist and album 16 px `#AAAAAA` below it. Text is `REC_TITLE` (else file name), `REC_ARTIST`, `REC_ALBUM`, cut below 200 bytes, x 92, 212 px wide |
+| Header | cover (`mb_art_t`, 64 px, 8 px corners, at (16, 36), decoded on the tick, never in paint); title 20 px white at y 38, up to two lines 24 px apart; artist and album 16 px `#AAAAAA` below it. Text is `REC_TITLE` (else file name), `REC_ARTIST`, `REC_ALBUM`, cut below 200 bytes, x 92, 212 px wide. For a podcast episode the third line is its date and length ("Nov 18 · 52m", `pc_when` and `pc_len_text`, the length left out when unknown) instead of the album, which is the show again; a book part keeps its album. The episode's entry comes from `pc_ep_of`, once per track change, and is kept in `np.ep` |
 | Badge | `HI-RES` or `DSD` (not translated): gold `#E3C16F` 1 px outline picture, 8 px left of the Format value, never tinted by the accent |
-| Rows | hairline above each row, rows 33 px apart from y 112: Format, Sample Rate, Bit Depth, Bitrate, Genre, Year, File Size, Location. Label 16 px `#AAAAAA` at x 16, value 16 px white right-aligned to 304. A row with no value (empty, or zero for rate, bit depth and bitrate) is left out and the rows below move up |
+| Rows | hairline above each row, rows 33 px apart from y 112: Format, Sample Rate, Bit Depth, Bitrate, Genre, Year, File Size, Location. Label 16 px `#AAAAAA` at x 16, value 16 px white right-aligned to 304. A row with no value (empty, or zero for rate, bit depth and bitrate) is left out and the rows below move up. Spoken audio (episode or book part) leaves out Genre and Year, and stock's labels of them are hidden |
 | Location | label on its own line, the path below it wrapped to up to two 288 px lines; only the last 200 bytes are shown |
 
 - **Title.** One line when it fits; otherwise it breaks at the last space that fits 212 px, even
@@ -223,6 +222,44 @@ at offset 0.
 - **Edge fades.** The top and bottom 16 rows of the scroll area fade into the scrim, painted over
   the content in the colour behind it, and only where content lies beyond that edge. No decode;
   at most 32 one-row fills per paint.
+
+## Episode notes page
+
+While spoken audio plays (`np.spoken`: a podcast episode or a book part) the lyrics slot (page 2) shows
+an episode notes page; music keeps the lyrics page. It is the information page's look: the same
+`np_scrim` (`img_np_scrim_notes`), the same header, one hairline, then the notes, all inside one
+clipping scroll container `np_n_scroll` (y 36, 320 x 252). The asset has them hidden, and hidden
+widgets are insensitive; only the container is made sensitive while the page shows. A page with
+any of the widgets missing (`np.nok` is 0) keeps the lyrics page. Model: `notes_layout` in
+`tools/mod_nowplaying.py`; the preview (`page=1,notes=feed|short|local`) draws it.
+
+| part | layout |
+|---|---|
+| Header | as the information page's (`np_head_place`, `np_head_text` serve both): a 64 px cover from the same `np.ia` bitmap at (16, 36), the title up to two lines, line 2 the show (the artist), line 3 "date · length" ("Nov 18 · 52m"; a book part: the album). Widgets `np_n_art`, `np_n_title`, `np_n_title2`, `np_n_artist`, `np_n_album` |
+| Hairline | `np_n_hair`, 288 wide at x 16, y `NPI_ROW_Y` (112) plus the title's 24 px shift |
+| Notes | 16 px `#DCDCDC`, x 16, 288 wide, from `NPN_GAP` (12) under the hairline; line pitch `PD_PITCH` (22), `PD_PGAP` (10) more between paragraphs; `NPN_GAP` of air under the last line ends the content |
+| Hint | no notes and no description (a book part, a local file with no entry): one grey line, the episode page's "No description", in `np_n_hint` where the notes would start |
+
+- **Text.** `np_ep_load` runs once per track change (the key `np.epkey`; the relay ticks never reread):
+  `pc_ep_of` for the entry, then `pno_read` of the guid's line in the show folder's `.notes`
+  (`PF_NOTE` + 1 bytes, `'\n'` between paragraphs), else the entry's `desc`. The text (`np.ntext`) and
+  the layout (`np.npd`, a `pd_t`) are heap blocks that live while spoken audio plays and are freed on a
+  switch to music and at stop; a refused allocation shows the hint.
+- **Layout.** `np_notes_layout` (track change, relay ticks; never per tick) wraps with
+  `pd_paras` (`patch/pcdetail.c`, the episode page's paragraph wrapper over `pw_wrap`: the font's own
+  advances, kinsoku, CJK anywhere) using `np_n_body`'s style, and sets the container's `virtual_h`.
+  Each layout clears `pd_t`'s advance cache first: it is keyed by the label, and the label's style
+  may resolve after the first layout (the relay ticks exist for that).
+- **Paint.** `np_n_body` is one label of the container's size whose `EVT_AFTER_PAINT` draws the lines
+  (`np_on_notes_paint`): only lines wholly inside the view, as the episode page does (AWTK does not
+  clip a text), each in a 20 px rect so the text top is the line's y. No file is read or decoded there.
+- **Scrolling** is the information page's: one `np_on_info_touch` and `np_on_info_fade` serve both
+  containers (`np_scr_t`, found from the listener's widget), with the same drag threshold, direction
+  lock, no fling and edge fades. `np_notes_scroll(off)` moves the header, hairline and hint and
+  repaints the body. The offset resets on a page change away from page 1, when Now Playing comes
+  to the front, and on a track change.
+- **Lyrics.** `np_notes_sync` (each tick) shows the page and calls `ly_standdown(1)` while spoken
+  audio plays, and the reverse for music ([lyrics](lyrics.md) "Second view").
 
 ## Pins and safety
 

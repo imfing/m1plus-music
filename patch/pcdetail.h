@@ -55,6 +55,8 @@ typedef struct {
 
 /* The date line: the cell's date and, when the size is known, " · 48 MB" ("Oct 28 · 48 MB"; just the size when there is no date). */
 void pd_date(char *out, unsigned size, const char *when, unsigned dur, unsigned length);
+/* text (paragraphs split by newlines) wrapped to PD_W in the style label st into d->text / d->dl / d->dy / d->nl, the first line's top at y; returns the y under the last line. */
+int pd_paras(pd_t *d, void *st, const char *text, int y);
 /* The page's texts: title in st_title, the show's name in st_meta (cut with an ellipsis to PD_SHOW_TEXT_W), the date line, and the description in st_desc (empty desc: the hint text instead, in the meta
  * style). has_pill: the pill row is there (the page puts the pill and the "..." at y_pill). */
 void pd_make(pd_t *d, void *st_title, void *st_meta, void *st_desc, const char *title, const char *show,

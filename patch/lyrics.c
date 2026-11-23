@@ -725,10 +725,12 @@ static void ly_poll(unsigned now) {
  * drag over the lyrics. Called for every touch on the lines and by the tick while the finger is down or the lines are scrolled away, so the ten seconds run from the moment the lines go back. */
 static void ly_awake(void) { *(volatile int *)NP_IDLE_COUNT = NP_IDLE_TICKS; }
 
+static int ly_stand(void);
+
 void ly_tick(void) {
     int n;
     unsigned now;
-    if (!ly.box) return;
+    if (!ly.box || ly_stand()) return;
     now = time_now_ms();
     if (ly.view && widget_get_visible(ly.view)) { /* stock shows it again for its own purposes: ours is the page */
         widget_set_visible(ly.view, 0, 0);
@@ -923,7 +925,37 @@ void ly_reload(void) {
     if (ly.box) ly_reloading = 1;
 }
 
+/* Now Playing's notes page replaces the lyrics page while spoken audio plays (ly_standdown). want: the page's wish; parked: the lyrics widgets are hidden; msg and scrim: label_lyricmsg and img_np_scrim_lyrics.
+ * The message is hidden by its opacity, never its visible flag: that flag stays stock's (set as each track loads), so standing up shows the message exactly when stock has it for the track playing then. */
+static struct {
+    void *msg, *scrim;
+    int want, parked;
+} ly_sd __attribute__((section(".scratch")));
+
+void ly_standdown(int on) { ly_sd.want = on != 0; }
+
+/* The tick's look at it: 1 while the lyrics page stands down (its widgets hidden, stock's message transparent), 0 for the normal tick. The widgets are Now Playing's own, so nothing is done while the idle page has the engine. */
+static int ly_stand(void) {
+    if (lyp.box) return 0;
+    if (ly_sd.want && !ly_sd.parked) {
+        ly_sd.parked = 1;
+        widget_set_visible(ly.box, 0, 0);
+        widget_set_sensitive(ly.box, 0);
+        if (ly_sd.scrim) widget_set_visible(ly_sd.scrim, 0, 0);
+        if (ly_sd.msg) widget_set_opacity(ly_sd.msg, 0);
+    } else if (!ly_sd.want && ly_sd.parked) {
+        ly_sd.parked = 0;
+        widget_set_visible(ly.box, 1, 0);
+        widget_set_sensitive(ly.box, 1);
+        if (ly_sd.scrim) widget_set_visible(ly_sd.scrim, 1, 0);
+        if (ly_sd.msg) widget_set_opacity(ly_sd.msg, 255);
+        ly.dirty = 1;
+    }
+    return ly_sd.parked;
+}
+
 void ly_stop(void) {
+    memset(&ly_sd, 0, sizeof ly_sd);
     ly_reloading = 0;
     m1_timer_stop(&ly.timer);
     m1_timer_stop(&ly.dtimer);
@@ -936,6 +968,9 @@ void ly_start(void *win) {
     ly_reloading = 0;
     memset(&ly, 0, sizeof ly);
     memset(&lyp, 0, sizeof lyp);
+    memset(&ly_sd, 0, sizeof ly_sd);
+    ly_sd.msg = widget_lookup(win, "label_lyricmsg", 1);
+    ly_sd.scrim = widget_lookup(win, "img_np_scrim_lyrics", 1);
     ly.sz = 2 - ly_size();
     ly.vh = LY_VIEW_H, ly.anc = LY_ANCHOR;
     ly.src = widget_lookup(win, "scroll_lrc", 1);

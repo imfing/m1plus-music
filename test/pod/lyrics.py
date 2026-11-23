@@ -1717,6 +1717,36 @@ class SlideMachine(StockEventMachine):
     def aborted_box(self): return [e for e in self.seen if e[:2] == ('emit', self.box) and e[2] == O['EVT_POINTER_ABORT']]
 
 
+def standdown_tests(ctx):
+    """ly_standdown (Now Playing's notes page replaces the lyrics page while spoken audio plays): the lyrics widgets hidden and idle, and back as they were."""
+    expect = ctx.expect
+    m = LyMachine(SONG); scrim = m.widget('img_np_scrim_lyrics'); m.props[(m.msg, 'visible')] = 1; m.init(); m.tick()
+    pool = m.pool() + m.dots()
+    work = lambda c: [x for x in c if x[0] in ('widget_move', 'widget_resize', 'widget_set_text_utf8', 'widget_set_opacity', 'widget_set_visible') and x[1] in pool]
+    expect(m.props.get((m.box, 'visible')) is None and m.props.get((scrim, 'visible')) is None, 'by default the lyrics page is as stock: nothing hidden')
+    m.call(PSYMS['ly_standdown'], a0=1); m.tick()
+    expect(m.props.get((m.box, 'visible')) == 0 and m.props.get((m.box, 'sensitive')) == 0 and m.props.get((scrim, 'visible')) == 0 and m.props.get((m.msg, 'opacity')) == 0 and m.props.get((m.view, 'visible')) == 0,
+           'standing down hides the lyrics box (and makes it insensitive), the lyrics scrim and (by its opacity) the stock message; the stock list stays hidden')
+    expect(m.props.get((m.msg, 'visible')) == 1, 'the message\'s visible flag stays stock\'s')
+    m.props[(m.msg, 'visible')] = 0; m.set_lines(SONG[:2]); c = m.tick()
+    expect(m.props.get((m.msg, 'opacity')) == 0 and not work(c), 'the new rows are not laid out while it stands down')
+    # reproducer (episode -> song): stock hid "No lyrics" for the new song while the page stood down; standing up must not show it over the lyrics
+    m.call(PSYMS['ly_standdown'], a0=0); m.tick(); m.tick()
+    expect(m.props.get((m.box, 'visible')) == 1 and m.props.get((m.box, 'sensitive')) == 1 and m.props.get((scrim, 'visible')) == 1 and m.props.get((m.msg, 'opacity')) == 255 and m.props.get((m.msg, 'visible')) == 0,
+           f'back to music: the box, its touches, the scrim and the message\'s opacity come back, and the message shows as stock has it for the new song (hidden: visible {m.props.get((m.msg, "visible"))})')
+    s = m.shown()
+    expect(s == expect_layout(SONG[:2], 0, 0, m.measure_fn), f'and the lines are laid out from the stock rows again ({s})')
+    m.call(PSYMS['ly_standdown'], a0=1); m.tick(); m.props[(m.msg, 'visible')] = 1; m.set_lines([]); m.tick()
+    m.call(PSYMS['ly_standdown'], a0=0); m.tick()
+    expect(m.props.get((m.msg, 'visible')) == 1 and m.props.get((m.msg, 'opacity')) == 255, "a song without lyrics after an episode: stock's message shows")
+    # the idle page holds the engine: standing down touches nothing of Now Playing's then
+    m = LyMachine(SONG); m.widget('img_np_scrim_lyrics'); m.init(); m.tick()
+    m.call(PSYMS['ly_standdown'], a0=1)
+    box = m.alloc(0x80); m.call(PSYMS['ly_retarget'], a0=WIN + 0x100, a1=box, a2=300, count=3000000)
+    m.call(PSYMS['ly_tick'], count=3000000)
+    expect(m.props.get((m.box, 'visible')) is None and m.props.get((box, 'visible')) is None, 'while the idle page has the engine the stand-down is not applied')
+
+
 def slide_view_tests(ctx):
     """The page swipe and a vertical drag on the lyrics or the info page, with demo's own slide view: the drag's MOVEs answer RET_STOP, so a sideways drift
     turns no page."""
@@ -1739,4 +1769,4 @@ def slide_view_tests(ctx):
     expect(flags[0] == 1 and xoff != 0, f'a sideways swipe still drags the page (dragged {flags[0]}, xoffset {xoff})')
 
 
-SECTIONS = [reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests, slide_view_tests]
+SECTIONS = [reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests, slide_view_tests, standdown_tests]

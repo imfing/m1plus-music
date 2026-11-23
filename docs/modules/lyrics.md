@@ -106,6 +106,16 @@ Settings > Now Playing > **Lyrics Text Size** (picker `m1plus_lyrsize`: Small / 
 
 ## Second view
 
+**Stand-down.** While spoken audio plays, Now Playing shows its [episode notes page](nowplaying.md#episode-notes-page)
+in the lyrics slot and calls `ly_standdown(1)`; `ly_standdown(0)` returns the page to lyrics. The
+flag is only a wish: `ly_tick` applies it (`ly_stand`). Standing down hides `np_lyrics` (and makes it
+insensitive) and `img_np_scrim_lyrics`, makes stock's `label_lyricmsg` transparent (opacity 0), and the
+tick does no other work. The message's visible flag stays stock's, set as each track loads, so
+standing up (opacity 255) shows it exactly when stock has it for the track playing then. Standing up
+also shows the box and scrim and lays the lines out from the stock rows. While the idle page has the engine the flag is not
+applied.
+
+
 The engine is one static state bound to one view at a time. `ly_start(win)` binds it to Now
 Playing's `np_lyrics`; the [idle lyrics page](idlelyrics.md) takes it with `ly_retarget(win, box, h)`
 and gives it back with `ly_release()`. Decision: rebind rather than run two instances, since the

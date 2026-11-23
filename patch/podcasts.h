@@ -98,6 +98,8 @@ int pc_is_path(const char *path); /* the path is a file in a show folder under t
 int bk_is_path(
     const char *
         path); /* the path is a file under the Audiobooks folder (case-insensitive, bounded by the slash); pc_is_path stays podcasts only */
+/* The .episodes entry (else .archive's) of the episode file at path (a podcast path) by its f= name, into out: guid, pub, dur, title, desc. 1 when an entry was found; else 0 with out filled from the file (title the file name, pub its modification time). Reads the files: call it on a track change only. */
+int pc_ep_of(const char *path, pc_ep_t *out);
 int pc_spoken_path(const char *path); /* pc_is_path or bk_is_path: spoken audio, kept out of the music features */
 void pc_fmt(char *out, unsigned size, const char *fmt, unsigned n);
 void pc_fmt2(char *out, unsigned size, const char *fmt, unsigned a, unsigned b);

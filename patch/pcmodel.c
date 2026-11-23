@@ -823,6 +823,84 @@ int pc_load_show(const pc_show_t *show, pc_ep_t *out, int max) { return pm_load(
 int pc_load_show_all(const pc_show_t *show, pc_ep_t *out, int max) { return pm_load(show, out, max, 1); }
 int pc_count_all(const pc_show_t *show) { return pm_load(show, (pc_ep_t *)0, PC_LIST_MAX, 1); }
 
+static int pm_same(const char *a, const char *b, unsigned n) {
+    while (n--)
+        if (*a++ != *b++) return 0;
+    return 1;
+}
+
+/* The entry of the file `name` in an .episodes text: the line whose f= field is exactly name, parsed into out (one pc_parse_eps record, through a copy of the line under the header). 1 when found. */
+static int pm_find_file(const char *buf, unsigned n, const char *name, pc_ep_t *out) {
+    static const char head[] = "M1PLUS-EPISODES 1\n";
+    const char *p = buf, *stop = buf + n, *next;
+    unsigned nl = strlen(name);
+    while (p < stop) {
+        unsigned len = m1_line(p, stop, &next), at = 0;
+        for (; len && len <= PM_LINE_MAX && p[0] != '#' && at < len;) {
+            const char *f = p + at;
+            unsigned flen = 0;
+            while (at + flen < len && f[flen] != '\t') ++flen;
+            if (flen == nl + 2 && f[0] == 'f' && f[1] == '=' && pm_same(f + 2, name, nl)) {
+                char *one = calloc(1, sizeof head + len + 1);
+                int ok = 0;
+                if (one) {
+                    memcpy(one, head, sizeof head - 1);
+                    memcpy(one + sizeof head - 1, p, len);
+                    one[sizeof head - 1 + len] = '\n';
+                    ok = pc_parse_eps(one, sizeof head + len, out, 1) == 1;
+                    free(one);
+                }
+                return ok;
+            }
+            at += flen + 1;
+        }
+        p = next;
+    }
+    return 0;
+}
+
+int pc_ep_of(const char *path, pc_ep_t *out) {
+    static const char *const files[] = {".episodes", ".archive"};
+    const char *name = path, *q;
+    char meta[PC_FILE * 2 + 40];
+    unsigned dl, i, mtime = 0, kb = 0;
+    memset(out, 0, sizeof *out);
+    out->state = PC_LOCAL;
+    if (!pc_is_path(path)) return 0;
+    for (q = path; *q; ++q)
+        if (*q == '/') name = q + 1;
+    if (strlen(name) >= PC_FILE) return 0;
+    dl = (unsigned)(name - path);
+    if (dl + 10 >= sizeof meta) return 0;
+    for (i = 0; i < 2; ++i) {
+        unsigned got;
+        char *buf;
+        int hit;
+        memcpy(meta, path, dl);
+        pm_cpy(meta + dl, sizeof meta - dl, files[i]);
+        buf = m1_read_file(meta, i ? PC_ARCH_BYTES : PM_META_MAX, &got);
+        if (!buf) continue;
+        hit = pm_find_file(buf, got, name, out);
+        free(buf);
+        if (hit) {
+            pm_cpy(out->file, PC_FILE, name);
+            if (!out->title[0]) pm_cpy(out->title, PC_TITLE, name);
+            return 1;
+        }
+        memset(out, 0, sizeof *out);
+        out->state = PC_LOCAL;
+    }
+    pm_cpy(out->file, PC_FILE, name);
+    pm_cpy(out->title, PC_TITLE, name);
+    memcpy(meta, path, dl - 1); /* the show folder: root up to its parent, then the folder's name */
+    meta[dl - 1] = 0;
+    for (q = meta, i = 0; *q; ++q)
+        if (*q == '/') i = (unsigned)(q - meta);
+    meta[i] = 0;
+    if (pc_stat(meta, meta + i + 1, name, &mtime, &kb)) out->pub = mtime;
+    return 0;
+}
+
 /* One line of an .episodes text read for the archive merge: whether it is an entry (as pc_parse_eps reads it), its guid hash (0: none), its file name's hash (0: none) and its date. */
 static int pm_line_keys(const char *p, unsigned len, unsigned *guid, unsigned *file, unsigned *pub) {
     unsigned at = 0;

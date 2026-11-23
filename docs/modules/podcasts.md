@@ -167,6 +167,10 @@ extensions: mp3, m4a, m4b, aac, ogg, opus, flac, wav, wma. A show can supply `co
   Downloads, Continue Listening and the queue agree. The cap keeps the newest 300 under either
   order, so the order never changes which episodes are listed. A missing file, entry or bad value
   in `order` is newest first. With no memory a list is not returned at all (no unsorted fallback).
+- `pc_ep_of(path, out)` looks up one playing episode: the `.episodes` entry (else `.archive`'s) whose
+  `f=` is the file name, parsed like any entry (guid, date, duration, title, description). Without
+  an entry it returns 0 with the title from the file name and the date from mtime. It reads files,
+  so Now Playing calls it on a track change only.
 - `pm_merge` combines feed entries and files into local, partial or remote episodes. Without
   metadata the title comes from the file name and the date from mtime. Newest first is date
   descending, then file name descending (digit runs by value, case ignored), then entry order;

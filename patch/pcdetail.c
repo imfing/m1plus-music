@@ -73,9 +73,35 @@ void pd_date(char *out, unsigned size, const char *when, unsigned dur, unsigned 
     }
 }
 
+/* text wrapped paragraph by paragraph (the text between newlines, each by itself, PD_W wide in the style label st) into d->text, d->dl and d->dy: the first line's top is y, the lines PD_PITCH apart, PD_PGAP more between
+ * paragraphs. Returns the y under the last line (y itself for no text). At most PD_LINES lines; the text is cut at PD_WIDE chars. */
+int pd_paras(pd_t *d, void *st, const char *text, int y) {
+    int n, k, a, b, para = 0;
+    d->nl = 0;
+    n = pd_wide(d->text, PD_WIDE, text);
+    for (a = 0; a < n && d->nl < PD_LINES; a = b + 1) {
+        int cnt;
+        b = a;
+        while (b < n && d->text[b] != '\n') ++b;
+        d->text[b] = 0; /* (the newline becomes the paragraph's end; the NUL after the text is there already) */
+        if (b > a) {
+            cnt = pd_lines(d, st, d->text + a, b - a, PD_W, PD_LINES - d->nl, d->dl + d->nl);
+            if (para) y += PD_PGAP;
+            for (k = 0; k < cnt; ++k) {
+                d->dl[d->nl + k].start = (short)(d->dl[d->nl + k].start + a);
+                d->dy[d->nl + k] = (short)y;
+                y += PD_PITCH;
+            }
+            d->nl += cnt;
+            para = 1;
+        }
+    }
+    return y;
+}
+
 void pd_make(pd_t *d, void *st_title, void *st_meta, void *st_desc, const char *title, const char *show,
              const char *date, const char *desc, const char *hint, int has_pill) {
-    int y, n, k, a, b, para = 0;
+    int y, n;
     unsigned buf[PD_META_MAX];
     memset(d, 0, sizeof *d);
     n = pd_wide(d->title, PD_TITLE_MAX, title);
@@ -106,25 +132,7 @@ void pd_make(pd_t *d, void *st_title, void *st_meta, void *st_desc, const char *
     }
     d->y_desc = y;
     d->hint = !desc[0];
-    n = pd_wide(d->text, PD_WIDE, desc[0] ? desc : hint);
-    for (a = 0; a < n && d->nl < PD_LINES;
-         a = b + 1) { /* paragraphs: the text between newlines, each wrapped by itself */
-        int cnt;
-        b = a;
-        while (b < n && d->text[b] != '\n') ++b;
-        d->text[b] = 0; /* (the newline becomes the paragraph's end; the NUL after the text is there already) */
-        if (b > a) {
-            cnt = pd_lines(d, desc[0] ? st_desc : st_meta, d->text + a, b - a, PD_W, PD_LINES - d->nl, d->dl + d->nl);
-            if (para) y += PD_PGAP;
-            for (k = 0; k < cnt; ++k) {
-                d->dl[d->nl + k].start = (short)(d->dl[d->nl + k].start + a);
-                d->dy[d->nl + k] = (short)y;
-                y += PD_PITCH;
-            }
-            d->nl += cnt;
-            para = 1;
-        }
-    }
+    y = pd_paras(d, desc[0] ? st_desc : st_meta, desc[0] ? desc : hint, y);
     d->h = y + PD_BOTTOM;
 }
 
