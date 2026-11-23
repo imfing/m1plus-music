@@ -17,8 +17,9 @@
 #include "stock.h"
 #endif
 
-#define PEQ_BANDS 30 /* 10 per side plus 10 shared, as L/R APO files use */
+#define PEQ_BANDS 64 /* the most a preset may have; the engine runs only the bands a preset has */
 #define PEQ_CHANNELS 8
+#define PEQ_OUT_MAX 1000.0 /* the engine's output bound, +60 dBFS: a finite float whatever the preset */
 #define PEQ_FILE_LIMIT 16384
 #define PEQ_LINE_LIMIT 512
 #define PEQ_TENBAND 10 /* the 10-Band EQ: ten gains, 31 Hz .. 16 kHz, one octave wide */
@@ -28,7 +29,7 @@
 #define PEQ_STATE \
     "/mnt/data/m1plus/playback-eq" /* the state record in the settings folder, demo writes it whole (tmp, fsync, rename; makes the folder when missing) */
 #define PEQ_STATE_DIR "/mnt/data/m1plus"
-#define PEQ_MAGIC "M1PEQ02" /* 8 bytes with its NUL */
+#define PEQ_MAGIC "M1PEQ03" /* 8 bytes with its NUL */
 #define PEQ_DIR "/mnt/mmc/EQ" /* the APO / AutoEQ presets the page lists */
 #define PEQ_KILL "/mnt/mmc/m1plus-off" /* the payload's kill switch: the player's filter passes audio through */
 #define PEQ_NAME 64

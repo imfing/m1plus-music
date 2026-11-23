@@ -15,7 +15,12 @@ ACCENT_FILE = '/mnt/data/m1plus/appearance-accent'
 PODCASTS = sibling('podcasts')
 STATE, STATE_TMP, KILL, EQ_DIR = '/mnt/data/m1plus/playback-eq', '/mnt/data/m1plus/playback-eq.tmp', '/mnt/mmc/m1plus-off', '/mnt/mmc/EQ'
 FLOAT, REINIT, GAIN_SET, GAIN_GET, CMDLINE = 0x1d, 0x10000100, 0x40001d00, 0x40001d01, 0x20000300
-BANDS, NAME = 30, 64
+BANDS, NAME = 64, 64
+OUT_MAX = 1000.0   # patch/peq.h PEQ_OUT_MAX: the engine's output bound
+PRESET_SIZE = 16 + 32 * BANDS + 16   # peq_preset: count, bypass, preamp, the bands, balance, automatic, spare
+STATE_BODY = 8 + PRESET_SIZE + NAME + 88   # peq_state: mode, the preset, the name, the 10-Band EQ's fields
+CURVE_AT = 8 + PRESET_SIZE + NAME   # peq_state.curve
+DELETE_ROW, RENAME_ROW = f'pod_row{BANDS + 1}', f'pod_row{BANDS + 2}'   # the Preset page's Rename / Delete Preset card, under the band rows
 GRAPHIC_F = (31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 STOCK_GAINS, MPCTX = 0xb10df4, 0xaf9e30
 FR = 1 << 29 | 1 << 26   # CP0 Status: CU1 and FR (the payloads are -mfp64)
@@ -29,7 +34,7 @@ Filter 5: OFF PK Fc 0 Hz Gain 0.0 dB Q 0.00
 AUTOEQ_BANDS = [(1, 1, 105, 5.5, 0.7), (1, 0, 2000, -3.1, 1.41), (1, 2, 10000, 2.0, 0.7), (1, 0, 140, -1.5, 0.5)]
 
 
-# ---- the record (patch/peq.h): peq_band 32 bytes, peq_preset 992, peq_state 1152 (the 10-Band EQ's curve, preamp, gain[10], custom[10] after the name), the file PEQ_MAGIC + the state
+# ---- the record (patch/peq.h): peq_band 32 bytes, peq_preset 2080, peq_state 2240 (the 10-Band EQ's curve, preamp, gain[10], custom[10] after the name), the file PEQ_MAGIC + the state
 def pack_preset(bands, preamp=0.0, automatic=2, balance=0.0, bypass=0):
     out = struct.pack('<iid', len(bands), bypass, preamp)
     full = list(bands) + [(0, 0, 1000.0, 0.0, 1.41)] * (BANDS - len(bands))
@@ -39,7 +44,7 @@ def pack_preset(bands, preamp=0.0, automatic=2, balance=0.0, bypass=0):
 
 def pack_state(mode, preset, name=b'', curve=0, preamp=-1, gain=None, custom=None):
     """mode 0 the 10-Band EQ (curve 0 Flat .. 8 Jazz, 9 Custom; preamp -1 Auto, 0..12 a cut in dB; its ten gains), 1 a preset file."""
-    return (b'M1PEQ02\0' + struct.pack('<i4x', mode) + preset + name.ljust(NAME, b'\0')
+    return (b'M1PEQ03\0' + struct.pack('<i4x', mode) + preset + name.ljust(NAME, b'\0')
             + struct.pack('<ii20f', curve, preamp, *(list(gain or [0.0] * 10) + list(custom or [0.0] * 10))))
 
 
@@ -47,7 +52,7 @@ def tenband(gain, preamp=-1, curve=9, custom=None):
     return pack_state(0, pack_preset([]), b'', curve, preamp, gain, custom)
 
 
-STATE_SIZE = 8 + 1152   # PEQ_MAGIC + peq_state
+STATE_SIZE = 8 + STATE_BODY   # PEQ_MAGIC + peq_state
 NAME_OF = lambda rec: rec[-NAME - 88:-88].rstrip(b'\0')   # the preset file's name in a record
 CURVES = [[0] * 10, [3, 1, 0, -2, -4, -4, -2, 0, 1, 2], [-2, 0, 2, 4, -2, -2, 0, 0, 4, 4], [-2, 3, 4, 1, -2, -2, 0, 0, 4, 4],
           [-2, 0, 2, 1, 0, 0, 0, 0, -2, -4], [-6, 0, 0, 0, 0, 0, 2, 0, 2, 0], [-4, 0, 2, 1, 0, 0, 0, 0, -4, -6],
@@ -328,6 +333,14 @@ def player_tests(ctx):
         want = model(AUTOEQ_BANDS + [(1, 0, 18000, 4.0, 2.0)], rate, 2, x, 10 ** (-6.2 / 20))
         expect(r == 1 and near(y, want), f'{rate} Hz: the record\'s preset and its preamp match the model (max err {max(abs(a - b) for a, b in zip(y, want)):.2e})')
 
+    # a stack of boosts past float's range (64 low shelves, +24 dB each, +1536 dB): bounded at PEQ_OUT_MAX, never inf, with Auto preamp too
+    shelves = [(1, 1, 1000, 24.0, 0.7)] * BANDS
+    for automatic in (2, 1):
+        p = Player({STATE: pack_state(1, pack_preset(shelves, preamp=0, automatic=automatic))}); af = p.open(); p.reinit(af, 48000)
+        _, y = p.play(af, tone(1024, 2, 48000, (100.0,), 0.01), 48000)
+        expect(all(math.isfinite(v) and abs(v) <= OUT_MAX for v in y) and max(abs(v) for v in y) == OUT_MAX,
+               f'{BANDS} shelves at +24 dB ({"file" if automatic == 2 else "Auto"} preamp): every sample finite, bounded at +-{OUT_MAX:g}')
+
     # Auto preamp: the cut for this rate's own peak
     bands = [(1, 0, 1000, 9.0, 1.0), (1, 1, 80, 6.0, 0.7)]
     for rate in (44100, 96000):
@@ -426,18 +439,22 @@ def demo_machine():
 
 def parse(m, text):
     buf = m.alloc(len(text) + 1); m.u.mem_write(buf, text + b'\0')
-    out, err = m.alloc(1000), m.alloc(12)
+    out, err = m.alloc(PRESET_SIZE), m.alloc(12)
     m.u.mem_write(err, b'\xaa' * 12)
     ok = m.call(PSYMS['peq_parse'], buf, len(text), count=1 << 40, a2=out, a3=err)
     line, reason = m.word(err), m.word(err + 4)
     m.skipped = m.word(err + 8)
-    return ok, unpack_preset(bytes(m.u.mem_read(out, 992))), (line, m.read_cstr(reason) if ok == 0 and reason else '')
+    return ok, unpack_preset(bytes(m.u.mem_read(out, PRESET_SIZE))), (line, m.read_cstr(reason) if ok == 0 and reason else '')
 
 
 def parser_tests(ctx):
     expect = ctx.expect
     m = demo_machine()
     ok, p, _ = parse(m, AUTOEQ)
+    full = b''.join(b'Filter: ON PK Fc %d Hz Gain 1 dB Q 1\n' % (100 + 10 * i) for i in range(BANDS))
+    ok64, p64, _ = parse(m, full)
+    expect(ok64 == 1 and p64['count'] == BANDS and [b[0] for b in p64['bands']] == [1] * BANDS and p64['bands'][-1][2] == 100 + 10 * (BANDS - 1),
+           f'{BANDS} bands parse whole: every band on, the last one\'s frequency')
     got = [(e, t, round(f, 6), round(g, 6), round(q, 6)) for e, t, f, g, q in p['bands']]
     expect(ok == 1 and p['count'] == 4 and got == [tuple(map(lambda v: round(v, 6), b)) for b in AUTOEQ_BANDS],
            f'an AutoEQ file: its four ON filters (LSC, PK, HSC, PK), the blank OFF slot skipped ({got})')
@@ -465,7 +482,7 @@ def parser_tests(ctx):
                                (b'Filter: ON PK Fc 1000 Hz Gain 3 dB Q 1\nChannel: L C\nPreamp: -1 dB\nPreamp: -70 dB\n', 4, 'preamp outside -60..24 dB or invalid number'),
                                (b'Filter: ON PK Fc 0x10 Hz Gain 3 dB Q 1\n', 1, 'invalid frequency or gain number'),
                                (b'Preamp: -70 dB\n', 1, 'preamp outside -60..24 dB or invalid number'),
-                               (b''.join(b'Filter: ON PK Fc 1000 Hz Gain 1 dB Q 1\n' for _ in range(31)), 31, 'more than 30 bands')):
+                               (b''.join(b'Filter: ON PK Fc 1000 Hz Gain 1 dB Q 1\n' for _ in range(BANDS + 1)), BANDS + 1, f'more than {BANDS} bands')):
         ok, _, err = parse(m, text)
         expect(ok == 0 and err == (line, reason), f'refused: {reason!r} on line {line} (got {err})')
 
@@ -485,26 +502,26 @@ def parser_tests(ctx):
     expect(ok == 1 and p['count'] == 1 and m.skipped == 1, 'a command line with more tokens than a filter has is skipped, not refused')
 
     # the record: saved whole (tmp, fsync, rename), read back; anything else reads as none
-    st = m.alloc(1152)
+    st = m.alloc(STATE_BODY)
     m.u.mem_write(st, pack_state(1, pack_preset(AUTOEQ_BANDS, -6.2), b'HD 600.txt')[8:])
     r = m.call(PSYMS['peq_state_save'], st, count=1 << 30)
     names = [c[0] for c in m.calls]
     expect(r == 0 and m.fs.get(STATE) == pack_state(1, pack_preset(AUTOEQ_BANDS, -6.2), b'HD 600.txt') and STATE_TMP not in m.fs,
            'peq_state_save: the magic and the record, under the tmp name, then renamed')
     expect(names.index('fsync') < names.index('rename'), 'fsynced before the rename')
-    back = m.alloc(1152)
+    back = m.alloc(STATE_BODY)
     r = m.call(PSYMS['peq_state_load'], back, count=1 << 30)
-    expect(r == 1 and bytes(m.u.mem_read(back, 1152)) == m.fs[STATE][8:], 'peq_state_load reads it back')
+    expect(r == 1 and bytes(m.u.mem_read(back, STATE_BODY)) == m.fs[STATE][8:], 'peq_state_load reads it back')
     m.fs[STATE] = m.fs[STATE][:-1]
     r = m.call(PSYMS['peq_state_load'], back, count=1 << 30)
-    expect(r == 0 and m.word(back) == 0 and unpack_preset(bytes(m.u.mem_read(back + 8, 992)))['count'] == 10, 'a short record reads as none: the 10-Band EQ (mode 0), the default preset')
-    expect(struct.unpack_from('<ii20f', bytes(m.u.mem_read(back + 1064, 88))) == (0, -1) + (0.0,) * 20, 'none: curve Flat, preamp Auto, zero gains')
+    expect(r == 0 and m.word(back) == 0 and unpack_preset(bytes(m.u.mem_read(back + 8, PRESET_SIZE)))['count'] == 10, 'a short record reads as none: the 10-Band EQ (mode 0), the default preset')
+    expect(struct.unpack_from('<ii20f', bytes(m.u.mem_read(back + CURVE_AT, 88))) == (0, -1) + (0.0,) * 20, 'none: curve Flat, preamp Auto, zero gains')
     # the 10-Band EQ's fields: saved whole and read back; the curve table and peq_set_curve
     rec = tenband([1.5, -2, 0, 0, 3, 0, 0, 0, 0, -12], 4, 9, [1.5, -2, 0, 0, 3, 0, 0, 0, 0, -12])
     m.u.mem_write(st, rec[8:])
     expect(m.call(PSYMS['peq_state_save'], st, count=1 << 30) == 0 and m.fs[STATE] == rec, 'peq_state_save: a 10-Band record with Custom gains and a fixed preamp')
-    m.u.mem_write(back, b'\xff' * 1152)
-    expect(m.call(PSYMS['peq_state_load'], back, count=1 << 30) == 1 and bytes(m.u.mem_read(back, 1152)) == rec[8:], 'peq_state_load reads the 10-Band record back')
+    m.u.mem_write(back, b'\xff' * STATE_BODY)
+    expect(m.call(PSYMS['peq_state_load'], back, count=1 << 30) == 1 and bytes(m.u.mem_read(back, STATE_BODY)) == rec[8:], 'peq_state_load reads the 10-Band record back')
     for bad in (tenband([0.0] * 10, 13), tenband([0.0] * 10, -2), tenband([13.0] + [0.0] * 9), pack_state(0, pack_preset([]), b'', 10), pack_state(0, pack_preset([]), b'', -1)):
         m.u.mem_write(st, bad[8:])
         expect(m.call(PSYMS['peq_state_save'], st, count=1 << 30) == 0xffffffff and m.fs[STATE] == rec, 'a record with a curve, preamp or gain out of range is not saved and the file is kept')
@@ -516,11 +533,11 @@ def parser_tests(ctx):
     for c, want in enumerate(CURVES):
         m.u.mem_write(st, rec[8:])
         m.call(PSYMS['peq_set_curve'], st, c, count=1 << 30)
-        got = struct.unpack_from('<ii20f', bytes(m.u.mem_read(st + 1064, 88)))
+        got = struct.unpack_from('<ii20f', bytes(m.u.mem_read(st + CURVE_AT, 88)))
         custom = [1.5, -2, 0, 0, 3, 0, 0, 0, 0, -12]
         expect(got[0] == c and list(got[2:12]) == (custom if c == 9 else want) and list(got[12:]) == custom, f'peq_set_curve({c}): the curve id and its ten gains (Custom: the user\'s), custom[] kept')
     m.u.mem_write(st, rec[8:]); m.call(PSYMS['peq_set_curve'], st, 77, count=1 << 30)
-    expect(struct.unpack_from('<i', bytes(m.u.mem_read(st + 1064, 4)))[0] == 0 and not any(struct.unpack_from('<10f', bytes(m.u.mem_read(st + 1072, 40)))), 'an unknown curve id becomes Flat')
+    expect(struct.unpack_from('<i', bytes(m.u.mem_read(st + CURVE_AT, 4)))[0] == 0 and not any(struct.unpack_from('<10f', bytes(m.u.mem_read(st + CURVE_AT + 8, 40)))), 'an unknown curve id becomes Flat')
     m.u.mem_write(st, struct.pack('<i', 5))
     expect(m.call(PSYMS['peq_state_save'], st, count=1 << 30) == 0xffffffff, 'an invalid record is not saved')
     m.u.mem_write(st, struct.pack('<i', 1)); m.fail.add(('rename', STATE))
@@ -587,7 +604,7 @@ def page_tests(ctx):
     tap(m, 4)
     rec = m.fs.get(STATE, b'')
     expect(len(rec) == STATE_SIZE and struct.unpack_from('<i', rec, 8)[0] == 1 and NAME_OF(rec) == b'Sennheiser HD 600.txt', 'the record: PEQ_FILE and the file\'s name')
-    p = unpack_preset(rec[16:16 + 992])
+    p = unpack_preset(rec[16:16 + PRESET_SIZE])
     expect(p['count'] == 4 and abs(p['preamp'] + 6.2) < 1e-9, 'the record holds the parsed preset')
     seq = [c for c in m.calls if c[0] in ('write_int_config', 'set_equalizer_value')]
     expect(seq == [('write_int_config', 1, 'PLAYSET', 'EQFLAG'), ('set_equalizer_value', 4, 1)], f'the switch was off: on, saved, then mcl-seteq with the mode ({seq})')
@@ -833,8 +850,8 @@ def register_peqpage(m, drop=()):
             for base in ('pod_label', 'pod_sub'): m.widget(f'{base}{i}')
         if i < O['GR_BANDS']: m.lookups[(m.widgets[f'pod_row{i}'], 'pod_hair')] = m.alloc(0x80)   # (the asset's last band row has none, nor has the preamp row's card: only a hairline per band row but the last)
     del m.lookups[(m.widgets['pod_row0'], 'pod_hair')]
-    if 'pod_row31' not in drop:
-        for k in (1, 2): m.widget(f'pod_row{O["GR_BANDS"] + k}')   # the Rename / Delete Preset card (31 Delete, 32 Rename)
+    if DELETE_ROW not in drop:
+        for k in (1, 2): m.widget(f'pod_row{O["GR_BANDS"] + k}')   # the Rename / Delete Preset card (GR_BANDS + 1 Delete, + 2 Rename)
 
 
 def ppage(files, name, bitmap_ok=True, drop=(), count=False):
@@ -884,7 +901,7 @@ def preset_page_tests(ctx):
     expect(ptext(m, 'label_title') == ['Long'], f'the navbar title is the preset\'s name without .txt ({ptext(m, "label_title")})')
     vis = {i: m.props.get((m.widgets[f'pod_row{i}'], 'visible')) for i in range(1, O['GR_BANDS'] + 1)}
     sens = {c[1]: c[2] for c in m.calls if c[0] == 'widget_set_sensitive'}
-    expect([i for i, v in vis.items() if v] == [1, 2, 3, 4, 5, 6] and all(sens.get(m.widgets[f'pod_row{i}']) == 1 for i in range(1, 7)) and not [i for i in range(7, 31) if m.widgets[f'pod_row{i}'] in sens]
+    expect([i for i, v in vis.items() if v] == [1, 2, 3, 4, 5, 6] and all(sens.get(m.widgets[f'pod_row{i}']) == 1 for i in range(1, 7)) and not [i for i in range(7, BANDS + 1) if m.widgets[f'pod_row{i}'] in sens]
            and m.widgets['pod_row0'] not in sens, 'six rows shown and made sensitive (a tap opens the band page), the others never touched, the preamp row untouched (no touch)')
     pcs = [piece(m, i) for i in range(1, 7)]
     expect([p_.removeprefix('pod_cd_') for p_ in pcs] == ST.peqp_pieces(6) == ['top', 'mid', 'mid', 'mid', 'mid', 'bot'], f'the band card is top, middle.., bottom ({pcs})')
@@ -960,11 +977,11 @@ def preset_page_tests(ctx):
         mp = G.render(db, rng)
         same = all(abs((px[y * w + x] >> 24) - mp[y][x][0]) <= 1 and abs((px[y * w + x] & 255) - mp[y][x][1]) <= 2 and abs((px[y * w + x] >> 16 & 255) - mp[y][x][2]) <= 2 for y in range(h) for x in range(w))
         expect(rng == want and ptext(m, 'pod_gr_top') == [f'+{want}'] and ptext(m, 'pod_gr_bot') == [f'−{want}'] and same, f'{what}: the scale is ±{want} dB ({ptext(m, "pod_gr_top")}) and the bitmap is the model\'s')
-    # the 30 band limit: every row used, the last without a hairline (the asset's has none)
-    many = ''.join(f'Filter {i + 1}: ON PK Fc {100 + 50 * i} Hz Gain {(i % 5) - 2} dB Q 2\n' for i in range(30)).encode()
+    # the band limit: every row used, the last without a hairline (the asset's has none)
+    many = ''.join(f'Filter {i + 1}: ON PK Fc {100 + 50 * i} Hz Gain {(i % 5) - 2} dB Q 2\n' for i in range(BANDS)).encode()
     m = ppage([('many.txt', many)], 'many.txt')
-    expect(all(ptexts(m, 'pod_label', i) == [f'{100 + 50 * (i - 1)} Hz' if 100 + 50 * (i - 1) < 1000 else G.freq_text(100 + 50 * (i - 1))] for i in range(1, 31)) and [piece(m, i).removeprefix('pod_cd_') for i in range(1, 31)] == ST.peqp_pieces(30)
-           and [hair(m, i) for i in (1, 29)] == [1, 1] and hair(m, 30) is None, '30 bands: every row named, the card\'s pieces, a hairline on all but the last (which has none)')
+    expect(all(ptexts(m, 'pod_label', i) == [f'{100 + 50 * (i - 1)} Hz' if 100 + 50 * (i - 1) < 1000 else G.freq_text(100 + 50 * (i - 1))] for i in range(1, BANDS + 1)) and [piece(m, i).removeprefix('pod_cd_') for i in range(1, BANDS + 1)] == ST.peqp_pieces(BANDS)
+           and [hair(m, i) for i in (1, BANDS - 1)] == [1, 1] and hair(m, BANDS) is None, f'{BANDS} bands: every row named, the card\'s pieces, a hairline on all but the last (which has none)')
 
     # refusals: nothing opens
     for what, kw in (('a file that does not parse', {'name': 'broken.txt'}), ('a file that is gone', {'name': 'gone.txt'}), ('a name too long', {'name': 'x' * 70 + '.txt'})):
@@ -1010,7 +1027,7 @@ def layout_peqp_tests(ctx):
         for i in range(1, n + 1): flags(f'pod_row{i}', F_VISIBLE | F_SENSITIVE)   # (a tap on a band row opens the band page)
         if skipped: flags('pod_note0', F_VISIBLE); flags('pod_gap1', 0)
         m.mark(); m.relayout()
-        names = ['pod_top', 'pod_graph', 'pod_gap0', 'pod_row0', 'pod_sec0'] + [f'pod_row{i}' for i in range(1, n + 1)] + (['pod_note0'] if skipped else ['pod_gap1']) + ['pod_row32', 'pod_row31', 'pod_end']
+        names = ['pod_top', 'pod_graph', 'pod_gap0', 'pod_row0', 'pod_sec0'] + [f'pod_row{i}' for i in range(1, n + 1)] + (['pod_note0'] if skipped else ['pod_gap1']) + [RENAME_ROW, DELETE_ROW, 'pod_end']
         got = [(nm,) + m.box(nm) for nm in names]
         tag = f'{n} bands{" and a note" if skipped else ""}'
         expect([(x, y, h) for _, x, y, _, h in got] == [(0, y, ST.item_h(it)) for it, y in placed], f'{tag}: demo\'s layouter stacks the model\'s column (graph {ST.GRAPH_H} high, the preamp card, the header, {n} rows, the note or the gap, and the Rename / Delete card)')
@@ -1024,18 +1041,18 @@ def layout_peqp_tests(ctx):
             nd = node(node_tree, nm); nd.x, nd.y, nd.w, nd.h = x_, y_, w_, h_
             if nm.startswith('pod_row') and nm != 'pod_row0': nd.flags |= F_VISIBLE
             if nm == 'pod_note0' and skipped: nd.flags |= F_VISIBLE
-            if nm in ('pod_row31', 'pod_row32') or (nm.startswith('pod_row') and 1 <= int(nm[7:]) <= n): nd.flags |= F_VISIBLE | F_SENSITIVE
+            if nm in (DELETE_ROW, RENAME_ROW) or (nm.startswith('pod_row') and 1 <= int(nm[7:]) <= n): nd.flags |= F_VISIBLE | F_SENSITIVE
         mm = Machine()
         for nm, x_, y_, w_, h_ in got:
             if y_ + h_ > 400: continue
             for x in (30, 160, 290):
                 path = stock_target(mm, node_tree, x, 50 + y_ + h_ // 2)
-                if nm in ('pod_row31', 'pod_row32') or (nm.startswith('pod_row') and nm != 'pod_row0'): expect(nm in path, f'{tag}: a tap at x {x} on {nm} reaches it ({path})')
+                if nm in (DELETE_ROW, RENAME_ROW) or (nm.startswith('pod_row') and nm != 'pod_row0'): expect(nm in path, f'{tag}: a tap at x {x} on {nm} reaches it ({path})')
                 else: expect(not any(c.startswith('pod_row') for c in path) and path[-1] in ('pod_scrollview', 'pod_listview', page.name), f'{tag}: a tap at x {x} on {nm} reaches nothing actionable ({path})')
     # the asset
     kids = [c.name for c in sv.children]
-    expect(kids[:5] == ['pod_top', 'pod_graph', 'pod_gap0', 'pod_row0', 'pod_sec0'] and kids[-5:] == ['pod_note0', 'pod_gap1', 'pod_row32', 'pod_row31', 'pod_end'] and len(kids) == 5 + 30 + 5,
-           f'the asset\'s column: the graph, a gap, the preamp row, the header, 30 band rows, the note, a gap, Rename and Delete Preset ({kids[:8]})')
+    expect(kids[:5] == ['pod_top', 'pod_graph', 'pod_gap0', 'pod_row0', 'pod_sec0'] and kids[-5:] == ['pod_note0', 'pod_gap1', RENAME_ROW, DELETE_ROW, 'pod_end'] and len(kids) == 5 + BANDS + 5,
+           f'the asset\'s column: the graph, a gap, the preamp row, the header, {BANDS} band rows, the note, a gap, Rename and Delete Preset ({kids[:8]})')
     gr = sv.children[1]
     expect(gr.get('sensitive') == 'false' and gr.h == ST.GRAPH_H and all(gr.get(f'style:{s_}:bg_color') == '#00000000' for s_ in ('normal', 'disable', 'focused')),
            'the graph view is insensitive and transparent (the bitmap drawn in its before-paint shows under its labels)')
@@ -1045,14 +1062,14 @@ def layout_peqp_tests(ctx):
     expect([labs[n_].x + labs[n_].w // 2 - ST.CM - G.PX0 for n_ in ('pod_gr_f100', 'pod_gr_f1k', 'pod_gr_f10k')] == list(G.GRID_X) and
            [labs[n_].y + labs[n_].h // 2 for n_ in ('pod_gr_top', 'pod_gr_mid', 'pod_gr_bot')] == [G.PY0, G.PY0 + G.PH // 2, G.PY0 + G.PH], 'the frequency labels sit under their grid lines, the scale labels on theirs')
     byname = {c.name: c for c in sv.children if c.name.startswith('pod_row')}
-    rows = [byname[f'pod_row{i}'] for i in range(31)]
-    dele, ren = byname['pod_row31'], byname['pod_row32']
+    rows = [byname[f'pod_row{i}'] for i in range(BANDS + 1)]
+    dele, ren = byname[DELETE_ROW], byname[RENAME_ROW]
     pre = rows[0]
     expect(pre.get('sensitive') == 'false' and pre.get('visible') != 'false' and pod_i18n.shown_english(next(c for c in pre.children if c.name == 'pod_label0')) == 'Preamp'
            and not [c for c in pre.children if c.name in ('pod_chevron', 'pod_check0')] and (pre.get('style:normal:bg_image'), pre.get('style:pressed:bg_image')) == ('pod_cd_single', 'pod_cd_single_down'), 'the preamp row: a single piece, a value, no chevron, no touch')
     pv = next(c for c in pre.children if c.name == 'pod_value0')
     expect(pv.x + pv.w == ST.band_right() == ST.CHEV_INSET * 0 + ST.chevron_left() - ST.VALUE_GAP, 'the preamp value ends where every value on the page ends (the band gains\'): a gap before the chevron\'s column')
-    expect(all(r.get('visible') == 'false' and r.get('sensitive') == 'false' for r in rows[1:]) and len(rows) == 31, 'the band rows start hidden and insensitive')
+    expect(all(r.get('visible') == 'false' and r.get('sensitive') == 'false' for r in rows[1:]) and len(rows) == BANDS + 1, 'the band rows start hidden and insensitive')
     r1 = rows[1]
     lab, val, sub = (next(c for c in r1.children if c.name == f'pod_{k}1') for k in ('label', 'value', 'sub'))
     chev = next(c for c in r1.children if c.name == 'pod_chevron')
@@ -1068,8 +1085,8 @@ def layout_peqp_tests(ctx):
            'a band row\'s gain is the geometry of a Settings value row: 18 px grey, right aligned 8 px before the chevron, centred on the row (the chevron\'s own centre)')
     expect(all(c.get('sensitive') == 'false' for r in rows for c in r.children), 'nothing inside a row takes a touch (the row does)')
     # Rename and Delete Preset: one card, a top and a bottom piece
-    labr, labd = [c for c in ren.children if c.name == 'pod_label32'], [c for c in dele.children if c.name == 'pod_label31']
-    expect(dele.get('visible') != 'false' and dele.get('sensitive') != 'false' and ren.get('visible') != 'false' and ren.get('sensitive') != 'false' and [c.name for c in dele.children] == ['pod_label31'] and [c.name for c in ren.children] == ['pod_label32', 'pod_hair']
+    labr, labd = [c for c in ren.children if c.name == f'pod_label{BANDS + 2}'], [c for c in dele.children if c.name == f'pod_label{BANDS + 1}']
+    expect(dele.get('visible') != 'false' and dele.get('sensitive') != 'false' and ren.get('visible') != 'false' and ren.get('sensitive') != 'false' and [c.name for c in dele.children] == [f'pod_label{BANDS + 1}'] and [c.name for c in ren.children] == [f'pod_label{BANDS + 2}', 'pod_hair']
            and (ren.get('style:normal:bg_image'), ren.get('style:pressed:bg_image')) == ('pod_cd_top', 'pod_cd_top_down') and (dele.get('style:normal:bg_image'), dele.get('style:pressed:bg_image')) == ('pod_cd_bot', 'pod_cd_bot_down')
            and labd[0].get('sensitive') != 'true' and pod_i18n.shown_english(labd[0]) == 'Delete Preset' and pod_i18n.shown_english(labr[0]) == 'Rename Preset'
            and all(labd[0].get(f'style:{s_}:text_color') == '#FF6B6B' for s_ in ('normal', 'disable', 'focused')) and not labr[0].get('style:normal:text_color') == '#FF6B6B' and sv.children[-4].name == 'pod_gap1' and sv.children[-4].get('visible') != 'false',
@@ -1146,7 +1163,7 @@ def widths_tests(ctx):
     pre_lab = tree.find('pod_label0')
     sub = tree.find('pod_sub1')
     note_t = tree.find('pod_note0_t')
-    del_lab = tree.find('pod_label31')
+    del_lab = tree.find(f'pod_label{BANDS + 1}')
     lib = awtk_ui.parse(open(os.path.join(raw, 'ui', pod_pages.PEQLIB_PAGE.key + '.bin'), 'rb').read())
     lib_sub, lib_dl = lib.find('pod_sub1'), lib.find('pod_label0')
     over = []
@@ -1213,7 +1230,7 @@ def widths_tests(ctx):
     expect(not over, f'the editor\'s and its pages\' strings fit in all 13 languages: Curve and Preamp in their 98 px label boxes, a curve name or "Auto · −12.0 dB" in the 150 px value, the picker rows, the slider values in the pill ({over[:3]})')
     # preset editing (patch/peqpage.c, patch/peqband.c): Rename, the unsaved-changes dialog, the band page
     bp = awtk_ui.parse(open(os.path.join(raw, 'ui', pod_pages.PEQBAND_PAGE.key + '.bin'), 'rb').read())
-    ren_lab = tree.find('pod_label32')
+    ren_lab = tree.find(f'pod_label{BANDS + 2}')
     dlg_t, dlg_b = bp.find('pq_title'), bp.find('pq_item0')
     over = []
     for loc in pod_i18n.LOCALES:
@@ -1382,15 +1399,15 @@ def carry_tests(ctx):
 
     # non-finite memory is not handed on
     p, af, _ = first(); p.ended()
-    z = p.word(af + 16) + 1200   # peq_dsp.current.z: after the 30 coefficient sets
+    z = p.word(af + 16) + 40 * BANDS   # peq_dsp.current.z: after the coefficient sets
     p.u.mem_write(z, struct.pack('<d', float('nan')))
     _, y2 = second(p, af)
     expect(near(y2, zero) and all(math.isfinite(v) for v in y2), 'a non-finite filter state is dropped, not carried')
 
     # the player's own memory layout the poke above relies on
     p, af, _ = first()
-    live = struct.unpack('<d', bytes(p.u.mem_read(p.word(af + 16) + 1200, 8)))[0]
-    expect(live != 0.0, 'the engine\'s filter memory sits 1200 bytes into the instance (peq_engine.c is 30 x 40 bytes)')
+    live = struct.unpack('<d', bytes(p.u.mem_read(p.word(af + 16) + 40 * BANDS, 8)))[0]
+    expect(live != 0.0, f'the engine\'s filter memory sits {40 * BANDS} bytes into the instance (peq_engine.c is {BANDS} x 40 bytes)')
 
 
 # ---- the Presets page (patch/peqlib.c) and Delete Preset (patch/peqpage.c, patch/peq_ui.c peq_delete)
@@ -1554,39 +1571,39 @@ def presets_page_tests(ctx):
         return m
     path = f'{EQ_DIR}/Sennheiser HD 600.txt'
     playing = pack_state(1, pack_preset(AUTOEQ_BANDS), b'Sennheiser HD 600.txt')
-    expect((m := delete_page(playing)).shown == 1 and m.props.get((m.widgets['pod_row31'], 'visible')) is None and (m.widgets['pod_row31'], O['EVT_CLICK']) in m.bound,
+    expect((m := delete_page(playing)).shown == 1 and m.props.get((m.widgets[DELETE_ROW], 'visible')) is None and (m.widgets[DELETE_ROW], O['EVT_CLICK']) in m.bound,
            'the Preset page binds the Delete Preset row (always shown: the payload never hides it)')
     m.confirm_yes = True
-    tap_row(m, 31)
+    tap_row(m, BANDS + 1)
     seq = [c for c in m.calls if c[0] in ('write_int_config', 'set_equalizer_value')]
     expect(('confirm', 'Delete Preset?', 1) in m.calls and ('unlink', path) in m.calls and path not in m.fs and f'{EQ_DIR}/keep.txt' in m.fs, 'Yes: the confirm asks "Delete Preset?", the file is unlinked, others stay')
     expect(struct.unpack_from('<i', m.fs[STATE], 8)[0] == 0 and NAME_OF(m.fs[STATE]) == b'' and seq == [('write_int_config', 0, 'PLAYSET', 'EQFLAG'), ('set_equalizer_value', 4, 0)]
            and m.u.mem_read(pod.DATA['EQ_FLAG'][0], 1)[0] == 0, f'it was the playing preset: the record is Graphic EQ with an empty name, stock\'s Equalizer flag off and the gains sent ({seq})')
     expect(('window_close', m.window) in m.calls and ('navigator_back',) not in m.calls and not [c for c in m.calls if c[0] == 'toast'], 'then this page closes (window_close: the dialog may still be the top window), no message')
     m = delete_page(pack_state(1, pack_preset(AUTOEQ_BANDS), b'keep.txt'))
-    m.confirm_yes = True; tap_row(m, 31)
+    m.confirm_yes = True; tap_row(m, BANDS + 1)
     expect(('unlink', path) in m.calls and m.fs[STATE] == pack_state(1, pack_preset(AUTOEQ_BANDS), b'keep.txt') and not [c for c in m.calls if c[0] in ('write_int_config', 'set_equalizer_value')] and ('window_close', m.window) in m.calls,
            'another preset plays: the file goes, the record and the Equalizer are untouched')
     m = delete_page(None)
-    m.confirm_yes = True; tap_row(m, 31)
+    m.confirm_yes = True; tap_row(m, BANDS + 1)
     expect(('unlink', path) in m.calls and STATE not in m.fs and not [c for c in m.calls if c[0] in ('write_int_config', 'set_equalizer_value')], 'no record at all: the file goes and nothing else is written')
     m = delete_page(playing)
-    tap_row(m, 31)
+    tap_row(m, BANDS + 1)
     expect(('confirm', 'Delete Preset?', 1) in m.calls and not [c for c in m.calls if c[0] in ('unlink', 'navigator_back', 'window_close', 'toast', 'write_int_config', 'set_equalizer_value')] and path in m.fs and m.fs[STATE] == playing,
            'No: nothing is deleted, written or closed; the page stays')
     m = delete_page(playing)
-    m.confirm_yes = True; m.fail.add(('unlink', path)); tap_row(m, 31)
+    m.confirm_yes = True; m.fail.add(('unlink', path)); tap_row(m, BANDS + 1)
     expect([c[1] for c in m.calls if c[0] == 'toast'] == ['Failed To Delete Preset'] and path in m.fs and m.fs[STATE] == playing and not [c for c in m.calls if c[0] in ('navigator_back', 'window_close')]
            and not [c for c in m.calls if c[0] in ('write_int_config', 'set_equalizer_value')], 'unlink fails: the message box, the file and the record stay, the page stays')
     # a destroyed page: a tap does nothing
     m = delete_page(playing)
     fn, c = m.bound[(m.window, O['EVT_DESTROY'])]
     m.call(fn, a0=c, count=1 << 30); m.calls = []
-    m.confirm_yes = True; tap_row(m, 31)
+    m.confirm_yes = True; tap_row(m, BANDS + 1)
     expect(not [c for c in m.calls if c[0] in ('confirm', 'unlink')], 'after the destroy the Delete row does nothing')
     # an asset without the Delete row is not ours
-    m = ppage([('Long.txt', PLONG)], 'Long.txt', drop=('pod_row31',))
-    expect(m.shown == 1 and not [x for x in m.bound if x[1] in (O['EVT_BEFORE_PAINT'], O['EVT_DESTROY'])] and not m.bitmaps, 'a Preset page asset without pod_row31 binds and draws nothing')
+    m = ppage([('Long.txt', PLONG)], 'Long.txt', drop=(DELETE_ROW,))
+    expect(m.shown == 1 and not [x for x in m.bound if x[1] in (O['EVT_BEFORE_PAINT'], O['EVT_DESTROY'])] and not m.bitmaps, 'a Preset page asset without the Delete Preset row binds and draws nothing')
 
 
 # ---- Preset editing: the band page (patch/peqband.c) with its unsaved-changes dialog, and the Preset page's Save, Save As, Revert and Rename (patch/peqpage.c)
@@ -1644,7 +1661,7 @@ def hsaves(m): return len([c for c in m.hist if c[0] == 'rename' and c[2] == STA
 def hsent(m): return len([c for c in m.hist if c[0] == 'set_equalizer_value'])
 def hptexts(m, base, i): return [u8(c[2]) for c in m.hist if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets[f'{base}{i}']]
 def hptext(m, name): return [u8(c[2]) for c in m.hist if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets[name]]
-def rec_preset(m): return unpack_preset(m.fs[STATE][16:16 + 992])
+def rec_preset(m): return unpack_preset(m.fs[STATE][16:16 + PRESET_SIZE])
 def rec_mode(m): return struct.unpack_from('<i', m.fs[STATE], 8)[0]
 def btext(m, name): return [u8(c[2]) for c in m.hist if c[0] == 'widget_set_text_utf8' and c[1] == m.bw[name]]
 def toasts_hist(m): return [c[1] for c in m.hist if c[0] == 'toast']
@@ -2082,7 +2099,7 @@ def edit_rename_tests(ctx):
     # ---- Rename
     m = epage([(HD, AUTOEQ), ('Other.txt', AUTOEQ)], state=pack_state(1, pack_preset(AUTOEQ_BANDS, preamp=-6.2), HD.encode()))
     m.hist.clear()
-    fire(m, m.widgets['pod_row32'], 'EVT_CLICK')
+    fire(m, m.widgets[RENAME_ROW], 'EVT_CLICK')
     expect(('window_open', 'm1plus_keyboard') in m.hist, 'Rename Preset opens the keyboard')
     m.hist.clear(); m.call(PSYMS['peqpage_renamed'], m.cstr('HD 600 mine'), count=1 << 40)
     expect(('rename', HD_PATH, f'{EQ_DIR}/HD 600 mine.txt') in m.hist and HD_PATH not in m.fs and m.fs[f'{EQ_DIR}/HD 600 mine.txt'] == AUTOEQ and NAME_OF(m.fs[STATE]) == b'HD 600 mine.txt'
@@ -2984,7 +3001,7 @@ def output_edit_tests(ctx):
         out_set(m, 2, 0); out_sync(m)                # the switch to USB (the status bar's timer)
         return m, edited
 
-    def slot_preset(m, k): return unpack_preset(m.fs[SLOT[k]][16:16 + 992])
+    def slot_preset(m, k): return unpack_preset(m.fs[SLOT[k]][16:16 + PRESET_SIZE])
 
     m, edited = session()
     expect(edited['bands'][1][3] != orig['bands'][1][3] and m.fs[STATE] == pop and slot_preset(m, 0)['bands'][1][3] == edited['bands'][1][3], 'setup: the edit is filed under Headphones, USB plays Pop')
@@ -3074,11 +3091,11 @@ def output_edit_tests(ctx):
     mine = pack_state(1, pack_preset(AUTOEQ_BANDS), HD.encode()); keep = pack_state(1, pack_preset(AUTOEQ_BANDS), b'keep.txt')
     m.fs[STATE] = keep; m.fs[SLOT[0]] = mine; m.fs[SLOT[1]] = keep; m.fs[SLOT[2]] = mine
     m.fs[OUT_FILE] = b'M1PEQO1\0' + struct.pack('<4i', 1, 1, 1, 1)
-    m.confirm_yes = True; tap_row(m, 31)
+    m.confirm_yes = True; tap_row(m, BANDS + 1)
     expect(HD_PATH not in m.fs and NAME_OF(m.fs[SLOT[0]]) == b'' and NAME_OF(m.fs[SLOT[2]]) == b'' and m.fs[SLOT[1]] == keep and out_rec(m)[0] == (1, 0, 1, 0) and not [c for c in m.calls if c[0] == 'toast'],
            f'Delete Preset: the Headphones and USB slots drop the file and their switches go off, Line Out is left alone ({out_rec(m)[0]})')
     m = ppage([(HD, AUTOEQ)], HD)
-    m.fs[SLOT[1]] = mine; m.fail.add(('rename', SLOT[1])); m.confirm_yes = True; tap_row(m, 31)
+    m.fs[SLOT[1]] = mine; m.fail.add(('rename', SLOT[1])); m.confirm_yes = True; tap_row(m, BANDS + 1)
     expect([c[1] for c in m.calls if c[0] == 'toast'] == ['Not saved'], 'Delete Preset with a slot that cannot be rewritten: "Not saved"')
 
 

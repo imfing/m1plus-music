@@ -184,7 +184,7 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `nowplaying-position` | Track Position | `1` on; missing/other off (the default) ([nowplaying](nowplaying.md) "Track position") |
 | `nowplaying-shrink` | Shrink on Pause | `0` off (the cover stays full size); missing/other on (the default) ([nowplaying](nowplaying.md) "Paused cover") |
 | `nowplaying-lyrics-size` | Lyrics Text Size | `0` Small (22 px), `1` Medium (26), `2` Large (30); missing/other Large (the default) ([lyrics](lyrics.md) "Text size") |
-| `playback-eq` | Equalizer curve | the `M1PEQ02` record ([peq](peq.md)); missing/invalid: 10-Band EQ, Flat, Auto. The switch is stock's `[PLAYSET] EQFLAG`. Per output ([peq](peq.md#per-output-eq-patchpeqoutc)): `playback-eq-headphones`, `-lineout`, `-usb` (the same record) and `playback-eq-output` (the owner and each output's switch) |
+| `playback-eq` | Equalizer curve | the `M1PEQ03` record ([peq](peq.md)); missing/invalid: 10-Band EQ, Flat, Auto. The switch is stock's `[PLAYSET] EQFLAG`. Per output ([peq](peq.md#per-output-eq-patchpeqoutc)): `playback-eq-headphones`, `-lineout`, `-usb` (the same record) and `playback-eq-output` (the owner and each output's switch) |
 | `playback-mono` | Playback Settings > Mono Audio | `1` on; missing/other off ([stereo](stereo.md)) |
 | `playback-crossfeed` | Playback Settings > Crossfeed | `0` Off .. `3` High; missing/other off (the user's level; the player reads `playback-stereo`, the effective record, which is derived and not listed) |
 | `playback-crossfade` | Playback Settings > Crossfade | one character: `a`..`l` on with 1..12 s, `A`..`L` off with the duration kept; missing/other off, 5 s ([crossfade](crossfade.md)) |

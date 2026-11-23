@@ -71,9 +71,9 @@ def run(ctx):
 
     # 4b. The per-output EQ follows the same one second tick (patch/peqout.c, docs/modules/peq.md "Per-output EQ"): the first tick notes the output, a change files the record; the kill switch leaves it alone.
     out_file, rec, slot = '/mnt/data/m1plus/playback-eq-output', '/mnt/data/m1plus/playback-eq', '/mnt/data/m1plus/playback-eq-headphones'
-    m = machine(); m.fs[rec] = b'M1PEQ02\0' + bytes(1152); tick(m, '55')
+    m = machine(); m.fs[rec] = b'M1PEQ03\0' + bytes(2240); tick(m, '55')
     expect(out_file in m.fs and m.fs[out_file][8:12] == struct.pack('<i', 0), 'the bar tick notes the output (Headphones) in the per-output EQ file')
-    m = machine(); m.fs[rec] = b'M1PEQ02\0' + bytes(1152); m.present.add(KILL); tick(m, '55')
+    m = machine(); m.fs[rec] = b'M1PEQ03\0' + bytes(2240); m.present.add(KILL); tick(m, '55')
     expect(out_file not in m.fs and slot not in m.fs, 'with the kill switch the tick does nothing for the EQ')
 
     # 5. Missing pieces: stock's behaviour, nothing else touched.

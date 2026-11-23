@@ -47,15 +47,16 @@ editor end with the note "EQ is not applied to DSD."
   and the join is under 3 s old. A skip, stop, pause, rate change, different preset, DSD,
   bypass or the kill switch starts from zero memory and clears the carry. The demuxer's EOF flag
   tells a natural end from a skip.
-- **Engine** (from the Q2 EQ): up to 30 bands, each on both channels or one side; RBJ peak and
+- **Engine:** up to 64 bands (`PEQ_BANDS`), each on both channels or one side; RBJ peak and
   shelves in double; preamp after the cascade; balance turns one side down. **Auto preamp** (a file
   without `Preamp:`) is minus the largest response of either side at the rate playing, never a
   boost, at most 60 dB. A band at or past Nyquist is skipped at that rate. Denormals are flushed,
-  non-finite input becomes 0, and samples above 1.0 are kept for stock's volume.
+  non-finite input becomes 0, and samples above 1.0 are kept for stock's volume, bounded at +-1000 (+60 dBFS, `PEQ_OUT_MAX`) so
+  a stack of large boosts never reaches infinity.
 
 ### The record
 
-`/mnt/data/m1plus/playback-eq` (`M1PEQ02\0`, 1160 bytes) holds the mode (10-Band or preset file),
+`/mnt/data/m1plus/playback-eq` (`M1PEQ03\0`, 2248 bytes) holds the mode (10-Band or preset file),
 the preset file name, and the 10-Band fields: `curve` (0..9), `preamp` (Auto, or 0..12 dB down),
 `gain[10]` (what plays) and `custom[10]`. Written whole by demo (temp file, fsync, rename), read by
 both binaries. A missing or invalid record (bad magic, size, mode, range or non-finite gain) plays
@@ -68,13 +69,13 @@ on/off switch.
 APO / AutoEq text, at most 16384 bytes with lines of 512: `Preamp:`, `Channel: L|R|all`, `Filter:
 ON|OFF PK|PEQ|LS|LSC|HS|HSC Fc .. Gain .. [Q ..]`, comments, a BOM, CRLF, a decimal comma. OFF
 filters are skipped. LS and HS without Q use slope 0.9, and with Q the corner moves to the centre
-(Equalizer APO's rules). Ranges: 20-20000 Hz, +-24 dB, Q 0.1-10, preamp -60..24 dB, 30 bands.
+(Equalizer APO's rules). Ranges: 20-20000 Hz, +-24 dB, Q 0.1-10, preamp -60..24 dB, 64 bands.
 
 **Lenient:** what the engine has no band for is skipped and counted (`peq_error.skipped`), not
 refused: other commands (`Device:`, `Include:`, `GraphicEQ:` ...), ON filters of another type
 (`LP`, `HP`, `BP`, `NO`, `AP` ...), and a `Channel:` that names a channel other than L, R, all (its
 filters are skipped until the next `Channel:`, never applied to the wrong side). **Still
-refused:** a malformed number on a supported line, a value out of range on an ON filter, over 30
+refused:** a malformed number on a supported line, a value out of range on an ON filter, over 64
 bands, an oversized file, and a file with no usable ON band. The parser is demo's only: the player
 reads the parsed record.
 
@@ -273,7 +274,7 @@ neutral white and grey.
 
 ## Limits
 
-- One preset file cap of 64 in the lists; 30 bands per preset.
+- One preset file cap of 64 in the lists; 64 bands per preset.
 - Preamp on the preset page is read-only.
 - No band add or remove; a Save drops lines the parser skipped.
 - The preset page shows a stale record as edited if the file changed on a computer; not handled.

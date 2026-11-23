@@ -637,7 +637,7 @@ assert PQ_ROWS == pod_pages.PEQ_ROWS and PQ_FIRST == 2
 
 
 PEQP_ROWS = OFFSETS['GR_BANDS']
-assert PEQP_ROWS == pod_pages.PEQP_ROWS == 30
+assert PEQP_ROWS == pod_pages.PEQP_ROWS == 64
 
 
 PQD_W, PQD_HEAD, PQD_ROW_H = OFFSETS['PD_CARD_W'], 76, OFFSETS['PL_ROW_H']   # the unsaved-changes dialog (patch/peqband.c): the card's width (the Podcasts dialog's PD_CARD_W), the head above the buttons, a button row (PL_ROW_H)

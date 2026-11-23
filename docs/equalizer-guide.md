@@ -33,5 +33,5 @@ Below the preset list:
   changes asks whether to **Save**, **Save As New…** or **Don't Save**. **Delete Preset** removes the file.
 
 Presets are Equalizer APO / AutoEq parametric `.txt` files in the `EQ` folder on the card (up to
-64; `Preamp`, `Channel` and `Filter` lines with peak and shelf filters), so you can also copy your
+64 files of up to 64 bands each; `Preamp`, `Channel` and `Filter` lines with peak and shelf filters), so you can also copy your
 own there.

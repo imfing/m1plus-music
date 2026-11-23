@@ -570,7 +570,7 @@ def rows_tests(ctx):
     rec = m.fs[STATE]
     expect(seq == [('set_equalizer_value', 4, 1)] and PEQ.NAME_OF(rec) == b'Sennheiser HD 600 (Rtings).txt' and all_rows(m)[5][1] == 'In use' and all_rows(m)[0][1] == 'Saved to EQ · Tap to use',
            'another: only the gains sent again; the mark moves')
-    expect(PEQ.unpack_preset(rec[16:16 + 992])['count'] == 4 and abs(PEQ.unpack_preset(rec[16:16 + 992])['preamp'] + 6.2) < 1e-9, 'the record holds the preset parsed from the file (the stamp line is a comment)')
+    expect(PEQ.unpack_preset(rec[16:16 + PEQ.PRESET_SIZE])['count'] == 4 and abs(PEQ.unpack_preset(rec[16:16 + PEQ.PRESET_SIZE])['preamp'] + 6.2) < 1e-9, 'the record holds the preset parsed from the file (the stamp line is a comment)')
     # a file that went bad on the card: the message box, nothing changes
     m.fs[EQ + '/Sennheiser HD 600.txt'] = b'# AutoEq: ' + HD600.encode() + b'\nnot a preset\n'
     m.calls = []

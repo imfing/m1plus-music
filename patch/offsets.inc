@@ -1860,7 +1860,7 @@
 #define GR_PY0 9
 #define GR_PH 138
 #define GR_DECADE 83
-#define GR_BANDS 30
+#define GR_BANDS 64
 /* The 10-Band editor's slider card (patch/tenband.c, tools/pod_ui.py cards_sliders, docs/modules/peq.md "10-Band EQ"): pod_sliders is a view TB_H high; its EVT_BEFORE_PAINT blits a TB_W x TB_H bitmap (the card #1C1C1E
  * baked in with TB_R corners and the TB_COLS tracks, TB_TRACK_W wide) at x TB_CARD_X, then a thumb TB_THUMB_W x TB_THUMB_H per column, and the white pill behind the value being dragged. Column c is TB_COL_W wide from card x TB_X0 + c * TB_COL_W;
  * the track runs from card y TB_Y0 (+12 dB) down TB_SPAN px (-12 dB: TB_PX_DB px a decibel, so two a half-decibel step); pod_sl_v<c> (value) and pod_sl_f<c> (frequency) are labels over / under the column. */

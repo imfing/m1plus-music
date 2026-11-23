@@ -1383,7 +1383,7 @@ PEQLIB_PAGE.layout = peqlib_items()   # the asset: every slot
 # The preset page (patch/peqpage.c, docs/modules/peq.md "Preset page"): a preset's frequency response, its preamp and its bands, read only. A cards page the payload fills (kind 'peqpage', no exported
 # rows): the graph card, the preamp row (a card of its own), a Bands header and PEQ_BANDS band rows in one card (the asset has them all, hidden; the payload names and shows as many as the preset has and sets
 # each shown row's card piece), and the note under the card when the parser skipped lines (hidden otherwise).
-PEQP_ROWS = 30   # patch/peq.h PEQ_BANDS (tools/pod_ui.py asserts it)
+PEQP_ROWS = 64   # patch/peq.h PEQ_BANDS (tools/pod_ui.py asserts it)
 PEQP_PREAMP, PEQP_BAND, PEQP_HDR = Row('Preamp', ACT_PEQ_PREAMP), Row('', ACT_PEQ_BAND), Hdr('Bands')
 PEQP_NOTE = Note('%d lines not supported were skipped.', lines=2)
 PEQP_DELETE = Row('Delete Preset', ACT_PEQ_DELETE)   # row PEQP_ROWS + 1: the last of the card of Rename and Delete under the bands and the note, always shown

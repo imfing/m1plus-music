@@ -612,7 +612,7 @@ def pin_tests(ctx):
     expect(ok, 'the stock binary passes every pin')
     manifest = json.load(open(os.path.join(WORK, 'playerbuild', 'manifest.json')))
     expect(manifest['seteq_call']['target'] == flag_fn and manifest['libc_slots']['strtol'] == 0xaf98e8, 'the manifest records the edit and the strtol slot')
-    expect(manifest['payload_len'] < 0xa000, f'the payload is {manifest["payload_len"]} bytes')
+    expect(manifest['payload_len'] < 0xc000, f'the payload is {manifest["payload_len"]} bytes')
 
 
 # ---- demo's side: the settings, the effective record and when the player is told (patch/stereoset.c, called by peqout_sync)

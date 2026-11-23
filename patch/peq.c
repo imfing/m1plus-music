@@ -220,7 +220,7 @@ int peq_parse(const char *text, unsigned size, peq_preset *out, peq_error *error
             if (!b.enabled) continue; /* APO ignores OFF filters; exporters fill blank slots with Fc 0 Q 0 */
             return error_at(error, line, "range: 20..20000 Hz, -24..24 dB, Q 0.1..10");
         }
-        if (p.count == PEQ_BANDS) return error_at(error, line, "more than 30 bands");
+        if (p.count == PEQ_BANDS) return error_at(error, line, "more than 64 bands");
         p.bands[p.count++] = b;
     }
     int usable = 0;
@@ -489,7 +489,14 @@ void peq_process(peq_dsp *d, float *audio, unsigned frames) {
                 double mix = (double)(d->ramp_length - d->ramp + 1) / d->ramp_length;
                 y += (wet - y) * mix;
             }
-            /* Keep float headroom for downstream volume; the output converter owns full-scale clipping. */
+            /* Keep float headroom for downstream volume; the output converter owns full-scale clipping. A stack of big boosts
+             * (64 shelves at +24 dB) outgrows float: bound it at PEQ_OUT_MAX, far above any curve a listener plays. */
+            if (!__builtin_isfinite(y))
+                y = 0;
+            else if (y > PEQ_OUT_MAX)
+                y = PEQ_OUT_MAX;
+            else if (y < -PEQ_OUT_MAX)
+                y = -PEQ_OUT_MAX;
             *audio = (float)y;
         }
         if (d->ramp && !--d->ramp) d->current = d->next, nc = nn, memcpy(cur, nxt, sizeof(cur));
