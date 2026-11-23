@@ -1848,8 +1848,31 @@ def pages_tests(ctx):
     m = PD(pages=True); m.present.add('/mnt/mmc/m1plus-off'); m.open()
     expect(state(m) == {**P1, 'pod_cc2_dot0': OFF, 'pod_cc2_dot1': OFF} and not any((m.dlg, k) in m.bound for k in (DOWN, MOVE, UP, ABORT)) and not {*PAGE1, *PAGE2} & {c[1] for c in m.calls if c[0] == 'widget_lookup'},
            'kill switch: no bind, the dots stay hidden, page 2 is never shown, nothing looked up')
-    m = PD(pages=True); m.open(); m.open()
-    expect(dots(m)[:2] == ['drop_dot_on', 'drop_dot_off'], 'the dialog is built again on page 1 whatever the last one showed')
+
+    # -- the remembered page: the next open starts on the page the last slide landed on; a power-on (a fresh machine) on page 1
+    def reopen(m):
+        """The dialog built again from the asset (page 1 in place, page 2 and the dots hidden), then the hook."""
+        for n in PAGE1 + PAGE2:
+            m.props[(m.widgets[n], 'visible')] = m.props[(m.widgets[n], 'sensitive')] = int(n in PAGE1)
+        for n in PAGE1 + PAGE2[:1]:
+            m.props[(m.widgets[n], 'x')], m.props[(m.widgets[n], 'y')] = tree.find(n).x, tree.find(n).y
+        m.open()
+    m = opened(); gesture(m, [(250, 100), (200, 100), (120, 100)])
+    expect(state(m) == P2, 'a left swipe lands on page 2')
+    reopen(m)
+    expect(state(m) == P2 and places(m) == at(m, -320) and dots(m)[-2:] == ['drop_dot_off', 'drop_dot_on'], f'reopened after page 2: on page 2 at once, the second dot lit ({state(m)}, {places(m)})')
+    expect(not any(c[0] == 'timer_add' and c[1] == PSYMS['pd_slide_frame'] for c in m.calls) and ('timer_add', PSYMS['cc2_tick'], 500) in m.calls, 'no slide at the open; page 2\'s card timer runs')
+    r = gesture(m, [(100, 120), (140, 118), (200, 118)])
+    expect(r[-1] == STOP and state(m) == P1, 'a right swipe from the remembered page 2 returns to page 1')
+    reopen(m)
+    expect(state(m) == P1 and places(m) == base and dots(m) == ['drop_dot_on', 'drop_dot_off'], f'reopened after page 1: on page 1, as the asset has it ({state(m)}, {places(m)}, {dots(m)})')
+    m = opened(); gesture(m, [(250, 100), (200, 100), (210, 100)], up=False); m.clock += 500; ev(m, UP, 210, 100); settle(m)
+    reopen(m)
+    expect(state(m) == P1, 'a slide that springs back to page 1 is remembered as page 1')
+    m = opened(); gesture(m, [(250, 100), (200, 100), (120, 100)]); m = opened()
+    expect(state(m) == P1 and dots(m)[:2] == ['drop_dot_on', 'drop_dot_off'], 'a power-on (a fresh machine) opens on page 1')
+    m = PD(pages=True); m.open(); gesture(m, [(250, 100), (200, 100), (120, 100)]); m.present.add('/mnt/mmc/m1plus-off'); reopen(m)
+    expect(not {*PAGE1, *PAGE2} & {c[1] for c in m.calls if c[0] == 'widget_lookup'} and vis(m, 'pod_cc2') == OFF, 'kill switch: page 2 is not restored')
 
 
 class CC(PT):

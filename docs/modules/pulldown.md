@@ -228,8 +228,9 @@ Tiles `c` and `d` are **switches** for the two service settings the Network Serv
 
 ## Two pages
 
-The pull-down has two pages side by side; a left / right swipe slides between them, the pages following
-the finger as Now Playing's do. The dialog always opens on page 1.
+The pull-down has two pages; a left / right swipe slides between them with the finger, as on
+Now Playing. It opens on the page the last slide landed on (`pd_last`, memory only: page 1
+after power-on), set before the first paint.
 
 - **Page 1** is the dialog as above: `view_switchs` (the tiles and their captions) and
   `view_backlight` (the brightness card). **Page 2** is `pod_cc2`, a view at (10, 44), 300 x 274
@@ -238,7 +239,7 @@ the finger as Now Playing's do. The dialog always opens on page 1.
   below). The status bar copy and the grabber are on both pages.
 - **Dots:** `pod_cc2_dot0` / `pod_cc2_dot1`, 4 px images, Now Playing's page dots (`drop_dot_on` white at alpha
   `0xEB`, `drop_dot_off` at `0x46`, baked: a tiny round fill renders square on the device) at (153 / 163, 320), centres 155
-  and 165, hidden in the asset. The hook shows them; the first is the current page 1.
+  and 165, hidden in the asset. The hook shows them and lights the current page's.
 - **Now Playing card** (`cc2_*` in `patch/pulldown.c`): `pod_cc2_top` is a button over the dialog's
   (10, 44)-(309, 163), `#1C1C1E`, radius 26. In it: the 96 px cover at (22, 56), painted in the
   card's `EVT_AFTER_PAINT` from a `mb_art_t` (size 96, corner radius 8; the Home bar's `mb_art_*`,

@@ -1238,7 +1238,7 @@ static int cc2_start(void *dlg) {
  * brightness card); page 2 is the asset's container pod_cc2 (hidden and insensitive there) with its dots pod_cc2_dot0 / _dot1. The status bar copy and the grabber belong to both. A slide only moves
  * those three containers by one offset (page 2 PD_PAGE_W right of page 1) and hides the page entirely off the dialog (m1_show: hidden is also insensitive), so what the hook set inside view_switchs (the
  * tiles shown, their places, the Control Labels) comes back exactly as it was. The dialog is built
- * afresh at each open: always page 1 (the dots show the page).
+ * afresh at each open, on the page the last slide landed on (pd_last, memory only: page 1 after a power-on; the dots show the page).
  *
  * The gesture is read on the dialog's "before children" pointer events (EVT_POINTER_*_BEFORE, dispatched ahead of the children and of the dialog's own listeners; RET_STOP ends the dispatch). A press
  * above PD_SWIPE_YMAX is watched: once it moved PD_SWIPE_PX horizontally and more than vertically it is a page swipe, and from then on its moves and its release are swallowed, so the tile or the slider
@@ -1268,6 +1268,8 @@ static struct {
     int from, to; /* the slide's offsets */
     unsigned t0, dur, anim; /* its start, length (ms), frame timer (0 none) */
 } pd_pg __attribute__((section(".scratch")));
+/* The page the last slide landed on (0 page 1, 1 page 2): the next open starts there. Memory only, so a power-on starts on page 1. */
+static int pd_last __attribute__((section(".scratch")));
 
 /* Both pages at page 1's offset `off` (page 2 PD_PAGE_W to its right); a page entirely off the dialog is hidden (m1_show: and insensitive). */
 static void pd_slide_place(int off) {
@@ -1296,7 +1298,7 @@ static void pd_page_set(int page) {
     m1_timer_stop(&pd_pg.anim);
     pd_slide_place(page ? -PD_PAGE_W : 0);
     pd_dots(page);
-    pd_pg.page = page;
+    pd_pg.page = pd_last = page;
     if (page)
         cc2_arm();
     else
@@ -1418,7 +1420,7 @@ static int pd_on_swipe(void *ctx, void *e) {
     return RET_OK;
 }
 
-/* The dialog's init, kill switch off: look up page 2 and bind the swipe, then show the dots (page 1 current). */
+/* The dialog's init, kill switch off: look up page 2 and bind the swipe, then show the dots and the remembered page (pd_last). */
 static void pd_pages_start(void *dlg) {
     unsigned i;
     memset(&pd_pg, 0, sizeof pd_pg);
@@ -1445,6 +1447,7 @@ static void pd_pages_start(void *dlg) {
         image_base_set_image(pd_pg.dot[i], i == 0 ? "drop_dot_on" : "drop_dot_off");
         m1_show(pd_pg.dot[i], 1);
     }
+    if (pd_last) pd_page_set(1); /* the last open ended on page 2: open there, before the first paint (no slide) */
 }
 
 /* The hook (tools/pod.py PULLDOWN_INIT): the flags, then stock, then ours. */

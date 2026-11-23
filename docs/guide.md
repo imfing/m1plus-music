@@ -89,7 +89,7 @@ Tap the mini player's cover on Home, or tap the Now Playing button in a page's t
 
 ### Control Center
 
-Pull down from the top edge, then swipe left for a second page with the playing track, its controls and a few shortcuts. Play Mode cycles List play, Repeat one, Shuffle and Repeat all; Up Next, Go to Artist and Go to Album open those pages; the Equalizer and Sleep cards show their state and open their pages.
+Pull down from the top edge, then swipe left for a second page with the playing track, its controls and a few shortcuts. Play Mode cycles List play, Repeat one, Shuffle and Repeat all; Up Next, Go to Artist and Go to Album open those pages; the Equalizer and Sleep cards show their state and open their pages. The pull-down opens on the page you last left it on; after a restart it starts on the first page.
 
 While a podcast episode or an audiobook plays, the page shows its own controls instead: back 15 seconds, play / pause and forward 30 seconds on the card; a Speed card (tap to step through the speeds; it stays on the pull-down) in place of the Equalizer; and four shortcuts for Podcasts (or Audiobooks), Up Next, the episode's notes (or the book's page) and the next episode or part. The lit buttons take the accent colour.
 
