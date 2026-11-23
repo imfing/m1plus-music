@@ -71,7 +71,9 @@ Everything else is in the [documentation index](docs/README.md).
   use the shared layout/text model and the built font.
 - Keep widget names. Hidden widgets are also made insensitive.
 - Feature branches leave `VERSION`, goldens and history unchanged; integration owns them.
-- No compatibility flags, and no code paths that exist only for old packages.
+- No compatibility flags, and no code paths that exist only for old packages. Exception: when a
+  released settings record changes format, the loader also reads the last released format, so
+  users keep their choice; mark it temporary and drop it a few releases later.
 - Bluetooth work only for approved features ([Bluetooth](docs/modules/bluetooth.md)).
   `hciplayer` is patched only for PEQ, Mono / Crossfeed, Crossfade, the read-only VU tap and the
   read-only radio ICY metadata tap ([peq](docs/modules/peq.md), [stereo](docs/modules/stereo.md),

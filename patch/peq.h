@@ -72,7 +72,7 @@ typedef struct {
  * EQ, ten peaking bands of gain[] (the curve's gains, which are custom[] while curve is PEQ_CUSTOM) and the preamp; PEQ_FILE: preset,
  * parsed from PEQ_DIR/name. curve: PEQ_FLAT .. PEQ_JAZZ (stock's genre gains, peq_curve_gains) or PEQ_CUSTOM (the user's custom[]).
  * preamp: PEQ_PREAMP_AUTO (the player cuts by the response's own peak) or 0..12, a fixed cut in dB. The fields after name are the
- * 10-Band EQ's; a record without them (the previous magic) is no record: Flat, Auto. */
+ * 10-Band EQ's. 1.8.1's M1PEQ02 (30 bands) reads as the same choice (patch/peq.c); any other record is none: Flat, Auto. */
 enum { PEQ_TENBAND_MODE, PEQ_FILE };
 enum {
     PEQ_FLAT,

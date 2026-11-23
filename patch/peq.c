@@ -270,25 +270,82 @@ static int state_valid(const peq_state *s) {
     return 1;
 }
 
-int peq_state_load_from(const char *path, peq_state *s) {
+/* The record 1.8.1 shipped (M1PEQ02, 1160 bytes): the same fields with 30 bands. Read once and saved as PEQ_MAGIC on the next
+ * save, so an update keeps each output's choice. Temporary: drop it a few releases after 1.8.1. */
+#define PEQ_MAGIC_02 "M1PEQ02"
+#define PEQ_BANDS_02 30
+typedef struct {
+    int mode;
     struct {
-        char magic[8];
-        peq_state s;
-    } file;
-    char extra;
+        int count, bypass;
+        double preamp;
+        peq_band bands[PEQ_BANDS_02];
+        double balance;
+        int automatic, spare;
+    } preset;
+    char name[PEQ_NAME];
+    int curve, preamp;
+    float gain[PEQ_TENBAND], custom[PEQ_TENBAND];
+} peq_state_02;
+
+static int magic_is(const char *have, const char *want) {
+    for (unsigned i = 0; i < 8; ++i)
+        if (have[i] != want[i]) return 0; /* the 7 letters and the NUL */
+    return 1;
+}
+
+static void state_from_02(const peq_state_02 *o, peq_state *s) {
+    s->mode = o->mode;
+    s->preset.count = o->preset.count;
+    s->preset.bypass = o->preset.bypass;
+    s->preset.preamp = o->preset.preamp;
+    memcpy(s->preset.bands, o->preset.bands, sizeof(o->preset.bands));
+    s->preset.balance = o->preset.balance;
+    s->preset.automatic = o->preset.automatic;
+    s->preset.spare = o->preset.spare;
+    memcpy(s->name, o->name, sizeof(s->name));
+    s->curve = o->curve;
+    s->preamp = o->preamp;
+    memcpy(s->gain, o->gain, sizeof(s->gain));
+    memcpy(s->custom, o->custom, sizeof(s->custom));
+}
+
+static void state_none(peq_state *s) {
     memset(s, 0, sizeof(*s));
     peq_default(&s->preset);
     s->preamp = PEQ_PREAMP_AUTO; /* none readable: Flat (the zeros), Auto */
+}
+
+int peq_state_load_from(const char *path, peq_state *s) {
+    union {
+        struct {
+            char magic[8];
+            peq_state s;
+        } cur;
+        struct {
+            char magic[8];
+            peq_state_02 s;
+        } old;
+    } file;
+    char extra;
+    state_none(s);
     void *f = fopen(path, "rb");
     if (!f) return 0;
     memset(&file, 0, sizeof(file));
-    unsigned n = fread(&file, 1, sizeof(file), f);
-    int ok = n == sizeof(file) && fread(&extra, 1, 1, f) == 0;
+    unsigned n = fread(&file, 1, sizeof(file.cur), f);
+    int ok = fread(&extra, 1, 1, f) == 0;
     if (fclose(f)) ok = 0;
-    for (unsigned i = 0; i < 8; ++i) ok = ok && file.magic[i] == PEQ_MAGIC[i]; /* the 7 letters and the NUL */
-    if (!ok || !state_valid(&file.s)) return 0;
-    *s = file.s;
-    return 1;
+    if (!ok) return 0;
+    if (n == sizeof(file.cur) && magic_is(file.cur.magic, PEQ_MAGIC))
+        *s = file.cur.s;
+    else if (n == sizeof(file.old) && magic_is(file.old.magic, PEQ_MAGIC_02) && file.old.s.preset.count >= 0 &&
+             file.old.s.preset.count <= PEQ_BANDS_02)
+        state_from_02(&file.old.s, s);
+    else
+        return 0;
+    if (state_valid(s)) return 1;
+    state_none(s);
+    return 0;
 }
 int peq_state_load(peq_state *s) { return peq_state_load_from(PEQ_STATE, s); }
 

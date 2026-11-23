@@ -60,7 +60,9 @@ editor end with the note "EQ is not applied to DSD."
 the preset file name, and the 10-Band fields: `curve` (0..9), `preamp` (Auto, or 0..12 dB down),
 `gain[10]` (what plays) and `custom[10]`. Written whole by demo (temp file, fsync, rename), read by
 both binaries. A missing or invalid record (bad magic, size, mode, range or non-finite gain) plays
-Flat with Auto preamp; an older record version is not read. The 10-Band mode plays `gain[]` as ten
+Flat with Auto preamp. The 1.8.1 record (`M1PEQ02\0`, 1160 bytes, 30 bands) reads as the same
+choice and is written as `M1PEQ03` on the next save (`peq_state_02`, temporary: dropped a few
+releases after 1.8.1); older versions are not read. The 10-Band mode plays `gain[]` as ten
 RBJ peaking bands at 31 Hz - 16 kHz, Q 1.41, plus the preamp. Stock's `equalizer_flag` stays the
 on/off switch.
 

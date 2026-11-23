@@ -48,6 +48,12 @@ def pack_state(mode, preset, name=b'', curve=0, preamp=-1, gain=None, custom=Non
             + struct.pack('<ii20f', curve, preamp, *(list(gain or [0.0] * 10) + list(custom or [0.0] * 10))))
 
 
+def state_02(rec, count=None):
+    """the 1.8.1 record (M1PEQ02, 30 bands, 1160 bytes) holding what rec holds: the bands past 30 cut; count overrides the preset's count."""
+    head = struct.pack('<iid', count if count is not None else struct.unpack_from('<i', rec, 16)[0], *struct.unpack_from('<id', rec, 20))
+    return b'M1PEQ02\0' + rec[8:16] + head + rec[32:32 + 32 * 30] + rec[32 + 32 * BANDS:]
+
+
 def tenband(gain, preamp=-1, curve=9, custom=None):
     return pack_state(0, pack_preset([]), b'', curve, preamp, gain, custom)
 
@@ -424,6 +430,17 @@ def player_tests(ctx):
         _, y = p.play(af, x, 48000)
         expect(y == x, f'a {what} record reads as none: Flat, Auto')
 
+    # the 1.8.1 record (M1PEQ02, 30 bands) reads as the same choice; a long one or one with over 30 bands is none
+    x = tone(256, 2, 48000)
+    plays = {}
+    for what, rec in (('M1PEQ03', good), ('M1PEQ02', state_02(good))):
+        p = Player({STATE: rec}); af = p.open(); p.reinit(af, 48000)
+        plays[what] = p.play(af, x, 48000)[1]
+    expect(len(state_02(good)) == 1160 and plays['M1PEQ02'] == plays['M1PEQ03'] != x, 'an M1PEQ02 record (1.8.1) plays its preset as the M1PEQ03 one does')
+    for what, rec in (('M1PEQ02 with 31 bands', state_02(good, 31)), ('long M1PEQ02', state_02(good) + b'\0'), ('M1PEQ02 magic at the new size', b'M1PEQ02\0' + good[8:])):
+        p = Player({STATE: rec}); af = p.open(); p.reinit(af, 48000)
+        expect(p.play(af, x, 48000)[1] == x, f'a {what} record reads as none: Flat, Auto')
+
     # uninit frees what open allocated
     p = Player(); af = p.open(); data, setup = p.word(af + 20), p.word(af + 16)
     p.call(p.word(af + 8), af)
@@ -595,6 +612,10 @@ def page_tests(ctx):
         expect(ptext(m2, 'pod_value1') == [name] and ptext(m2, f'pod_value{ROWS}') == [name], f'a {name} record: its name in grey on the picker row and the link row')
     m2 = page(files, flag=1, state=pack_state(1, pack_preset(AUTOEQ_BANDS), b'Sennheiser HD 600.txt', 2, -1, CURVES[2]))
     expect(marks(m2) == [4] and ptext(m2, 'pod_value1') == ['Rock'], 'a preset plays: its row is checked, the 10-Band row still names its curve (Rock) without a check')
+    m2 = page(files, flag=1, state=state_02(pack_state(1, pack_preset(AUTOEQ_BANDS), b'Sennheiser HD 600.txt', 2, -1, CURVES[2])))
+    expect(marks(m2) == [4] and ptext(m2, 'pod_value1') == ['Rock'], 'an M1PEQ02 record (1.8.1): the same preset checked and the same curve named')
+    m2 = page(files, state=state_02(pack_state(0, pack_preset([]), b'', 9, 3, [2.0] * 10, [2.0] * 10)))
+    expect(marks(m2) == [1] and ptext(m2, 'pod_value1') == ['Custom'], 'an M1PEQ02 10-Band record keeps its Custom curve')
     expect(m.props.get((m.widgets['pod_note1'], 'visible')) == 0 and m.props.get((m.widgets['pod_gap0'], 'visible')) == 1, 'no hint when there are presets: the gap before the bottom card shows instead')
     expect(ptext(m, f'pod_value{ROWS + 1}') == ['3'], f'the Presets row\'s grey count is the number of .txt files ({ptext(m, f"pod_value{ROWS + 1}")})')
     expect(not any(c[0] in ('widget_move', 'widget_restack') for c in m.calls), 'the rows are not moved: the stock layouter stacks the visible ones in order')
