@@ -433,7 +433,7 @@ def run(ctx):
     expect(all(mn.__dict__[k] == O[v] for k, v in (('I_X', 'NPI_X'), ('I_R', 'NPI_R'), ('I_TOP', 'NPI_TOP'), ('I_ART', 'NPI_ART'), ('I_ART_Y', 'NPI_ART_Y'), ('I_ART_R', 'NPI_ART_R'),
                                                    ('I_TEXT_X', 'NPI_TEXT_X'), ('I_TEXT_W', 'NPI_TEXT_W'), ('I_TITLE_Y', 'NPI_TITLE_Y'), ('I_TITLE_PX', 'NPI_TITLE_PX'), ('I_ARTIST_Y', 'NPI_ARTIST_Y'),
                                                    ('I_ALBUM_Y', 'NPI_ALBUM_Y'), ('I_META_PX', 'NPI_META_PX'), ('I_PAD', 'NPI_PAD'), ('I_BADGE_H', 'NPI_BADGE_H'), ('I_BADGE_GAP', 'NPI_BADGE_GAP'),
-                                                   ('I_ROW_Y', 'NPI_ROW_Y'), ('I_ROW_PITCH', 'NPI_ROW_PITCH'), ('I_ROW_TEXT', 'NPI_ROW_TEXT'), ('I_ROW_PX', 'NPI_ROW_PX'), ('I_KEY_GAP', 'NPI_KEY_GAP'),
+                                                   ('I_ROW_Y', 'NPI_ROW_Y'), ('I_BARE_Y', 'NPI_BARE_Y'), ('I_ROW_PITCH', 'NPI_ROW_PITCH'), ('I_ROW_TEXT', 'NPI_ROW_TEXT'), ('I_ROW_PX', 'NPI_ROW_PX'), ('I_KEY_GAP', 'NPI_KEY_GAP'),
                                                    ('I_ROWS', 'NPI_ROWS'), ('I_LOC_ROW', 'NPI_LOC_ROW'), ('I_LOC_Y', 'NPI_LOC_Y'), ('I_LOC_LH', 'NPI_LOC_LH'), ('I_LOC_LINES', 'NPI_LOC_LINES'), ('I_FOOT', 'NPI_FOOT'),
                                                    ('I_ROW_TAIL', 'M1_FIT_TAIL'), ('I_RELAY', 'NP_RELAY'), ('I_TITLE_LH', 'NPI_TITLE_LH'), ('I_TAP_PX', 'NPI_TAP_PX'), ('I_FADE', 'NPI_FADE'), ('I_PAGE', 'NPI_PAGE'))) and (mn.SCRIM[1], mn.SCRIM[3], mn.SCRIM_ALPHA, mn.SCRIM_EDGE) == (O['NP_SCRIM_Y'], O['NP_SCRIM_H'], O['NP_SCRIM_ALPHA'], O['NP_SCRIM_EDGE']) and mn.I_W == O['NPI_R'] - O['NPI_X'] and mn.I_TOP + O['NPI_VIEW_H'] == mn.I_BOTTOM == 288 and
            mn.I_BADGE_W == {'HI-RES': O['NPI_BADGE_HIRES_W'], 'DSD': O['NPI_BADGE_DSD_W']}, 'the payload\'s info page constants equal the asset builder\'s')
@@ -446,11 +446,12 @@ def run(ctx):
         """Every hairline, label, value, path line and the virtual height are where the shared model (mod_nowplaying.flow) puts them."""
         pr = present(m); n = 2 if shown(m, 'np_i_v8') else 1
         sh = mn.I_TITLE_LH if shown(m, 'np_i_title2') else 0
-        hair, text, loc, bottom = mn.flow(pr, n, sh); bad = []
+        bare = not shown(m, 'np_i_title')     # spoken audio: no header
+        hair, text, loc, bottom = mn.flow(pr, n, sh, bare); bad = []
         for r in range(8):
-            if shown(m, f'np_i_h{r}') != pr[r]: bad.append(('hair shown', r))
+            if shown(m, f'np_i_h{r}') != (r in hair): bad.append(('hair shown', r))
             if not pr[r]: continue
-            if P(m, f'np_i_h{r}') != (16, hair[r] - 36 - m_off(m), 288, 1): bad.append(('hair', r, P(m, f'np_i_h{r}')))
+            if r in hair and P(m, f'np_i_h{r}') != (16, hair[r] - 36 - m_off(m), 288, 1): bad.append(('hair', r, P(m, f'np_i_h{r}')))
             if P(m, f'np_i_k{r}')[1:] [0] + 2 != text[r] - 36 - m_off(m): bad.append(('key', r, P(m, f'np_i_k{r}')))
             if r != 7 and P(m, f'np_i_v{r}')[1] + 2 != text[r] - 36 - m_off(m): bad.append(('value', r, P(m, f'np_i_v{r}')))
         if pr[7]:
@@ -734,8 +735,20 @@ def run(ctx):
     hid = lambda n: m.props.get((m.widgets[n], 'visible')) == 0
     expect(not shown(m, 'np_i_k4') and not shown(m, 'np_i_k5') and shown(m, 'np_i_k6') and shown(m, 'np_i_k7') and hid('label_genre') and hid('label_year'),
            f'Genre and Year are left out (stock\'s labels hidden too), File Size and Location stay: {[rowv(m, r) for r in range(8)]}')
+    HEAD = ('np_i_art', 'np_i_title', 'np_i_title2', 'np_i_artist', 'np_i_album')
+    ploc = 'SD:/Podcasts/Night Shift Radio/nsr-112-why-old-players-still-sound-great.mp3'
+    m = info(dict(stock_en, label_location='Location:' + ploc), rec=dict(REC, title='112: Why Old Players Still Sound Great', artist='Show', album='Show', path=PEP, name='e1.mp3'), fs=dict(ep_fs))
+    first = min(r for r in range(8) if shown(m, f'np_i_k{r}'))
+    expect(not any(shown(m, n) for n in HEAD) and not shown(m, f'np_i_h{first}') and P(m, f'np_i_k{first}')[1] + 2 == mn.I_TITLE_Y - 36,
+           f'an episode: the info page is bare (the notes page has the header): no cover or header lines, the first row without its hairline, its text at the notes title\'s y ({P(m, f"np_i_k{first}")})')
+    check_flow(m, 'an episode, a two line path')
+    expect(shown(m, 'np_i_v8') and vhigh(m) == 252, f'an episode: every row and both path lines fit the 252 px view, nothing to scroll (virtual_h {vhigh(m)})')
+    m.play([m.record(**REC)], 0)
+    for _ in range(3): m.tick()
+    expect(shown(m, 'np_i_art') and shown(m, 'np_i_title') and shown(m, 'np_i_h0'), 'music after an episode: the header and the first hairline are back')
+    check_flow(m, 'music after an episode')
     m = info(stock_en, rec=dict(REC, title='Ep', artist='Show', album='Show', path='/mnt/mmc/Podcasts/Show/nofile.mp3', name='nofile.mp3'), fs=dict(ep_fs))
-    expect(T(m, 'np_i_album') == '' or ' \u00b7 ' not in T(m, 'np_i_album'), f'an episode with no entry: its file date, no length ({T(m, "np_i_album")!r})')
+    expect(T(m, 'np_i_album') == ''or ' \u00b7 ' not in T(m, 'np_i_album'), f'an episode with no entry: its file date, no length ({T(m, "np_i_album")!r})')
     m = info(stock_en, rec=dict(REC, title='Part', artist='Author', album='The Book', path='/mnt/mmc/Audiobooks/Book One/01.mp3', name='01.mp3'))
     expect(T(m, 'np_i_album') == 'The Book' and not shown(m, 'np_i_k4') and not shown(m, 'np_i_k5'), 'a book part keeps its album line (the book) and also loses Genre / Year')
     m.play([m.record(**dict(REC, path=PEP, name='e1.mp3'))], 0); m.fs.update(ep_fs)

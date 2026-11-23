@@ -92,6 +92,7 @@ I_BADGE_H, I_BADGE_GAP = 18, 8                     # HI-RES / DSD badge: a pictu
 I_BADGE_W = {'HI-RES': 49, 'DSD': 35}              # the text's width in Inter 11 px + 12
 GOLD = '#E3C16F'                                   # fixed: the Accent picker does not move it
 I_ROW_Y, I_ROW_PITCH, I_ROW_TEXT, I_ROW_PX, I_KEY_GAP = 112, 33, 8, 16, 14
+I_BARE_Y = 30                                      # a bare page's first row (spoken audio: the notes page has the header): its text at I_TITLE_Y
 I_ROWS, I_LOC_ROW = 8, 7                           # Format, Sample Rate, Bit Depth, Bitrate, Genre, Year, File Size, Location
 I_LOC_Y, I_LOC_LH, I_LOC_LINES, I_FOOT = 28, 20, 2, 8
 I_KEYS = ('Format', 'Sample Rate', 'Bit Depth', 'Bitrate', 'Genre', 'Year', 'File Size', 'Location')
@@ -141,12 +142,15 @@ def qparse(s):
         out[f] = v + (' ' + I_UNITS[f] if f else '')
     return out
 
-def flow(present, loc_lines=I_LOC_LINES, shift=0):
-    """np_flow: where the rows go (page y). present[r]: row r shows. shift: the second title line's I_TITLE_LH, or 0. Returns hair {r: y}, text {r: y of its label (and value)}, loc [y of each path line], bottom (the content's end)."""
-    y, hair, text, loc, bottom = I_ROW_Y + shift, {}, {}, [], I_ROW_Y + shift
+def flow(present, loc_lines=I_LOC_LINES, shift=0, bare=False):
+    """np_flow: where the rows go (page y). present[r]: row r shows. shift: the second title line's I_TITLE_LH, or 0. bare: no header (spoken audio), the rows from I_BARE_Y and the first one without a hairline.
+    Returns hair {r: y} (the rows with a hairline), text {r: y of its label (and value)}, loc [y of each path line], bottom (the content's end)."""
+    y = I_BARE_Y if bare else I_ROW_Y + shift
+    hair, text, loc, bottom = {}, {}, [], y
     for r in range(I_ROWS):
         if not present[r]: continue
-        hair[r], text[r] = y, y + I_ROW_TEXT
+        if not bare or text: hair[r] = y
+        text[r] = y + I_ROW_TEXT
         if r == I_LOC_ROW:
             loc = [y + I_LOC_Y + k * I_LOC_LH for k in range(loc_lines)]
             bottom = loc[-1] + I_ROW_PX + I_FOOT if loc else y + I_ROW_TEXT + I_ROW_PX + I_FOOT

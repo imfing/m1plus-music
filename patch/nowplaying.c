@@ -828,6 +828,19 @@ static int np_head_text(void *const *w, const char *title, const char *artist, c
     return sh;
 }
 
+/* 1: the info page is bare (spoken audio with the notes page, whose header is the same): no header, the rows from NPI_BARE_Y. */
+static int np_bare(void) { return np.spoken && np.nok; }
+
+/* The info page's header shown, or hidden while the page is bare (hidden widgets are insensitive in the asset). */
+static void np_ihead_vis(void) {
+    int on = !np_bare();
+    np_vis(np.iw[NI_ART], on);
+    np_vis(np.iw[NI_TITLE], on);
+    np_vis(np.iw[NI_TITLE2], on && np.tsh);
+    np_vis(np.iw[NI_ARTIST], on);
+    np_vis(np.iw[NI_ALBUM], on);
+}
+
 /* Both headers' covers painted again (the bitmap or its settle changed). */
 static void np_art_inval(void) {
     widget_invalidate_force(np.iw[NI_ART], (void *)0);
@@ -966,9 +979,7 @@ static unsigned np_header(int force) {
     }
     np.tsh = np_head_text(np.iw + NI_ART, tb, ab, cb); /* the title in one or two lines */
     np_head_place(np.iw + NI_ART, np.si.off);
-    np_vis(np.iw[NI_TITLE], 1);
-    np_vis(np.iw[NI_ARTIST], 1);
-    np_vis(np.iw[NI_ALBUM], 1);
+    np_ihead_vis();
     if (np.nok && np.spoken) {
         np_head_text(np.nw + NN_ART, tb, ab, cb);
         np_vis(np.nw[NN_TITLE], 1);
@@ -1137,17 +1148,18 @@ static void np_set_row(int r, const char *key, const char *val, const char *alt)
     np.fdirty = 1;
 }
 
-/* The rows' places, from the top: a hairline above each row that shows, its label and value NPI_ROW_TEXT under it, the next row NPI_ROW_PITCH on; the Location's path under its label in np.locn lines; the badge on the
+/* The rows' places, from the top (NPI_ROW_Y under the header, NPI_BARE_Y on a bare page): a hairline above each row that shows (but a bare page's first), its label and value NPI_ROW_TEXT under it, the next row NPI_ROW_PITCH on; the Location's path under its label in np.locn lines; the badge on the
  * Format row, NPI_BADGE_GAP left of the value's text. The content's end sets the scroll_view's virtual_h. Everything is placed by np_cy, so the same call moves it all to a new content offset. */
 static void np_flow(void) {
-    int r, y = NPI_ROW_Y + np.tsh, end = NPI_ROW_Y + np.tsh, badge = np.ibadge, bx = 0, by = 0;
+    int bare = np_bare(), r, y = bare ? NPI_BARE_Y : NPI_ROW_Y + np.tsh, end = y, badge = np.ibadge, bx = 0, by = 0;
     int bw = badge == 2 ? NPI_BADGE_DSD_W : badge == 1 ? NPI_BADGE_HIRES_W : 0;
     np.fdirty = 0;
     for (r = 0; r < NPI_ROWS; ++r) {
         void *h = np.iw[NI_HAIR + r];
         int on = np.rown >> r & 1;
-        np_vis(h, on);
+        np_vis(h, on && !bare); /* bare: the first shown row has no hairline (bare is cleared below) */
         if (!on) continue;
+        bare = 0;
         widget_move(h, NPI_X, np_cy(y));
         widget_resize(h, NPI_R - NPI_X, 1);
         np_place(np.iw[NI_KEY + r], NPI_X, y + NPI_ROW_TEXT, np.rkw[r] + 4, NPI_ROW_PX);
@@ -1183,6 +1195,7 @@ __attribute__((noinline)) void np_info_scroll(int off) {
     np.si.off = off > max ? max : off;
     if (np.si.off < 0) np.si.off = 0;
     np_head_place(np.iw + NI_ART, np.si.off);
+    np_ihead_vis();
     np_flow();
 }
 

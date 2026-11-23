@@ -183,6 +183,12 @@ at offset 0.
 | Rows | hairline above each row, rows 33 px apart from y 112: Format, Sample Rate, Bit Depth, Bitrate, Genre, Year, File Size, Location. Label 16 px `#AAAAAA` at x 16, value 16 px white right-aligned to 304. A row with no value (empty, or zero for rate, bit depth and bitrate) is left out and the rows below move up. Spoken audio (episode or book part) leaves out Genre and Year, and stock's labels of them are hidden |
 | Location | label on its own line, the path below it wrapped to up to two 288 px lines; only the last 200 bytes are shown |
 
+- **Bare page.** While the notes page shows (spoken audio, `np.nok`), this page has no header
+  (`np_bare`, `np_ihead_vis`): the notes page already shows the same one. The header's widgets are
+  hidden, the rows start at `NPI_BARE_Y` (30, the first label's text at the notes title's y 38),
+  and the first row shown has no hairline. The five rows and a two-line path end at y 267, inside
+  the 252 px view, so the page does not scroll. The header's text is still written. Model:
+  `flow(..., bare=True)`; preview `page=2,notes=NAME`.
 - **Title.** One line when it fits; otherwise it breaks at the last space that fits 212 px, even
   when line 2 then ends in an ellipsis. Only with no such space (CJK, a first word wider than the
   line) does it break at the last character that fits. With a two-line title the artist and album
@@ -230,7 +236,8 @@ an episode notes page; music keeps the lyrics page. It is the information page's
 `np_scrim` (`img_np_scrim_notes`), the same header, one hairline, then the notes, all inside one
 clipping scroll container `np_n_scroll` (y 36, 320 x 252). The asset has them hidden, and hidden
 widgets are insensitive; only the container is made sensitive while the page shows. A page with
-any of the widgets missing (`np.nok` is 0) keeps the lyrics page. Model: `notes_layout` in
+any of the widgets missing (`np.nok` is 0) keeps the lyrics page, and the information page keeps
+its header; otherwise the information page is bare. Model: `notes_layout` in
 `tools/mod_nowplaying.py`; the preview (`page=1,notes=feed|short|local`) draws it.
 
 | part | layout |

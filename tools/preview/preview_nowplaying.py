@@ -187,7 +187,8 @@ class Painter:
         loc = MN.loc_wrap(I['location'], MN.I_W, lambda t: adv(t, MN.I_ROW_PX)) if present[7] else []
         tl, cut = MN.title_wrap(I['title'], MN.I_TEXT_W, lambda t: adv(t, MN.I_TITLE_PX))
         sh = MN.I_TITLE_LH if len(tl) > 1 else 0
-        hair, text, locy, bottom = MN.flow(present, len(loc) or 1, sh)
+        bare = bool(self.notes)                          # spoken audio: the notes page has the header, so this page has none
+        hair, text, locy, bottom = MN.flow(present, len(loc) or 1, sh, bare)
         cv = Image.new('RGBA', (W, max(H, bottom + 12)))
         def put(x, y, t, px, rgb):                       # the text's top at y, left at x
             f = self.font(px); layer = Image.new('RGBA', cv.size); ld = ImageDraw.Draw(layer)
@@ -197,14 +198,14 @@ class Painter:
             if adv(t, px) <= room: return t
             while t and adv(t + '...', px) > room: t = t[:-1]
             return t + '...'
-        c = self.cover(MN.I_ART, MN.I_ART); m = Image.new('L', c.size, 0); ImageDraw.Draw(m).rounded_rectangle([0, 0, c.width - 1, c.height - 1], radius=MN.I_ART_R, fill=255)
-        cv.paste(c, (MN.I_X, MN.I_ART_Y), m)
-        for i, t in enumerate(tl): put(MN.I_TEXT_X, MN.I_TITLE_Y + i * MN.I_TITLE_LH, end_fit(t, MN.I_TITLE_PX, MN.I_TEXT_W) if cut else t, MN.I_TITLE_PX, '#FFFFFF')
-        put(MN.I_TEXT_X, MN.I_ARTIST_Y + sh, end_fit(I['artist'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
-        third = self.notes['date'] if self.notes else I['album']    # an episode: the notes page's "date · length" in place of the album (the show again)
-        put(MN.I_TEXT_X, MN.I_ALBUM_Y + sh, end_fit(third, MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
+        if not bare:
+            c = self.cover(MN.I_ART, MN.I_ART); m = Image.new('L', c.size, 0); ImageDraw.Draw(m).rounded_rectangle([0, 0, c.width - 1, c.height - 1], radius=MN.I_ART_R, fill=255)
+            cv.paste(c, (MN.I_X, MN.I_ART_Y), m)
+            for i, t in enumerate(tl): put(MN.I_TEXT_X, MN.I_TITLE_Y + i * MN.I_TITLE_LH, end_fit(t, MN.I_TITLE_PX, MN.I_TEXT_W) if cut else t, MN.I_TITLE_PX, '#FFFFFF')
+            put(MN.I_TEXT_X, MN.I_ARTIST_Y + sh, end_fit(I['artist'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
+            put(MN.I_TEXT_X, MN.I_ALBUM_Y + sh, end_fit(I['album'], MN.I_META_PX, MN.I_TEXT_W), MN.I_META_PX, MN.GREY)
         for r, (k, v) in rows.items():
-            cv.alpha_composite(Image.new('RGBA', (MN.I_W, 1), MN.HAIR_RGBA), (MN.I_X, hair[r]))
+            if r in hair: cv.alpha_composite(Image.new('RGBA', (MN.I_W, 1), MN.HAIR_RGBA), (MN.I_X, hair[r]))
             put(MN.I_X, text[r], k, MN.I_ROW_PX, MN.GREY)
             if r == MN.I_LOC_ROW:
                 for line, y in zip(loc, locy): put(MN.I_X, y, line, MN.I_ROW_PX, '#FFFFFF')

@@ -540,6 +540,7 @@
  * NPI_ROW_Y, its text NPI_ROW_TEXT under it, NPI_ROW_PX high, the label at NPI_X, the value right aligned to NPI_R, NPI_KEY_GAP after the label; a missing row is left out and the next ones move up.
  * The badge (NPI_BADGE_H high, NPI_BADGE_HIRES_W or NPI_BADGE_DSD_W wide) sits NPI_BADGE_GAP left of the Format value. The Location (row NPI_LOC_ROW): its label, then the path left aligned from NPI_LOC_Y under the
  * hairline in up to NPI_LOC_LINES lines NPI_LOC_LH apart, the content ends NPI_FOOT under the last text. Every own label's box is its text's line plus NPI_PAD above and below.
+ * Bare (spoken audio with the notes page, which shows the header): no header, the rows from NPI_BARE_Y, the first shown row without its hairline.
  * The title takes up to two lines (NPI_TITLE_LH apart, m1_wrap2); a second line moves the artist, the album and everything under the header down by NPI_TITLE_LH. Touch: a vertical drag of NPI_TAP_PX or more
  * scrolls the content with the finger (np_on_info_touch), a sideways one is the slide view's; the content goes back to the top when the slide view's page (NPI_PAGE: the info page) is left. The top and bottom NPI_FADE rows of
  * the view fade into the page's colour while there is more content beyond that edge (np_on_info_fade; the colour is the window tone under np_scrim, whose rows are NP_SCRIM_Y.., NP_SCRIM_H high, NP_SCRIM_ALPHA in the
@@ -570,6 +571,7 @@
 #define NPI_BADGE_GAP 8
 #define NPI_ROWS 8
 #define NPI_ROW_Y 112
+#define NPI_BARE_Y 30 /* the first row's top on a bare page: its text at NPI_TITLE_Y, where the notes page's title is */
 #define NPI_ROW_PITCH 33
 #define NPI_ROW_TEXT 8
 #define NPI_ROW_PX 16
