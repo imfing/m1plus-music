@@ -295,9 +295,12 @@ def settings_tests(ctx):
     img = lambda n: Image.open(os.path.join(WORK, 'rootfs/release/assets/default/raw/images/xx', n + '.png')).convert('RGBA')
     th, track = img('pod_sl_thumb'), img('drop_bg')
     box = th.getchannel('A').point(lambda a: 255 if a >= 250 else 0).getbbox()
-    expect({v for k, v in sl.props if k.endswith(':icon')} == {'pod_sl_thumb'} and sl.get('bar_size') == str(track.height) == '6' and mod_icons.SLIDER_THUMB == ('pod_sl_thumb', 38, 24, 46, 34) and th.size == (46, 34)
-           and (box[2] - box[0], box[3] - box[1]) in ((38, 24), (38, 22), (36, 24), (36, 22)) and th.getpixel((23, 17)) == (255, 255, 255, 255) and th.getpixel((0, 0))[3] == 0 and 0 < th.getpixel((23, 31))[3] < 255,
-           f'the thumb: our white capsule (38 x 24 in a 46 x 34 canvas, a soft shadow under it) on a bar as high as the track image ({box})')
+    expect({v for k, v in sl.props if k.endswith(':icon')} == {'pod_sl_thumb'} and sl.get('bar_size') == str(track.height) == '6' and mod_icons.SLIDER_THUMB == ('pod_sl_thumb', 38, 24, 38, 34) and th.size == (38, 34)
+           and (box[2] - box[0], box[3] - box[1]) in ((38, 24), (38, 22)) and th.getpixel((19, 17)) == (255, 255, 255, 255) and th.getpixel((0, 0))[3] == 0 and 0 < th.getpixel((19, 31))[3] < 255,
+           f'the thumb: our white capsule (38 x 24 in a 38 x 34 canvas, a soft shadow under it) on a bar as high as the track image ({box})')
+    expect(th.getpixel((0, 17))[3] == th.getpixel((th.width - 1, 17))[3] == 255,
+           'the capsule reaches both sides of its canvas: AWTK\'s dragger is the icon\'s width and travels 0 .. slider w - icon w over a track drawn 0 .. slider w, '
+           'so a side margin left track showing past the thumb at the minimum and the maximum (the slider looked as if it could go further)')
     expect(lab is not None and lab.get('visible') == 'false' and lab.get('sensitive') == 'false', 'label_brightness (stock\'s refresh needs it) is hidden and insensitive')
     card = dt.find('pod_bright')
     expect(card.h == dt.find('pod_row0').h and [card.find(n).get('image') for n in ('pod_bright_lo', 'pod_bright_hi')] == ['drop_lighticon0', 'drop_lighticon1']

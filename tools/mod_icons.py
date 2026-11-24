@@ -648,12 +648,12 @@ DROP_CC_LIVE = (('drop_cc_live_l', False), ('drop_cc_live_r', True))   # radio's
 DROP_CC_LIVE_W = 54
 DAILY = DAILY + list(DROP_CC_DISCS) + [n for n, _ in DROP_CC_LIVE]
 DROP_DOTS = (('drop_dot_on', 0xEB), ('drop_dot_off', 0x46), 4)   # the pull-down's page dots (patch/pulldown.c): the current page's and the other's, Now Playing's page dots (mod_nowplaying DOTS / DOT_ON / DOT_OFF: 4 px, white at alpha 0xEB / 0x46), antialiased discs (a tiny round fill renders square on the device)
-SLIDER_THUMB = ('pod_sl_thumb', 38, 24, 46, 34)   # the settings slider's thumb (name, the capsule's width and height, the canvas)
+SLIDER_THUMB = ('pod_sl_thumb', 38, 24, 38, 34)   # the settings slider's thumb (name, the capsule's width and height, the canvas): the canvas is the capsule's width, because AWTK's dragger is the icon's width (dragger_adapt_to_icon) and travels 0 .. slider w - icon w over a track drawn 0 .. slider w, so any side margin leaves track showing past the thumb at the minimum and the maximum
 
 
 def slider_thumb():
     """The thumb of a slider on a Settings card (the Display page's brightness card, tools/pod_ui.py cards_brightness): a white capsule, antialiased (8 x 8 samples per pixel), over a soft
-    shadow one pixel lower, centred in its canvas. Never tinted: the fill left of it takes the accent (drop_fg)."""
+    shadow one pixel lower, the canvas only as wide as the capsule (SLIDER_THUMB). Never tinted: the fill left of it takes the accent (drop_fg)."""
     from PIL import Image, ImageDraw, ImageFilter
     _, w, h, cw, ch = SLIDER_THUMB
     ss = 8; x, y = (cw - w) // 2, (ch - h) // 2

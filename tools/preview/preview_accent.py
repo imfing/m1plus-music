@@ -137,7 +137,7 @@ def controls_screen(s, pal):
     ty = y + 26 - 3
     im.alpha_composite(pal.image(s, 'drop_lighticon0'), (20, y + 16)); im.alpha_composite(pal.image(s, 'drop_lighticon1'), (270, y + 16))
     bg = pal.image(s, 'drop_bg').crop((0, 0, 200, 6)); fg = pal.image(s, 'drop_fg').crop((0, 0, 120, 6))
-    im.alpha_composite(bg, (60, ty)); im.alpha_composite(fg, (60, ty)); im.alpha_composite(pal.image(s, 'pod_sl_thumb'), (60 + 120 - 23, y + 26 - 17))
+    im.alpha_composite(bg, (60, ty)); im.alpha_composite(fg, (60, ty)); im.alpha_composite(pal.image(s, 'pod_sl_thumb'), (60 + 120 - 19, y + 26 - 17))
     return im
 
 
