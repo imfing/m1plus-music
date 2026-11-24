@@ -596,6 +596,8 @@ DATA = {
     'DMR_SERVERFLAG':     (0xa06020, 'dmr_serverflag'),   # int: 1 while stock's DLNA renderer (UPnP) service runs (dlna_service_running 0x507bec reads it; Clear and the queue insert stay off then, docs/modules/queue.md)
     'MCL_PRELOAD_NEXT':   (0xa0abcc, None),   # int: the queue index the preload opened (-1 none; the decision 0x5d0ea4 stores -1 first, @0x5d0ecc)
     'MCL_GAPLESS':        (0xa0ab89, None),   # byte: the Gapless setting (mclSetGaplessMode 0x5d28ac stores it; mclNextSong 0x5d583c and mclAutoChange 0x5d632c read it)
+    'MCL_TIME_MUTEX':     (0xa0ab20, None),   # pthread_mutex_t guarding MCL_PLAYINFO (mclGetPlayTime 0x5d35e0, mclNextSong 0x5d5868; XFADE_PINS)
+    'MCL_PLAYINFO':       (0xa0ab50, None),   # 0x34-byte player info struct (+8 total_s, +0xc cur_s; mclGetPlayTime 0x5d35f4; XFADE_PINS)
     # the menu's list (patch/menu.c mn_plain_paint): g_scroll_view_vtable is a widget's vtable word (+0x70) when it is a scroll_view;
     # 0x60c164 is the paint-children hook list_view_on_add_child (0x60cc08) stores in a scroll_view (@0x60cd04..0x60cd10,
     # `addiu v1, v1, -0x3e9c`; its prologue `lui gp, 0x3f; addiu gp, gp, 0x7d6c`, test/pod/pulldown.py pins both words)

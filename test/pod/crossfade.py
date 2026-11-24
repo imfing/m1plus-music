@@ -372,7 +372,8 @@ def pin_tests(ctx):
     finally: mod_player.PLAYER_SHA = keep
     expect(ok, f'mutating pinned hciplayer word {a0:#x} is caught by check_stock')
     # Demo XFADE_PINS
-    expect(len(pod.XFADE_PINS) == 8 and {a for a, _, _ in pod.XFADE_PINS} >= {0x5d35a8, 0x5d0ea4}, 'XFADE_PINS pins mclGetPlayTime and mcl_gapless_preload')
+    expect(len(pod.XFADE_PINS) == 15 and {a for a, _, _ in pod.XFADE_PINS} >= {0x5d35a8, 0x5d35e0, 0x5d35f4, 0x5d6454, 0x5d0ea4},
+           'XFADE_PINS pins mclGetPlayTime (mutex/playinfo), mclAutoChange post-handoff preload and mcl_gapless_preload')
     expect(len(xfrec()) == 20 and xfrec()[:8] == b'M1XFD01\0', 'xfade_record is 20 bytes with NUL-terminated M1XFD01 magic')
 
 
@@ -959,12 +960,16 @@ def demo_tests(ctx):
     m, _ = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, gapless=0, play_time=(190, 200))
     expect(('mcl_gapless_preload', 1) in m.calls and m.u.mem_read(pod.DATA['MCL_GAPLESS'][0], 1)[0] == 0 and m.word(pod.DATA['MCL_PRELOAD'][0]) == 1,
            'Gapless OFF: preload temporarily raises MCL_GAPLESS=1 and immediately restores 0')
-    # Now Track A ends (HCI_RUNNING=0, MCL_PRELOAD=1): mclAutoChange sees MCL_GAPLESS=1, then restored to 0!
+    # Now Track A ends (HCI_RUNNING=0, MCL_PRELOAD=1): clears shared play time before mclAutoChange so stock's 0x5d6454
+    # fallthrough cannot prematurely preload Track C, runs mclAutoChange with MCL_GAPLESS=1, then restores 0!
+    m.setword(pod.DATA['MCL_PLAYINFO'][0] + 8, 200)
+    m.setword(pod.DATA['MCL_PLAYINFO'][0] + 12, 198)
     m.u.mem_write(pod.DATA['HCI_RUNNING'][0], b'\0')
     m.auto_seen = []; m.calls = []
     call_c(m, 'xfade_auto_change')
-    expect(m.auto_seen == [1] and m.u.mem_read(pod.DATA['MCL_GAPLESS'][0], 1)[0] == 0,
-           'Gapless OFF handoff: mclAutoChange runs with MCL_GAPLESS=1, then user byte restored to 0')
+    expect(m.auto_seen == [1] and m.u.mem_read(pod.DATA['MCL_GAPLESS'][0], 1)[0] == 0
+           and m.word(pod.DATA['MCL_PLAYINFO'][0] + 8) == 0 and m.word(pod.DATA['MCL_PLAYINFO'][0] + 12) == 0,
+           'Gapless OFF handoff: clears shared play time, runs mclAutoChange with MCL_GAPLESS=1, restores user byte to 0')
 
     # Turning Crossfade Off while forced_gapless preload is open closes preload via mclSetGaplessMode(0)
     m, _ = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, gapless=0, play_time=(190, 200))
@@ -1378,4 +1383,88 @@ def handoff_tests(ctx):
     expect(len([e for e in p.swr_log if e[0] == 'free']) == 2 and not p.swr, 'every converter made is freed')
 
 
-SECTIONS = [pin_tests, rec_tests, mix_tests, resample_tests, native_tests, flac_seek_tests, edge_tests, sticky_tests, rate_tests, handoff_tests, demo_tests, ui_tests]
+# ---- 8. the handoff through stock's own code: mclAutoChange, mclNextSong(1) and the getters run for real
+MCL_STATUS, MCL_POS, MCL_MODE = 0xa0abe4, 0xa0abdc, 0xa0abe0   # the words mclGetPlayStatus (0x5d3640), mclGetPlayPos (0x5d4290) and mclGetPlayMode (0x5d3628) return
+MCL_ASK_STATUS = 0x5d0918   # mclAutoChange's {player-status\request} round trip (@0x5d6430): nonzero while hciplayer answers "playing"
+STOCK_STUBS = {0x741fb0: 'pthread_mutex_lock', 0x743460: 'pthread_mutex_unlock', 0x743590: 'deque_size', 0x742c70: 'deque_at'}   # libc and libcstl as demo's GOT has them
+
+
+class StockAuto(Machine):
+    """Stock's end-of-track step run for real. Only its leaves are answered here: the status request ("playing"), the preload (the harness's mock, plus the index stock stores),
+    mclStartPlayer (recorded: the path that mutes the DAC) and the lyric load."""
+
+    def __init__(self, gapless, tracks=3):
+        super().__init__()
+        for n in ('mclAutoChange', 'mclGetPlayTime', 'mclGetPlayPos', 'mclGetPlayStatus', 'mclGetPlayType', 'mclGetPlayMode'): self.handlers.pop(pod.FUNCTIONS[n][2])
+        self.handlers.update(STOCK_STUBS)
+        self.handlers[MCL_ASK_STATUS] = 'ask_status'
+        self.handlers[pod.START_PLAYER] = 'mclStartPlayer'
+        self.fs[SET_FILE], self.fs[AUTO_FILE] = b'h\n', b'0\n'   # on, 8 s, Always
+        self.setword(pod.DATA['PLAY_QUEUE'][0], self.new_deque([self.record(album=f'Album {i}', path=f'/mnt/mmc/{i}.flac') for i in range(tracks)]))
+        self.setword(MCL_MODE, 0)
+        self.set(pos=0, status=2, running=1, gapless=gapless, preload=0, time=(0, 200))
+
+    def set(self, pos=None, status=None, running=None, gapless=None, preload=None, time=None):
+        if pos is not None: self.setword(MCL_POS, pos)
+        if status is not None: self.setword(MCL_STATUS, status)
+        if running is not None: self.u.mem_write(pod.DATA['HCI_RUNNING'][0], bytes([running]))
+        if gapless is not None: self.u.mem_write(pod.DATA['MCL_GAPLESS'][0], bytes([gapless]))
+        if preload is not None: self.setword(pod.DATA['MCL_PRELOAD'][0], preload)
+        if time is not None: self.setword(pod.DATA['MCL_PLAYINFO'][0] + 12, time[0]); self.setword(pod.DATA['MCL_PLAYINFO'][0] + 8, time[1])
+
+    def got(self):
+        """(position, running, preload state, Gapless byte, (cur, total)) as stock's words have them."""
+        info = pod.DATA['MCL_PLAYINFO'][0]
+        return (self.s32(MCL_POS), self.u.mem_read(pod.DATA['HCI_RUNNING'][0], 1)[0], self.s32(pod.DATA['MCL_PRELOAD'][0]), self.u.mem_read(pod.DATA['MCL_GAPLESS'][0], 1)[0],
+                (self.s32(info + 12), self.s32(info + 8)))
+
+    def _hook(self, u, address, size, d):
+        name = self.handlers.get(address)
+        if name in ('ask_status', 'mclStartPlayer', 'mclLoadExLyric'):
+            self.calls.append((name,))
+            u.reg_write(UC_MIPS_REG_V0, 1); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+            return
+        if name == 'mcl_gapless_preload': self.setword(pod.DATA['MCL_PRELOAD_NEXT'][0], self.s32(MCL_POS) + 1)   # the index stock's decision stores in List play (mclNextSong(1) moves the position there)
+        return super()._hook(u, address, size, d)
+
+
+def stock_tests(ctx):
+    expect = ctx.expect
+    AUTO = pod.FUNCTIONS['mclAutoChange'][2]
+    # The stock behaviour the handoff has to work around: mclAutoChange tests the ended track's time (its stack copy) after mclNextSong(1) has moved on
+    m = StockAuto(1); m.set(running=0, preload=1, time=(198, 200)); m.setword(pod.DATA['MCL_PRELOAD_NEXT'][0], 1)
+    m.call(AUTO, count=4000000)
+    expect(m.got() == (1, 1, 1, 1, (0, 0)) and ('mcl_gapless_preload', 1) in m.calls and 'mclStartPlayer' not in m.names(),
+           'stock alone, a track ended 2 s short of its total: the handoff, then at once a preload of the track after (its time test reads the ended track\'s)')
+    m = StockAuto(1); m.set(running=0, preload=1, time=(200, 200)); m.setword(pod.DATA['MCL_PRELOAD_NEXT'][0], 1)
+    m.call(AUTO, count=4000000)
+    expect(m.got() == (1, 1, 0, 1, (0, 0)) and 'mcl_gapless_preload' not in m.names(), 'stock alone, ended at its total: the handoff and no preload')
+    # Through xfade_auto_change, three tracks, the Gapless setting off and on: each join is preloaded once, with its own record, and handed off; mclStartPlayer never runs
+    for g in (0, 1):
+        m = StockAuto(g); seqs = []
+        for pos in (0, 1):
+            m.set(time=(20, 200)); m.clock += 1000
+            call_c(m, 'xfade_auto_change')
+            expect(m.got()[:4] == (pos, 1, 0, g) and 'mcl_gapless_preload' not in m.names(), f'Gapless {g}, track {pos} far from its end: no preload')
+            m.set(time=(188, 200)); m.clock += 1000
+            call_c(m, 'xfade_auto_change')
+            seqs.append(read_rt(m)[2])
+            expect(m.got()[:4] == (pos, 1, 1, g) and ('mcl_gapless_preload', 1) in m.calls and read_rt(m)[1] == 8 and read_rt(m)[3] == 1,
+                   f'Gapless {g}, track {pos} 12 s from its end: the record (8 s) is written and the next track preloaded; the Gapless byte is the user\'s again')
+            m.set(running=0, time=(198, 200))   # the faded end: the last time hciplayer reported is short of the total
+            call_c(m, 'xfade_auto_change')
+            expect(m.got() == (pos + 1, 1, 0, g, (0, 0)) and not {'mcl_gapless_preload', 'mclStartPlayer'} & set(m.names()),
+                   f'Gapless {g}, track {pos} ended: stock hands off to track {pos + 1}, with no preload of the one after and no mclStartPlayer')
+        expect(seqs[1] > seqs[0], f'Gapless {g}: the second join has a record of its own')
+    # A preload open at the end with the Gapless setting off and nothing remembered here (a fresh state): still the handoff
+    m = StockAuto(0); m.set(running=0, preload=1, time=(198, 200)); m.setword(pod.DATA['MCL_PRELOAD_NEXT'][0], 1)
+    call_c(m, 'xfade_auto_change')
+    expect(m.got() == (1, 1, 0, 0, (0, 0)) and not {'mcl_gapless_preload', 'mclStartPlayer'} & set(m.names()),
+           'an open preload at a track\'s end is handed off whether or not this file opened it: never mclStartPlayer under a playing hciplayer')
+    # Stopped: stock returns at once, and the time is left alone
+    m = StockAuto(0); m.set(running=0, preload=1, status=1, time=(198, 200))
+    call_c(m, 'xfade_auto_change')
+    expect(m.got() == (0, 0, 1, 0, (198, 200)), 'stopped with a preload open: nothing moves, the play time stands')
+
+
+SECTIONS = [pin_tests, rec_tests, mix_tests, resample_tests, native_tests, flac_seek_tests, edge_tests, sticky_tests, rate_tests, handoff_tests, demo_tests, stock_tests, ui_tests]

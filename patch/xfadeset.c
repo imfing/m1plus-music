@@ -9,8 +9,8 @@
  * off) to tmpfs XFADE_FILE right before triggering stock's gapless preload (0x5d0ea4).
  *
  * When the user has Gapless OFF but Crossfade ON, xfade_auto_change temporarily raises MCL_GAPLESS around the preload
- * call and around the seamless mclNextSong(1) handoff inside mclAutoChange, restoring the user's Gapless byte
- * immediately so the saved Gapless setting is never modified.
+ * call, restoring the user's Gapless byte immediately so the saved Gapless setting is never modified. A track that
+ * ends with a preload open is always handed off through mclNextSong(1) (MCL_GAPLESS raised across mclAutoChange).
  */
 #include "offsets.inc"
 #include "stock.h"
@@ -25,7 +25,7 @@
 
 static struct {
     unsigned char loaded, on, sec, smart;
-    unsigned char forced_gapless; /* 1: we opened a preload while stock's Gapless switch was off */
+    unsigned char forced_gapless; /* 1: a preload is open while stock's Gapless switch is off */
     int seq; /* monotonic sequence written into XFADE_FILE */
     int last_pos; /* last playing queue index we saw (resets forced_gapless on track change) */
     int last_rt; /* last runtime seconds written to XFADE_FILE (-1 = unknown) */
@@ -206,6 +206,17 @@ static int transition_seconds(void *cur, void *nxt, int total_s) {
     return sec > max_eff ? max_eff : sec;
 }
 
+/* Zero the shared play time under stock's mutex, as mclNextSong(1) does itself (0x5d5860..0x5d5888).
+ * Stock's mclAutoChange copies (cur, total) to its stack before mclNextSong(1) and then runs its preload test
+ * (0x5d6414..0x5d6484) on that copy: Track A's last time. When that is short of the total (the last report before
+ * a faded end), it preloads Track C at 0:00 of Track B, with Track A -> B's record still in the runtime file. */
+static void clear_play_time(void) {
+    pthread_mutex_lock((void *)MCL_TIME_MUTEX);
+    *(volatile int *)((char *)MCL_PLAYINFO + 8) = 0;
+    *(volatile int *)((char *)MCL_PLAYINFO + 12) = 0;
+    pthread_mutex_unlock((void *)MCL_TIME_MUTEX);
+}
+
 /* Called from rd_auto_change (Hook 36) on every idle pass when Radio does not own the player.
  * Handles early preload (total - cur <= eff + 5), writes /tmp/m1plus-xfade, and bridges MCL_GAPLESS during
  * seamless handoff if the user had Gapless off. Always finishes by calling stock mclAutoChange(). */
@@ -223,16 +234,22 @@ int xfade_auto_change(void) {
         xf.last_pos = pos;
         if (preload == 0) xf.forced_gapless = 0;
     }
-    /* Case 1: Track A just ended (running == 0) after we forced a crossfade preload while user's Gapless was off.
-     * Temporarily raise MCL_GAPLESS so mclAutoChange -> mclNextSong(1) takes the seamless gapless handoff path
-     * instead of restarting hciplayer with mclStartPlayer. */
-    if (xf.forced_gapless && !running && preload == 1) {
+    /* Case 1: Track A just ended (running == 0) with a preload open (preload == 1). hciplayer swaps to the preloaded
+     * track on its own, so demo has to take mclNextSong(1)'s handoff, whatever the Gapless setting is and whether or
+     * not this file remembers opening the preload: with Gapless off stock would call mclStartPlayer, which mutes the
+     * DAC and sends set-songurl; a playing hciplayer only notes that for later and, with the output kept open, never
+     * reopens it, so nothing unmutes (playback goes on in silence until a pause). MCL_GAPLESS is raised across the
+     * call only. The play time is cleared first, in the cases where stock goes on to the handoff (clear_play_time). */
+    if (!running && preload == 1) {
         int r;
+        pt = mclGetPlayType();
+        if (mclGetPlayStatus() != 1 && pt != 2 && pt != 0xf0 && pt != 0xf1) clear_play_time();
         saved_gap = *(volatile unsigned char *)MCL_GAPLESS;
-        *(volatile unsigned char *)MCL_GAPLESS = 1;
+        if (!saved_gap) *(volatile unsigned char *)MCL_GAPLESS = 1;
         r = mclAutoChange();
-        *(volatile unsigned char *)MCL_GAPLESS = saved_gap;
-        xf.forced_gapless = 0;
+        if (!saved_gap) *(volatile unsigned char *)MCL_GAPLESS = 0;
+        /* Still open (stock did not hand off this pass), or opened again: the next pass comes here too. */
+        xf.forced_gapless = !saved_gap && *(volatile int *)MCL_PRELOAD == 1;
         return r;
     }
     /* Case 2: Playing a local track with Crossfade enabled and no preload sent yet (preload == 0). The play time (a locked copy of two words, which

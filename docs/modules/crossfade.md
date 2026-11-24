@@ -140,11 +140,33 @@ establish that concurrent preloaded demuxing works for every format.
   own preload (about 5 s before the end) opens without the duration. Between two looks the last `keep`
   stands.
 - **Gapless-off bridge:** if the user's Gapless setting (`MCL_GAPLESS`, `0xa0ab89`) is off while
-  Crossfade is on, `xfade_auto_change()` temporarily sets `MCL_GAPLESS = 1` across
-  `mcl_gapless_preload()` (and across the seamless `mclNextSong(1)` handoff inside `mclAutoChange`
-  when `HCI_RUNNING == 0` and `MCL_PRELOAD == 1`), restoring `0` immediately so the user's Gapless
-  setting is never altered. Turning Crossfade off while such a preload is open calls
-  `mclSetGaplessMode(0)` to close it cleanly.
+  Crossfade is on, `xfade_auto_change()` sets `MCL_GAPLESS = 1` across `mcl_gapless_preload()` and
+  restores `0` at once, so the user's setting is never altered. Turning Crossfade off while such a
+  preload is open calls `mclSetGaplessMode(0)` to close it.
+- **Handoff:** `demo` and `hciplayer` have to agree at every track end. With a preload open
+  (`MCL_PRELOAD == 1`) `hciplayer` swaps to the preloaded track on its own, so when Track A ends
+  (`HCI_RUNNING == 0`) `xfade_auto_change()` always runs `mclAutoChange()` with `MCL_GAPLESS = 1`
+  (restored after), which takes `mclNextSong(1)`'s handoff: it moves the position and sends nothing.
+  It does not depend on whether this file opened the preload. The other path, `mclStartPlayer`, must
+  not run under a playing `hciplayer`:
+  - its sender (`0x5d4e00`) mutes the DAC first (`mclSetMute(1)`, then 150 ms; model `0xf`, local
+    output) and sends `{set-songurl\...}`;
+  - `hciplayer` only stores that for its wait between files (flag `0xb10e1c`, read at `0x42d814`), so
+    the playing track goes on;
+  - stock unmutes at the end of the output's open (`0x438e58`), on resume and after a seek. With the
+    output kept open there is no open, so playback runs on in silence, the play time moving, until
+    a pause and play.
+- **Play time at the handoff:** `mclAutoChange` (`0x5d621c`) copies `(cur, total)` to its stack
+  before `mclNextSong(1)` (`0x5d63fc`), then runs its own preload test on that copy
+  (`0x5d6414`..`0x5d6484`: `total >= 3 && total - cur < 6 && total != cur`, after
+  `{player-status\request}` answers "playing"). That is Track A's last reported time; when it is
+  short of the total, as the last report before a faded end can be, stock preloads Track C at `0:00`
+  of Track B. The runtime record is then still Track A→B's, and with Gapless off the next end met
+  `mclStartPlayer` (above). So before that `mclAutoChange()` call, `xfade_auto_change()` zeroes the
+  shared play time (`MCL_PLAYINFO + 8` total, `+ 12` current, under `MCL_TIME_MUTEX`), as
+  `mclNextSong(1)` does itself a moment later: the test sees `total < 3` and Track C is preloaded by
+  the early preload, with its own record. It is left alone when stock returns before the handoff
+  (stopped, DLNA and the two stream play types).
 
 ## Settings and files
 
