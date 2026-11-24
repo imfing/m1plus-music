@@ -31,6 +31,7 @@ and [UI reference](ui.md).
 - **1.8.1:** fixes and polish for the status bar, Now Playing, Radio and the Recently Added grid.
 - **1.9.0:** a second Control Center page, playlist editing, podcast episode notes on Now Playing
   and grouped item menus.
+- **1.9.1:** fixes for Crossfade, lyrics and sliders.
 
 ## Device findings
 
