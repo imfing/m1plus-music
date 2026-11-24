@@ -610,7 +610,7 @@
  * (at most LY_MAX; each row's int property "lrc_time" and its text, LY_BUF bytes). A move of the anchored line is a damped spring of LY_SPRING_MS per line (a table of 65 entries, overshoot cut at LY_OVERSHOOT_MAX px), each line starting LY_DELAY_MS
  * (shrinking 20/21 a line) after the one before, in LY_FRAME_MS steps; a move over LY_SNAP_LINES lines jumps. The window of lines laid out round the anchor is LY_POOL, those
  * further than LY_OFF_MAX px are not measured (4 x LY_VIEW_H, the most an offset can be, ly_move: a move of LY_SNAP_LINES lines of LY_LINES_MAX rows is 929 px, and a line that was on the screen has to stay laid out until its spring has taken it out). Touch: a vertical drag over LY_TAP_PX scrolls, LY_IDLE_MS after the last touch the lines come back, a tap under LY_TAP_PX (not within
- * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_FIT_W (LY_W less the style's 2 px margins each side) is what a one-row line may measure, LY_ROW_W (one less: stock's wrap check adds 1 px) what a row of a broken line may (ly_break). A line past LY_LINES_MAX rows is cut and ends in LY_MARK (U+2026). An anchored line of more than three rows sits higher (ly_anchor): the next line's first row ends LY_ANCHOR_ROOM px above the view's bottom, the line's top not above LY_ANCHOR_MIN. get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
+ * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_FIT_W (LY_W less the style's 0 px left and 4 px right margins) is what a one-row line may measure, LY_ROW_W (one less: stock's wrap check adds 1 px) what a row of a broken line may (ly_break). A line past LY_LINES_MAX rows is cut and ends in LY_MARK (U+2026). An anchored line of more than three rows sits higher (ly_anchor): the next line's first row ends LY_ANCHOR_ROOM px above the view's bottom, the line's top not above LY_ANCHOR_MIN. get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
 #define LY_W 264
 #define LY_VIEW_H 244
 #define LY_ANCHOR 85
@@ -675,7 +675,7 @@
  * between 255 and LY_DOT_BREATH_MIN every LY_DOT_BREATH_MS, and fades out over the last LY_DOT_FADE_MS. One LY_DOT_MS timer exists while they show and the player plays. */
 #define LY_DOT 10
 #define LY_DOT_PITCH 18
-#define LY_DOT_X 2
+#define LY_DOT_X 0
 #define LY_DOT_PAD 46
 #define LY_DOT_MIN_S 4
 #define LY_DOT_MS 80

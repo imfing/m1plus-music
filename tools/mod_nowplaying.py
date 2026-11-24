@@ -271,8 +271,11 @@ LYR_SIZES = {'': (LYR_FONT, LYR_SPACER), '_m': (26, 3), '_s': (22, 3)}
 # A wrapped label loses its last row unless the rows fit between the top and bottom margins: stock's label paint (0x62eb4c) draws a row only while y + the font size is at most the content
 # area's bottom, the first row is at the top margin and the content area (widget_get_content_area, 0x672978) is the label less margin_top / margin_bottom (each defaults to `margin`, default 2).
 # A label of n rows is n x (font + spacer) high, so the last row needs margin_top + margin_bottom <= spacer: 2 + 2 fits Large's 4 (the style sets none), Medium and Small (3) take 1 + 1.
-# A one-row label is painted by another path (centred in the content area), which equal margins do not move; the left and right margins stay 2 (the 260 px content width, LY_FIT_W).
+# A one-row label is painted by another path (widget_draw_icon_text, 0x67235c: centred in its rect), which equal margins do not move. That path defaults `margin` to 0
+# (0x6723d0), the wrapped one to 2, so with no side margins a one-row line started 2 px left of a wrapped one. The styles set both sides: text at x 0 in either path (the
+# page's 28 px edge, like the progress bar), and the right margin keeps the 260 px content width (LY_FIT_W).
 LYR_DEFAULT_MARGIN = 2
+LYR_MARGIN_L, LYR_MARGIN_R = 0, 4
 def lyr_vmargin(spacer): return min(LYR_DEFAULT_MARGIN, spacer // 2)
 LYR_GAPS = {'': 12, '_m': 10, '_s': 9}   # the gap between lines (patch/lyrics.c ly_sizes: about 0.4 of the font; Large is LY_GAP)
 LYR_BOLD_SIZES = ('', '_m')      # the sizes whose Latin lines use the bold face; Small (22 px) draws them in the default font like every other line
@@ -738,6 +741,7 @@ def apply_style(th):
             s.set_color('bg_color', '#00000000'); s.set_color('border_color', '#00000000')
             s.set('font_size', px); s.set('spacer', spacer, awtk_style.T_INT32); s.set_color('text_color', LYR_WHITE)
             if face: s.set('font_name', face)
+            s.set('margin_left', LYR_MARGIN_L, awtk_style.T_INT32); s.set('margin_right', LYR_MARGIN_R, awtk_style.T_INT32)
             if lyr_vmargin(spacer) != LYR_DEFAULT_MARGIN:
                 s.set('margin_top', lyr_vmargin(spacer), awtk_style.T_INT32); s.set('margin_bottom', lyr_vmargin(spacer), awtk_style.T_INT32)
             th.items.append(s)

@@ -103,6 +103,11 @@ Settings > Now Playing > **Lyrics Text Size** (picker `m1plus_lyrsize`: Small / 
   most the content area's bottom, so the last row shows only if both margins fit in the spacer.
   Large (spacer 4) keeps the default 2 + 2. Medium and Small (spacer 3) set `margin_top` and
   `margin_bottom` to 1 (`lyr_vmargin`); with the defaults every wrapped line lost its last row.
+- **Side margins.** Stock paints a one-row label through `widget_draw_icon_text`, whose `margin`
+  defaults to 0, and a wrapped one through the content area, whose default is 2. Every style sets
+  `margin_left` 0 and `margin_right` 4 (`LYR_MARGIN_L/R`), so both start at the page's 28 px edge,
+  in line with the progress bar and the intro dots (`LY_DOT_X` 0), and keep 260 px of width.
+  Without them a one-row line sat 2 px left of a wrapped one.
 
 ## Second view
 

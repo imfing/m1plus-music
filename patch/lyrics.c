@@ -278,7 +278,7 @@ static int ly_span(const char *s, int n) {
 }
 
 /* Breaks line i (text s, probe ready in its face) into rows ourselves: greedy at the spaces, a word wider than a row (or a text with no spaces: CJK) at any code point.
- * Stock's label wrap would break a row at its first character past the content width (LY_W less the style's 2 px margins), but leaves an overflowing LAST character on
+ * Stock's label wrap would break a row at its first character past the content width (LY_W less the style's side margins), but leaves an overflowing LAST character on
  * its row, clipped at the label's edge, and its row count would then differ from ours. Every row here is at most LY_ROW_W wide: stock's check (0x62ddf0: the row so far +
  * the character + 1 px over the content width) never fires and our '\n's are its only breaks. A line that fits in LY_FIT_W is left to stock (a last character may then
  * reach LY_FIT_W, its ink ends before the label's edge). ly.brk[i] gets the break offsets (a space there becomes the '\n', else the '\n' is put before the byte) and,

@@ -1187,9 +1187,17 @@ def size_tests(ctx):
         while n < rows and y + px <= rows * lh - mb: y, n = y + lh, n + 1
         return n
     lost = [(n + sf, st, r) for px, lh, gap, sf in SIZES.values() for n in (BOLD, CJKF) for st in mn.BTN_STATES for r in range(2, MAXR + 1) if drawn(ls[(n + sf, st)], px, lh, r) != r]
-    side = {ls[k].get(m) for k in ls for m in ('margin', 'margin_left', 'margin_right')}
-    expect(not lost and side == {None} and all(ls[(n, st)].get('margin_top') is None and ls[(n, st)].get('margin_bottom') is None for n in (BOLD, CJKF) for st in mn.BTN_STATES),
-           f'at every size stock paints all 2..{MAXR} rows of a wrapped label inside its height (margin_top + margin_bottom <= spacer: Medium and Small set 1 + 1); the side margins stay the default (the {FIT} px content width) and Large sets none ({lost[:3]})')
+    expect(not lost and all(ls[(n, st)].get('margin_top') is None and ls[(n, st)].get('margin_bottom') is None for n in (BOLD, CJKF) for st in mn.BTN_STATES),
+           f'at every size stock paints all 2..{MAXR} rows of a wrapped label inside its height (margin_top + margin_bottom <= spacer: Medium and Small set 1 + 1); Large sets none ({lost[:3]})')
+    # the text's left edge and width in each of stock's two label paths: a wrapped label's content area defaults `margin` to 2 (0x672978), a one-row label's widget_draw_icon_text to 0
+    # (0x6723d0). Device report: with no side margins one-row lines started 2 px left of wrapped ones.
+    def side(st, dflt):
+        m = st.get('margin') if st.get('margin') is not None else dflt
+        l, r = (st.get(k) if st.get(k) is not None else m for k in ('margin_left', 'margin_right'))
+        return l, O['LY_W'] - l - r
+    sides = {(side(ls[k], 2), side(ls[k], 0)) for k in ls}
+    expect(sides == {((0, FIT), (0, FIT))} and DX == 0,
+           f'wrapped and one-row lines start at x 0 (the page edge, with the intro dots) and both have {FIT} px of content width ({sorted(sides)}, dots at {DX})')
     expect(all(AMIN <= anchor(r, lh, gap) and anchor(r, lh, gap) + r * lh <= VIEW_H - AROOM for px, lh, gap, _ in SIZES.values() for r in range(1, MAXR + 1)),
            f'at every size {MAXR} rows from their anchor end inside the view ({[[anchor(r, lh, gap) for r in range(1, MAXR + 1)] for _, lh, gap, _ in SIZES.values()]})')
 
