@@ -135,6 +135,9 @@ void rowmenu_hold_move(const m1_tap_t *t, void *e);
 void rowmenu_paint(void *canvas, const rowmenu_t *rm, int right, int flush, int y, int row_h, int view_h);
 /* The same for a bitmap of the "..."'s size (RM_DOTS_PX square) in its place (the Add Songs page's marks, patch/songs.c). */
 void rowmenu_paint_bmp(void *canvas, void *bmp, int right, int flush, int y, int row_h, int view_h);
+/* Such a bitmap from a white-on-transparent image of that size (the "...": rm_dots; the picker's tick: sg_pdone), its colour rgb (A<<24 | B<<16 | G<<8 | R, the alpha the
+ * image's coverage). NULL where it cannot be made. The caller destroys it. */
+void *rowmenu_make_glyph(void *win, const char *image, unsigned rgb);
 
 /* Opens the sheet for the row `row` whose record is `rec`; `add` is the page's Add to Playlist; src is the row's library source (NULL or &lib_stock: the card's library).
  * 1 when the menu is open, 0 when it cannot be (no "...", no memory). The five rows: Play Next, Play After (the source's queue record through upnext_add; an undownloaded DSD row asks

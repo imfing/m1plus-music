@@ -12,6 +12,7 @@
 #include "songops.h"
 #include "libsrc.h"
 #include "picker.h"
+#include "fnv.h"
 
 static int so_marked(const unsigned char *sel, unsigned i) { return sel[i >> 3] >> (i & 7) & 1; }
 
@@ -301,6 +302,14 @@ void *so_row_deque(void *rec) {
     deque_init(d);
     _deque_push_back(d, rec);
     return d;
+}
+
+#define SO_KEY_SEED 2166136261u
+void so_song_key(void *rec, unsigned h[2]) {
+    const char *p = cc_str(rec, REC_PATH);
+    unsigned cue = (unsigned)I(rec, REC_CUE_START) * 0x9e3779b1u ^ (unsigned)I(rec, REC_CUE_END);
+    h[0] = m1_fnv(SO_KEY_SEED ^ cue, p);
+    h[1] = m1_fnv(h[0] ^ 0x9e3779b9u ^ cue, p);
 }
 
 /* Now Playing on the queue at idx with class cls: navigator_to_with_context("playing_page", {queue, idx, cls, PLAY_MODE}); start_player copies the queue. */

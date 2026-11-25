@@ -337,7 +337,7 @@ Edit row runs `sg_select(1)` (marks, Select All, "N Selected"), plus:
 - Every action commits at once; there is no save or cancel.
 
 **Add Songs (Edit's +, the empty playlist's Add Songs row; `sg_pick`).** `sg_add_songs` collects the playlist's songs as two FNV words of
-each path and CUE span (`sg_pk_hash`, `m1_fnv` over `REC_PATH` seeded with `REC_CUE_START` /
+each path and CUE span (`so_song_key` in `patch/songops.c`, `m1_fnv` over `REC_PATH` seeded with `REC_CUE_START` /
 `REC_CUE_END`: a CUE image's tracks share one path, and stock's duplicate check compares the times
 too; no strings are kept), then opens the library (`CLASS_ALL_SONGS`, the
 same rows, sort and A-Z rail as `songs_open`) over the playlist page with `sg_open_page` and

@@ -410,7 +410,7 @@ static int sg_edge(void) {
 static int sg_more(void) { return !sg.select && !sg.pick && rowmenu_on(&sg.rm); }
 static int sg_text_end(void) { return sg.select ? (sg_handles() ? SG_HANDLE_X : az_end(&sg.al)) : sg_edge(); }
 
-/* Edit mode's handle as a bitmap, as the rows' "..." is made (patch/rowmenu.c rm_make_dots): the image sg_handle is white on transparent (cc_decode flattens it over black: the red channel is the coverage),
+/* Edit mode's handle as a bitmap, as the rows' "..." is made (patch/rowmenu.c rowmenu_make_glyph): the image sg_handle is white on transparent (cc_decode flattens it over black: the red channel is the coverage),
  * the bitmap's alpha is that coverage and its colour SG_HANDLE_RGB. 0 when it cannot be made. */
 static void *sg_make_bmp(const char *image, unsigned size, unsigned rgb) {
     unsigned *px, i;
@@ -434,20 +434,10 @@ static void *sg_make_bmp(const char *image, unsigned size, unsigned rgb) {
 }
 static void *sg_make_handle(void) { return sg_make_bmp("sg_handle", SG_HANDLE_PX, SG_HANDLE_RGB); }
 
-/* Add Songs: a song's path and its CUE span (REC_CUE_START / REC_CUE_END: a CUE image's tracks share one path; stock's duplicate check also compares them) as two FNV words (the
- * playlist's songs are kept as these, not as strings). */
-#define SG_PK_SEED 2166136261u
-static void sg_pk_hash(void *rec, unsigned h[2]) {
-    const char *p = cc_str(rec, REC_PATH);
-    unsigned cue = (unsigned)I(rec, REC_CUE_START) * 0x9e3779b1u ^ (unsigned)I(rec, REC_CUE_END);
-    h[0] = m1_fnv(SG_PK_SEED ^ cue, p);
-    h[1] = m1_fnv(h[0] ^ 0x9e3779b9u ^ cue, p);
-}
-
-/* The song is in the playlist (or was added here). */
+/* Add Songs: the song is in the playlist (or was added here); the playlist's songs are kept as so_song_key words. */
 static int sg_pk_has(void *rec) {
     unsigned h[2], i;
-    sg_pk_hash(rec, h);
+    so_song_key(rec, h);
     for (i = 0; i < sg.pk_n; ++i)
         if (sg.pk_h[2 * i] == h[0] && sg.pk_h[2 * i + 1] == h[1]) return 1;
     return 0;
@@ -1615,7 +1605,7 @@ static void sg_add_songs(void) {
     n = sg.list ? sg.count : 0;
     h = calloc(2 * (n + 1), sizeof *h);
     if (!h) return;
-    for (i = 0; i < n; ++i) sg_pk_hash(deque_at(sg.list, i), &h[2 * i]);
+    for (i = 0; i < n; ++i) so_song_key(deque_at(sg.list, i), &h[2 * i]);
     memcpy(nm, sg.name, sizeof nm);
     sg_pick_h = h, sg_pick_n = n, sg_pick_id = sg.pl_id, sg_pick_next = 1;
     if (sg_open_page(CLASS_ALL_SONGS, 0, (const char *)0, nm, (const lib_src_t *)0, 0, (void *)0) == -1 || sg_pick_next)
@@ -1639,7 +1629,7 @@ static void sg_pick_tap(int a) {
         pod_toast(TR("msg_addfailed"));
         return;
     }
-    sg_pk_hash(rec, h);
+    so_song_key(rec, h);
     g = calloc(2 * (sg.pk_n + 1), sizeof *g);
     if (g) {
         memcpy(g, sg.pk_h, 2 * sg.pk_n * sizeof *g);

@@ -74,6 +74,7 @@ typedef struct {
     unsigned key[4]; /* the first distinct albums of the playlist that have a cache file */
     int nk, songs;
     int scanned; /* 0 not read, 1 read, PL_SCAN_MISS read and an album had a key but no cache file (its file may appear: read again when the page returns) */
+    int has; /* the picker: how many of the songs being added the playlist (row 1: Favourites) holds, by its scan (picker_in); 0 before it */
 } info_t;
 #define PL_SCAN_MISS 2
 
@@ -153,6 +154,8 @@ static struct {
     unsigned timer;
     void *stash;
     void *star; /* the Favourites row's glyph: a 24 px white star, alpha bitmap */
+    void *
+        tick; /* the mark of a row that holds every song being added: the Add Songs page's grey tick (sg_pdone), RM_DOTS_PX */
 } pick __attribute__((section(".scratch")));
 
 /* A playlist just made on the Playlists page (not the picker): its page opens once the keyboard has gone (pl_new_later). */
@@ -162,6 +165,10 @@ static struct {
     char name[0x100];
 } pl_new __attribute__((section(".scratch")));
 static int pl_v(void) { return pick.on ? 2 : 0; } /* the rows before the playlists: New playlist, Favourites */
+/* The picker's row i (Favourites or a playlist) holds every song being added (its scan said so): the tick, and a tap adds nothing. */
+static int pl_full(int i) {
+    return pick.on && i > 0 && pl.info[i].has > 0 && (unsigned)pl.info[i].has == picker_count();
+}
 /* The stock playlist (index in the copy of the stock list) shown at display position k, after the picker's rows. */
 static unsigned pl_slot(unsigned k) { return pl.ord ? pl.ord[k] : k; }
 static void *pl_rec(int i) { return deque_at(pl.pls, pl_slot((unsigned)(i - pl_v()))); }
@@ -209,6 +216,8 @@ static void pl_texts(tile_t *t, int a) {
     info_t *in = &pl.info[a];
     char sub[48];
     sub[0] = 0;
+    t->markw = pl_full(a) ? rowmenu_text_end(RM_MORE_RIGHT, 0) - LIST_TEXT_X
+                          : 0; /* (the tick's room: the callers clear fit) */
     if (a < pl_v()) {
         grid_set(t, TR(a ? "Favorites" : "playlist_create"), sub, 0);
         return;
@@ -396,6 +405,9 @@ static int pl_on_paint(void *ctx, void *e) {
                         pl.select ? SG_SEL_COL : 0, !pl.select && !pl_v(), pl_tile_of, (void *)0);
         if (pl_v() && r0 == 0) pl_plus(canvas, LIST_ART_Y - co);
         if (pl_v() && r0 <= 1 && r1 >= 1) pl_star(canvas, LIST_ROW_H + LIST_ART_Y - co);
+        for (a = r0; pick.tick && a <= r1; ++a) /* the picker's tick where the "..." would be */
+            if (pl_full(a))
+                rowmenu_paint_bmp(canvas, pick.tick, RM_MORE_RIGHT, 0, a * LIST_ROW_H - co, LIST_ROW_H, GRID_VIEW_H);
     } else if (r1 >= r0) {
         last = (r1 + 1) * GRID_COLS;
         if (last > (int)pl.count) last = (int)pl.count;
@@ -442,9 +454,11 @@ static void pl_scan_src(info_t *in, void *rec) {
 
 static void pl_scan(int i) {
     info_t *in = &pl.info[i];
-    int n, miss;
+    int n, miss, got;
     void *list;
-    if (i < pl_v()) { /* the picker's New playlist and Favourites rows have nothing to read */
+    if (i <
+        pl_v()) { /* the picker's New playlist row has nothing to read; Favourites only what it holds of the songs being added */
+        if (i == 1) in->has = picker_in_fav();
         in->scanned = 1;
         return;
     }
@@ -457,10 +471,11 @@ static void pl_scan(int i) {
         return;
     }
     *(int *)(CLASSINFO + 4) = pl_id(i);
-    loadLocalClassList(CLASS_PLAYLIST_SONGS);
+    got = loadLocalClassList(CLASS_PLAYLIST_SONGS);
     list = *(void **)PDEQ_SHOWLIST;
     n = list ? (int)deque_size(list) : 0;
     in->songs = n;
+    in->has = pick.on && got > 0 ? picker_in(list) : 0;
     in->nk = grid_mosaic_keys(list, pl.albums, in->key,
                               &miss); /* patch/grid.c: shared with the Songs page's playlist header */
     in->scanned = miss ? PL_SCAN_MISS : 1;
@@ -752,7 +767,8 @@ static void pl_load(void) {
             pl.info = pl.count ? calloc(pl.count, sizeof(info_t)) : (info_t *)0;
             if (pl.count && !pl.info) pl.count = 0;
             for (i = 0; pl.info && i < pl_v(); ++i)
-                pl.info[i].scanned = 1; /* New playlist, Favourites: nothing to read */
+                pl.info[i].scanned =
+                    !i; /* New playlist: nothing to read; Favourites: the loader reads what it holds (pl_scan) */
             grid_placeholder(&pl.g);
         }
         free(oldord);
@@ -802,7 +818,8 @@ static void pl_reorder(void) {
         const info_t *from = &pl.info[k < v ? k : v + inv[pl_slot(k - v)]];
         int j;
         for (j = 0; j < 4; ++j) fresh[k].key[j] = from->key[j];
-        fresh[k].nk = from->nk, fresh[k].songs = from->songs, fresh[k].scanned = from->scanned;
+        fresh[k].nk = from->nk, fresh[k].songs = from->songs, fresh[k].scanned = from->scanned,
+        fresh[k].has = from->has;
     }
     free(pl.info);
     pl.info = fresh;
@@ -846,7 +863,7 @@ static int pl_item_of(void *e) {
  * stock Playlists page's row handler (@0x53d300, mode 0): the name for the page's title, the id into classinfo[1], then the stock Songs page with the
  * playlist class. Back returns here. */
 static void pl_create(void);
-static void pl_pick_add(int id);
+static void pl_pick_add(int id, int have);
 static void pl_pick_later(int id);
 static void pl_new_later(int id, const char *name);
 
@@ -865,8 +882,10 @@ static void pl_open(int i) {
     if (pl_v()) { /* the picker: New playlist (row 0), Favourites (row 1), or the add to that playlist */
         if (i == 0)
             pl_create();
+        else if (pl_full(i)) /* every song being added is there: said, and the picker stays for another choice */
+            pod_toast(TR(i == 1 ? "Already in Favorites" : "Already in Playlist"));
         else
-            pl_pick_add(i == 1 ? PICKER_FAVOURITES : pl_id(i));
+            pl_pick_add(i == 1 ? PICKER_FAVOURITES : pl_id(i), pl.info[i].has);
         return;
     }
     rec = pl_rec(i);
@@ -1081,9 +1100,9 @@ static void pl_named(const char *name) {
 }
 
 /* The picker's add (patch/picker.c: batch_add_file, the message), then the page closes as the stock picker's handler closes its window (window_close on the row's window). */
-static void pl_pick_add(int id) {
+static void pl_pick_add(int id, int have) {
     void *win = pl.win;
-    picker_add(id);
+    picker_add(id, have);
     if (win) window_close(win);
 }
 
@@ -1093,7 +1112,7 @@ static void pl_pick_add(int id) {
 static int pl_pick_fire(const void *unused) {
     (void)unused;
     pick.timer = 0;
-    if (pick.on && pl.win) pl_pick_add(pick.id);
+    if (pick.on && pl.win) pl_pick_add(pick.id, 0);
     return RET_OK;
 }
 
@@ -1101,7 +1120,7 @@ static void pl_pick_later(int id) {
     if (pick.timer) return;
     pick.id = id;
     pick.timer = timer_add(pl_pick_fire, (void *)0, PL_PICK_MS);
-    if (!pick.timer) pl_pick_add(id); /* no timer: now */
+    if (!pick.timer) pl_pick_add(id, 0); /* no timer: now */
 }
 
 /* The new playlist's own page (empty: its Add Songs row, patch/songs.c), as a tap on its row opens it; PL_PICK_MS after the keyboard's Done, for the reason pl_pick_later waits.
@@ -1359,7 +1378,8 @@ static int pl_on_destroy(void *ctx, void *e) {
     m1_timer_stop(&pick.timer);
     m1_timer_stop(&pl_new.timer);
     if (pick.star) bitmap_destroy(pick.star);
-    pick.star = (void *)0;
+    if (pick.tick) bitmap_destroy(pick.tick);
+    pick.star = pick.tick = (void *)0;
     if (pick.on) { /* the picker's page: its copies freed, the page below it (if there was one) as it was */
         pick.on = 0;
         picker_release();
@@ -1435,6 +1455,7 @@ static int pl_open_page(const lib_src_t *src) {
     m1_sel_init(&pl.sel, pl.win, pl.back, pl.title, pl.btn_selall, pl.bar, pl.del, (void *)0, (void *)0,
                 (void *)0); /* the marks: all or none (no marks: no select mode) */
     if (pl_v() && !pick.star) pick.star = pl_make_star();
+    if (pl_v() && !pick.tick) pick.tick = rowmenu_make_glyph(pl.win, "sg_pdone", SG_HANDLE_RGB);
     pl.list = pl_v() || !pl_use_grid(); /* the picker is always the list (the saved choice is the page's own) */
     pl_shape(pl.list);
     if (pl.src) { /* read-only remote playlists: no list-plus button (New Playlist, Import, Export, Delete Playlists, Clean Up are the stock library's), the title runs on */

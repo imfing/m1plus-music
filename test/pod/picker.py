@@ -3,7 +3,7 @@ and the marks, shows the Playlists page as a list with "New playlist" first and 
 through its own stock queries, adds with the stock batch_add_file as the stock row handler does (class, 0xf00b, the list, the selection, the playlist id), says the
 stock message and closes; New playlist makes the playlist on the keyboard's Done and adds to it; Back adds nothing; where the page cannot open the caller gets -1 (the
 stock picker is its fallback, tested in test/pod/songs.py)."""
-import importlib.util, os, sys
+import importlib.util, os, struct, sys
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
 
 
@@ -32,6 +32,7 @@ def caller(PL, windows=None):
     m.setword(SHOWLIST, m.new_deque(m.songs))
     m.u.mem_write(NAV_TITLE, b'Songs title\0'); m.setword(G_CLASS, CLS); m.setword(CLASSINFO, CLS); m.setword(CLASSINFO + 4, 77)
     m.setword(SEL_VEC, m.alloc(8))   # the stock vector exists
+    m.class_lists[0xf00a] = []   # Favourites empty (the picker reads it for its tick)
     m.sel = m.alloc(8); m.u.mem_write(m.sel, bytes([0b00001010]))
     return m
 
@@ -245,4 +246,72 @@ def run(ctx):
     m.windows.clear()
     r, calls = open_picker(m)
     expect(r == 1, 'and a picker opens afterwards')
+    destroy(m)
+
+    # 8. Already there: a row that holds every song being added (by path and CUE span) shows the Add Songs page's grey tick where the "..." would be, its texts end before it,
+    #    and a tap says so and adds nothing (the picker stays); a row that holds some adds as before and says how many of them were added
+    import mod_icons
+    PX = O['RM_DOTS_PX']
+    si = mod_icons.songs_images()
+
+    def there(fav=True, marks=0b00001010, folder=None):
+        m = caller(PL)
+        m.images['sg_pdone'] = (PX, PX, b''.join(struct.pack('<4B', c, c, c, 255) for c in si['sg_pdone'].getchannel('A').tobytes()))   # (the red channel is the coverage)
+        m.songs = [m.record(title=f'S{i}', path=f'/mnt/mmc/m/{i}/1.flac', rid=100 + i) for i in range(6)]   # the playlists' paths: rows 1 and 3 are in Road Trip, row 1 in Late Night
+        if folder is not None: m.setword(m.songs[folder] + O['REC_TYPE'], 4)   # a Folders page folder (stock adds its direct audio files)
+        m.setword(SHOWLIST, m.new_deque(m.songs)); m.u.mem_write(m.sel, bytes([marks]))
+        if fav: m.fav_rows = [(f'{i}.flac', f'/mnt/mmc/m/{i}/1.flac', f'S{i}') for i in (1, 3, 5)]
+        open_picker(m); PL.settle(m)
+        return m
+
+    def ticks(m):
+        blits, texts, styles = PL.paint(m)
+        got = []
+        for b in blits:
+            if b[2][2:] == (PX, PX) and b[0] in m.bitmaps:
+                data = m.bitmaps[b[0]][0]
+                if struct.unpack('<I', bytes(m.u.mem_read(data + 4 * (PX * (PX // 2) + PX // 2), 4)))[0] & 0xffffff == O['SG_HANDLE_RGB']:
+                    got.append(((b[2][1] - PL.TOP) // ROW, b[2][0]))
+        widths = {t: w for (t, (x, y, w, h)), s in zip(texts, styles) if s == 'label_row_title'}
+        return sorted(got), widths
+
+    m = there()
+    got, widths = ticks(m)
+    expect([r for r, x in got] == [1, 4] and all(x >= O['LIST_TEXT_X'] + widths['Road Trip'] for r, x in got),
+           f'the grey tick on Favorites and Road Trip (both hold rows 1 and 3), not on Late Night (one of them) or Focus, right of the texts ({got})')
+    expect(widths['Road Trip'] < widths['Late Night'] == widths['Focus'] == O['LIST_TEXT_W'] and widths['Favorites'] == widths['Road Trip'],
+           f'a ticked row\'s texts end before the tick; the others run to LIST_TEXT_W ({widths})')
+    expect(record_ok(m), 'the browsing record is put back after the Favourites query')
+    for y, key in ((4, 'Already in Playlist'), (1, 'Already in Favorites')):
+        m.calls = []
+        calls = PL.tap(m, 100, PL.TOP + y * ROW + 20)
+        expect([c for c in calls if c[0] == 'toast'] == [('toast', key, 1, 2000)] and not [c for c in calls if c[0] in ('batch_add_file', 'window_close', 'select_recordinit')],
+               f'a tap on a ticked row: "{key}", nothing added, the picker stays')
+    calls = PL.tap(m, 100, PL.TOP + 3 * ROW + 20)
+    add = [c for c in calls if c[0] == 'batch_add_file']
+    expect(len(add) == 1 and add[0][5] == 2 and add[0][6] == [1, 3] and ('toast', 'Added 1 of 2 songs', 1, 2000) in calls and ('window_close', m.window) in calls,
+           f'a tap on Late Night (holds one of the two): the add as before (stock skips the one there), "Added 1 of 2 songs", the page closes ({add})')
+    destroy(m)
+
+    m = there(fav=False, marks=0b00100000)   # row 5 alone: Focus holds it, Favourites is empty
+    got, widths = ticks(m)
+    expect([r for r, x in got] == [2] and widths['Road Trip'] == widths['Favorites'] == O['LIST_TEXT_W'], f'the tick follows the songs being added: Focus only ({got})')
+    calls = PL.tap(m, 100, PL.TOP + ROW + 20)
+    expect(('toast', 'msg_addfavsuccess', 1, 2000) in calls and [c for c in calls if c[0] == 'batch_add_file'], 'and the add is the stock one')
+    destroy(m)
+
+    m = there(folder=3)   # rows 1 and 3, row 3 a folder: the songs being added are not the rows, so no row is said to hold them
+    got, widths = ticks(m)
+    calls = PL.tap(m, 100, PL.TOP + 3 * ROW + 20)
+    expect(got == [] and ('toast', 'msg_addplaylistsuccess', 1, 2000) in calls and [c for c in calls if c[0] == 'batch_add_file'],
+           f'a folder among the marks: no tick, a tap on Late Night adds with the stock message, not "Added 1 of 2 songs" ({got})')
+    destroy(m)
+
+    m = caller(PL)   # Now Playing's one song (picker_open_rec): Road Trip and Late Night both hold it
+    m.images['sg_pdone'] = (PX, PX, b''.join(struct.pack('<4B', c, c, c, 255) for c in si['sg_pdone'].getchannel('A').tobytes()))
+    m.setword(SHOWLIST, 0)
+    m.call(PSYMS['picker_open_rec'], a0=CLS, a1=m.record(title='Playing', path='/mnt/mmc/m/1/1.flac', rid=900), count=60000000)
+    PL.settle(m)
+    got, widths = ticks(m)
+    expect([r for r, x in got] == [3, 4], f'one record (Now Playing): the tick on both playlists that hold it ({got})')
     destroy(m)

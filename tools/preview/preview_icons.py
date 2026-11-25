@@ -428,12 +428,13 @@ def mosaic(rgbs, size, r):
     for q, k in enumerate(quad): im.paste(sample_cover(rgbs[k], h), ((q & 1) * h, (q >> 1) * h))
     return rounded(im, r)
 
-def playlists_grid(s, menu=False, pressed=3, list_mode=False, row_pressed=1, select=None, pick=False, order='az'):
+def playlists_grid(s, menu=False, pressed=3, list_mode=False, row_pressed=1, select=None, pick=False, order='az', have=()):
     """ui/m1plus_playlists.bin as patch/playlists.c paints it: the Albums grid's cells (a mosaic cover, the playlist's name in 18 px, "N tracks" in
     15 px #AAAAAA) under a navbar with the "..." button; menu=True: the popup card open (row `pressed` held down) under the button. select: the set of marked
     playlists (indexes into PLAYLISTS) in select mode (the menu's Delete Playlists): the glass x, "N Selected", Select All, a mark on every cell or row (the list's rows
     and texts 30 px to the right), the bar with the Delete pill. The navbar is list-plus | "..." | Now Playing; menu=True (or 'more') opens the shared view-sort card (patch/viewsort.c) of the "...": Grid, List,
-    Name; menu='actions' the list-plus button's: New Playlist, Import, Export, Delete Playlists (`pressed`: the row held down, from the top). order: the page's order, the firmware's default 'az' (Name A-Z) or 'za'; the card ticks Name with its direction line."""
+    Name; menu='actions' the list-plus button's: New Playlist, Import, Export, Delete Playlists (`pressed`: the row held down, from the top). order: the page's order, the firmware's default 'az' (Name A-Z) or 'za'; the card ticks Name with its direction line.
+    have (the picker): the rows (playlist names, or 'Favorites') that hold every song being added: the grey tick where the "..." would be, the texts ending before it."""
     pls = sorted(PLAYLISTS, key=lambda p: p[0].casefold(), reverse=order == 'za')
     o = offsets(); W_, H_ = 320, 450
     im = Image.new('RGBA', (W_, H_), (0, 0, 0, 255))
@@ -466,9 +467,16 @@ def playlists_grid(s, menu=False, pressed=3, list_mode=False, row_pressed=1, sel
         view_card(s, im, rows, 'vs_glass3', (2,), pressed)
     if list_mode:   # 64 px rows as patch/grid.c grid_list_paint draws them: 52 px mosaic, name 21 px, count 18 px #AAAAAA, hairline, the pressed row
         d = ImageDraw.Draw(im); rh = o['LIST_ROW_H']
-        def lcut(text, px):
-            while s.font.width(text, px) > o['LIST_TEXT_W'] - shift and len(text) > 1: text = text[:-2] + '…' if text.endswith('…') else text[:-1] + '…'
+        import preview_songs as PS
+        tick_x = PS.dots_x(o['RM_MORE_RIGHT'], False)
+        def lcut(text, px, w=o['LIST_TEXT_W']):
+            while s.font.width(text, px) > w - shift and len(text) > 1: text = text[:-2] + '…' if text.endswith('…') else text[:-1] + '…'
             return text
+        def tick(y, key):   # the picker's tick (patch/playlists.c pick.tick: the baked sg_pdone in #8E8E93, rowmenu_paint_bmp at RM_MORE_RIGHT); the text width it leaves (rowmenu_text_end)
+            if key not in have: return o['LIST_TEXT_W']
+            mk = Image.new('RGBA', (PS.DOTS_PX,) * 2, (0x8E, 0x8E, 0x93, 0)); mk.putalpha(s.img('sg_pdone').getchannel('A'))
+            im.alpha_composite(mk, (tick_x, y + (rh - 1 - PS.DOTS_PX) // 2))
+            return tick_x + PS.INK_X - PS.INK_GAP - o['LIST_TEXT_X']
         rows = [(s.strings.get('New playlist', 'New playlist'), None, []), (s.strings.get('Favorites', 'Favorites'), None, [])] + pls if pick else pls   # the picker's first rows make a playlist and add to Favourites: no count
         for r, (name, tracks, albums) in enumerate(rows):
             y = 50 + o['SG_TITLE_H'] + r * rh   # the rows start under the large title block
@@ -486,12 +494,13 @@ def playlists_grid(s, menu=False, pressed=3, list_mode=False, row_pressed=1, sel
                     pts = [((12 + (10.5 if i % 2 == 0 else 4.75) * math.sin(i * math.pi / 5)) * k, (12.5 - (10.5 if i % 2 == 0 else 4.75) * math.cos(i * math.pi / 5)) * k) for i in range(10)]
                     big = Image.new('L', (24 * k, 24 * k), 0); ImageDraw.Draw(big).polygon(pts, fill=255)
                     im.paste(Image.new('RGBA', (24, 24), (255, 255, 255, 255)), (bx, by), big.resize((24, 24), Image.LANCZOS))
-                s.text(im, o['LIST_TEXT_X'] + shift, y + (rh - o['LIST_TITLE_H']) // 2 + o['LIST_TITLE_H'] / 2, lcut(name, 20), 20)
+                s.text(im, o['LIST_TEXT_X'] + shift, y + (rh - o['LIST_TITLE_H']) // 2 + o['LIST_TITLE_H'] / 2, lcut(name, 20, tick(y, 'Favorites') if r == 1 else o['LIST_TEXT_W']), 20)
                 continue
             im.alpha_composite(mosaic([ALBUMS[i][2] for i in albums if ALBUMS[i][2]], o['LIST_ART'], o['LIST_R']), (o['LIST_ART_X'] + shift, y + o['LIST_ART_Y']))
-            s.text(im, o['LIST_TEXT_X'] + shift, y + o['LIST_TITLE_Y'] + o['LIST_TITLE_H'] / 2, lcut(name, 20), 20)
+            tw = tick(y, name) if pick else o['LIST_TEXT_W']
+            s.text(im, o['LIST_TEXT_X'] + shift, y + o['LIST_TITLE_Y'] + o['LIST_TITLE_H'] / 2, lcut(name, 20, tw), 20)
             count = s.strings.get('%d track' if tracks == 1 else '%d tracks', '%d tracks').replace('%d', str(tracks))
-            if tracks is not None: s.text(im, o['LIST_TEXT_X'] + shift, y + o['LIST_SUB_Y'] + o['LIST_SUB_H'] / 2, lcut(count, 18), 18, (0xAA, 0xAA, 0xAA))
+            if tracks is not None: s.text(im, o['LIST_TEXT_X'] + shift, y + o['LIST_SUB_Y'] + o['LIST_SUB_H'] / 2, lcut(count, 18, tw), 18, (0xAA, 0xAA, 0xAA))
             if select is not None: mark(o['LIST_ART_X'] + (shift - 6 - o['SG_MARK']) // 2, y + (rh - o['SG_MARK']) // 2, r)
         if menu: card()
         if select is not None: bar()

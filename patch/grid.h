@@ -54,6 +54,7 @@ typedef struct {
         cov; /* a playlist tile: the sig of the chosen cover it was made for (plc_t.sig), 0 the mosaic; the owner compares it to see a cover change */
     int nm; /* a chosen cover with the Name on Cover flag (grid_plc sets it, grid_free_art clears it): grid_plc_name draws the playlist's name on it */
     int nochev; /* list mode with chevrons: this row opens nothing (a dimmed Not available result): no chevron, the text runs to LIST_TEXT_W */
+    int markw; /* list mode without chevrons: > 0, the texts end this far after LIST_TEXT_X (the page paints a mark beyond them: the picker's tick); the owner clears fit when it changes */
 } grid_tile_t;
 
 typedef struct {

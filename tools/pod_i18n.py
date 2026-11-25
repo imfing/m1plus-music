@@ -1687,6 +1687,14 @@ TEXT = dict([
        'Ninguno', 'Nessuno', 'ไม่เลือกเลย', 'Odznacz', 'Снять все', 'Зняти все'),
     _t('Add to Playlist', '加入歌单', '加入歌單', 'リストに追加', '목록에 추가', 'Ajouter', 'Hinzufügen',
        'Añadir', 'Aggiungi', 'เพิ่ม', 'Dodaj', 'Добавить', 'Додати'),   # (the stock key's texts are longer than a 145 px pill holds beside its glyph: German 30 characters, Japanese 144 px)
+    # the Add to Playlist picker (patch/playlists.c, patch/picker.c): a tap on a row that holds every song being added, and an add where some were there already
+    # (two or more songs: a plural-form-free text in pl, ru, uk)
+    _t('Already in Playlist', '已在歌单中', '已在歌單中', 'すでにプレイリストにあります', '이미 플레이리스트에 있음', 'Déjà dans la playlist', 'Schon in der Playlist',
+       'Ya está en la lista', 'Già nella playlist', 'มีในเพลย์ลิสต์แล้ว', 'Już na playliście', 'Уже в плейлисте', 'Вже в плейлисті'),
+    _t('Already in Favorites', '已在收藏中', '已在收藏中', 'すでにお気に入りにあります', '이미 즐겨찾기에 있음', 'Déjà dans les favoris', 'Schon in den Favoriten',
+       'Ya está en Favoritos', 'Già nei preferiti', 'มีในรายการโปรดแล้ว', 'Już w ulubionych', 'Уже в избранном', 'Вже в обраному'),
+    _t('Added %d of %d songs', '已添加 %d 首（共 %d 首）', '已加入 %d 首（共 %d 首）', '%d/%d曲を追加しました', '%d/%d곡 추가됨', '%d titres sur %d ajoutés', '%d von %d Titeln hinzugefügt',
+       '%d de %d canciones añadidas', '%d brani su %d aggiunti', 'เพิ่มแล้ว %d จาก %d เพลง', 'Dodano utwory: %d z %d', 'Добавлено песен: %d из %d', 'Додано пісень: %d з %d'),
     _t('Delete', '删除', '刪除', '削除', '삭제', 'Supprimer', 'Löschen',
        'Eliminar', 'Elimina', 'ลบ', 'Usuń', 'Удалить', 'Видалити'),   # (the Wi-Fi Transfer page's, WEB_KEYS)
     _t('%d Selected', '已选 %d 项', '已選 %d 項', '%d 件選択', '%d개 선택', '%d choisis', '%d gewählt',

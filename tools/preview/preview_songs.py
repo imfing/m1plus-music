@@ -60,7 +60,7 @@ def section(t):
 
 
 def dots(s):
-    """The row's "..." as the payload makes it (patch/rowmenu.c rm_make_dots): #8C8C8C with the image's coverage (cc_decode flattens it over black: the red channel) as the alpha."""
+    """The row's "..." as the payload makes it (patch/rowmenu.c rowmenu_make_glyph): #8C8C8C with the image's coverage (cc_decode flattens it over black: the red channel) as the alpha."""
     g = s.img('rm_dots').convert('RGBA')
     flat = Image.new('RGBA', g.size, (0, 0, 0, 255)); flat.alpha_composite(g)
     out = Image.new('RGBA', g.size, DOTS_RGB + (255,)); out.putalpha(flat.getchannel('R'))

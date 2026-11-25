@@ -74,6 +74,10 @@ On an album or Songs list, tap a track's **…** or long-press its row. The menu
 **Pin Song**, **Add to Playlist**, **Favorite** and **Get Info**, then **Play Next** and **Play After**. A
 favorited track offers **Undo Favorite** instead. In a playlist, **Remove from Playlist** (in red) is the last choice.
 
+**Add to Playlist** lists **New playlist**, **Favorites** and your playlists. A grey check marks the ones that already
+have every song you are adding; tapping one says so and adds nothing. When a playlist has only some of them, the
+rest are added and the message says how many.
+
 ### Album actions
 
 Touch and hold an album on **Albums**, the **Recently Added** album grid, **Recently Played** or a Home pin for

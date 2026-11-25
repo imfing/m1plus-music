@@ -27,6 +27,9 @@ static struct {
     int cls; /* the browsing class of the list: batch_add_file's first argument, as the stock picker's context carries it */
     int cls0, ci[2];
     char title[NAV_TITLE_SIZE];
+    unsigned *keys; /* so_song_key of each song being added (the marked rows), two words each, sorted, no key twice */
+    unsigned nkeys;
+    unsigned char *seen; /* picker_in: a bit for each key, the ones found in the list it reads */
 } pk __attribute__((section(".scratch")));
 
 void picker_restore(void) {
@@ -41,7 +44,72 @@ void picker_release(void) {
     picker_restore();
     if (pk.list) deque_destroy(pk.list);
     free(pk.sel);
+    free(pk.keys);
+    free(pk.seen);
     memset(&pk, 0, sizeof pk);
+}
+
+static int pk_less(const unsigned *a, const unsigned *b) { return a[0] != b[0] ? a[0] < b[0] : a[1] < b[1]; }
+
+/* The keys of the marked rows of the copy, sorted (Shell sort: no qsort among the imports) and each once. Without memory there are none: no row is marked as holding
+ * the songs, the add is as before. Nor where a marked row is not a song (REC_TYPE 8): the Folders page's folders, playlist files and storages, which batch_add_file
+ * turns into a folder's direct audio files or nothing, so the songs being added are not the rows. */
+static void pk_make_keys(void) {
+    unsigned i, j, n = 0, gap, *k;
+    for (i = 0; i < pk.count; ++i)
+        if (pk.sel[i / 8] >> (i % 8) & 1) {
+            if (I(deque_at(pk.list, i), REC_TYPE) != 8) return;
+            ++n;
+        }
+    k = n ? calloc(2 * n, sizeof *k) : (unsigned *)0;
+    pk.seen = k ? calloc((n + 7) / 8, 1) : (unsigned char *)0;
+    if (!pk.seen) {
+        free(k);
+        return;
+    }
+    for (i = j = 0; i < pk.count; ++i)
+        if (pk.sel[i / 8] >> (i % 8) & 1) so_song_key(deque_at(pk.list, i), &k[2 * j++]);
+    for (gap = n / 2; gap; gap /= 2)
+        for (i = gap; i < n; ++i)
+            for (j = i; j >= gap && pk_less(&k[2 * j], &k[2 * (j - gap)]); j -= gap) {
+                unsigned a = k[2 * j], b = k[2 * j + 1];
+                k[2 * j] = k[2 * (j - gap)], k[2 * j + 1] = k[2 * (j - gap) + 1];
+                k[2 * (j - gap)] = a, k[2 * (j - gap) + 1] = b;
+            }
+    for (i = j = 0; i < n; ++i) /* (a song marked twice, as a list can hold it, is one song being added) */
+        if (!j || pk_less(&k[2 * (j - 1)], &k[2 * i])) k[2 * j] = k[2 * i], k[2 * j + 1] = k[2 * i + 1], ++j;
+    pk.keys = k, pk.nkeys = j;
+}
+
+unsigned picker_count(void) { return pk.on ? pk.nkeys : 0; }
+
+int picker_in(void *songs) {
+    unsigned i, n = songs ? deque_size(songs) : 0, found = 0;
+    if (!pk.on || !pk.nkeys) return 0;
+    memset(pk.seen, 0, (pk.nkeys + 7) / 8);
+    for (i = 0; i < n && found < pk.nkeys; ++i) {
+        unsigned h[2], lo = 0, hi = pk.nkeys;
+        so_song_key(deque_at(songs, i), h);
+        while (lo < hi) { /* the first key not below h */
+            unsigned mid = (lo + hi) / 2;
+            if (pk_less(&pk.keys[2 * mid], h))
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo < pk.nkeys && pk.keys[2 * lo] == h[0] && pk.keys[2 * lo + 1] == h[1] &&
+            !(pk.seen[lo / 8] >> (lo % 8) & 1))
+            pk.seen[lo / 8] |= (unsigned char)(1u << (lo % 8)), ++found;
+    }
+    return (int)found;
+}
+
+int picker_in_fav(void) {
+    int n;
+    if (!pk.on || !pk.nkeys) return 0;
+    n = loadLocalClassList(CLASS_FAV) > 0 ? picker_in(*(void **)PDEQ_SHOWLIST) : 0;
+    picker_restore();
+    return n;
 }
 
 /* The picker over `list`, a copy that is the picker's from here (0 where it could not be made): count rows, the marks in sel. */
@@ -56,6 +124,7 @@ static int pk_open(int cls, void *list, unsigned count, const unsigned char *sel
     }
     memcpy(pk.sel, sel, bytes);
     pk.count = count, pk.cls = cls;
+    pk_make_keys();
     pk.cls0 = *(int *)G_CLASS_TYPE;
     memcpy(pk.ci, (void *)CLASSINFO, sizeof pk.ci);
     memcpy(pk.title, (void *)NAV_TITLE, sizeof pk.title);
@@ -80,9 +149,11 @@ int picker_open_rec(int cls, void *rec) {
 
 /* The stock row handler's sequence: the selection into the stock vector, batch_add_file (duplicates skipped by checkPlayListExist; the rows of the copy get the new
  * ids), the message. A selection that cannot be made is msg_addfailed. PICKER_FAVOURITES is the stock Add button's Favourites choice (@0x5281c8):
- * batch_add_file(class, 0xf00a, list, vector, 0), then msg_addfavsuccess. */
-void picker_add(int playlist) {
-    int fav = playlist == PICKER_FAVOURITES;
+ * batch_add_file(class, 0xf00a, list, vector, 0), then msg_addfavsuccess. Where some of the songs were there already (have of picker_count), the message says how many
+ * of them were added ("Added 3 of 5 songs"): stock skips the others. */
+void picker_add(int playlist, int have) {
+    int fav = playlist == PICKER_FAVOURITES, n = (int)picker_count();
+    char msg[96];
     if (!pk.on || pk.done) return;
     pk.done = 1;
     if (!so_selection(pk.count, pk.sel)) {
@@ -90,5 +161,9 @@ void picker_add(int playlist) {
         return;
     }
     batch_add_file(pk.cls, fav ? CLASS_FAV : CLASS_PLAYLISTS, pk.list, *(void **)SEL_VEC, fav ? 0 : playlist);
-    pod_toast(TR(fav ? "msg_addfavsuccess" : "msg_addplaylistsuccess"));
+    if (have > 0 && have < n) {
+        snprintf(msg, sizeof msg, TR("Added %d of %d songs"), n - have, n);
+        pod_toast(msg);
+    } else
+        pod_toast(TR(fav ? "msg_addfavsuccess" : "msg_addplaylistsuccess"));
 }

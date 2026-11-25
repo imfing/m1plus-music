@@ -18,8 +18,19 @@ int picker_open_rec(int cls, void *rec);
 /* picker_add's argument for the Favourites row (a playlist id is never negative). */
 #define PICKER_FAVOURITES (-1)
 
-/* The playlist's songs (or Favourites): batch_add_file on the copy and the marks, then the stock message. Once per picker. Playlists page only. */
-void picker_add(int playlist);
+/* The playlist's songs (or Favourites): batch_add_file on the copy and the marks, then the stock message, or "Added N of M songs" where have (picker_in of the playlist,
+ * 0 when not read) of the M were there already. Once per picker. Playlists page only. */
+void picker_add(int playlist, int have);
+
+/* How many songs the picker adds (the marked rows, a song marked twice once); 0 with no picker. */
+unsigned picker_count(void);
+
+/* How many of the songs being added the stock song list `songs` holds (by so_song_key: path and CUE span, as stock's duplicate check). 0 with no picker. Playlists page
+ * only: its scan of each playlist, so the row of a playlist that holds them all shows the tick (docs/modules/picker.md "Already there"). */
+int picker_in(void *songs);
+
+/* The same for Favourites: its stock query (loadLocalClassList(0xf00a), into *pdeq_showlist), then the browsing record put back. */
+int picker_in_fav(void);
 
 /* The browsing record as it was when the picker opened (after each stock query the picker runs). No-op when no picker is open. Playlists page only. */
 void picker_restore(void);

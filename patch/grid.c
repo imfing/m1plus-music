@@ -523,8 +523,10 @@ void grid_list_paint(void *canvas, grid_t *g, void *st_title, void *st_sub, int 
                           (pass                   ? LIST_SUB_Y
                            : tile_of(ctx, r)->mid ? (LIST_ROW_H - LIST_TITLE_H) / 2
                                                   : LIST_TITLE_Y),
-                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV : LIST_TEXT_W) - shift - inset -
-                          (pass ? tile_of(ctx, r)->subx : 0),
+                      (chev && !tile_of(ctx, r)->nochev ? LIST_TEXT_W_CHEV
+                       : tile_of(ctx, r)->markw         ? tile_of(ctx, r)->markw
+                                                        : LIST_TEXT_W) -
+                          shift - inset - (pass ? tile_of(ctx, r)->subx : 0),
                       pass ? LIST_SUB_H : LIST_TITLE_H, 0);
     }
 }

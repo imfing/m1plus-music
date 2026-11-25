@@ -27,6 +27,10 @@ void pod_open_player(void *queue, int idx, int cls);
 /* A deque holding a copy of rec alone (as the stock queries push rows); NULL without memory. The caller destroys it. */
 void *so_row_deque(void *rec);
 
+/* A song's key as stock's playlist duplicate check sees it: its path and its CUE span (REC_CUE_START / REC_CUE_END: a CUE image's tracks share one path) as two FNV words.
+ * The Add Songs page (patch/songs.c) and the picker (patch/picker.c) keep a playlist's songs as these, not as strings. */
+void so_song_key(void *rec, unsigned h[2]);
+
 /* The stock selection vector filled from the bitset: select_recordinit(count), set_selectindex(i) for each marked row. 0 when there is no vector. */
 int so_selection(unsigned count, const unsigned char *sel);
 

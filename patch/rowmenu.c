@@ -55,9 +55,9 @@ void rowmenu_hold_move(const m1_tap_t *t, void *e) {
     if (rm_hold.timer && !m1_tap_near(t, e)) rowmenu_hold_stop();
 }
 
-/* The "..." as a bitmap: the image rm_dots is white on transparent (cc_decode flattens it over black, so the red channel is the coverage), the bitmap's alpha is that coverage and its
- * colour RM_DOTS_RGB. */
-static void *rm_make_dots(void *win) {
+/* A glyph of the "..."'s size as a bitmap: the image is white on transparent (cc_decode flattens it over black, so the red channel is the coverage), the bitmap's alpha is that
+ * coverage and its colour rgb. The "..." is rm_dots in RM_DOTS_RGB. */
+void *rowmenu_make_glyph(void *win, const char *image, unsigned rgb) {
     unsigned *px, i;
     void *b = bitmap_create_ex(RM_DOTS_PX, RM_DOTS_PX, RM_DOTS_PX * 4, BITMAP_RGBA8888);
     int ok;
@@ -68,8 +68,8 @@ static void *rm_make_dots(void *win) {
         bitmap_destroy(b);
         return (void *)0;
     }
-    ok = cc_decode(win, "rm_dots", 1, RM_DOTS_PX, 1, px);
-    for (i = 0; ok && i < RM_DOTS_PX * RM_DOTS_PX; ++i) px[i] = (px[i] & 0xff) << 24 | RM_DOTS_RGB;
+    ok = cc_decode(win, image, 1, RM_DOTS_PX, 1, px);
+    for (i = 0; ok && i < RM_DOTS_PX * RM_DOTS_PX; ++i) px[i] = (px[i] & 0xff) << 24 | rgb;
     bitmap_unlock_buffer(b);
     if (!ok) {
         bitmap_destroy(b);
@@ -300,7 +300,7 @@ static int rm_bind(rowmenu_t *rm, void *win, int rows, int popup) {
     m1_scrim(rm->scrim, 0);
     m1_show(rm->card, 0);
     if (!ok) return 0;
-    rm->dots = rm_make_dots(win);
+    rm->dots = rowmenu_make_glyph(win, "rm_dots", RM_DOTS_RGB);
     rm->on = rm->dots != (void *)0;
     return rm->on;
 }

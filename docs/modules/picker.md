@@ -1,7 +1,7 @@
 # Add to Playlist picker
 
 **Sources:** `patch/picker.c`, `patch/picker.h` (the add and the copies), `patch/playlists.c` (pick mode),
-`patch/songops.c` (`so_add`), `patch/playmore.c` (`pm_on_addpl`), `PICKER_PINS` in `tools/pod.py`.
+`patch/songops.c` (`so_add`, `so_song_key`), `patch/rowmenu.c` (`rowmenu_make_glyph`), `patch/playmore.c` (`pm_on_addpl`), `PICKER_PINS` in `tools/pod.py`.
 Our own picker replaces the stock one. Add on the Songs page and the album page (`so_add`) opens it,
 and so does Add to playlist on Now Playing's More sheet (`picker_open_rec`, [More menu](playmore.md));
 the stock `playlist_page` in picker mode is only the fallback.
@@ -23,15 +23,33 @@ pressed row `#333334`.
 - Rows 2..n: the playlists, the name and "N tracks" once read (the page's loader, one playlist a tick). A tap adds and closes.
 - Back, or the system back, closes with nothing added; there is no tap-outside (it is a page). Now Playing is not offered.
 
+## Already there
+
+A row (Favourites or a playlist) that holds every song being added shows the Add Songs page's grey tick (`sg_pdone` in `SG_HANDLE_RGB`,
+made by `rowmenu_make_glyph`) where a row's "..." would be (`rowmenu_paint_bmp` at `RM_MORE_RIGHT`). Its texts end where the "..." zone begins
+(`grid_tile_t.markw`, `rowmenu_text_end`). A tap on it toasts "Already in Playlist" / "Already in Favorites" and adds nothing; the picker stays.
+
+- **Which songs.** `picker_open` keys the marked rows of its copy with `so_song_key` (path and CUE span, two FNV words: what stock's duplicate check
+  compares; the Add Songs page keys a playlist the same way), sorted, each once (`pk_make_keys`). `picker_count` is how many.
+  A marked row that is not a song (`REC_TYPE` 8) makes none: the Folders page's folders, playlist files and storages, which
+  `batch_add_file` turns into a folder's direct audio files or nothing. Then no row is ticked and the add's message is stock's.
+- **Which rows.** The loader's scan of a playlist already reads all its songs (`pl_scan`, for the count). In pick mode it also counts the keys that
+  list holds (`picker_in`: a binary search a song, a bit a key so a song the playlist has twice counts once) into `info_t.has`. Favourites (row 1) is
+  scanned too: `picker_in_fav` runs the stock query `loadLocalClassList(0xf00a)` (music only, hook 6) and puts the browsing record back. A row
+  shows the tick once its scan has run, as its count does; a tap before then adds as before.
+- **Some of them.** A tap on a row that holds some adds as before (stock skips the ones there) and toasts "Added N of M songs" (`picker_add`'s
+  `have`) instead of the stock message.
+- `pl_load` keeps the scans while the database is unchanged; the songs being added do not change while the picker is open, so `has` stays right.
+
 ## What it does with a tap
 
 Stock's row handler in picker mode calls `batch_add_file(class, 0xf00b, *pdeq_showlist, *SEL_VEC, playlist id)`
 (the id is the row's `REC_DISC`; it skips songs already in the playlist), shows `msg_addplaylistsuccess`
 in `dialog/msginfo_dialog` and closes the picker's window. `picker_add` does the same, in the same
 order. The prologue of `batch_add_file` and the handler's class, call and 5th-argument words are pinned
-(`PICKER_PINS`). Stock returns nothing the handler tests, so the message is always the success one.
+(`PICKER_PINS`). Stock returns nothing the handler tests, so its message is always the success one; ours says how many were added when the scan found some of the songs there ("Already there").
 
-**Favourites** is the stock Add button's other choice (`dialog/batchadd_dialog` returns 1): `batch_add_file(g_class_type, 0xf00a, *pdeq_showlist, *SEL_VEC, 0)`, then the message `msg_addfavsuccess` in `dialog/msginfo_dialog`. Stock stays on its page afterwards; ours closes the picker, as for a playlist. With nothing selected stock shows `msg_addfailed` first: ours never opens with an empty selection (`so_add`). `picker_add(PICKER_FAVOURITES)` does it on the same copies, with class `0xf00a` and 0 for the id. The words are pinned in `PICKER_PINS`.
+**Favourites** is the stock Add button's other choice (`dialog/batchadd_dialog` returns 1): `batch_add_file(g_class_type, 0xf00a, *pdeq_showlist, *SEL_VEC, 0)`, then the message `msg_addfavsuccess` in `dialog/msginfo_dialog`. Stock stays on its page afterwards; ours closes the picker, as for a playlist. With nothing selected stock shows `msg_addfailed` first: ours never opens with an empty selection (`so_add`). `picker_add(PICKER_FAVOURITES, have)` does it on the same copies, with class `0xf00a` and 0 for the id. The words are pinned in `PICKER_PINS`.
 
 **The copies.** The Playlists page reads every playlist to show its count and mosaic (`loadLocalClassList(0xff13)`), and each read replaces `*pdeq_showlist`, the list
 the add needs. So `picker_open` copies the list (`cc_copy_list`: the page's `count` rows must be the stock list's, else -1) and the marks (the page's bitset)
