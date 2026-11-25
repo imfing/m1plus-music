@@ -180,6 +180,8 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `home-recent-albums` | Recent Albums | `0` off; missing/other on |
 | `keyboard-pinyin` | Chinese (Pinyin) keyboard | `1` on; missing/other off ([keyboard](keyboard.md)) |
 | `keyboard-french` | French (AZERTY) keyboard | `1` on; missing/other off ([keyboard](keyboard.md)) |
+| `keyboard-english` | English keyboard | `0` off; missing/other on ([keyboard](keyboard.md)) |
+| `keyboard-last` | The layer the language key last chose | `0` English, `1` Chinese, `2` French; missing/other: the first keyboard on ([keyboard](keyboard.md)) |
 | `library-genre-split` | Split Genres | The same format as `library-artist-split`; `1` is on with the semicolon alone ([artists](artists.md) "Split Genres") |
 | `library-artist-split` | Split Artists | `0` or missing: off (the default); `1`: on with the default separators (`;` `/` `&` `feat.`); `m<decimal>`: on with that `M1_SPLIT_*` mask (bit k = the k-th separator of the page; `m0`: on, splits nothing); `o<decimal>`: off, keeping that mask (the page writes `m<mask>` and `o<mask>`, so the separators survive an off / on); anything else off ([artists](artists.md) "Split index") |
 | `lockscreen-layout` | Lock Screen > Player Style | `1` Mini Player; missing/other Large Cover (the default); applies the next time the lock screen opens ([lockscreen](lockscreen.md)) |
@@ -364,11 +366,13 @@ the build tag. Stock's page stays under All System Settings.
 ## Keyboards
 
 Settings > General > Keyboards lists the keyboards the on-screen keyboard offers ([keyboard](keyboard.md))
-as three switch rows. **English** is always on: dimmed to 60 % and no tap. **French (AZERTY)**
-(`ACT_KB_FR`, `keyboard-french`) and **Chinese (Pinyin)** (`ACT_KB_ZH`, `keyboard-pinyin`) are normal
-switches, saved atomically (off by default, read each time the keyboard opens). With one on the
+as three switch rows, as on iOS: **English** (`ACT_KB_EN`, `keyboard-english`, on by default),
+**French (AZERTY)** (`ACT_KB_FR`, `keyboard-french`) and **Chinese (Pinyin)** (`ACT_KB_ZH`,
+`keyboard-pinyin`), both off by default. Each is saved atomically and read each time the keyboard
+opens. Any of them can be turned off except the last one on: that row is dimmed to 60 % and takes no
+tap (`kb_only_on`, refreshed after every toggle; `kb_toggle` refuses it too). With two or more on the
 keyboard has a language key (and with Chinese a pinyin layer); turning one off also forgets it as the
-layer the keyboard ended on.
+saved layer (`keyboard-last`).
 
 ## Settings Files
 

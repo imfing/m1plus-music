@@ -6,7 +6,7 @@
 
 Our own on-screen keyboard, built from stock AWTK widgets. It replaces stock's T9 popup
 (`ui/user_keyboard.bin`, laid out 640 px wide in a 320 px popup) wherever we use it, and types
-French (AZERTY) and Chinese when Settings > General > Keyboards > French (AZERTY) or Chinese (Pinyin) is on. No hook, no new import, no
+English, French (AZERTY) and Chinese, as chosen in Settings > General > Keyboards. No hook, no new import, no
 thread; one timer only while the delete key or an accent key is held.
 
 ## Layout
@@ -57,22 +57,28 @@ area effectively fills the 3 px gaps, the 8 px gaps between rows and the pad mar
 
 ## Keyboards setting and the language key
 
-Three switch rows in Settings > General > Keyboards, in iOS order: English (always on), French
-(AZERTY) (`/mnt/data/m1plus/keyboard-french`) and Chinese (Pinyin) (`keyboard-pinyin`); each file
-`1` = on, default off ([settings](settings.md)).
+Three switch rows in Settings > General > Keyboards, in iOS order: English
+(`/mnt/data/m1plus/keyboard-english`, `0` = off, default on), French (AZERTY) (`keyboard-french`)
+and Chinese (Pinyin) (`keyboard-pinyin`) (`1` = on, default off) ([settings](settings.md)). Any of
+them can be turned off except the last one on (`kb_toggle` keeps it; its row is dimmed).
 
-- **Only English:** exactly the keyboard above. No language key, space 163 px, the dictionary and
-  engine never touched.
+- **One keyboard on:** that layer only, no language key, space 163 px. English alone is exactly the
+  keyboard above, the dictionary and engine never touched; French alone opens on AZERTY; Chinese
+  alone opens on the pinyin layer (no shift, so no capitals).
 - **More than one on:** row four is `123 / ABC` (74), the language key `kb_lang` (40), space (120),
   Search. The key is on every page. A tap cycles the layers that are on in the order EN, FR, 中, EN
   and shows the layer the next tap goes to (`FR`, `中`, `EN`; not translated). Tapping it on the 123
   or #+= page also returns to the new layer's letters. If `gpinyin.dat` is missing the Chinese layer
   is not offered; if the engine will not open when its turn comes, the layer leaves the cycle for
   that keyboard and the tap goes on to the next one (the key goes away when one layer is left).
-- The layer the last keyboard ended on is remembered for the session (`kb_memo`). A remembered layer
-  that is off or will not open starts English instead (and memo says English); turning a
-  keyboard's setting off forgets it if it was the memo.
-- A `KB_PASSWORD` field is English only whatever is on or remembered.
+- **English fallback:** with no layer left (only Chinese on, and no dictionary or an engine that will
+  not open) the keyboard is English.
+- The layer the language key last chose is saved in `keyboard-last` (one digit, `L_EN` 0, `L_ZH` 1,
+  `L_FR` 2; atomically, on each tap), so the next keyboard starts there, also after a restart.
+  Nothing saved: the first keyboard on. A saved layer that is off or will not open starts the first
+  one on and the file is removed; turning a keyboard off removes it too if it named that layer.
+- A `KB_PASSWORD` field has one letter layer: English, or French when English is off (English when
+  neither is on). It reads the saved layer but never removes it.
 
 ## Layers
 
@@ -210,8 +216,8 @@ int  keyboard_refocus(placeholder, text_w, flags, text, on_change, on_go);
 
 ### Password mode
 
-`KB_PASSWORD` (Wi-Fi password, [wifi](wifi.md)): English only (no language key, no strip, no engine,
-whatever the setting); the letter page starts lowercase and an emptied field never turns capitals on;
+`KB_PASSWORD` (Wi-Fi password, [wifi](wifi.md)): one letter layer, English or French when English is off
+(no language key, no strip, no engine); the letter page starts lowercase and an emptied field never turns capitals on;
 space is typed anywhere; the text is returned untrimmed; no clear button (the page has an eye); at
 most `KB_PASS_MAX` 127 bytes. The field is masked by the keyboard (one `•` per character, caret
 measured on what is shown), so the host renders nothing. `keyboard_set_go(key, 0)` dims the action

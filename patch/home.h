@@ -98,6 +98,10 @@
     "/mnt/data/m1plus/keyboard-pinyin" /* the on-screen keyboard's Chinese (Pinyin) layer: "1" = on, anything else or missing = off (Settings > General > Keyboards; patch/keyboard.c) */
 #define KBFR_FILE \
     "/mnt/data/m1plus/keyboard-french" /* the French (AZERTY) layer: "1" = on, anything else or missing = off (Settings > General > Keyboards; patch/keyboard.c) */
+#define KBEN_FILE \
+    "/mnt/data/m1plus/keyboard-english" /* the English layer: "0" = off, anything else or missing = on (Settings > General > Keyboards; patch/keyboard.c) */
+#define KBLAST_FILE \
+    "/mnt/data/m1plus/keyboard-last" /* the layer the language key last chose: "0" English, "1" Chinese, "2" French; missing = the first one on (patch/keyboard.c) */
 #define PCSEARCH_FILE \
     "/mnt/data/m1plus/podcast-online-search" /* Podcast Discover: "0" = off, anything else or missing = on (Settings > Library > Podcasts; patch/podcasts.c) */
 #define PCDIR_FILE \
@@ -299,6 +303,9 @@ extern int np_pos_toggle(void); /* flip it, saved atomically; the new state, or 
 extern int
 np_shrink_setting(void); /* Settings > Now Playing > Shrink on Pause: 1 on (the default), 0 off (patch/nowplaying.c) */
 extern int np_shrink_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
+extern int kb_en_setting(void); /* ... > English: 1 on (the default), 0 off */
+extern int kb_en_toggle(
+    void); /* flip it, saved atomically; the new state, or -1 when it could not be saved (the last keyboard on stays on) */
 extern int kb_fr_setting(void); /* ... > French (AZERTY): 1 on, 0 off (the default) */
 extern int kb_fr_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */
 extern int kb_zh_toggle(void); /* flip it, saved atomically; the new state, or -1 when it could not be saved */

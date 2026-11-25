@@ -660,6 +660,7 @@ def asset_tests(ctx):
 # The setting, the language key, the layers
 # ====================================================================================================================================
 KBZH = '/mnt/data/m1plus/keyboard-pinyin'
+KBLAST = '/mnt/data/m1plus/keyboard-last'   # the layer the language key last chose ("0" English, "1" Chinese, "2" French)
 DICT_DATA = open(PY.DICT, 'rb').read()
 
 
@@ -1226,7 +1227,7 @@ def raw_text(m):
 
 
 def password_tests(ctx):
-    """KB_PASSWORD (keyboard_attach flags): English only, a lowercase page, spaces anywhere, the text as typed, dots with an eye, the action key's label and its dimmed state."""
+    """KB_PASSWORD (keyboard_attach flags): one letter layer (English unless it is off), a lowercase page, spaces anywhere, the text as typed, dots with an eye, the action key's label and its dimmed state."""
     expect = ctx.expect
     PW = DEFS['KB_PASSWORD']
     # 1. Chinese on and the dictionary there: a password field has no language key and no composition, a plain one has both
@@ -1238,7 +1239,7 @@ def password_tests(ctx):
     typ(m, 'nihao')
     expect(raw_text(m) == 'nihao' and not strip_on(m) and m.word(PY.ENGINE_PTR) == 0 and not [c for c in m.calls if c[0] in ('im_search', 'im_open_decoder')], 'letters are typed as they are: no pinyin, no candidate strip, no engine')
     # a remembered Chinese layer does not carry over either
-    m = zh_machine(); m.setword(PSYMS['kb_memo'], 1)
+    m = zh_machine(); m.fs[KBLAST] = b'1\n'
     expect(attach(m, PW) == 0 and shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'q', 'a remembered Chinese layer does not make a password field Chinese')
     # 2. Lowercase start, no capital after the field was emptied, spaces anywhere, backtick
     m = keyboard_machine(); m.fs[KBZH] = b'1\n'
@@ -1466,37 +1467,37 @@ def french_tests(ctx):
     names_ = [c[0] for k in range(2) for c in press(m, 'kb_lang')]
     expect(said(m, 'kb_lang') == 'FR' and 'im_open_decoder' not in names_, 'and Chinese is not tried again')
     m = keyboard_machine(); m.fs[KBZH] = b'1\n'; m.fs[KBFR] = b'1\n'; m.present.add(PY.SYS_PATH); m.py_open_ok = False
-    m.setword(PSYMS['kb_memo'], 1)
+    m.fs[KBLAST] = b'1\n'
     kopen(m)
-    expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q' and shown(m, 'kb_lang') == (1, 1) and m.word(PSYMS['kb_memo']) == 0, 'a remembered Chinese layer that will not open: English, the French key still there')
+    expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q' and shown(m, 'kb_lang') == (1, 1) and KBLAST not in m.fs, 'a remembered Chinese layer that will not open: English, the French key still there')
 
     # 5. The remembered layer; a setting turned off meanwhile
     m = fr_machine(); kopen(m); press(m, 'kb_lang'); reopen(m)
     expect(said(m, 'kb_lang') == 'EN' and keys(m)[0] == 'A' and not layout_ok(m, 'ABC', lang=True, fr=True), 'the next keyboard starts on the French layer the last one ended on')
     m.fs[KBFR] = b'0\n'; reopen(m)
-    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'Q' and geo(m, 'kb_space')[0] == 79 and m.word(PSYMS['kb_memo']) == 0, 'French turned off meanwhile: English, no key, memo not left on French')
+    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'Q' and geo(m, 'kb_space')[0] == 79 and KBLAST not in m.fs, 'French turned off meanwhile: English, no key, memo not left on French')
     m.fs[KBFR] = b'1\n'; reopen(m)
     expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q', 'turned on again: English first')
     m = fr_machine(zh=True); kopen(m); press(m, 'kb_lang'); press(m, 'kb_lang'); reopen(m)
     expect(said(m, 'kb_lang') == 'EN' and keys(m)[0] == 'q' and m.engine()[1] == 1, 'the Chinese layer is remembered too')
     m.fs[KBZH] = b'0\n'; reopen(m)
-    expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q' and m.word(PSYMS['kb_memo']) == 0, 'Chinese off meanwhile (French on): English, the key now goes to FR')
+    expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q' and KBLAST not in m.fs, 'Chinese off meanwhile (French on): English, the key now goes to FR')
     m = fr_machine(zh=True); kopen(m); press(m, 'kb_lang')
     m.call(*m.bound[(m.window, DESTROY)][:1], a0=m.bound[(m.window, DESTROY)][1], count=4000000)
-    expect(m.call(PSYMS['kb_fr_setting']) == 1 and m.call(PSYMS['kb_fr_toggle'], count=4000000) == 0 and m.fs[KBFR] == b'0\n' and m.word(PSYMS['kb_memo']) == 0, 'kb_fr_toggle turns it off (saved) and forgets a French layer')
+    expect(m.call(PSYMS['kb_fr_setting']) == 1 and m.call(PSYMS['kb_fr_toggle'], count=4000000) == 0 and m.fs[KBFR] == b'0\n' and KBLAST not in m.fs, 'kb_fr_toggle turns it off (saved) and forgets a French layer')
     expect(m.call(PSYMS['kb_fr_toggle'], count=4000000) == 1 and m.fs[KBFR] == b'1\n', 'and on again')
-    m.setword(PSYMS['kb_memo'], 1)
+    m.fs[KBLAST] = b'1\n'
     m.call(PSYMS['kb_fr_toggle'], count=4000000); m.call(PSYMS['kb_fr_toggle'], count=4000000)
-    expect(m.word(PSYMS['kb_memo']) == 1, 'turning French off or on leaves a Chinese memo alone')
+    expect(m.fs.get(KBLAST) == b'1\n', 'turning French off or on leaves a Chinese memo alone')
     m.call(PSYMS['kb_zh_toggle'], count=4000000)
-    expect(m.word(PSYMS['kb_memo']) == 0, 'turning Chinese off forgets it')
+    expect(KBLAST not in m.fs, 'turning Chinese off forgets it')
     m = keyboard_machine()
     for data in (b'0\n', b'', b'x', b'\n1', b'1x', b'11'):
         m.fs[KBFR] = data; m.call(PSYMS['kb_fr_setting'])
         expect(m.call(PSYMS['kb_fr_setting']) == 0, f'the file {data!r}: off')
 
     # 6. A password field is English only, whatever is on or remembered
-    m = fr_machine(zh=True); m.setword(PSYMS['kb_memo'], 2)
+    m = fr_machine(zh=True); m.fs[KBLAST] = b'2\n'
     expect(attach(m, DEFS['KB_PASSWORD']) == 0 and shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'q' and geo(m, 'kb_space')[2] == 163 and not [c for c in m.calls if c[0] in ('im_open_decoder', 'access')],
            'KB_PASSWORD with French remembered: English, no language key')
     refocus(m, 'N', 156, 0, '')
@@ -1518,6 +1519,70 @@ def french_tests(ctx):
             if pressed != ([name] if d2 > 0 else []): bad.append((x, y, pressed, name))
             ptr(m, 'kb_pad', 'abort', x, WIN_Y + PAD_Y + y, t)
     expect(not bad, f'with the language key every point of the French page presses the key the model picks ({bad[:2]})')
+
+
+KBEN = '/mnt/data/m1plus/keyboard-english'
+
+
+def primary_tests(ctx):
+    """English can be turned off (iOS): the keyboards that are on, the first of them when nothing is remembered, the last layer kept in keyboard-last across restarts,
+    password fields on the first letter layer on, and the last keyboard on cannot be turned off."""
+    expect = ctx.expect
+    for data, on in ((None, 1), (b'1\n', 1), (b'', 1), (b'x', 1), (b'0\n', 0), (b'0', 0)):
+        m = keyboard_machine()
+        if data is not None: m.fs[KBEN] = data
+        expect(m.call(PSYMS['kb_en_setting']) == on, f'the English file {data!r}: {"on" if on else "off"} (only "0" is off)')
+
+    # 1. English off, French on: one keyboard, no language key, AZERTY from the start; a password field too
+    m = fr_machine(); m.fs[KBEN] = b'0\n'; kopen(m)
+    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[:10] == list('AZERTYUIOP') and geo(m, 'kb_space')[:3] == PK.layout('ABC')['fn']['space'] and not layout_ok(m, 'ABC', fr=True),
+           'English off, French on: AZERTY capitals at once, no language key, space as wide as with one keyboard')
+    m = fr_machine(zh=True); m.fs[KBEN] = b'0\n'; kopen(m)
+    expect(said(m, 'kb_lang') == '中' and keys(m)[0] == 'A' and m.word(PY.ENGINE_PTR) == 0, 'French and Chinese on: French first, the key reads 中')
+    press(m, 'kb_lang')
+    expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'q' and m.engine()[1] == 1, 'and the key cycles FR <-> 中 (no English)')
+    m = fr_machine(zh=True); m.fs[KBEN] = b'0\n'
+    expect(attach(m, DEFS['KB_PASSWORD']) == 0 and shown(m, 'kb_lang') == (0, 0) and keys(m)[:10] == list('azertyuiop') and not [c for c in m.calls if c[0] in ('im_open_decoder', 'access')],
+           'KB_PASSWORD with English off: the French layer (lowercase), no key, the dictionary never looked at')
+
+    # 2. Only Chinese on: the pinyin layer from the start; English where Chinese cannot be (a password, no dictionary, an engine that will not open)
+    m = zh_machine(); m.fs[KBEN] = b'0\n'; kopen(m)
+    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'q' and shown(m, 'kb_shift') == (0, 0) and said(m, 'kb_sym') == "'" and m.engine()[1] == 1,
+           'only Chinese on: the Chinese layer at once (engine open, the separator where shift was), no language key')
+    typ(m, 'ni'); press(m, 'kb_space')
+    expect(field(m) == '你', 'and it composes')
+    m = zh_machine(); m.fs[KBEN] = b'0\n'
+    expect(attach(m, DEFS['KB_PASSWORD']) == 0 and keys(m)[0] == 'q' and shown(m, 'kb_shift') == (1, 1) and m.word(PY.ENGINE_PTR) == 0, 'only Chinese on, a password field: English')
+    m = zh_machine(dictionary=False); m.fs[KBEN] = b'0\n'; kopen(m)
+    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'Q' and m.word(PY.ENGINE_PTR) == 0, 'only Chinese on but no dictionary: English')
+    m = keyboard_machine(); m.fs[KBZH] = b'1\n'; m.fs[KBEN] = b'0\n'; m.present.add(PY.SYS_PATH); m.py_open_ok = False; kopen(m)
+    expect(shown(m, 'kb_lang') == (0, 0) and keys(m)[0] == 'Q' and m.word(PY.ENGINE_PTR) == 0 and KBLAST not in m.fs, 'only Chinese on and the engine will not open: English')
+
+    # 3. The last layer is kept in keyboard-last, so a restart (a new machine over the same files) starts there
+    m = fr_machine(); kopen(m); press(m, 'kb_lang')
+    expect(m.fs.get(KBLAST) == b'2\n' and KBLAST + '.tmp' not in m.fs and ('rename', KBLAST + '.tmp', KBLAST) in m.calls, 'the language key saves the layer it chose (atomically)')
+    press(m, 'kb_lang')
+    expect(m.fs.get(KBLAST) == b'0\n', 'English again: saved too')
+    m = fr_machine(); m.fs[KBLAST] = b'2\n'; kopen(m)
+    expect(said(m, 'kb_lang') == 'EN' and keys(m)[0] == 'A', 'after a restart the keyboard starts on the saved French layer')
+    for data in (b'9\n', b'x', b''):
+        m = fr_machine(); m.fs[KBLAST] = data; kopen(m)
+        expect(said(m, 'kb_lang') == 'FR' and keys(m)[0] == 'Q', f'keyboard-last {data!r}: the first keyboard on')
+    m = fr_machine(); m.fs[KBLAST] = b'2\n'
+    attach(m, DEFS['KB_PASSWORD'])
+    expect(m.fs.get(KBLAST) == b'2\n', 'a password field (English only with English on) leaves the saved layer alone')
+
+    # 4. The last keyboard on cannot be turned off; any other can
+    m = keyboard_machine()
+    expect(m.call(PSYMS['kb_en_toggle'], count=4000000) == 1 and KBEN not in m.fs, 'English alone: its toggle keeps it on, nothing written')
+    m.fs[KBFR] = b'1\n'
+    expect(m.call(PSYMS['kb_en_toggle'], count=4000000) == 0 and m.fs[KBEN] == b'0\n', 'with French on English turns off (saved "0")')
+    expect(m.call(PSYMS['kb_fr_toggle'], count=4000000) == 1 and m.fs[KBFR] == b'1\n', 'and now French is the last one: it stays on')
+    m.fs[KBZH] = b'1\n'
+    expect(m.call(PSYMS['kb_fr_toggle'], count=4000000) == 0 and m.call(PSYMS['kb_zh_toggle'], count=4000000) == 1 and m.fs[KBZH] == b'1\n', 'French off with Chinese on; then Chinese is the last')
+    expect(m.call(PSYMS['kb_en_toggle'], count=4000000) == 1 and m.fs[KBEN] == b'1\n', 'English on again')
+    m.fs[KBLAST] = b'0\n'
+    expect(m.call(PSYMS['kb_en_toggle'], count=4000000) == 0 and KBLAST not in m.fs, 'turning English off forgets a saved English layer')
 
 
 def key_at(m, c): return keys(m).index(c)
@@ -1717,4 +1782,4 @@ def accent_tests(ctx):
                 ptr(m, name, 'abort', x, y, 3000)
 
 
-SECTIONS = [base_tests, name_tests, password_tests, refocus_tests, gap_tests, asset_tests, setting_tests, zh_tests, zh_search_tests, zh_limit_tests, strip_tests, hit_tests, lang_gap_tests, french_tests, accent_tests]   # tools/check.py runs each as its own task
+SECTIONS = [base_tests, name_tests, password_tests, refocus_tests, gap_tests, asset_tests, setting_tests, zh_tests, zh_search_tests, zh_limit_tests, strip_tests, hit_tests, lang_gap_tests, french_tests, primary_tests, accent_tests]   # tools/check.py runs each as its own task

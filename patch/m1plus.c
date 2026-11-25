@@ -537,7 +537,14 @@ static void switch_show(void *img, int on) {
  * there are none) while no mix can be made (the Daily Mix switch off, or a library under MIX_MIN_LIB songs); the Daily Mix switch updates them in place. The row is a card of its own
  * (a single piece) at the end of the page, so nothing else changes with it. They are the page's last row and fourth note (pod_note3; tools/pod_pages.py HOMESET_PAGE, pinned by test). */
 static void *regen_row __attribute__((section(".scratch"))), *regen_note __attribute__((section(".scratch")));
-#define KB_EN_DIM 153 /* 60 %: Settings > General > Keyboards > English, always on and not switchable */
+#define KB_EN_DIM \
+    153 /* 60 %: a dimmed row that takes no tap (first: Settings > General > Keyboards, the only keyboard on) */
+
+static int kb_only_on(
+    int action) { /* Settings > General > Keyboards: the row's keyboard is the only one on (patch/keyboard.c kb_toggle) */
+    int en = kb_en_setting(), fr = kb_fr_setting(), zh = kb_zh_setting();
+    return (action == ACT_KB_EN ? en : action == ACT_KB_FR ? fr : zh) && en + fr + zh == 1;
+}
 
 /* Settings > Library > Podcasts: the Directory and Podcast Region rows are dimmed and take no tap while Podcast Discover is off (there is then no search to ask and no Discover to show). */
 static void *pcdir_row __attribute__((section(".scratch"))), *pcreg_row __attribute__((section(".scratch")));
@@ -578,7 +585,6 @@ GS_SEP_FN(1)
 GS_SEP_FN(2)
 GS_SEP_FN(3)
 GS_SEP_FN(7)
-static int sw_always(void) { return 1; } /* Keyboards > English: always on, and its row takes no tap */
 
 static const struct pod_switch {
     int action;
@@ -588,7 +594,7 @@ static const struct pod_switch {
     {ACT_LANDSCAPE, coverflow_landscape, coverflow_landscape_toggle},
     {ACT_SHELF, recent_setting, recent_toggle},
     {ACT_DAILY, dailymix_setting, dailymix_toggle},
-    {ACT_KB_EN, sw_always, sw_always},
+    {ACT_KB_EN, kb_en_setting, kb_en_toggle},
     {ACT_KB_FR, kb_fr_setting, kb_fr_toggle},
     {ACT_KB_ZH, kb_zh_setting, kb_zh_toggle},
     {ACT_PCSEARCH, pcsearch_setting, pcsearch_toggle},
@@ -677,6 +683,8 @@ static int on_switch(void *ctx, void *e) {
     if (s->sw->action == ACT_GSPLIT) pod_page_refresh(POD_GSPLIT_PAGE);
     if (s->sw->action == ACT_XFADESET)
         pod_page_refresh(POD_PSXFADE_PAGE); /* the duration card shows and hides with the switch */
+    if (on >= 0 && (s->sw->action == ACT_KB_EN || s->sw->action == ACT_KB_FR || s->sw->action == ACT_KB_ZH))
+        pod_page_refresh(POD_KEYBOARDS_PAGE); /* the only keyboard left on is dimmed */
     if (s->sw->action == ACT_STANDBY) pod_page_refresh(POD_KEYSPOWER_PAGE); /* turning it on turned Auto-Shutdown off */
     if (s->sw->action == ACT_BOOTMEM) pod_page_refresh(POD_PSBOOTVOL_PAGE); /* the slider's cards follow the switch */
     if (s->sw->action == ACT_DTAUTO || s->sw->action == ACT_DT24)
@@ -693,10 +701,6 @@ static void bind_switch(void *win, unsigned i, const struct pod_row *row) {
     snprintf(name, sizeof name, "pod_switch%u", i);
     sw_slot[k].sw = &sw_tab[k];
     sw_slot[k].img = widget_lookup(win, name, 1);
-    if (row->action == ACT_KB_EN) { /* English cannot be turned off: on, dimmed, and the row takes no tap */
-        if (r) widget_set_opacity(r, KB_EN_DIM), widget_set_sensitive(r, 0);
-        return;
-    }
     if (r) widget_on(r, EVT_CLICK, on_switch, &sw_slot[k]);
 }
 
@@ -991,6 +995,13 @@ static void page_refresh(void *win, const struct pod_page *page) {
             ACT_COVNAME) { /* the Cover page: Albums stores nothing, so Name on Cover is dimmed and inert for it */
             void *item = widget_lookup(win, row->name, 1);
             int on = plcpage_style() != 0;
+            if (item) widget_set_opacity(item, on ? 255 : KB_EN_DIM), widget_set_sensitive(item, on);
+        }
+        if (row->action == ACT_KB_EN || row->action == ACT_KB_FR ||
+            row->action ==
+                ACT_KB_ZH) { /* Keyboards: the only one on cannot be turned off: its row is dimmed and takes no tap */
+            void *item = widget_lookup(win, row->name, 1);
+            int on = !kb_only_on(row->action);
             if (item) widget_set_opacity(item, on ? 255 : KB_EN_DIM), widget_set_sensitive(item, on);
         }
         if (row->action == ACT_DTDATE || row->action == ACT_DTTIME) {

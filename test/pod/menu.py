@@ -904,10 +904,12 @@ def header_asset_tests(ctx, tree, what):
 
 
 def keyboards_tests(ctx, on_row, rows_s):
-    """Settings > General > Keyboards (m1plus_keyboards): English always on and not switchable, French (AZERTY) and Chinese (Pinyin) switches saved in /mnt/data/m1plus/keyboard-french and keyboard-pinyin, off by default."""
+    """Settings > General > Keyboards (m1plus_keyboards): English (on by default, keyboard-english), French (AZERTY) and Chinese (Pinyin) (off by default, keyboard-french and keyboard-pinyin)
+    switches in /mnt/data/m1plus; the only keyboard on is dimmed and takes no tap."""
     expect, P = ctx.expect, pod_pages
     K = P.KEYBOARDS_PAGE
     FILE = '/mnt/data/m1plus/keyboard-pinyin'
+    EN = '/mnt/data/m1plus/keyboard-english'
     kb_i = next(i for i, r in enumerate(P.GENERAL_PAGE.rows) if r.action == P.ACT_PAGE and r.arg == P.KEYBOARDS_PAGE_INDEX)
     rows_s = PSYMS[f'pod_rows_{P.GENERAL_PAGE_INDEX}']
     expect([(r.label, r.action) for r in K.rows] == [('English', P.ACT_KB_EN), ('French (AZERTY)', P.ACT_KB_FR), ('Chinese (Pinyin)', P.ACT_KB_ZH)] and K.title == 'Keyboards' and K.key == 'm1plus_keyboards'
@@ -930,10 +932,20 @@ def keyboards_tests(ctx, on_row, rows_s):
 
     m = open_kb()
     expect(('window_open', K.key) in m.calls and images(m, 0) == ['sset_on'] and images(m, 1) == ['sset_off'] and images(m, 2) == ['sset_off'], 'the row opens the page: English shows on, French (AZERTY) and Chinese (Pinyin) off with nothing saved')
-    expect(('widget_set_opacity', m.widgets['pod_row0'], 153) in m.calls and ('widget_set_sensitive', m.widgets['pod_row0'], 0) in m.calls
-           and (m.widgets['pod_row0'], O['EVT_CLICK']) not in m.bound and (m.widgets['pod_row1'], O['EVT_CLICK']) in m.bound and (m.widgets['pod_row2'], O['EVT_CLICK']) in m.bound,
-           'English is dimmed and takes no tap (nothing is bound on it); the French and Chinese rows are bound')
-    expect(FILE not in m.fs, 'English has nothing to save: no file')
+    def dim(m, i):
+        w = m.widgets[f'pod_row{i}']
+        return [c[2] for c in m.calls if c[0] == 'widget_set_sensitive' and c[1] == w][-1:] == [0] and [c[2] for c in m.calls if c[0] == 'widget_set_opacity' and c[1] == w][-1:] == [153]
+
+    expect(dim(m, 0) and not dim(m, 1) and not dim(m, 2) and all((m.widgets[f'pod_row{i}'], O['EVT_CLICK']) in m.bound for i in range(3)),
+           'English alone is dimmed and takes no tap (insensitive); the French and Chinese rows are live; all three are bound')
+    expect(FILE not in m.fs and EN not in m.fs, 'opening saves nothing')
+    m = open_kb(fr=b'1\n')
+    expect(images(m, 0) == ['sset_on'] and not dim(m, 0) and not dim(m, 1), 'French on too: neither is dimmed')
+    m.click('pod_row0')
+    expect(m.fs.get(EN) == b'0\n' and ('rename', EN + '.tmp', EN) in m.calls and images(m, 0)[-1] == 'sset_off' and dim(m, 1) and not dim(m, 0) and m.call(PSYMS['kb_en_setting']) == 0,
+           'a tap turns English off (keyboard-english "0", atomically); French is now the only one on: dimmed')
+    m.click('pod_row0')
+    expect(m.fs.get(EN) == b'1\n' and images(m, 0)[-1] == 'sset_on' and not dim(m, 1), 'and on again: French is live again')
     for data, on in ((b'1\n', 1), (b'1', 1), (b'0\n', 0), (b'', 0), (b'x', 0), (b'11', 0), (b'1x', 0), (b'\n1', 0)):
         got = images(open_kb(data), 2)
         expect(got == [('sset_on' if on else 'sset_off')], f'saved {data!r}: the Chinese switch opens {"on" if on else "off"} (exactly "1" or "1\\n" is on, anything else off)')

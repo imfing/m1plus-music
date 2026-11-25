@@ -38,7 +38,7 @@ enum {
     L_ZH = 1,
     L_FR = 2,
     L_N = 3
-}; /* layer ids (kb_memo); the cycle order of the language key is EN, FR, ZH (kb_start) */
+}; /* layer ids (KBLAST_FILE's digit); the cycle order of the language key is EN, FR, ZH (kb_start) */
 enum { S_NONE = 0, S_PINYIN = 1, S_PRED = 2 }; /* what the candidate strip shows */
 enum {
     K_DEL = 100,
@@ -130,9 +130,6 @@ static struct {
     unsigned short slot[KB_POOL]; /* the candidate (+ 1) each item widget shows, 0 for none */
     char pool[KB_POOL_BYTES];
 } zh __attribute__((section(".scratch")));
-
-static int kb_memo __attribute__((section(
-    ".scratch"))); /* the layer the last keyboard ended on: the session's choice (the page's state is cleared with the page) */
 
 static unsigned kb_clen(const char *s) { /* the bytes of the UTF-8 character at s */
     unsigned char c = (unsigned char)*s;
@@ -835,26 +832,29 @@ static const struct kb_layer KB_LAYERS[L_N] = {
 
 static const struct kb_layer *kb_layer_of(int layer) { return &KB_LAYERS[layer]; }
 
-/* Settings > General > Keyboards > Chinese (Pinyin): "1" = on, anything else or no file = off. */
+/* Settings > General > Keyboards: English is on unless its file says "0"; French (AZERTY) and Chinese (Pinyin) are on when theirs says "1".
+ * Any of them may be turned off except the last one on (its row is dimmed, patch/m1plus.c kb_only_on; a toggle that would leave none keeps it on). */
+int kb_en_setting(void) { return set_read(KBEN_FILE, '1') != '0'; }
+int kb_fr_setting(void) { return set_read(KBFR_FILE, 0) == '1'; }
 int kb_zh_setting(void) { return set_read(KBZH_FILE, 0) == '1'; }
 
-int kb_zh_toggle(void) {
-    int next = !kb_zh_setting();
-    if (home_set_digit(KBZH_FILE, next, 1) < 0) return -1;
-    if (!next && kb_memo == L_ZH)
-        kb_memo = L_EN; /* off: the next time it is turned on the keyboard starts on English again */
-    return next;
+/* The layer the language key last chose, kept across restarts (KBLAST_FILE, one digit: L_EN, L_ZH, L_FR); -1 for none. */
+static int kb_last(void) {
+    int c = set_read(KBLAST_FILE, 0);
+    return c >= '0' && c < '0' + L_N ? c - '0' : -1;
 }
 
-/* Settings > General > Keyboards > French (AZERTY): the same file shape. */
-int kb_fr_setting(void) { return set_read(KBFR_FILE, 0) == '1'; }
-
-int kb_fr_toggle(void) {
-    int next = !kb_fr_setting();
-    if (home_set_digit(KBFR_FILE, next, 1) < 0) return -1;
-    if (!next && kb_memo == L_FR) kb_memo = L_EN;
-    return next;
+static int kb_toggle(const char *file, int on, int layer) {
+    if (on && kb_en_setting() + kb_fr_setting() + kb_zh_setting() == 1) return 1; /* the last keyboard on */
+    if (home_set_digit(file, !on, 1) < 0) return -1;
+    if (on && kb_last() == layer)
+        unlink(KBLAST_FILE); /* off: forgotten, so turned on again it waits for the language key */
+    return !on;
 }
+
+int kb_en_toggle(void) { return kb_toggle(KBEN_FILE, kb_en_setting(), L_EN); }
+int kb_fr_toggle(void) { return kb_toggle(KBFR_FILE, kb_fr_setting(), L_FR); }
+int kb_zh_toggle(void) { return kb_toggle(KBZH_FILE, kb_zh_setting(), L_ZH); }
 
 /* ---- the layers ---- */
 static void kb_layer_set(int layer) {
@@ -862,7 +862,8 @@ static void kb_layer_set(int layer) {
     if (old->flush) old->flush();
     zh_hide();
     kb.layer = layer;
-    kb_memo = layer;
+    home_set_digit(KBLAST_FILE, layer,
+                   L_N - 1); /* the next keyboard starts here (a failed save: it starts on the first one on) */
     kb_page(kb_letters());
     kb_lang_label();
     kb_refresh();
@@ -1223,17 +1224,26 @@ static void kb_load(const char *initial) {
 
 /* The layers, the bottom row and the first page for the field's flags and text, then the field drawn (the tail of kb_init, also of keyboard_refocus). */
 static void kb_start(void) {
-    int want = (kb.flags & KB_PASSWORD) ? L_EN : kb_memo, i, have = 0;
-    kb.order[0] = L_EN;
-    kb.layers = 1;
-    if (!(kb.flags &
-          KB_PASSWORD)) { /* (a password field: English only) more keyboards: the language key cycles EN, FR, 中 over the ones that are on */
-        if (kb_fr_setting()) kb.order[kb.layers++] = L_FR;
-        if (kb_zh_setting() && (want == L_ZH ? KB_LAYERS[L_ZH].enter() == 0 : access(PINYIN_DICT, 0) == 0))
-            kb.order[kb.layers++] =
-                L_ZH; /* (the remembered Chinese layer opens the engine now; one that will not open is dropped) */
-        for (i = 0; i < kb.layers; ++i) have |= kb.order[i] == want;
-        if (!have) want = kb_memo = L_EN; /* the remembered layer is off now or will not open */
+    int want = kb_last(), i, have = 0;
+    kb.layers = 0; /* the language key cycles EN, FR, 中 over the ones that are on */
+    if (kb_en_setting()) kb.order[kb.layers++] = L_EN;
+    if (kb_fr_setting()) kb.order[kb.layers++] = L_FR;
+    if (kb.flags & KB_PASSWORD)
+        kb.layers = kb.layers > 0; /* a password field: one letter layer, the first of English and French that is on */
+    else if (kb_zh_setting() && access(PINYIN_DICT, 0) == 0)
+        kb.order[kb.layers++] = L_ZH;
+    if (!kb.layers) kb.order[kb.layers++] = L_EN; /* only Chinese on, and no dictionary or a password: English */
+    for (i = 0; i < kb.layers; ++i) have |= kb.order[i] == want;
+    if (!have) { /* the remembered layer is off now or has no dictionary: the first one on (and forgotten, unless only a password left it out) */
+        if (want >= 0 && !(kb.flags & KB_PASSWORD)) unlink(KBLAST_FILE);
+        want = kb.order[0];
+    }
+    if (want == L_ZH &&
+        KB_LAYERS[L_ZH].enter() != 0) { /* the engine will not open: the layer leaves the cycle, forgotten */
+        kb_drop(L_ZH);
+        if (!kb.layers) kb.order[kb.layers++] = L_EN;
+        unlink(KBLAST_FILE);
+        want = kb.order[0];
     }
     kb.layer = want;
     kb_bottom();
