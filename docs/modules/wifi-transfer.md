@@ -1,7 +1,8 @@
 # Wi-Fi Transfer
 
-**Sources:** `patch/netservice.c` (pages), `patch/webapi.c` (`api.cgi`), `assets/webapp/index.html`,
-`tools/mod_webapp.py`, `tools/pod_pins.py` `NETSERVICE_PINS`.
+**Sources:** `patch/netservice.c` (pages), `patch/qr.c` and its model `tools/qr.py` (the QR code),
+`patch/webapi.c` (`api.cgi`), `assets/webapp/index.html`, `tools/mod_webapp.py`, `tools/pod_pins.py`
+`NETSERVICE_PINS`.
 
 Stock runs `thttpd -C /etc/thttpd.conf` when Wi-Fi Transfer is on (port 8888, `dir=/usr/share/web`,
 `cgipat=**.cgi`, `user=root`). The mod leaves the player binary, thttpd and its configuration alone and
@@ -17,7 +18,7 @@ stock's own pages. The state is stock's own bytes; nothing of ours is saved.
 | Page | Rows |
 |---|---|
 | Network Services | AirPlay switch (ACT 166), DLNA switch (167), a gap, **SyncLink** (opens stock's page, Back returns here), **Wi-Fi Transfer** (168) |
-| Wi-Fi Transfer | no rows; centred: a hero (tile, white `wifi` glyph, title, grey description), one address card `<ip>:8888` (22 px bold, no `http://`), a grey footer note |
+| Wi-Fi Transfer | no rows; centred: a hero (tile, white `wifi` glyph, title, grey description) or, in its place, the address as a QR code; one address card `<ip>:8888` (22 px bold, no `http://`), a grey footer note, the Show QR Code pill |
 
 - **Switches** call stock's `airplay_switch` / `dlna_switch` and show the byte. There is no
   AirPlay-playing guard, as on stock's page (the Control Center tiles do refuse; [pulldown](pulldown.md)).
@@ -38,7 +39,33 @@ stock's own pages. The state is stock's own bytes; nothing of ours is saved.
 - Wi-Fi dropping, USB, the lock screen and power-off are as in stock: nothing is stopped.
 - The page's texts are our own keys in 13 languages; stock's long `wifits_info` texts are not used.
   `AirPlay` and `DLNA` are brands.
-- The page uses the layout items `Hero`, `BigCard` and `Note(center=True)` ([settings](settings.md#cards)).
+- The page uses the layout items `Hero`, `QrCard`, `BigCard`, `Note(center=True)` and `QrPill`
+  ([settings](settings.md#cards)).
+
+### QR code
+
+- **The pill.** Under the note, a small flat pill (`pod_qrbtn`: the rest surface, the grey 14 px label
+  and Lucide `qr-code` glyph `wt_qr`) reads Show QR Code. A tap hides the hero and shows the code
+  (`pod_qr`) in its place; the pill then reads Hide QR Code and a second tap swaps back. The two items
+  are as high as each other and the layouter stacks only the visible one, so the address card, the
+  note and the pill never move. Every open starts with the hero; Now Playing and back keeps the state.
+  `wt_pill_fit` sizes the pill to its label and centres the glyph and label as a pair
+  (`m1_pill_styles`), 5 px apart. The label sits `PILL_DROP` (1) px below the pill's centre, so its
+  capitals centre on the pill and the glyph: `margin_top` 3 and
+  `margin_bottom` 1 move the text and icon box down, and `wt_qr.png` has 2 clear rows under the
+  glyph, which keeps the glyph where it was.
+- **The code.** `HTTP://<ip>:8888` in capitals: the alphanumeric mode has no small letters and a
+  browser accepts the scheme in any case. `patch/qr.c qr_make` makes version 2 (25 x 25), level M,
+  one alphanumeric segment of at most 38 characters, the mask of least penalty; the longest address
+  (27 characters) always fits. It follows ISO/IEC 18004 as Project Nayuki's QR Code generator (MIT)
+  implements it; the code is our own, reduced to the one size. The symbol is made again only when the
+  address text changes.
+- **The paint.** `pod_qr_code` (132 px) is painted in its `EVT_AFTER_PAINT`: `#E5E5EA` paper, black
+  modules of 4 px with a 4-module border, corners of radius 12 in the page's colour (`m1_corners`).
+  The paper and the modules are raw canvas colours, not `ui_ink`, so Light Mode keeps a dark-on-light
+  code. Near white rather than `#FFFFFF`: the code shows only on demand and is softer on the black page.
+- **No address** (Wi-Fi gone while the page is open): the hero, and the pill hidden. A refused paint
+  or click bind also leaves the pill hidden.
 
 Stock shipped a Chinese GCDWebUploader port (jQuery, Bootstrap, five cgic CGIs) with shell-injection and
 JSON-escaping faults (a built-in extension whitelist in `list.cgi`, `system("rm -rf ...")` after only a

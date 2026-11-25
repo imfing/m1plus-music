@@ -303,6 +303,18 @@ class BigCard:
     """A one-line card of large centred text (a card piece 60 px high, the text written by the payload as the page opens: the label pod_big<n>_t; the Wi-Fi Transfer page's address)."""
 
 
+class QrCard:
+    """A QR code the payload paints (patch/netservice.c wt_qr_paint, tools/qr.py), in a view as high as `hero`, the Hero it takes the place of: it starts hidden, and showing it hides the Hero,
+    so nothing under them moves (the Wi-Fi Transfer page's address as a code)."""
+    start_hidden = True
+    def __init__(self, hero): self.hero = hero
+
+
+class QrPill:
+    """A small flat pill centred under the page's last item (a glyph and a grey label, the payload sizes it to the label): the Wi-Fi Transfer page's Show QR Code / Hide QR Code."""
+    def __init__(self, text): self.text = text
+
+
 class Sliders:
     """The 10-Band editor's card of ten vertical sliders (a view the payload paints: patch/tenband.c; tools/pod_settings.py SLIDERS_H high)."""
 
@@ -1557,7 +1569,9 @@ SLEEPTIMER_PAGE_INDEX = page_index('m1plus_sleeptimer')
 NETSERVICE_PAGE = Page('m1plus_netservice', 'm1plus_netservice_page', 'Network Services', layout=[Row('AirPlay', ACT_NETAIR), Row('DLNA', ACT_NETDLNA), GAP, Row('SyncLink', ACT_STOCK, STOCK_SYNCLINK), Row('Wi-Fi Transfer', ACT_NETTRANS, WIFITRANSFER_PAGE_INDEX)])   # SyncLink: stock's synclink page (ACT_STOCK; Back returns here)
 WT_INFO = 'On the same Wi-Fi, open this address in a browser to manage your music.'
 WT_NOTE = 'Playback is paused while this page is open. Leave the page to turn it off.'
-WIFITRANSFER_PAGE = Page('m1plus_wifitransfer', 'm1plus_wifitransfer_page', 'Wi-Fi Transfer', layout=[Hero('wifi', 'Wi-Fi Transfer', WT_INFO), BigCard(), Note(WT_NOTE, lines=3, center=True)])
+WT_SHOW_QR, WT_HIDE_QR = 'Show QR Code', 'Hide QR Code'   # the pill's two labels (patch/netservice.c wt_qr_set)
+WT_HERO = Hero('wifi', 'Wi-Fi Transfer', WT_INFO)
+WIFITRANSFER_PAGE = Page('m1plus_wifitransfer', 'm1plus_wifitransfer_page', 'Wi-Fi Transfer', layout=[WT_HERO, QrCard(WT_HERO), BigCard(), Note(WT_NOTE, lines=3, center=True), QrPill(WT_SHOW_QR)])   # the code takes the hero's place while shown
 
 # Settings > Library > Update Library (patch/libupdate.c, docs/modules/libupdate.md): what the library holds and when it was last scanned, the two scans of stock's scan dialog, and stock's Auto Update switch. The rows have no glyphs (NOGLYPH_ACTIONS).
 LU_NOTE1 = 'Choose Folders only adds new music. To remove deleted songs, use Update Now.'

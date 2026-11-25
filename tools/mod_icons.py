@@ -930,9 +930,11 @@ def ah_tint_alpha(y):
 # The Songs page (patch/songs.c, docs/modules/songs.md): the glyphs of its flat pills (Play, Shuffle, Add to playlist, Delete: a 16 px canvas each, the ink at
 # most SG_INK px; Delete's is red-ish) and the tick of the sort card's current order (14 px). White except Delete's; no pressed variants (the pills are flat).
 DARK_GLYPH = (0x14, 0x14, 0x14)
+WT_QR_DROP = 1   # tools/pod_settings.py PILL_DROP: wt_qr is 14 x (14 + 2 x WT_QR_DROP), the glyph at the top
 SONGS_IMAGES = {'sg_play': ('play:filled', WHITE, 14, 16), 'sg_shuffle': ('shuffle', WHITE, 16, 16), 'sg_repeat': ('repeat', WHITE, 16, 16), 'sg_repeat1': ('repeat-1', WHITE, 16, 16), 'sg_listplus': ('list-plus', WHITE, 16, 16),
                 'sg_shuffle_on': ('shuffle', DARK_GLYPH, 16, 16), 'sg_repeat_on': ('repeat', DARK_GLYPH, 16, 16), 'sg_repeat1_on': ('repeat-1', DARK_GLYPH, 16, 16),   # the Queue page's lit buttons (#C8C8C8): a near black glyph
                 'sg_trash': ('trash', (0xFF, 0x6B, 0x6B), 16, 16), 'sg_tick': ('+check', WHITE, 14, 14),
+                'wt_qr': ('qr-code', (0xAA, 0xAA, 0xAA), 14, 14),   # the Wi-Fi Transfer page's Show / Hide QR Code pill (tools/pod_ui.py cards_qrpill): the label's grey
                 'pod_ic_vslist': ('list', WHITE, None, 20), 'pod_ic_vsgrid': ('layout-grid', WHITE, None, 20), 'pod_ic_vssearch': ('search', WHITE, None, 20), 'pod_ic_vsselect': ('T:circle-check', WHITE, None, 20),
                 'pod_ic_vsartist': ('mic-vocal', WHITE, None, 20), 'pod_ic_vsalbumartist': ('user-star', WHITE, None, 20),
                 'pod_ic_vsrefresh': ('refresh-cw', WHITE, None, 20), 'pod_ic_vsserver': ('server', WHITE, None, 20),   # the Subsonic root's "..." card (patch/ndroot.c): Sync Now, Server Settings
@@ -999,6 +1001,7 @@ def songs_images():
         c = Image.new('RGBA', (canvas, canvas), (0, 0, 0, 0))
         gi = glyph_fit(g, ink, ink, rgb, 0) if ink else tint(ink_crop(render(gname(g), VS_GRID_PX, 'outline', 1.5 * 24 / VS_GRID_PX)), rgb)
         c.alpha_composite(gi, ((canvas - gi.width) // 2, (canvas - gi.height) // 2)); f[n] = c
+    q = f['wt_qr']; f['wt_qr'] = Image.new('RGBA', (q.width, q.height + 2 * WT_QR_DROP), (0, 0, 0, 0)); f['wt_qr'].alpha_composite(q)   # clear rows under the glyph: the pill's label drops by its margins, the glyph stays
     f[SG_HANDLE[0]] = handle_image()
     f.update(zip(SG_ADD, add_tile_images()))
     return f

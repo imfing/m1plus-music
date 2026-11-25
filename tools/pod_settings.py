@@ -30,6 +30,12 @@ CNOTE_PX, CNOTE_PITCH, CNOTE_END = NOTE_PX, NOTE_PX + 2, 10   # a centred note (
 HERO_TILE, HERO_TILE_Y, HERO_TILE_R, HERO_GLYPH = 64, 2, 16, 36   # a Hero's tile (a RAISED_RGB rounded square centred on the page, its top 2 px under the first item's) and its white glyph
 HERO_TITLE_Y, HERO_TITLE_H, HERO_TITLE_PX = 76, 30, 22          # its title: 22 px white, centred, 10 px under the tile
 HERO_DESC_Y, HERO_DESC_PX, HERO_DESC_PITCH, HERO_END = 108, 14, 16, 14   # its description: grey, 14 px (a step under the notes: at 15 px the Ukrainian text needs a third row), wrapped rows 16 px apart (font + spacer 2), 14 px between its last row and the next card
+QR_MOD, QR_QUIET, QR_R = 4, 4, 12   # a QrCard's code (tools/qr.py, patch/netservice.c wt_qr_paint): 4 px a module, the 4-module light border inside its rounded card (radius 12), so 33 modules = QR_SIDE px
+QR_SIDE = (25 + 2 * QR_QUIET) * QR_MOD
+QR_RGB, QR_DARK_RGB = '#E5E5EA', '#000000'   # its paper (near white, softer than #FFFFFF on the black page) and modules; painted raw, so Light Mode keeps them (only the corners take the page's colour)
+PILL_Y, PILL_H, PILL_R, PILL_PX, PILL_GLYPH, PILL_GAP, PILL_PAD = 6, 32, 16, 14, 14, 5, 14   # a QrPill: 6 px under the item above, 32 high, the 14 px glyph and the 14 px grey label 5 px apart (about half the 10 px caps), 14 px each side (the payload sizes it, patch/netservice.c wt_pill_fit)
+PILL_ITEM_H = PILL_Y + PILL_H
+PILL_DROP = 1   # the label sits this far below the pill's centre, so its 10 px caps (no descenders) centre on the pill and the glyph: margin_top 2 + PILL_DROP, margin_bottom 2 - PILL_DROP, and the glyph PNG carries 2 x PILL_DROP clear rows under it to stay put (tools/mod_icons.py WT_QR_DROP)
 BIG_H, BIG_CARD_H, BIG_PX, BIG_FACE = 66, 60, 22, 'lyrics'   # a BigCard: the item, its card (the tall single piece, 60 px) and the text size; the text is in the bold face (mod_font lyric_face; digits and Latin only: the payload writes the address)
 VOLUME_CARD_H = 3 * ROW_H + 12   # the Volume page's card (pod_pages.VolumeCard): a top, a mid and a bottom card piece stacked (and a second mid piece for the 12 px over three rows: 12 px top and bottom padding), the number and its info line over the first two, the 52 px bar in the last (patch/volume.c)
 VOLUME_GAP = 10             # the space under it, before the second card (Gain, Equalizer, Volume & Sound): part of the item, so the item is VOLUME_ITEM_H high
@@ -96,7 +102,7 @@ def cnote_h(note):
 def item_h(item):
     """The height of a layout item: Hdr, Note, GAP, Row or TOP / END."""
     return (HDR_H if isinstance(item, pod_pages.Hdr) else cnote_h(item) if isinstance(item, pod_pages.Note) and item.center else NOTE_H + (item.lines - 1) * WRAP_LINE if isinstance(item, pod_pages.Note)
-            else hero_h(item) if isinstance(item, pod_pages.Hero) else BIG_H if isinstance(item, pod_pages.BigCard) else GAP_H if item is pod_pages.GAP
+            else hero_h(item) if isinstance(item, pod_pages.Hero) else hero_h(item.hero) if isinstance(item, pod_pages.QrCard) else PILL_ITEM_H if isinstance(item, pod_pages.QrPill) else BIG_H if isinstance(item, pod_pages.BigCard) else GAP_H if item is pod_pages.GAP
             else REGION_H if item is pod_pages.REGION else GRAPH_H if isinstance(item, pod_pages.Graph) else (HIST_LEVEL_H if item.kind == 'level' else HIST_ACT_H) if isinstance(item, pod_pages.HistChart) else HIST_SUMMARY_H if isinstance(item, pod_pages.HistSummary) else VOLUME_ITEM_H if isinstance(item, pod_pages.VolumeCard) else SLIDERS_H if isinstance(item, pod_pages.Sliders) else SEG_H if isinstance(item, pod_pages.Segment) else ROW_H if isinstance(item, (pod_pages.Brightness, pod_pages.VolCard)) else XFADE_H if isinstance(item, pod_pages.XfadeCard) else HSL_H if isinstance(item, pod_pages.HSliders) else CM if item == TOP else END_H if item == END else row_h(item))
 
 
@@ -104,6 +110,8 @@ def layout(items):
     """(placed, end): placed = [(item, y)] for [TOP] + items + [END], the stacked column the list_view layouter makes; end = virtual_h."""
     y, placed = 0, []
     for it in [TOP] + list(items) + [END]:
+        if isinstance(it, pod_pages.QrCard):   # in its Hero's place: the payload shows one of the two, and the layouter stacks only the visible one
+            placed.append((it, placed[-1][1])); continue
         placed.append((it, y))
         y += item_h(it)
     return placed, y

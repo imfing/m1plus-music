@@ -19,7 +19,8 @@ WRAP_UNIT = re.compile(r'[^\s⺀-鿿＀-￯฀-๿]+\s*|[⺀-鿿＀-￯฀-๿]\
 RAW = PI.RAW
 
 # What a typical device shows: widget name -> text (values), name -> on (switches), name -> shown (checks, the hidden card), per page key.
-WT_STATE = {'values': {'pod_big0_t': '192.168.100.100:8888'}}   # Wi-Fi Transfer: the big card's text, four three-digit groups (the digits are tabular: 255.255.255.255 is as wide)
+WT_STATE = {'values': {'pod_big0_t': '192.168.100.100:8888'}}
+WT_QR_STATE = dict(WT_STATE, hidden={'pod_hero'}, items={'pod_qr'}, pill='Hide QR Code')   # the pill tapped: the code in the hero's place (patch/netservice.c wt_qr_set)   # Wi-Fi Transfer: the big card's text, four three-digit groups (the digits are tabular: 255.255.255.255 is as wide)
 XFADE_SHOWN = {'pod_sec0', 'pod_xfcard', 'pod_row1', 'pod_note0', 'pod_note1'}   # the items of the Crossfade page the payload shows while its switch is on (patch/xfadeset.c xfade_show)
 XFADE_ON = {'switches': {'pod_switch0': True, 'pod_switch1': True}, 'items': XFADE_SHOWN, 'vol': 5, 'xf_text': '5 seconds'}
 XFADE_OFF = {'switches': {'pod_switch0': False, 'pod_switch1': True}}
@@ -113,6 +114,8 @@ def draw_page(s, key, full=False, state=None, lit=False, pal=None, pressed=None,
         elif c.name == 'pod_volume': draw_volume(s, im, c, y, ink, img, st)
         elif c.name == 'pod_hero': draw_hero(s, im, c, y, ink, img)
         elif c.name.startswith('pod_big'): draw_bigcard(s, im, c, y, ink, img, values)
+        elif c.name == 'pod_qr': draw_qr(im, c, y, ink, values)
+        elif c.name == 'pod_qrpill': draw_qrpill(s, im, c, y, ink, img, st.get('pill'))
         else: draw_text_item(s, im, c, y, ink, st.get('texts'))
         y += c.h
     d.rectangle((0, 0, W - 1, NAV - 1), fill=base)   # the list is under the navbar: it clips at its top
@@ -255,6 +258,33 @@ def draw_bigcard(s, im, c, y, ink, img, values):
         if not hasattr(s, 'bold'): s.bold = StbFont(os.path.join(s.tree, RAW, 'fonts/lyrics.ttf'))
         px = int(style(t, 'font_size')); text = values.get(t.name) or s.shown(t)
         s.bold.draw(im, int(t.x + t.w / 2 - s.bold.width(text, px) // 2), int(y + card.y + t.y + (t.h - px) / 2), text, px, ink(rgb(style(t, 'text_color'))) + (255,))
+
+
+def draw_qr(im, c, y, ink, values):
+    """A QrCard as patch/netservice.c wt_qr_paint draws it: the near-white paper, the modules of tools/qr.py's symbol of the big card's address (raw colours, as the payload's), the corners rounded
+    in the page's colour (ink: Light Mode flips them with the page)."""
+    import qr
+    code = c.children[0]; mod, quiet = ST.QR_MOD, ST.QR_QUIET; side = code.w
+    ip = (values.get('pod_big0_t') or '').split(':')[0]
+    sym = Image.new('RGBA', (side, side), rgb(ST.QR_RGB) + (255,)); d = ImageDraw.Draw(sym)
+    for r, row in enumerate(qr.encode(qr.address_text(ip)) or ()):
+        for k, v in enumerate(row):
+            if v: d.rectangle(((quiet + k) * mod, (quiet + r) * mod, (quiet + k + 1) * mod - 1, (quiet + r + 1) * mod - 1), fill=rgb(ST.QR_DARK_RGB))
+    mask = Image.new('L', (side * 4, side * 4), 0); ImageDraw.Draw(mask).rounded_rectangle((0, 0, side * 4 - 1, side * 4 - 1), ST.QR_R * 4, fill=255)
+    sym.putalpha(mask.resize((side, side), Image.LANCZOS))
+    under = Image.new('RGBA', (side, side), ink((0, 0, 0)) + (255,)); under.alpha_composite(sym)
+    im.alpha_composite(under, (c.x + code.x, y + code.y))
+
+
+def draw_qrpill(s, im, c, y, ink, img, text=None):
+    """A QrPill as patch/netservice.c wt_pill_fit leaves it: as wide as its label needs, centred, the glyph and the grey label centred as a pair on the flat rest-surface pill."""
+    b = c.children[0]; text = s.strings.get(text, text) if text else s.shown(b)
+    px = ST.PILL_PX; tw = s.font.width(text, px); w = 2 * ST.PILL_PAD + ST.PILL_GLYPH + ST.PILL_GAP + tw; h = ST.PILL_H
+    x0, top = ST.CM + ST.CARD_W // 2 - w // 2, y + ST.PILL_Y
+    big = Image.new('RGBA', (w * 4, h * 4), (0, 0, 0, 0)); ImageDraw.Draw(big).rounded_rectangle((0, 0, w * 4 - 1, h * 4 - 1), ST.PILL_R * 4, fill=ink(rgb(style(b, 'bg_color'))) + (255,))
+    im.alpha_composite(big.resize((w, h), Image.LANCZOS), (x0, top))
+    g = img('wt_qr'); im.alpha_composite(g, (x0 + ST.PILL_PAD, top + ST.PILL_DROP + (h - g.height) // 2))   # the margins move the icon square down PILL_DROP, the PNG's clear rows lift the glyph back
+    s.text(im, x0 + ST.PILL_PAD + ST.PILL_GLYPH + ST.PILL_GAP, top + h / 2 + ST.PILL_DROP, text, px, ink(rgb(style(b, 'text_color'))))
 
 
 def draw_text_item(s, im, c, y, ink=lambda c: c, texts=None):
@@ -631,11 +661,12 @@ def main():
                      ('datetime-manual', draw_page(s, 'm1plus_datetime')), ('datetime-auto', draw_page(s, 'm1plus_datetime', state=on)), ('timezone', draw_page(s, 'm1plus_timezone', state={'shown': {'pod_check0'}})),
                      ('dtdate', draw_page(s, 'm1plus_dtdate', state={'values': {'pod_value0': '2026', 'pod_value1': '11', 'pod_value2': '15'}})),
                      ('dttime', draw_page(s, 'm1plus_dttime', state={'values': {'pod_value0': '14', 'pod_value1': '05'}})), ('dtyear', draw_page(s, 'm1plus_dtyear', state={'shown': {'pod_check4'}})),
-                     ('playset', draw_page(s, 'm1plus_playset', full=True)), ('psvolume', draw_page(s, 'm1plus_psvolume', full=True)), ('psoutput', draw_page(s, 'm1plus_psoutput', full=True)), ('library', draw_page(s, 'm1plus_library', full=True)), ('libupdate', draw_page(s, 'm1plus_libupdate', full=True)), ('cardrun', draw_page(s, 'm1plus_cardrun', full=True)), ('cardrun-running', draw_page(s, 'm1plus_cardrun', full=True, state={'values': {'pod_value0': 'Running 0:12', 'pod_label1.text': 'Stop'}})), ('cardlog', draw_cardlog(s, CARDLOG_SAMPLE)), ('cardsrc', draw_cardlog(s, CARDSRC_SAMPLE, 'm1plus_cardsrc')), ('netservice', draw_page(s, 'm1plus_netservice', full=True, state={'switches': {'pod_switch0': True}})), ('wifitransfer', draw_page(s, 'm1plus_wifitransfer', full=True, state=WT_STATE))):
+                     ('playset', draw_page(s, 'm1plus_playset', full=True)), ('psvolume', draw_page(s, 'm1plus_psvolume', full=True)), ('psoutput', draw_page(s, 'm1plus_psoutput', full=True)), ('library', draw_page(s, 'm1plus_library', full=True)), ('libupdate', draw_page(s, 'm1plus_libupdate', full=True)), ('cardrun', draw_page(s, 'm1plus_cardrun', full=True)), ('cardrun-running', draw_page(s, 'm1plus_cardrun', full=True, state={'values': {'pod_value0': 'Running 0:12', 'pod_label1.text': 'Stop'}})), ('cardlog', draw_cardlog(s, CARDLOG_SAMPLE)), ('cardsrc', draw_cardlog(s, CARDSRC_SAMPLE, 'm1plus_cardsrc')), ('netservice', draw_page(s, 'm1plus_netservice', full=True, state={'switches': {'pod_switch0': True}})), ('wifitransfer', draw_page(s, 'm1plus_wifitransfer', full=True, state=WT_STATE)), ('wifitransfer-qr', draw_page(s, 'm1plus_wifitransfer', full=True, state=WT_QR_STATE))):
         os.makedirs(s2, exist_ok=True); im.save(os.path.join(s2, name + '.png')); print('wrote', os.path.join(s2, name + '.png'))
     for loc, tag in (('ge_DE', 'de'), ('ru_RU', 'ru'), ('zh_CN', 'zh'), ('th_TH', 'th'), ('fr_FR', 'fr')):   # the Wi-Fi Transfer page in the long languages (out/preview/stock2/wifitransfer-<tag>.png)
         t = PI.Side(sys.argv[1], True, loc); t.mark = lambda *a: None
         draw_page(t, 'm1plus_wifitransfer', full=True, state=WT_STATE).save(os.path.join(s2, f'wifitransfer-{tag}.png')); print('wrote', os.path.join(s2, f'wifitransfer-{tag}.png'))
+        draw_page(t, 'm1plus_wifitransfer', full=True, state=WT_QR_STATE).save(os.path.join(s2, f'wifitransfer-qr-{tag}.png'))   # the pill's longer label
         draw_page(t, 'm1plus_general', full=True).save(os.path.join(s2, f'general-{tag}.png')); print('wrote', os.path.join(s2, f'general-{tag}.png'))   # General's labels
     # Light Mode (docs/modules/accent.md): the same pages with the hooks' colours and images (tools/palette.py); the Settings page with Light Mode On, and the picker
     lit = os.path.join(os.path.dirname(out), 'settings-light.png')

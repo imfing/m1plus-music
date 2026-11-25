@@ -340,13 +340,13 @@ def run(ctx):
     wrap_w = 260 - 2 * 12
     unit = re.compile(r'[^\s⺀-鿿＀-￯฀-๿]+\s*|[⺀-鿿＀-￯฀-๿]\s*|\s+')
 
-    def wrapped(text, px, maxw):
-        lines, cur = 1, ''
+    def wrapped(text, px, maxw, rows=False):
+        lines, cur, out = 1, '', []
         for u in unit.findall(text):
-            if cur and width((cur + u).rstrip(), px) > maxw: lines, cur = lines + 1, ''
+            if cur and width((cur + u).rstrip(), px) > maxw: lines, cur = lines + 1, out.append(cur) or ''
             cur += u
-            while width(cur.rstrip(), px) > maxw: lines, cur = lines + 1, cur[len(cur) // 2:]     # a unit wider than a line
-        return lines
+            while width(cur.rstrip(), px) > maxw: lines, cur = lines + 1, out.append(cur[:len(cur) // 2]) or cur[len(cur) // 2:]     # a unit wider than a line
+        return out + [cur] if rows else lines
     for key, what in (('Rebuild all covers? This may take a few minutes.', 'Rebuild Covers'), ('Rebuild all artist photos? This may take a few minutes.', 'Rebuild Artist Photos'), ('Take a screenshot?', 'Screenshot'), ('Take a screenshot in:', 'Screenshot delay'),
                       ('Cancel the screenshot?', 'Cancel Screenshot'), ('Delete all cached covers? They will be made again on Home.', 'Clear Cover Cache'), ('Delete all measured track durations? They will be measured again on Home.', 'Clear Track Durations'), ('Reset all settings to their defaults?', 'Reset All Settings'), ('Delete this settings file?', 'Delete Settings File'), ('Delete all unsupported files?', 'Delete Unsupported Files'), ('Delete this unsupported file?', 'Delete Unsupported File'),('Delete folder and everything in it?', 'Delete folder'), ('Download %s (55 MB)? It replaces update.bin on the card.', 'Software Update'),
                       ('msg_bt_open', 'Bluetooth switch-on warning'), ('msg_wifi_open', 'Wi-Fi switch-on warning')):
@@ -409,7 +409,7 @@ def run(ctx):
                         continue
                     if width(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px) > node.w - 4: cards_over.append((page.key, node.name, loc, px))
     # every wrapping note (Note.lines > 1, a plain label) of every generated settings page wraps to at most `lines` lines of its label's width, in every language
-    wrap_seen = 0
+    wrap_seen, CLOSING = 0, set('。，、．！？：；）」』》〉】')
     for page in [p for p in pod_pages.PAGES if p.layout is not None]:
         tree = awtk_ui.parse(open(os.path.join(WORK, RAW, 'ui', page.key + '.bin'), 'rb').read())
         for n, note in enumerate(x for x in page.layout if isinstance(x, (pod_pages.Note, pod_pages.Hero))):   # (a Hero's description is numbered as a note; a centred Note and the description always wrap)
@@ -420,7 +420,9 @@ def run(ctx):
             wrap_seen += 1
             px = int(node.get('style:normal:font_size'))
             for loc in LOC:
-                if node.type != 'label' or wrapped(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px, node.w - 4) > note.lines: cards_over.append((page.key, node.name, loc, px, 'wrap'))
+                rows = wrapped(tr_text(loc, pod_i18n.key_for(pod_i18n.shown_english(node))), px, node.w - 4, rows=True)
+                if node.type != 'label' or len(rows) > note.lines: cards_over.append((page.key, node.name, loc, px, 'wrap'))
+                if any(r[:1] in CLOSING for r in rows[1:]): cards_over.append((page.key, node.name, loc, 'a row starts with closing punctuation', rows))   # (an orphaned 。 or ，: reword the translation)
     expect(wrap_seen >= 4, f'the wrapping notes were found ({wrap_seen})')
     note_over = [(loc, k) for loc in LOC for k in pod_pages.RGB_NOTES if wrapped(tr_text(loc, k), ST.NOTE_PX, ST.HDR_W - 4 - 4) > 2]   # the Theme page's note (two lines, a wrapping label of the note's width): the payload sets one of these
     expect(not note_over, f'the four Theme notes wrap to at most two lines in all 13 languages ({note_over})')

@@ -2590,6 +2590,29 @@ def cards_bigcard(n):
     return v
 
 
+def cards_qr(card):
+    """A QrCard: a black view as high as its Hero (hidden and insensitive until the payload shows it in the Hero's place) holding pod_qr_code, a QR_SIDE square centred on the card column and on the
+    item's height that the payload paints in its EVT_AFTER_PAINT (patch/netservice.c wt_qr_paint: the paper, the modules, the corners)."""
+    import pod_settings as ST
+    v = cards_spacer('pod_qr', ST.hero_h(card.hero))
+    v.children.append(Widget('view', ST.CM + (ST.CARD_W - ST.QR_SIDE) // 2, (v.h - ST.QR_SIDE) // 2, ST.QR_SIDE, ST.QR_SIDE, [('name', 'pod_qr_code'), ('sensitive', 'false')]))
+    return v
+
+
+def cards_qrpill(pill):
+    """A QrPill: a sensitive black view (its button must be reachable) holding the flat pill pod_qrbtn in the flat pills' colours (SG_PILL_RGB, pressed SG_PILL_DOWN_RGB), the grey 14 px label and the wt_qr glyph; the
+    payload sets its width and centres it for the language (patch/netservice.c wt_pill_fit), the asset's is the English label's at most."""
+    import pod_settings as ST
+    v = Widget('view', 0, 0, ST.LIST_W, ST.PILL_ITEM_H, [('name', 'pod_qrpill')])
+    for st in STATES: styled(v, (st,), 'bg_color', '#000000')
+    w = 2 * ST.PILL_PAD + ST.PILL_GLYPH + ST.PILL_GAP + 100
+    b = Widget('button', ST.CM + (ST.CARD_W - w) // 2, ST.PILL_Y, w, ST.PILL_H, [('name', 'pod_qrbtn'), ('enable', 'true'), pod_i18n.text_prop(pill.text)])
+    for st in STATES:   # the label ST.PILL_DROP px low, its caps centred on the glyph (whose PNG is padded below to stay where it was)
+        styled(b, (st,), 'margin_top', str(2 + ST.PILL_DROP)); styled(b, (st,), 'margin_bottom', str(2 - ST.PILL_DROP))
+    v.children.append(flat_pill(b, SG_PILL_RGB, SG_PILL_DOWN_RGB, ST.PILL_R, ink=ST.GREY, px=ST.PILL_PX, icon='wt_qr'))
+    return v
+
+
 def cards_cnote(name, note):
     """A centred note (Note.center): a view holding the note-size grey wrapping label pod_note<n>_t, centred on the card column."""
     import pod_settings as ST
@@ -2626,6 +2649,8 @@ def build_cards_page(page):
         elif isinstance(it, pod_pages.Hdr): sv.children.append(cards_text(f'pod_sec{n_hdr}', ST.HDR_LABEL_Y, ST.HDR_LABEL_H, it.text, ST.HDR_PX, ST.HDR_H)); n_hdr += 1
         elif isinstance(it, pod_pages.Hero): sv.children.append(cards_hero(it, n_note)); n_note += 1
         elif isinstance(it, pod_pages.BigCard): sv.children.append(cards_bigcard(n_big)); n_big += 1
+        elif isinstance(it, pod_pages.QrCard): sv.children.append(cards_qr(it))
+        elif isinstance(it, pod_pages.QrPill): sv.children.append(cards_qrpill(it))
         elif isinstance(it, pod_pages.Note) and it.center: sv.children.append(cards_cnote(f'pod_note{n_note}', it)); n_note += 1
         elif isinstance(it, pod_pages.Note):
             sv.children.append(cards_text(f'pod_note{n_note}', ST.NOTE_LABEL_Y, ST.NOTE_LABEL_H + (it.lines - 1) * ST.WRAP_LINE, it.text, ST.NOTE_PX, ST.item_h(it), it.lines > 1)); n_note += 1

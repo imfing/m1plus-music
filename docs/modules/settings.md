@@ -73,11 +73,13 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
   spacers, glyphs and accessories are never sensitive.
 - **Wrapping notes.** A `Note` with `lines > 1`, a centred note or a `Hero` description is a plain label
   and wraps only after `label_set_line_wrap`. `tools/pod.py` writes `Page.wrap_notes()` as the page's
-  `wrap_notes` field and `open_page` turns the wrap on, so no page or note number is hardcoded. Three layout
+  `wrap_notes` field and `open_page` turns the wrap on, so no page or note number is hardcoded. Five layout
   items serve the Wi-Fi Transfer page ([wifi-transfer](wifi-transfer.md)): `Hero(glyph, title, text)` (a
   rounded tile with a white glyph, a 22 px title and a wrapping 14 px grey description, all centred),
-  `BigCard()` (one tall card with a large centred label the payload fills) and `Note(center=True)` (a centred
-  wrapping footer at the note size).
+  `QrCard(hero)` (a hidden view as high as the hero, placed at its y and adding no height: the payload shows
+  one of the two), `BigCard()` (one tall card with a large centred label the payload fills),
+  `Note(center=True)` (a centred wrapping footer at the note size) and `QrPill(text)` (a small flat pill the
+  payload sizes to its label).
 
 ## Page notes
 

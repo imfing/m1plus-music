@@ -685,7 +685,7 @@ TEXT = dict([
        'Directorio', 'Directory', 'ไดเรกทอรี', 'Katalog', 'Каталог', 'Каталог'),   # (the row's label: it shares the room with the name of the directory)
     _t('Search Podcast Index', '搜索 Podcast Index', '搜尋 Podcast Index', 'Podcast Index を検索', 'Podcast Index 검색', 'Chercher sur Podcast Index', 'Podcast Index durchsuchen',
        'Buscar en Podcast Index', 'Cerca su Podcast Index', 'ค้นหา Podcast Index', 'Szukaj w Podcast Index', 'Поиск в Podcast Index', 'Пошук у Podcast Index'),
-    _t('Search words go to the chosen directory.', '搜索词会发送给所选目录。', '搜尋詞會傳送給所選目錄。', '検索語は選択したディレクトリに送信されます。', '검색어는 선택한 디렉터리로 전송됩니다.',
+    _t('Search words go to the chosen directory.', '搜索词会发送给所选目录。', '搜尋詞會傳送給所選目錄。', '検索語は選択したディレクトリに送られます。', '검색어는 선택한 디렉터리로 전송됩니다.',
        'Les mots recherchés vont à l\'annuaire choisi.', 'Suchbegriffe gehen an das gewählte Verzeichnis.', 'Los términos van al directorio elegido.', 'Le parole cercate vanno alla directory scelta.',
        'คำค้นหาจะถูกส่งไปยังไดเรกทอรีที่เลือก', 'Szukane słowa trafiają do wybranego katalogu.', 'Слова запроса отправляются в выбранный каталог.', 'Слова запиту надсилаються до вибраного каталогу.'),
     # Battery Percentage (patch/battery.c, docs/modules/battery.md): Settings > Battery
@@ -737,7 +737,7 @@ TEXT = dict([
        'Desactivarlo elimina el historial.', 'Disattivare elimina la cronologia.', 'การปิดจะลบประวัติ', 'Wyłączenie usuwa historię.', 'Выключение удаляет историю.', 'Вимкнення видаляє історію.'),
     _t('Estimated from the battery gauge.', '根据电量计估算。', '根據電量計估算。', 'バッテリーゲージからの推定値。', '배터리 게이지로 추정한 값입니다.', 'Estimé d’après la jauge de batterie.', 'Anhand des Akku-Messchips geschätzt.',
        'Estimado a partir del indicador de batería.', 'Stimato dall’indicatore della batteria.', 'ประมาณจากเกจแบตเตอรี่', 'Szacowane na podstawie wskaźnika baterii.', 'Оценка по датчику заряда.', 'Оцінка за датчиком заряду.'),
-    _t('Battery history appears after the first 15 minutes.', '电池记录将在最初 15 分钟后显示。', '電池記錄將在最初 15 分鐘後顯示。', '最初の15分後にバッテリー履歴が表示されます。',
+    _t('Battery history appears after the first 15 minutes.', '电池记录将在最初 15 分钟后显示。', '電池記錄將在最初 15 分鐘後顯示。', '15分後にバッテリー履歴が表示されます。',
        '처음 15분 후에 배터리 기록이 표시됩니다.', 'L’historique apparaît après les 15 premières minutes.', 'Der Akkuverlauf erscheint nach den ersten 15 Minuten.',
        'El historial aparece tras los primeros 15 minutos.', 'La cronologia appare dopo i primi 15 minuti.', 'ประวัติแบตเตอรี่จะแสดงหลัง 15 นาทีแรก',
        'Historia baterii pojawi się po pierwszych 15 minutach.', 'История появится через 15 минут.', 'Історія з’явиться через 15 хвилин.'),
@@ -960,7 +960,7 @@ TEXT = dict([
     _t("The sample rate stays the same from track to track; later tracks are resampled to it. Pause or skip to return to a track's own rate.",
        '曲目连续播放时采样率保持不变，后面的曲目会重采样到该采样率。暂停或切歌后恢复曲目自身的采样率。',
        '曲目連續播放時取樣率保持不變，後面的曲目會重新取樣到該取樣率。暫停或切歌後恢復曲目本身的取樣率。',
-       '曲が続けて再生される間はサンプルレートが変わらず、後の曲はそれに合わせて変換されます。一時停止またはスキップで曲本来のレートに戻ります。',
+       '曲が続く間はサンプルレートが変わらず、後の曲はそれに合わせて変換されます。一時停止またはスキップで曲本来のレートに戻ります。',
        '곡이 이어서 재생되는 동안 샘플링 속도는 유지되며, 다음 곡은 그 속도로 변환됩니다. 일시 정지하거나 건너뛰면 곡 본래의 속도로 돌아갑니다.',
        'La fréquence d’échantillonnage reste la même d’un titre à l’autre ; les titres suivants y sont convertis. Une pause ou un saut de titre rétablit celle du titre.',
        'Die Abtastrate bleibt von Titel zu Titel gleich; folgende Titel werden darauf umgerechnet. Pause oder Titelwechsel stellt die Rate des Titels wieder her.',
@@ -2235,12 +2235,16 @@ TEXT.update([
        'Con el mismo Wi-Fi, abre esta dirección en un navegador para gestionar tu música.', 'Sulla stessa rete Wi-Fi, apri questo indirizzo in un browser per gestire la tua musica.',
        'ใช้ Wi-Fi เดียวกัน แล้วเปิดที่อยู่นี้ในเบราว์เซอร์เพื่อจัดการเพลงของคุณ', 'W tej samej sieci Wi-Fi otwórz ten adres w przeglądarce, aby zarządzać muzyką.',
        'В той же сети Wi-Fi откройте этот адрес в браузере, чтобы управлять музыкой.', 'У тій самій мережі Wi-Fi відкрийте цю адресу в браузері, щоб керувати музикою.'),
-    _t('Playback is paused while this page is open. Leave the page to turn it off.', '此页面打开时播放会暂停，离开页面即关闭。', '此頁面開啟時播放會暫停，離開頁面即關閉。',
+    _t('Playback is paused while this page is open. Leave the page to turn it off.', '此页面打开时暂停播放，离开页面即关闭。', '此頁面開啟時暫停播放，離開頁面即關閉。',
        'このページを開いている間は再生が一時停止します。ページを離れるとオフになります。', '이 페이지가 열려 있는 동안 재생이 일시 중지됩니다. 페이지를 나가면 꺼집니다.',
        'La lecture est en pause tant que cette page est ouverte. Quittez la page pour la désactiver.', 'Die Wiedergabe pausiert, solange diese Seite offen ist. Verlasse sie zum Beenden.',
        'La reproducción se pausa mientras esta página está abierta. Sal de la página para desactivarlo.', 'La riproduzione è in pausa finché questa pagina è aperta. Esci dalla pagina per disattivarlo.',
        'การเล่นจะหยุดชั่วคราวขณะเปิดหน้านี้ ออกจากหน้านี้เพื่อปิด', 'Odtwarzanie jest wstrzymane, gdy ta strona jest otwarta. Wyjdź ze strony, aby wyłączyć.',
        'Пока эта страница открыта, воспроизведение приостановлено. Покиньте страницу, чтобы выключить.', 'Поки ця сторінка відкрита, відтворення призупинено. Залиште сторінку, щоб вимкнути.'),
+    _t('Show QR Code', '显示二维码', '顯示 QR 碼', 'QRコードを表示', 'QR 코드 보기', 'Afficher le code QR', 'QR-Code anzeigen', 'Mostrar código QR', 'Mostra codice QR',
+       'แสดงคิวอาร์โค้ด', 'Pokaż kod QR', 'Показать QR-код', 'Показати QR-код'),
+    _t('Hide QR Code', '隐藏二维码', '隱藏 QR 碼', 'QRコードを隠す', 'QR 코드 숨기기', 'Masquer le code QR', 'QR-Code ausblenden', 'Ocultar código QR', 'Nascondi codice QR',
+       'ซ่อนคิวอาร์โค้ด', 'Ukryj kod QR', 'Скрыть QR-код', 'Сховати QR-код'),
 ])
 # Settings > Library > Update Library (patch/libupdate.c, docs/modules/libupdate.md). The page title and the row are stock's sset_updatemusic. Machine translations, checked for fit only.
 TEXT.update([
@@ -2267,7 +2271,7 @@ TEXT.update([
     _t('Auto Update', '自动更新', '自動更新', '自動更新', '자동 업데이트', 'Mise à jour auto', 'Auto-Update',
        'Actualizar auto', 'Aggiorna auto', 'อัปเดตอัตโนมัติ', 'Auto-aktualizacja', 'Автообновление', 'Автооновлення'),
     _t('Choose Folders only adds new music. To remove deleted songs, use Update Now.', '“选择文件夹”只会添加新音乐。要移除已删除的歌曲，请使用“立即更新”。',
-       '「選擇資料夾」只會新增音樂。要移除已刪除的歌曲，請使用「立即更新」。', '「フォルダを選択」は新しい曲の追加のみです。削除した曲は「今すぐ更新」で除かれます。',
+       '「選擇資料夾」只會新增音樂。要移除已刪除的歌曲，請使用「立即更新」。', '「フォルダを選択」は新曲の追加のみです。削除した曲は「今すぐ更新」で除かれます。',
        '“폴더 선택”은 새 음악만 추가합니다. 삭제한 곡을 제거하려면 “지금 업데이트”를 사용하세요.',
        'Choisir les dossiers n’ajoute que du neuf. Titres supprimés : Mettre à jour.',
        'Ordner wählen fügt nur Neues hinzu. Gelöschte Titel entfernt Jetzt aktualisieren.',

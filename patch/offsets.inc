@@ -1036,6 +1036,19 @@
 #define SG_PILL_R 20
 #define SG_PILL_GLYPH 16
 #define SG_PILL_GAP 8
+/* The Wi-Fi Transfer page's QR code and its pill (patch/netservice.c; tools/pod_settings.py QR_* / PILL_*, the same numbers): the code 4 px a module with a 4-module border on its
+ * near-white paper (raw colours: Light Mode keeps them), radius 12; the pill 32 high, the 14 px glyph and label 5 apart, 14 px each side, centred on the card column (x 160 of the item). */
+#define WT_QR_MOD 4
+#define WT_QR_QUIET 4
+#define WT_QR_R 12
+#define WT_QR_PAPER 0xffeae5e5u /* #E5E5EA as a color_t word (r, g, b, a bytes) */
+#define WT_QR_DARK 0xff000000u
+#define WT_PILL_Y 6
+#define WT_PILL_H 32
+#define WT_PILL_GLYPH 14
+#define WT_PILL_GAP 5
+#define WT_PILL_PAD 14
+#define WT_PILL_MID 160
 #define SG_PILL_PX_SMALL 16     /* a pill label too wide beside its glyph at 18 px is drawn at this size (patch/common.c m1_centre_pill) */
 #define SG_TOP 104
 #define SG_HDR_H 28

@@ -398,7 +398,8 @@ unsent listens stay in the log for the next attempt. Details: [scrobbling](modul
 
 1. Connect to Wi-Fi and open **Settings → Network Services → Wi-Fi Transfer**, or tap the
    **Wi-Fi Transfer** tile in Control Center if you have added it. Playback stops while the page is open.
-2. Open the address shown (port 8888) in a browser on the same network.
+2. Open the address shown (port 8888) in a browser on the same network. On a phone, tap
+   **Show QR Code** and scan the code with the camera instead of typing the address.
 3. Leave the player page to turn Wi-Fi Transfer off.
 
 The browser page lists the whole card: sort, filter, select files to download, rename, move or

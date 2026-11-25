@@ -864,14 +864,36 @@ void m1_pill_paint(const m1_pill_t *p, void *canvas, int y) {
     if (n) canvas_draw_text_in_rect(canvas, text, n, rect);
 }
 
-/* The pills: the glyph and the label centred as a pair SG_PILL_GAP apart (the flat pills of the Songs, Folders and artist pages, the select bars'): AWTK puts the glyph in a
- * square as high as the button at margin_left and the text at the square's end plus the spacer. Moved from patch/songs.c. */
-void m1_centre_pill(void *btn, int pw) {
-    static const char *const key[5] = {"normal:", "pressed:", "over:", "focused:", "disable:"};
+static const char *const pill_key[5] = {"normal:", "pressed:", "over:", "focused:", "disable:"};
+
+/* A pill pw x ph whose glyph (glyph px) and label (tw px) are centred as a pair gap apart: AWTK puts the glyph in a square as high as the button at margin_left and the
+ * text at the square's end plus the spacer, so these five styles are set in every state. */
+void m1_pill_styles(void *btn, int pw, int ph, int glyph, int gap, int tw) {
     static const char *const prop[5] = {"margin_left", "icon_at", "margin_right", "spacer", "text_align_h"};
-    const unsigned *text = widget_get_text(btn);
-    int tw = text && *text ? m1_text_w(btn, text) : 0, margin, i, j;
+    int margin = (pw - (glyph + gap + tw)) / 2 - (ph - glyph) / 2, i, j;
     unsigned v[4], val[5]; /* value_t: type at 0, the uint32 at 8 */
+    char name[32];
+    if (margin < 0) margin = 0;
+    val[0] = (unsigned)margin, val[1] = 1, val[2] = 0, val[3] = (unsigned)(gap - (ph - glyph) / 2),
+    val[4] = 2; /* icon_at left, text_align_h left */
+    for (j = 0; j < 5; ++j) {
+        memset(v, 0, sizeof v);
+        value_set_uint32(v, val[j]);
+        for (i = 0; i < 5; ++i) {
+            unsigned k = 0, m = 0;
+            while (pill_key[i][k]) name[k] = pill_key[i][k], ++k;
+            while (prop[j][m]) name[k++] = prop[j][m++];
+            name[k] = 0;
+            widget_set_style(btn, name, v);
+        }
+    }
+}
+
+/* The pills: the glyph and the label centred as a pair SG_PILL_GAP apart (the flat pills of the Songs, Folders and artist pages, the select bars'). Moved from patch/songs.c. */
+void m1_centre_pill(void *btn, int pw) {
+    const unsigned *text = widget_get_text(btn);
+    int tw = text && *text ? m1_text_w(btn, text) : 0, i;
+    unsigned v[4]; /* value_t: type at 0, the uint32 at 8 */
     char name[32];
     if (!text || !*text)
         return; /* (a text that cannot be measured is taken as 0 px wide: the glyph is still put at the left, not above the text as the automatic icon position would) */
@@ -881,7 +903,7 @@ void m1_centre_pill(void *btn, int pw) {
         for (i = 0; i < 5; ++i) {
             unsigned k = 0, m = 0;
             static const char fs[] = "font_size";
-            while (key[i][k]) name[k] = key[i][k], ++k;
+            while (pill_key[i][k]) name[k] = pill_key[i][k], ++k;
             while (fs[m]) name[k++] = fs[m++];
             name[k] = 0;
             memset(v, 0, sizeof v);
@@ -890,22 +912,7 @@ void m1_centre_pill(void *btn, int pw) {
         }
         tw = m1_text_w(btn, text);
     }
-    margin = (pw - (SG_PILL_GLYPH + SG_PILL_GAP + tw)) / 2 - (SG_PILL_H - SG_PILL_GLYPH) / 2;
-    if (margin < 0) margin = 0;
-    val[0] = (unsigned)margin, val[1] = 1, val[2] = 0,
-    val[3] = (unsigned)(SG_PILL_GAP - (SG_PILL_H - SG_PILL_GLYPH) / 2),
-    val[4] = 2; /* icon_at left, text_align_h left */
-    for (j = 0; j < 5; ++j) {
-        memset(v, 0, sizeof v);
-        value_set_uint32(v, val[j]);
-        for (i = 0; i < 5; ++i) {
-            unsigned k = 0, m = 0;
-            while (key[i][k]) name[k] = key[i][k], ++k;
-            while (prop[j][m]) name[k++] = prop[j][m++];
-            name[k] = 0;
-            widget_set_style(btn, name, v);
-        }
-    }
+    m1_pill_styles(btn, pw, SG_PILL_H, SG_PILL_GLYPH, SG_PILL_GAP, tw);
 }
 
 /* A select mark: the stock image (26 px) as a bitmap, cut to its circle. cc_decode flattens the image over black, so the square

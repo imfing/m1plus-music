@@ -83,6 +83,8 @@ def layout_tests(ctx):
             elif isinstance(it, P.Note): names.append((f'pod_note{n_n}', y, ST.item_h(it))); n_n += 1
             elif isinstance(it, P.Hero): names.append(('pod_hero', y, ST.hero_h(it))); n_n += 1   # (its description is numbered as a note)
             elif isinstance(it, P.BigCard): names.append((f'pod_big{n_b}', y, ST.BIG_H)); n_b += 1
+            elif isinstance(it, P.QrCard): names.append(('pod_qr', y, ST.item_h(it)))   # in its Hero's place (the same y): the payload shows one of the two
+            elif isinstance(it, P.QrPill): names.append(('pod_qrpill', y, ST.PILL_ITEM_H))
             elif isinstance(it, P.Brightness): names.append(('pod_bright', y, ST.ROW_H))   # the Display page's brightness card: a row's height
             elif isinstance(it, P.VolCard): names.append(('pod_vsval' if it.part == 'value' else 'pod_vsctl', y, ST.ROW_H))   # the loudness pages' cards: a row's height
             elif isinstance(it, P.XfadeCard): names.append(('pod_xfcard', y, ST.XFADE_H))   # the Crossfade page's duration card and the gap under it
@@ -91,7 +93,13 @@ def layout_tests(ctx):
             else: names.append((f'pod_row{n_r}', y, ST.row_h(it))); n_r += 1
         expect([(c.name, c.y, c.h) for c in sv.children] == names, f'{page.key}: the scroll_view\'s children are the model\'s column in display order, each as high as the model says (asset y = the stacked y)')
         # demo's own layouter on the structs
-        m = SL(page, show_all=True)
+        swap = [n for n in names if n[0] == 'pod_qr']   # (a QR code and its Hero are never shown together: the column is checked with the Hero, then with the code in its place)
+        if swap:
+            hero = next(n for n in names if n[0] == 'pod_hero')
+            mq = SL(page, hide=('pod_hero',), show_all=True)
+            expect(mq.box('pod_qr')[1:4:2] == (hero[1], hero[2]) and swap[0][1:] == hero[1:] and mq.vh() == end, f'{page.key}: with the code shown and the hero hidden, demo\'s layouter puts the code at the hero\'s y, as high, and nothing else moves')
+            names = [n for n in names if n[0] != 'pod_qr']
+        m = SL(page, hide=tuple(n[0] for n in swap), show_all=True)
         got =[(n, ) + m.box(n) for n, _, _ in names]
         expect(all((x, y, h) == (0, ey, eh) for (n, x, y, w, h), (_, ey, eh) in zip(got, names)), f'{page.key}: demo\'s layouter puts every child at x 0 and the model\'s y with its own height ({[(g[0], g[2]) for g, (_, ey, _) in zip(got, names) if g[2] != ey][:3]})')
         widths = {w for _, _, _, w, _ in got}
@@ -164,6 +172,8 @@ def layout_tests(ctx):
                     expect(n in got_path and not any(c.startswith(('pod_value', 'pod_switch', 'pod_chevron', 'pod_icon', 'pod_check', 'pod_hair')) for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches its list_item ({got_path})')
                 elif n == 'pod_bright':   # the Display page's brightness card: the slider takes the touch over its own width; the card (a sensitive view, or stock's hit test would not look into it) has nothing bound
                     expect(got_path[-1] == ('slider_brightness' if x == 160 else 'pod_bright') and not any(c.startswith('pod_row') for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches the slider only over the slider ({got_path})')
+                elif n == 'pod_qrpill':   # the Wi-Fi Transfer page's pill: the button over its own width, the item (sensitive, so the button is reached) beside it with nothing bound
+                    expect(got_path[-1] == ('pod_qrbtn' if x == 160 else n) and not any(c.startswith('pod_row') for c in got_path), f'{page.key}: a tap at x {x} on {n} reaches the pill only over the pill ({got_path})')
                 elif n == 'pod_volume':   # the Volume page's card: its middle (between the buttons' row and the bar) is the card itself, nothing bound to it
                     expect(got_path[-1] == n and not any(c.startswith('pod_row') for c in got_path), f'{page.key}: a tap at x {x} in the middle of {n} reaches the card only ({got_path})')
                 elif n in ('pod_vsval', 'pod_vsctl'):   # the loudness pages' cards: the value card takes the touch itself (its label is insensitive); in the control card the two buttons and the slider take it over their own width

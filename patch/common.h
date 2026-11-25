@@ -165,6 +165,8 @@ void *m1_bind(void *win, const char *name, int (*fn)(void *, void *), const void
 /* The flat pill's glyph and label (a button whose style has the glyph as its icon) centred as a pair SG_PILL_GAP apart in a pill pw px wide (the Songs, Folders and artist pages' Play / Shuffle pills, the select bars' pills; AWTK puts the glyph in a square as high as the button at margin_left and the text at the square's end plus the spacer); a label too wide beside
  * the glyph steps down to SG_PILL_PX_SMALL. Needs the button's text (widget_get_text) to be set. */
 void m1_centre_pill(void *btn, int pw);
+/* A pill pw x ph: its glyph (glyph px) and label (tw px) centred as a pair gap apart (the styles m1_centre_pill sets, for any pill size). */
+void m1_pill_styles(void *btn, int pw, int ph, int glyph, int gap, int tw);
 /* The header's Play pill, the album page's design (patch/albumpage.c, a playlist's page): the pill is a picture (the button), the glyph an image over it and
  * the text painted by the page's content view; glyph and text are centred as a pair for the language (AH_PILL_*). ptext is the hidden label with the text style and the translated
  * text. m1_pill_place puts the glyph and measures the text for a button whose top is y (AH_PLAY_X, AH_BTN_H high; one that cannot be measured, or does not fit, is centred as

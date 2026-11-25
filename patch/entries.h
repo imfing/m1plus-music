@@ -306,6 +306,14 @@ void wt_opened(
     void *win); /* the page's window is up: stop_player, switch_wifitransport(1), and the exits that stop it */
 void wt_front(void); /* back in front after the player: the server again */
 
+/* patch/qr.c: the QR code of the Wi-Fi Transfer page's address (version 2, level M, alphanumeric; tools/qr.py is its model) */
+#define QR_SIZE 25 /* modules per side */
+#define QR_BYTES ((QR_SIZE * QR_SIZE + 7) / 8) /* the symbol as bits, row by row, the first module in bit 7 of byte 0 */
+int qr_make(
+    const char *text, int mask,
+    unsigned char *
+        bits); /* bits: the symbol of text with mask 0..7, or the least penalty's (-1); QR_SIZE, or 0 when text does not fit */
+
 /* patch/libupdate.c: Settings > Library > Update Library (stock's autoscan_flag, scan dialog and folder page; the Last Updated record) */
 int lu_auto(void);
 int lu_auto_toggle(void); /* stock's switch: the byte xor 1, then [SYSSET] AUTOSCAN; the new state */
