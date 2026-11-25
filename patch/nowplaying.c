@@ -172,6 +172,10 @@ static struct {
     int cr; /* the corner radius np.corner holds (0: NP_ART_R) */
     unsigned pchk; /* the play button's status check timer (0 none) */
     int pst, pleft; /* the status when the button was tapped, checks left */
+    void *slider; /* slider_play, the progress bar (np_on_scrub) */
+    int scrub; /* 1 while a finger is on it: the bar goes to NP_BAR_SCRUB px thick, 0 to NP_BAR */
+    int bsz, bfrom; /* its bar_size now, and where the ease started */
+    unsigned bt0, btimer; /* the ease's start (time_now_ms), its frame timer (0 none) */
 } np __attribute__((section(".scratch")));
 
 /* A dark, a little desaturated tone of the cover's average colour (r, g, b bytes), as a color_t word
@@ -612,6 +616,14 @@ static void np_label(int own) {
     }
 }
 
+/* While a finger is on the progress bar (np.scrub) the times follow it, as Apple Music's do: the position is the slider's value scaled from its max (stock sets the track's
+ * length there) to the player's length. Stock's own VALUE_CHANGING handler writes label_playtime the same way, under np_elapsed. No 64-bit division in the payload. */
+static int np_scrub_pos(int pos, int len) {
+    unsigned max = widget_get_prop_int(np.slider, "max", 0), v = widget_get_prop_int(np.slider, "value", -1);
+    if (!max || v > max) return pos;
+    return max == (unsigned)len ? (int)v : (int)(v / max * len + v % max * len / max);
+}
+
 static void np_time(void) {
     int pos = 0, len = 0;
     char text[16];
@@ -620,6 +632,7 @@ static void np_time(void) {
         np_label(0);
         return;
     }
+    if (np.scrub && np.slider) pos = np_scrub_pos(pos, len);
     if (pos < 0) pos = 0;
     if (pos > len) pos = len;
     if (np.shown != len - pos) {
@@ -1677,6 +1690,7 @@ static void np_stop(void) {
     m1_timer_stop(&np.timer);
     m1_timer_stop(&np.anim);
     m1_timer_stop(&np.pchk);
+    m1_timer_stop(&np.btimer);
     if (np.sbmp) bitmap_destroy(np.sbmp);
     mb_art_free(&np.ia);
     memset(&np, 0, sizeof np);
@@ -1689,10 +1703,74 @@ static int np_on_destroy(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The progress bar thickens under the finger, as Apple Music's scrubber does: slider_play eases to NP_BAR_SCRUB px thick (centred in its 30 px target, so it grows both ways)
+ * when a touch lands on it and back to NP_BAR when the touch ends, over NP_SCRUB_MS (an ease-in-out cubic, so neither end jumps; a frame every NP_FRAME_MS; a change mid-way turns round from the
+ * thickness it has). Only its bar_size and corners change; the drag and the seek stay stock's slider and handlers. */
+static void np_bar_set(int b) {
+    static const char *const state[5] = {"normal", "disable", "focused", "over", "pressed"};
+    char name[40];
+    int i;
+    if (b == np.bsz) return;
+    np.bsz = b;
+    widget_set_prop_int(np.slider, "bar_size", b);
+    for (i = 0; i < 5; ++i) {
+        snprintf(name, sizeof name, "style:%s:round_radius", state[i]);
+        widget_set_prop_int(np.slider, name, b / 2 + 1);
+    }
+    widget_invalidate_force(np.slider, (void *)0);
+}
+
+/* The thickness el ms into an ease from `from` to `to`: 1 - (1 - t)^3 of the way, rounded. */
+static int np_bar_ease(int from, int to, int el) {
+    int p = el >= NP_SCRUB_MS ? 1024 : (el < 0 ? 0 : el) * 1024 / NP_SCRUB_MS, u = 2048 - 2 * p;
+    int e = p < 512 ? 4 * p * p / 1024 * p / 1024 : 1024 - u * u / 1024 * u / 1024 / 2;
+    return from + ((to - from) * e + (to > from ? 512 : -512)) / 1024;
+}
+
+static int np_bar_frame(const void *timer) {
+    int el;
+    (void)timer;
+    if (!np.win || !np.btimer) return RET_OK;
+    el = (int)(time_now_ms() - np.bt0);
+    np_bar_set(np_bar_ease(np.bfrom, np.scrub ? NP_BAR_SCRUB : NP_BAR, el));
+    if (el < NP_SCRUB_MS) return RET_REPEAT;
+    np.btimer = 0; /* RET_OK ends this timer */
+    return RET_OK;
+}
+
+/* on: the touch's start (1) or end (0); animate 0 (another window over the page) sets the thickness at once. No frame timer: at once too. */
+static void np_scrub_look(int on, int animate) {
+    if (!np.slider || (np.scrub == on && (animate || !np.btimer))) return;
+    np.scrub = on;
+    np.bfrom = np.bsz;
+    np.bt0 = time_now_ms();
+    if (animate && !np.btimer) np.btimer = timer_add(np_bar_frame, (void *)0, NP_FRAME_MS);
+    if (animate && np.btimer) return;
+    m1_timer_stop(&np.btimer);
+    np_bar_set(on ? NP_BAR_SCRUB : NP_BAR);
+}
+
+/* slider_play's own pointer events (the _BEFORE copies reach its emitter first, whatever the slider answers; the slider holds the grab, so the release comes here too), and
+ * its EVT_VALUE_CHANGING while dragged: the times follow the finger at once (np_time, np_scrub_pos), not on the next tick. Stock's handler, bound first, stops its timer
+ * while dragging, so the value stays the finger's until the release seeks. */
+static int np_on_scrub(void *ctx, void *e) {
+    int type = e ? *(int *)e : 0;
+    (void)ctx;
+    if (!np.win) return RET_OK;
+    if (type == EVT_POINTER_DOWN_BEFORE)
+        np_scrub_look(1, 1);
+    else if (type == EVT_POINTER_UP_BEFORE || type == EVT_POINTER_ABORT)
+        np_scrub_look(0, 1);
+    else if (type == EVT_VALUE_CHANGING && np.scrub)
+        np_time();
+    return RET_OK;
+}
+
 /* Another window came over the page (a page, a dialog, the pull-down): the bar is black while it covers. */
 static int np_on_background(void *ctx, void *e) {
     (void)e;
     if (!np.win || ctx != np.win) return RET_OK;
+    np_scrub_look(0, 0); /* a touch the new window took: the progress bar is thin again, at once */
     if (np.barok) np.fg = 0;
     np_bar_black();
     return RET_OK;
@@ -1747,6 +1825,14 @@ static void np_start(void *win) {
     }
     np.queue = widget_lookup(win, "btn_queue", 1);
     if (np.mode) widget_on(np.mode, EVT_CLICK, np_on_mode, (void *)0);
+    np.slider = widget_lookup(win, "slider_play", 1);
+    np.bsz = NP_BAR; /* the asset's */
+    if (np.slider) {
+        widget_on(np.slider, EVT_POINTER_DOWN_BEFORE, np_on_scrub, (void *)0);
+        widget_on(np.slider, EVT_POINTER_UP_BEFORE, np_on_scrub, (void *)0);
+        widget_on(np.slider, EVT_POINTER_ABORT, np_on_scrub, (void *)0);
+        widget_on(np.slider, EVT_VALUE_CHANGING, np_on_scrub, (void *)0);
+    }
     if (!np.el || !np.pt) np.el = np.pt = (void *)0; /* only the pair is swapped */
     np.shown = np.eshown = -1;
     np.idx = widget_lookup(win, "label_index", 1);

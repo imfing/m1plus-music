@@ -1919,6 +1919,90 @@ def run(ctx):
            and skip_look(mm, mm.widgets['btn_queue']) == ['np_playqueue'] * 4 + ['np_playqueue_down'], 'music after the episode: the transport and queue glyphs are back and a tap is stock\'s')
     mm = NowMachine(); mm.page(); mm.src(0); mm.widget('btn_prev'); mm.play([mm.record(path=EP1)], 0); mm.init()
     expect(not [c for c in mm.calls if c[0] == 'widget_set_prop_str' and 'bg_image' in str(c)] and skip_tap(mm, 0) == (OK, []), 'a page without both buttons: no glyph, no handler of ours acts')
+    # the progress bar thickens under the finger (Apple Music's scrubber): slider_play's own DOWN_BEFORE makes it NP_BAR_SCRUB px with corners b / 2 + 1, its UP_BEFORE, an ABORT or
+    # another window coming over put NP_BAR back; only bar_size and the corners change (the drag and the seek stay stock's), once per change, then a repaint
+    expect(O['NP_BAR'] == mn.BAR and O['NP_BAR_SCRUB'] > mn.BAR, f'NP_BAR is the asset\'s bar ({O["NP_BAR"]}, {mn.BAR}) and the scrub bar is thicker ({O["NP_BAR_SCRUB"]})')
+    sl_mid = mn.SLIDER[1] + mn.SLIDER[3] // 2
+    expect(O['NP_BAR_SCRUB'] <= mn.SLIDER[3] and sl_mid + O['NP_BAR_SCRUB'] // 2 < sl_mid + 7 and sl_mid + O['NP_BAR_SCRUB'] // 2 + 6 <= mn.TIMES_Y,
+           f'the thick bar stays in the 30 px target, above the A-B markers and 6 px or more above the times (bar to y {sl_mid + O["NP_BAR_SCRUB"] // 2}, times at {mn.TIMES_Y})')
+    SC_D, SC_U, SC_A = O['EVT_POINTER_DOWN_BEFORE'], O['EVT_POINTER_UP_BEFORE'], O['EVT_POINTER_ABORT']
+    def scrub_machine(slider=True):
+        mm = NowMachine(); mm.page(); mm.src(0); s = mm.widget('slider_play') if slider else 0
+        mm.play([mm.record(path=MUSIC1)], 0); mm.init()
+        return mm, s
+    def scrub(mm, s, kind):
+        e = mm.alloc(0x30); mm.u.mem_write(e, bytes(0x30)); mm.setword(e, kind)
+        r = mm.call(mm.bound[(s, kind)][0], a0=mm.bound[(s, kind)][1], a1=e, count=2000000)
+        return r, scrub_did(mm, s)
+    def scrub_did(mm, s): return [c[2:] for c in mm.calls if c[0] in ('widget_set_prop_int', 'widget_invalidate_force') and c[1] == s]
+    def scrub_look(b): return [('bar_size', b)] + [(f'style:{st}:round_radius', b // 2 + 1) for st in mn.BTN_STATES] + [()]
+    THICK, THIN = scrub_look(O['NP_BAR_SCRUB']), scrub_look(O['NP_BAR'])
+    mm, s = scrub_machine()
+    ons = sorted(c[2:] for c in mm.calls if c[0] == 'widget_on' and c[1] == s)
+    SC_V = O['EVT_VALUE_CHANGING']
+    expect(ons == sorted((ev, PSYMS['np_on_scrub'], 0) for ev in (SC_D, SC_U, SC_A, SC_V)), f'slider_play: DOWN_BEFORE, UP_BEFORE, ABORT and VALUE_CHANGING bound to np_on_scrub ({ons})')
+    expect(not scrub_did(mm, s), 'the page opens with the asset\'s bar: nothing set')
+    MS_, FR_ = O['NP_SCRUB_MS'], O['NP_FRAME_MS']
+    def bar_ease(f, t, el):   # patch/nowplaying.c np_bar_ease: an ease-in-out cubic of the way, rounded half away from zero (C division)
+        p = 1024 if el >= MS_ else max(el, 0) * 1024 // MS_; u = 2048 - 2 * p
+        e = 4 * p * p // 1024 * p // 1024 if p < 512 else 1024 - u * u // 1024 * u // 1024 // 2
+        n = (t - f) * e + (512 if t > f else -512)
+        return f + (abs(n) // 1024) * (1 if n >= 0 else -1)
+    def frames(mm, s, t0, until):   # the frame timer run every NP_FRAME_MS from t0: (returns, the bar_size each frame set)
+        rs, sizes = [], []; looks.clear()
+        for t in range(t0 + FR_, until + 1, FR_):
+            mm.clock = t; rs.append(mm.call(PSYMS['np_bar_frame'], count=400000))
+            sizes += [c[3] for c in mm.calls if c[0] == 'widget_set_prop_int' and c[1] == s and c[2] == 'bar_size']
+            looks.append(scrub_did(mm, s))
+            if rs[-1] != O['RET_REPEAT']: break
+        return rs, sizes
+    BS, BT = O['NP_BAR'], O['NP_BAR_SCRUB']; looks = []   # frames(): what each frame set on the slider
+    mm.clock = 1000
+    r, did = scrub(mm, s, SC_D)
+    expect(r == O['RET_OK'] and did == [] and ('timer_add', PSYMS['np_bar_frame'], FR_) in mm.calls,
+           f'a touch on the bar: RET_OK (stock\'s slider takes the touch), nothing set yet, a frame timer every {FR_} ms ({did})')
+    rs, sizes = frames(mm, s, 1000, 1000 + MS_ + 4 * FR_)
+    want = [bar_ease(BS, BT, el) for el in range(FR_, MS_ + FR_, FR_)]
+    want = [b for i, b in enumerate(want) if i == 0 or b != want[i - 1]]
+    expect(sizes == [b for b in want if b != BS] and sizes[-1] == BT and rs[-1] == O['RET_OK'] and all(x == O['RET_REPEAT'] for x in rs[:-1]) and len(rs) == -(-MS_ // FR_),
+           f'the bar eases to {BT} px over {MS_} ms, each size set once, then the timer ends ({sizes}, {rs})')
+    expect(bar_ease(BS, BT, FR_) <= BS + 1 and bar_ease(BS, BT, MS_ - FR_) >= BT - 1 and bar_ease(BS, BT, MS_ // 2) == (BS + BT) // 2,
+           f'neither end jumps: a pixel at most in the first and the last frame, half way at half the time ({[bar_ease(BS, BT, t) for t in range(0, MS_ + FR_, FR_)]})')
+    expect(all(lk in ([], scrub_look(lk[0][1]) if lk else []) for lk in looks) and [lk[0][1] for lk in looks if lk] == sizes,
+           f'a frame that changes the thickness sets the five states\' corners to half of it plus one and repaints the slider; one that does not sets nothing ({looks})')
+    mm.calls = []; mm.clock = 2000; r, did = scrub(mm, s, SC_D)
+    expect((r, did) == (O['RET_OK'], []) and not [c for c in mm.calls if c[0] == 'timer_add'], 'a second DOWN while thick does nothing')
+    mm.clock = 3000; scrub(mm, s, SC_U); rs, sizes = frames(mm, s, 3000, 3000 + MS_ + 4 * FR_)
+    expect(sizes and sizes[-1] == BS and sizes == sorted(sizes, reverse=True) and rs[-1] == O['RET_OK'], f'the release eases back to {BS} px ({sizes})')
+    HALF = MS_ // 2 // FR_ * FR_   # a frame near half way: the ease has moved the bar by then
+    mm.clock = 4000; scrub(mm, s, SC_D); frames(mm, s, 4000, 4000 + HALF); mid = bar_ease(BS, BT, HALF)
+    mm.clock = 4000 + HALF; scrub(mm, s, SC_A); rs, sizes = frames(mm, s, 4000 + HALF, 4000 + HALF + MS_ + 4 * FR_)
+    expect(sizes and mid > BS and sizes == list(range(mid - 1, BS - 1, -1)), f'an ABORT mid-way turns round from the thickness it had ({mid}: {sizes})')
+    mm.clock = 5000; scrub(mm, s, SC_D); frames(mm, s, 5000, 5000 + HALF); mm.fire(O['EVT_WINDOW_TO_BG'])
+    expect(scrub_did(mm, s) == THIN and ('timer_remove', 0x777) in mm.calls, 'a window coming over the page mid-touch: thin again at once, the frame timer removed')
+    mm.calls = []; mm.clock = 5100; expect(mm.call(PSYMS['np_bar_frame'], count=100000) == O['RET_OK'] and not scrub_did(mm, s), 'a late frame after that does nothing')
+    mm, s = scrub_machine(); mm.timer_fail = True; r, did = scrub(mm, s, SC_D)
+    expect(did == THICK, f'no frame timer: {BT} px at once')
+    r, did = scrub(mm, s, SC_U)
+    expect(did == THIN, 'and back at once')
+    mm, s = scrub_machine(slider=False)
+    expect(not [c for c in mm.calls if c[0] == 'widget_on' and c[2] in (SC_D, SC_U, SC_V)], 'a page without slider_play: nothing bound')
+    # the times follow the finger: while it is on the bar, VALUE_CHANGING (stock's handler, bound first, has set the value) rewrites np_remaining and np_elapsed from the
+    # slider's value scaled from its max to the player's length; a tick keeps them; the release gives them back to the player's position
+    mm = NowMachine(); mm.page(); mm.src(0); el = mm.widget('np_elapsed'); mm.widget('label_playtime'); s = mm.widget('slider_play')
+    mm.play([mm.record(path=MUSIC1)], 0); mm.pt = (30, 200, 1); mm.init(); rem = mm.widgets['np_remaining']; mm.timer_fail = True
+    mm.props[(s, 'max')], mm.props[(s, 'value')] = 200, 120
+    r, _ = scrub(mm, s, SC_V)
+    expect(r == O['RET_OK'] and not mm.set_texts(), f'a value change without a finger on the bar (stock\'s tick moving it): RET_OK, the times stay ({mm.set_texts()})')
+    scrub(mm, s, SC_D); r, _ = scrub(mm, s, SC_V)
+    expect(r == O['RET_OK'] and mm.set_texts() == [(rem, '-1:20'), (el, '2:00')], f'dragged to 120 of 200 s: -1:20 and 2:00 at once, RET_OK ({mm.set_texts()})')
+    mm.tick(); expect(not mm.set_texts(), f'a tick while dragging keeps the finger\'s time, not the player\'s 0:30 ({mm.set_texts()})')
+    mm.props[(s, 'max')], mm.props[(s, 'value')] = 1000, 500; scrub(mm, s, SC_V)
+    expect(mm.set_texts() == [(rem, '-1:40'), (el, '1:40')], f'a max other than the length: scaled (500 of 1000 on 200 s is 1:40) ({mm.set_texts()})')
+    mm.props[(s, 'max')] = 0; scrub(mm, s, SC_V)
+    expect(mm.set_texts() == [(rem, '-2:50'), (el, '0:30')], f'no max: the player\'s position ({mm.set_texts()})')
+    mm.props[(s, 'max')], mm.props[(s, 'value')] = 200, 150; scrub(mm, s, SC_V); scrub(mm, s, SC_U); mm.tick()
+    expect(mm.set_texts() == [(rem, '-2:50'), (el, '0:30')], f'after the release the tick shows the player\'s position again ({mm.set_texts()})')
     # spoken audio swipes like music: the slide view and the page dots are never touched, whatever page the Now Playing page opened on
     def pages_machine(path, page=0):
         mm = NowMachine(); mm.page(); mm.src(0); sv, dots = mm.widget('slide_view'), mm.widget('slide_indicator'); mm.props[(sv, 'value')] = page

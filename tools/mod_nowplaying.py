@@ -252,7 +252,7 @@ RETURN = (100, 0, 120, 44)       # the grabber pill is drawn in the button (np_g
 # (stock-ish V2.1nL had 22 / 13 / 17 / 11). Each box is placed from its font's ink offset: the 14 px digits start 3 px under
 # their label's top; the glyphs are centred in the row (ROW_Y + ROW_H / 2 = 421, the glyphs' centre).
 SLIDER = (M, 348, W - 2 * M, 30)  # stock 30 px target; bar_size 6 centred at y 363
-BAR = 6
+BAR = 6   # patch/offsets.inc NP_BAR; NP_BAR_SCRUB while a finger is on it (patch/nowplaying.c np_on_scrub)
 TIMES_Y, TIMES_H, TIMES_W = 379, 18, 72   # 14 px: "-0:00:00" is 8 characters (test/pod/nowplaying.py measures it)
 ROW_Y = 392                      # transport row 392..450, glyphs centred on 421
 ROW_H = H - ROW_Y

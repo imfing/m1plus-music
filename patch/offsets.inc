@@ -517,6 +517,11 @@
 #define NP_ALPHA_TOP 38
 #define NP_ALPHA_BOTTOM 235
 #define NP_WIN_H 450
+/* The progress bar (slider_play, tools/mod_nowplaying.py BAR): NP_BAR px thick, NP_BAR_SCRUB px while a finger is on it (np_on_scrub, Apple Music's scrubber); its corners are
+ * half the thickness plus one in either size, as the asset styles them. */
+#define NP_BAR 6
+#define NP_BAR_SCRUB 12
+#define NP_SCRUB_MS 250 /* the ease either way (np_bar_frame) */
 /* Paused, the cover is NP_ART_SMALL px (0.80), centred on the full cover at window x NP_ART_X; its shadow (img_np_shadow, NP_SHADOW_PAD px round the art at full size)
  * scales with it and fades with the size to NP_SHADOW_DIM opacity at the small one. np_art_size: a critically damped spring of NP_SHRINK_MS to the small size, an underdamped one of NP_GROW_MS
  * (about 3 % overshoot, 2 px) back, a frame every NP_FRAME_MS. A tap on

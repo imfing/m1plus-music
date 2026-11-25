@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Approximate PIL mock-up of the Now Playing page (ui/playing_page.bin + its page theme); not pixel-exact AWTK.
 
-  preview_nowplaying.py OUT.png LABEL=RAW_DIR[,page=N][,info=cd|hires|dsd|mp3|long][,out=HZ][,key1=LABEL][,scroll=PX][,full][,cover=FILE][,tint=RRGGBB][,playing][,paused|,art=PX][,skip] ...
+  preview_nowplaying.py OUT.png LABEL=RAW_DIR[,page=N][,info=cd|hires|dsd|mp3|long][,out=HZ][,key1=LABEL][,scroll=PX][,full][,cover=FILE][,tint=RRGGBB][,playing][,paused|,art=PX][,skip][,scrub] ...
 
 RAW_DIR is a tree's rootfs/release/assets/default/raw. Each panel draws a 30 px status bar and the 450 px
 window under it. Styles resolve as on the device: inline style:<state>:<prop>, then the window theme
@@ -11,18 +11,19 @@ hscroll_label text from margin_left 2 and clipped to its margins); the glyphs th
 values (title, times, cover...) are sample data. The cover is a synthetic gradient, or cover=FILE (drawn at the
 widget's size, and its box average gives the window colour through mod_nowplaying.tone, as patch/nowplaying.c
 does); tint=RRGGBB is a cover's average colour given directly. page=N shows slide page N (0 cover, 1 lyrics,
-2 info; paused draws the cover and its shadow at the paused size, art=PX at any side of the spring; scroll=PX shows the info page's content scrolled by that many px, full draws the whole content as a taller panel; skip draws an episode's page: speed, back 15 s, forward 30 s, the plain queue glyph, no page dots). The remaining time label is shown in place of the total, as with the hook running.
+2 info; paused draws the cover and its shadow at the paused size, art=PX at any side of the spring; scroll=PX shows the info page's content scrolled by that many px, full draws the whole content as a taller panel; skip draws an episode's page: speed, back 15 s, forward 30 s, the plain queue glyph, no page dots; scrub draws the progress bar as thick as under a finger). The remaining time label is shown in place of the total, as with the hook running.
 """
 import argparse, os, sys
 from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import awtk_ui, awtk_style
+import awtk_ui, awtk_style, cdefs
 from awtk_text import Ttf, StbText
 import mod_nowplaying as MN
 from mod_nowplaying import tone, tint_alpha, corner_alpha, ART_R, BG
 
 HSCROLL_MARGIN = 2
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 W, BAR, H = 320, 30, 450
 SAMPLE = {'scrlabel_title': 'Money', 'scrlabel_artist': 'Pink Floyd', 'label_album': 'Album: The Dark Side of the Moon',
           'label_index': '5/10', 'np_elapsed': '1:23', 'np_remaining': '-4:59',
@@ -332,6 +333,8 @@ def main():
             if o.startswith('scroll='): p.scroll = int(o[7:])
             if o.startswith('notes='): p.notes = NOTES[o[6:]]
             if o == 'full': p.full = True
+            if o == 'scrub':   # a finger on the progress bar: np_scrub_look's thickness (patch/offsets.inc NP_BAR_SCRUB)
+                b = cdefs.defines(os.path.join(ROOT, 'patch', 'offsets.inc'), ['NP_BAR_SCRUB'])['NP_BAR_SCRUB']; root.find('slider_play').set('bar_size', str(b))
             if o == 'skip' or o.startswith('notes='):   # an episode or a book part: the skip glyphs, as np_skip_sync sets them
                 for n, g in (('btn_prev', 'np_back15'), ('btn_next', 'np_fwd30'), ('btn_queue', 'np_playlist')): root.find(n).set('style:normal:bg_image', g)
                 root.find('btn_playmode').set('style', 'btn_imgspeed0_style')   # the speed button at 1x (np_mode_sync)

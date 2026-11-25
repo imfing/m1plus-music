@@ -42,7 +42,16 @@ has 12 px corners. Existing widget names are kept.
   invisible and insensitive; only the payload shows it, see "Track position".
 - Mode and queue glyphs are `#C8C8C8` (repeat-off `#6E6E6E`).
 - The stock `slider_play` keeps its 30 px seek target and 6 px track (30% white track,
-  `#FFFFFFEB` fill, radius 4).
+  `#FFFFFFEB` fill, radius 4). From a touch on it to the touch's end (release, abort, or another
+  window coming over) `np_on_scrub` makes it `NP_BAR_SCRUB` (12 px, radius 7) thick, centred, as
+  Apple Music's scrubber does. It eases there and back over `NP_SCRUB_MS` (250 ms, ease-in-out cubic,
+  a frame every `NP_FRAME_MS`); another window coming over sets the thin bar at once. It listens to the slider's own `EVT_POINTER_DOWN_BEFORE`,
+  `EVT_POINTER_UP_BEFORE` and `EVT_POINTER_ABORT`; only `bar_size` and `round_radius` change, the
+  drag and the seek stay stock's.
+- While the finger is on the bar the times follow it: the slider's `EVT_VALUE_CHANGING` (stock's
+  handler, bound first, has set the value and stopped stock's timer) calls `np_time`, which takes
+  the position from the slider's `value` scaled from its `max` (stock sets the length there) to
+  the player's length (`np_scrub_pos`). The release gives the times back to the player.
 - The mode button keeps its four steps and looks; the shown mode follows the Shuffle flag, see
   [shuffle](shuffle.md). While an episode or an audiobook part plays it is the speed button, see
   "Spoken audio controls".
