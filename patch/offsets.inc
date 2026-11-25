@@ -2008,3 +2008,36 @@
 #define VB_TICK_W 2
 #define VB_TICK_INSET 12
 #define VB_TICK 0xff6e6a6au
+
+/* The Cover page's thumbnails (patch/plcpage.c, docs/modules/plcover.md "Cover page"; test/pod/plcover.py checks them against tools/pod_settings.py COVER_* and tools/mod_icons.py COVER_*): PLP_T px squares with PLP_R corners, PLP_PX / PLP_PY apart from x PLP_X and y PLP_TY in the item, the ring image PLP_RING px square PLP_GROW outside each. */
+#define PLP_T 88
+#define PLP_R 10
+#define PLP_X 10
+#define PLP_TY 4
+#define PLP_PX 101
+#define PLP_PY 124
+#define PLP_GROW 4
+#define PLP_RING 96
+
+/* The generated playlist covers (patch/plcover.c, docs/modules/plcover.md; tools/pod_plcover.py has the same numbers, test/pod/plcover.py asserts it). Ratios are /256. */
+#define PLC_MAX 320            /* the largest side plc_art draws */
+#define PLC_K 41               /* K, the dark end of the colour ramp: the first tone at 16 % */
+#define PLC_L 179              /* L, the light end: the first tone 70 % toward white */
+#define PLC_SOLID_TOP 287      /* Solid: the tone x 1.12 at the top */
+#define PLC_SOLID_BOT 210      /* ... x 0.82 at the bottom */
+#define PLC_STRIPE_LO 31       /* Stripes: the ramp position 0.12 + 0.78 x smoothstep */
+#define PLC_STRIPE_SPAN 199
+#define PLC_BAND_Y 154         /* Band: the light band's centre at 0.6 of the height */
+#define PLC_BAND_R2 4424       /* ... its reach squared: 3 x (0.15 x 256)^2 */
+#define PLC_BAND_MIX 243       /* ... its weight toward L, 0.95 */
+#define PLC_BAND_T0 38         /* ... the ramp behind it: position 0.15 + 0.35 v */
+#define PLC_BAND_TS 90
+#define PLC_SUN_X 14           /* Sunburst: the apex at (0.7, 1.1) of the side, in tenths of the doubled side */
+#define PLC_SUN_Y 22
+#define PLC_SUN_RAYS 7         /* ... rays per turn */
+#define PLC_SUN_T0 31          /* ... ramp position 0.12 + 0.70 rays (1 - 0.45 far) + 0.18 glow */
+#define PLC_SUN_RAY 179
+#define PLC_SUN_FADE 115
+#define PLC_SUN_GLOW 46
+#define PLC_SUN_FAR 20         /* ... the far fade's and the glow's reach in tenths of the side (squared they are the smoothsteps' scale) */
+#define PLC_SUN_NEAR 8

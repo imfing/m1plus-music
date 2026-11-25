@@ -239,7 +239,7 @@ def page_tests(ctx):
     """The page as cards, its texts, the row kinds; the asset."""
     expect, P = ctx.expect, pod_pages
     LP = P.LIBUPDATE_PAGE
-    expect((LP.key, LP.title, LP.kind) == ('m1plus_libupdate', 'Update Library', 'cards') and P.PAGE_ORDER[-7:-5] == ['m1plus_libupdate', 'm1plus_lupick'], 'the page, its title, then the picker after it in PAGE_ORDER')
+    expect((LP.key, LP.title, LP.kind) == ('m1plus_libupdate', 'Update Library', 'cards') and P.PAGE_ORDER[-8:-6] == ['m1plus_libupdate', 'm1plus_lupick'], 'the page, its title, then the picker after it in PAGE_ORDER')
     expect([(r.label, r.action) for r in LP.rows] == [('Songs', P.ACT_INFO), ('Last Updated', P.ACT_INFO), ('Update Now', P.ACT_LUNOW), ('Choose Folders', P.ACT_LUFOLDERS), ('Auto Update', P.ACT_LUAUTO)]
            and (P.ACT_LUNOW, P.ACT_LUFOLDERS, P.ACT_LUAUTO) == (193, 194, 195) and (LP.rows[0].arg, LP.rows[1].arg) == (P.INFO_LUSONGS, P.INFO_LUWHEN) and P.INFO_LUWHEN == P.INFO_LUSONGS + 1, 'the five rows and their actions')
     expect([P.row_kind(r) for r in LP.rows] == ['info', 'info', 'action', 'link', 'switch'], 'two info rows (no touch), the action row, the link and the switch')

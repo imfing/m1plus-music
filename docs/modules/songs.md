@@ -270,7 +270,7 @@ With Split Artists on, the artist's list is `as_fill` instead of the stock query
 
 A playlist opens on a header in the album page's and Daily Mix page's manner instead of the large
 title ([album-page](album-page.md) "Layout", [dailymix](dailymix.md) "The page"): the playlist's
-**2 x 2 mosaic**, its **name** centred, the album page's Shuffle disc and Play pill, then the rows.
+**2 x 2 mosaic** (a chosen cover of a local playlist, [plcover](plcover.md), instead; a source's never), its **name** centred, the album page's Shuffle disc and Play pill, then the rows.
 Only here; other lists keep the large title and the two flat pills. The song count is the footer
 only (Apple shows an "Updated" line there, which needs a change time we do not have).
 
@@ -324,6 +324,10 @@ Edit row runs `sg_select(1)` (marks, Select All, "N Selected"), plus:
   places the hidden image `sg_hpencil` (16 px grey `#8E8E93`, `sg_pencil`) 8 px after the name's
   last line, centred on it, and shows it only in Edit. A rename reads the list again through
   `sg_edit_reload`, which keeps Edit mode and the marks.
+- A round pencil badge (`sg_cbadge`, 28 px, `sg_cbadge_paint`) is painted over the header cover's lower
+  right corner in Edit (it is painted, not a widget: the content paints after its children). A tap on the
+  cover (`sg_in_cover`, `sg_cover`) opens the Cover page ([plcover](plcover.md) "Cover page");
+  when this page is back in front `sg_head_prep` makes the header from the stored choice.
 - The bottom bar shows Delete (red trash, left, `sg_edel`) and + (right, `sg_eplus`, 16 px glyph)
   instead of Add / Delete, which are hidden and insensitive (`sg_bar_edit`). Delete is dim until a
   row is marked and removes the marked songs from this playlist ([playlists](playlists.md)

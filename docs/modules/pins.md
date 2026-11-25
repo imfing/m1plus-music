@@ -39,7 +39,8 @@ Covers come from the Cover Flow cache, as on the Albums grid, one per `PIN_TICK_
 - **Album:** the cache file of its cover key, box-reduced to 90 px; no file gives the shared placeholder disc.
 - **Playlist:** the Playlists page's 2 x 2 mosaic (`grid_mosaic`, one quarter a tick) of up to four album
   keys stored in the file when the playlist was pinned, so Home runs no query to draw it. None gives the
-  placeholder.
+  placeholder. A playlist with a chosen cover ([plcover](plcover.md) "The stored choice", looked up by id and name) shows
+  `plc_art` instead (`grid_plc`), and its tile follows a change of the file (`tcov`).
 
 ## Touch
 

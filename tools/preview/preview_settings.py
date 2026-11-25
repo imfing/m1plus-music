@@ -44,6 +44,7 @@ STATE = {
     'm1plus_psoutput': {'values': {'pod_value1': 'D2P', 'pod_value3': 'Variable'}, 'switches': {'pod_switch4': False}},
     'm1plus_psxfeed': {'shown': {'pod_check2'}},
     'm1plus_psmaxvol': {'vol_text': '80', 'vol': 80},
+    'm1plus_plcover': {'cover': 3, 'switches': {'pod_switch0': False}},
     'm1plus_volume': {'volnum': '42', 'volinfo': 'Headphones \u00b7 Max 80', 'vol': 42},
     'm1plus_psbootvol': {'vol_text': '30', 'vol': 30, 'switches': {'pod_switch0': False}},
     'm1plus_psbal': {'vol_text': 'L3', 'vol': 7},
@@ -112,6 +113,7 @@ def draw_page(s, key, full=False, state=None, lit=False, pal=None, pressed=None,
         elif c.name in ('pod_vsval', 'pod_vsctl'): draw_volcard(s, im, c, y, img, ink, st.get('vol_text', ''), st.get('vol', 0), st.get('vol_dim', False))
         elif c.name == 'pod_xfcard': draw_xfcard(s, im, c, y, img, ink, st.get('vol', 5), st.get('xf_text', ''))
         elif c.name == 'pod_volume': draw_volume(s, im, c, y, ink, img, st)
+        elif c.name == 'pod_cover': draw_cover(s, im, c, y, ink, img, st.get('cover', 0), st.get('switches', {}).get('pod_switch0', False))
         elif c.name == 'pod_hero': draw_hero(s, im, c, y, ink, img)
         elif c.name.startswith('pod_big'): draw_bigcard(s, im, c, y, ink, img, values)
         elif c.name == 'pod_qr': draw_qr(im, c, y, ink, values)
@@ -198,6 +200,27 @@ def draw_volume(s, im, c, y, ink, img, st):
         elif t.type == 'button':
             px = int(style(t, 'font_size')); s.text(im, t.x + t.w / 2, y + t.y + t.h / 2, t.get('text'), px, ink(rgb(style(t, 'text_color'))), anchor='m')
         elif t.name == 'pod_volbar': draw_volbar(im, t, y, img, ink, st.get('vol', 42), st.get('vmax'))   # (vol_slider is invisible: the bar is the view over it)
+
+
+def draw_cover(s, im, c, y, ink, img, chosen, name_on=False):
+    """The Cover page's card (tools/pod_ui.py cards_cover, patch/plcpage.c pc_paint): the six thumbnails (Albums: a 2 x 2 of sample album colours; the styles from the integer model, tools/pod_plcover.py, over three sample tones, the playlist's seed),
+    each with the grid's rounded corners, the ring (pod_covring) round the `chosen` one, and the names under them (white when chosen, grey otherwise)."""
+    import pod_plcover as PC, preview_plcover as PP; PI2 = PI
+    T, A = 88, PI2.ALBUMS
+    tones = [A[0][2], A[7][2], A[6][2]]
+    for k in range(6):
+        x, ty = 10 + k % 3 * 101, y + k // 3 * 124 + 4
+        if k == 0:
+            t = Image.new('RGBA', (T, T)); h = T // 2
+            for q, a in enumerate((0, 7, 6, 1)): t.paste(A[a][2] + (255,), (q % 2 * h, q // 2 * h, q % 2 * h + h, q // 2 * h + h))
+        else: t = PC.to_image(PC.art(k, tones, 20261123, T)).convert('RGBA')
+        im.alpha_composite(PI2.rounded(t, 10), (x, ty))
+        if k and name_on: PP.put_name(s, im, x, ty, T, 'Road Trip', 14)
+        if k == chosen: im.alpha_composite(img('pod_covring'), (x - 4, ty - 4))
+    for t in c.children:
+        if t.name.startswith('pod_covl'):
+            k = int(t.name[8:]); px = int(style(t, 'font_size'))
+            s.text(im, t.x + t.w / 2, y + t.y + t.h / 2, s.shown(t), px, ink((255, 255, 255) if k == chosen else rgb(style(t, 'text_color'))), anchor='m')
 
 
 def VOLUME_STATES(tr):
@@ -635,6 +658,8 @@ def main():
                ('Max Volume', draw_page(t, 'm1plus_psmaxvol', state={'vol_text': '80', 'vol': 80})),
                ('Volume (status bar tap): 42, Max 80', draw_page(t, 'm1plus_volume', full=True, state=VOLUME_STATES(tr)[0])),
                ('Volume: 6, Max 80 (low fill)', draw_page(t, 'm1plus_volume', full=True, state=VOLUME_STATES(tr)[1])),
+               ('Playlist Cover: Sunburst', draw_page(t, 'm1plus_plcover', full=True, state={'cover': 3, 'switches': {'pod_switch0': True}})),
+               ('Playlist Cover: Albums (Name on Cover dimmed)', draw_page(t, 'm1plus_plcover', full=True, state={'cover': 0, 'switches': {'pod_switch0': False}, 'pod_label0.color': '#606060'})),
                ('Volume: Bluetooth, no Max', draw_page(t, 'm1plus_volume', full=True, state=VOLUME_STATES(tr)[2])),
                ('Default Volume (Volume Memory off)', draw_page(t, 'm1plus_psbootvol', state={'vol_text': '30', 'vol': 30, 'switches': {'pod_switch0': False}})),
                ('Default Volume (Volume Memory on)', draw_page(t, 'm1plus_psbootvol', state={'vol_text': '30', 'vol': 30, 'vol_dim': True, 'switches': {'pod_switch0': True}})),

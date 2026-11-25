@@ -67,14 +67,6 @@ class LabelMachine(SelectMachine):
                 ret = self.alloc(4 * len(t) + 4); self.u.mem_write(ret, struct.pack(f'<{len(t) + 1}I', *map(ord, t), 0))
             u.reg_write(UC_MIPS_REG_V0, ret); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
             return
-        if name == '__xstat':
-            path = self.read_cstr(a1); self.calls.append(('__xstat', path))
-            ret = 0xffffffff
-            if path in self.db:
-                self.u.mem_write(a2, bytes(144)); mt, ns, sz = self.db[path]
-                self.setword(a2 + 0x40, mt); self.setword(a2 + 0x44, ns); self.setword(a2 + 0x30, sz); ret = 0
-            u.reg_write(UC_MIPS_REG_V0, ret); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
-            return
         if name == 'widget_measure_text':
             n = 0
             while self.word(a1 + 4 * n): n += 1
@@ -382,12 +374,26 @@ def select_tests(expect, lists):
     m.confirm_yes = True; m.calls = []
     m.click('pl_del')
     order = [c for c in m.calls if c[0] in ('confirm', 'loadLocalClassList', 'select_recordinit', 'set_selectindex', 'batch_delete_file', 'toast')]
-    expect([c[0] for c in order] == ['confirm', 'loadLocalClassList', 'select_recordinit', 'set_selectindex', 'set_selectindex', 'batch_delete_file', 'toast', 'loadLocalClassList'], f'Yes: confirm, the stock list read, the stock vector filled, batch_delete_file, the message, the page reads again ({[c[0] for c in order]})')
+    expect([c[0] for c in order] == ['confirm', 'loadLocalClassList', 'select_recordinit', 'set_selectindex', 'set_selectindex', 'batch_delete_file', 'loadLocalClassList', 'toast', 'loadLocalClassList'], f'Yes: confirm, the stock list read, the stock vector filled, batch_delete_file, the list read again for the covers of the playlists it took, the message, the page reads again ({[c[0] for c in order]})')
     bd = next(c for c in order if c[0] == 'batch_delete_file')
     expect(bd[:2] == ('batch_delete_file', O['CLASS_PLAYLISTS']) and bd[3] == m.word(SEL_VEC) and bd[4:] == (0, 0, [1, 3]) and order[1] == ('loadLocalClassList', O['CLASS_PLAYLISTS'])
            and order[2] == ('select_recordinit', len(lists)), f'batch_delete_file(0xf00b, the stock list, the stock vector, 0, 0) with rows 1 and 3 selected ({bd})')
     expect(order[-2] == ('toast', 'msg_delplaylistsuccess', 1, 2000) and vis(m, 'pl_bar') == (0, 0) and vis(m, 'btn_selall') == (0, 0) and all(vis(m, n) == (1, 1) for n in names),
            'then the success message, select mode is over and the page shows the playlists read again')
+    # the deleted playlists' stored covers go with them (patch/plcover.c plc_forget), the others' stay; a delete that did not take a playlist out keeps its cover
+    import pod_plcover as PC
+    PLC = '/mnt/mmc/.m1plus/playlist-covers'
+    for takes in (True, False):
+        m = PM(lists, missing=(7,)); open_page(m); settle(m); m.setword(SEL_VEC, m.alloc(8)); m.confirm_yes = True
+        everyone = [(pid, 1, 0, 0x1000 + pid, (), name) for pid, name, _ in lists]
+        m.fs[PLC] = PC.dump(everyone)
+        if takes: m.on_batch_delete = lambda m=m: setattr(m, 'playlists', [p_ for i, p_ in enumerate(m.playlists) if not m.sel_vec[i]])
+        m.click('btn_plactions'); m.click('vs_item9'); tap(m, *centre(1)); tap(m, *centre(3))
+        m.click('pl_del')
+        left = {m.word(r + REC_DISC) for r in m.playlists}
+        gone = [e for e in everyone if e[0] not in left]
+        expect(len(gone) == (2 if takes else 0) and PC.parse(m.fs[PLC]) == [e for e in everyone if e not in gone],
+               f'Delete {"takes" if takes else "does not take"} the selected playlists out: their covers {"are forgotten, the others stay" if takes else "stay"} ({[e[5] for e in PC.parse(m.fs[PLC])]})')
     # the stock list changed under the page (a playlist added elsewhere): nothing is deleted, the page reads again
     m = PM(lists, missing=(7,)); open_page(m); settle(m); m.setword(SEL_VEC, m.alloc(8)); m.confirm_yes = True
     m.click('btn_plactions'); m.click('vs_item9'); tap(m, *centre(1))

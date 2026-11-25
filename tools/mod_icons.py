@@ -230,8 +230,34 @@ def vol_ink():
     im = Image.new('RGBA', g.size, (0, 0, 0, 0)); im.putalpha(g.getchannel('A')); return im
 
 
+# The Cover page (patch/plcpage.c, docs/modules/plcover.md "Cover page"): the selection ring round a thumbnail, COVER_RING px square: a white ring 3 px wide on the outside, a black gap 2 px wide inside it (over the page's black and the
+# thumbnail's own corners), transparent in the middle; its corners follow the thumbnail's (COVER_R) plus the 4 px it grows by.
+COVER_T, COVER_R, COVER_RING_GROW = 88, 10, 4
+COVER_RING = COVER_T + 2 * COVER_RING_GROW
+COVER_IMAGES = ['pod_covring']
+
+
+def cover_ring(ss=8):
+    from PIL import Image, ImageDraw
+    n = COVER_RING
+
+    def shape(inset, r):
+        big = Image.new('L', (n * ss, n * ss), 0)
+        ImageDraw.Draw(big).rounded_rectangle((inset * ss, inset * ss, (n - inset) * ss - 1, (n - inset) * ss - 1), r * ss, fill=255)
+        return big
+    outer, mid = shape(0, COVER_R + COVER_RING_GROW), shape(3, COVER_R + COVER_RING_GROW - 3)
+    hole = shape(COVER_RING_GROW, COVER_R)
+    from PIL import ImageChops
+    ring = ImageChops.subtract(outer, mid)
+    gap = ImageChops.subtract(mid, hole)
+    im = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+    black = Image.new('RGBA', (n, n), (0, 0, 0, 0)); black.putalpha(gap.resize((n, n), Image.LANCZOS))
+    white = Image.new('RGBA', (n, n), (255, 255, 255, 0)); white.putalpha(ring.resize((n, n), Image.LANCZOS))
+    im.alpha_composite(black); im.alpha_composite(white); return im
+
+
 BT_VOL_IMAGES = ['pod_ic_btvol_dn','pod_ic_btvol_dn_down', 'pod_ic_btvol_up', 'pod_ic_btvol_up_down']
-DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + BT_VOL_IMAGES + VOLBAR_IMAGES + ['drop_grabber', 'drop_dot_on', 'drop_dot_off', 'drop_sleep', 'drop_sleepopen', 'drop_settings', 'drop_equalizer', 'drop_power', 'drop_airplay', 'drop_airplayopen', 'drop_dlna', 'drop_dlnaopen', 'drop_transfer', 'drop_shot', 'pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_vu', 'pod_ic_art', 'pod_ic_mode', 'pod_ic_lyrics'] + sorted(ES_ICONS) + sorted(HERO_ICONS)   # (pod_ic_sleep is not here: the Sleep Timer row is also a row of the Control Center page, so apply_pod_rows adds it; pod_ic_tape, pod_ic_vinyl, pod_ic_vu: Now Playing's More sheet's Cassette Mode, Vinyl Mode and VU Meter Mode rows, tools/mod_lists.py: no row page uses them)
+DAILY = DAILY + CARD_IMAGES + WIFI_IMAGES + BT_VOL_IMAGES + VOLBAR_IMAGES + COVER_IMAGES + ['drop_grabber', 'drop_dot_on', 'drop_dot_off', 'drop_sleep', 'drop_sleepopen', 'drop_settings', 'drop_equalizer', 'drop_power', 'drop_airplay', 'drop_airplayopen', 'drop_dlna', 'drop_dlnaopen', 'drop_transfer', 'drop_shot', 'pod_ic_tape', 'pod_ic_vinyl', 'pod_ic_vu', 'pod_ic_art', 'pod_ic_mode', 'pod_ic_lyrics'] + sorted(ES_ICONS) + sorted(HERO_ICONS)   # (pod_ic_sleep is not here: the Sleep Timer row is also a row of the Control Center page, so apply_pod_rows adds it; pod_ic_tape, pod_ic_vinyl, pod_ic_vu: Now Playing's More sheet's Cassette Mode, Vinyl Mode and VU Meter Mode rows, tools/mod_lists.py: no row page uses them)
 # M1+ Music menu and Shuffle page rows: label -> (added image, glyph). A bare white glyph (BARE_PX canvas) left of the title.
 # '@shanling' = the brand mark cut out of a stock image (shanling_mark below), not a glyph.
 POD_ROWS = {'Now Playing': ('pod_ic_nowplaying', 'audio-lines'), 'Cover Flow': ('pod_ic_coverflow', '+coverflow'),   # audio-lines: the wave of the navbar's Now Playing button
@@ -859,6 +885,7 @@ def generate_all(sizes):
     f[SLIDER_THUMB[0]] = slider_thumb()
     f[XF_DOTS[0]] = xf_dots()
     f['pod_vol_track'], f['pod_vol_fill'], f['pod_vol_ink'] = vol_capsule(VOLBAR_TRACK), vol_capsule(WHITE), vol_ink()
+    f['pod_covring'] = cover_ring()
     for n, a in DROP_DOTS[:2]:
         d = disc(DROP_DOTS[2], (255, 255, 255)); d.putalpha(d.getchannel('A').point(lambda v: v * a // 255)); f[n] = d
     for n, kind, tone in DROP_CC:
@@ -955,7 +982,9 @@ SG_HANDLE = ('sg_handle', 20)
 # An empty stock playlist's Add Songs row (patch/songs.c sg_paint_add): the payload fills a LIST_ART px tile (SG_ADD_TILE_RGB, LIST_R corners) and paints two masks of that size over it, white on
 # transparent: the notes (Lucide music, tinted SG_HANDLE_RGB grey) with a hole round the badge, and the badge (a white disc, its plus cut out so the tile shows through), top right of the notes.
 SG_ADD = ('sg_addnote', 'sg_addbadge')
-ALBUM += sorted(SONGS_IMAGES) + [SG_HANDLE[0]] + list(SG_ADD)
+# Edit mode's cover badge (patch/songs.c sg_pencil): a SG_CBADGE px disc (#2C2C2E, the Home cache pill's stop disc) with a white 14 px pencil, on the header cover's lower right corner.
+SG_CBADGE = ('sg_cbadge', 28, (0x2C, 0x2C, 0x2E))
+ALBUM += sorted(SONGS_IMAGES) + [SG_HANDLE[0]] + list(SG_ADD) + [SG_CBADGE[0]]
 
 # The keyboard page's glyphs (patch/keyboard.c, docs/modules/keyboard.md): shift (outline, white) and shift on (filled, dark on the light key), delete, the field's magnifier (grey) and its clear
 # disc (a dark x on a grey disc), exact canvases; the custom SVGs are Lucide's arrow-big-up and delete. White and grey only.
@@ -1003,6 +1032,7 @@ def songs_images():
         c.alpha_composite(gi, ((canvas - gi.width) // 2, (canvas - gi.height) // 2)); f[n] = c
     q = f['wt_qr']; f['wt_qr'] = Image.new('RGBA', (q.width, q.height + 2 * WT_QR_DROP), (0, 0, 0, 0)); f['wt_qr'].alpha_composite(q)   # clear rows under the glyph: the pill's label drops by its margins, the glyph stays
     f[SG_HANDLE[0]] = handle_image()
+    f[SG_CBADGE[0]] = on_disc(glyph_fit('pencil', 14, 14, WHITE, 0, 1.5), SG_CBADGE[1], SG_CBADGE[2])
     f.update(zip(SG_ADD, add_tile_images()))
     return f
 

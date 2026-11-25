@@ -23,7 +23,7 @@ playlists in the saved order; no list-plus button, "..." or Now Playing; a tap a
 - **List**: 64 px rows (`LIST_ROW_H`), 52 px mosaic at (10, 6), name 21 px white and "N tracks"
   18 px grey from x 74, hairline to x 310, chevron at x 288 (none in select mode or the picker),
   pressed row `#333333`. The painter is `grid_list_paint`, shared with Albums.
-- **The tile** is a 2 x 2 mosaic of the playlist's albums: four fill the quadrants (A B / C D),
+- **The tile** is a 2 x 2 mosaic of the playlist's albums (a local playlist with a stored cover, [plcover](plcover.md), draws that instead: `pl_art`; its scan still runs for the counts): four fill the quadrants (A B / C D),
   three repeat the first (A B / C A), two (A B / B A), one is that cover full size, none (empty
   playlist, or no album has a cache file) is the placeholder disc.
 - Empty: the large title stays with a centred "No playlists" under it; the card is still there.
@@ -96,7 +96,8 @@ It exists for deleting (stock's multi-select only exports and deletes; export st
 confirm dialog with `msg_delplaylist` (Yes = 0xa; anything else ends it, the mode stays); then the
 stock list is read again and must match what the page shows (same ids, same order, else nothing is
 deleted); the stock vector is filled from the marks; `batch_delete_file(0xf00b, *pdeq_playlist,
-vector, 0, 0)`; `msg_delplaylistsuccess`; the mode ends and the page reads again.
+vector, 0, 0)`; the stock list is read once more and the stored covers ([plcover](plcover.md)) of the selected playlists it
+no longer has are forgotten (`pl_forget_deleted`); `msg_delplaylistsuccess`; the mode ends and the page reads again.
 
 ## The stock database calls
 
@@ -312,7 +313,7 @@ field). The keyboard is not modal; `sg_renamed` runs on Done for the playlist it
   that did not run toasts "Can't rename playlist" and changes nothing.
 - Then `sg.name`, the header name (one or two lines, `sg_name_place`; the list is read again for
   the new row offset), the small title, stock's `nagvation_title` when it held the old name, and a
-  Home pin of this playlist (`pins_rename_playlist`: same place and cover keys) take the new name.
+  Home pin of this playlist (`pins_rename_playlist`: same place and cover keys) and its stored cover (`plc_rename`) take the new name.
   The Playlists page reads the list again when it is back in front. Edit mode and its marks stay
   (`sg_edit_reload`).
 

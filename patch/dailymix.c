@@ -35,6 +35,7 @@
 #include "podcasts.h"
 #include "songops.h"
 #include "fnv.h"
+#include "dmart.h"
 
 #define P(r, off) (*(char **)((char *)(r) + (off)))
 #define DM_GREY 0xff1e1c1cu /* #1C1C1E (red lowest) */
@@ -150,11 +151,6 @@ static unsigned dm_today(void) {
 /* ---------------------------------------------------------------------------
  * The state. dm is the card on the Home window; the job is the mix being made (heap, only while it runs).
  */
-typedef struct {
-    int cx, cy;
-    unsigned r2;
-    int t[3];
-} blob_t;
 typedef struct {
     unsigned *key;
     unsigned short *val;
@@ -396,7 +392,7 @@ static void dm_puthex(char **o, const char *end, unsigned v, unsigned digits) {
 
 /* A cover's tone made card-ready: a colourful tone (saturation above 0.10) gets at least 0.55 and a lightness in [0.30, 0.56], a grey one a lightness
  * in [0.25, 0.66] and its saturation. l2 is lightness x 2 x 255 (0..510); the channels keep their place between min and max, so the hue stays. */
-static void dm_prep(unsigned tone, int *out) {
+void dm_prep(unsigned tone, int *out) {
     int c[3], mx, mn, d, l2, den, colourful, l2n, denn, dn, mnn, i;
     c[0] = (int)(tone & 255), c[1] = (int)(tone >> 8 & 255), c[2] = (int)(tone >> 16 & 255);
     mx = c[0] > c[1] ? c[0] : c[1];
@@ -421,8 +417,7 @@ static void dm_prep(unsigned tone, int *out) {
 }
 
 /* The blobs and the base of tones[0..n) for the seed on a w x h field (pod_dailymix.blobs / field): the card's (DM_W x DM_H) and the page's (DP_W x DP_ART_H). */
-static void dm_blobs_wh(const unsigned *tone, unsigned n, unsigned aseed, unsigned w, unsigned h, int *base,
-                        blob_t *bl) {
+void dm_blobs_wh(const unsigned *tone, unsigned n, unsigned aseed, unsigned w, unsigned h, int *base, blob_t *bl) {
     int prep[4][3], i, dark = 0;
     unsigned st = aseed ? aseed : 0x9E3779B9u, k;
     for (k = 0; k < n; ++k) dm_prep(tone[k], prep[k]);
@@ -450,7 +445,7 @@ static void dm_blobs(job_t *j) {
 }
 
 /* Row y of the field, w pixels of 3 bytes into o. */
-static void dm_field_wh(unsigned char *o, unsigned y, unsigned w, const int *base, const blob_t *bls, unsigned nbl) {
+void dm_field_wh(unsigned char *o, unsigned y, unsigned w, const int *base, const blob_t *bls, unsigned nbl) {
     unsigned x, k;
     for (x = 0; x < w; ++x, o += 3) {
         int r = base[0], g = base[1], b = base[2];
@@ -479,10 +474,10 @@ static unsigned dm_scrim(unsigned y, unsigned a64) {
     return s * a64 / 64;
 }
 
-static const unsigned char dm_bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+const unsigned char dm_bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
 
 /* One channel through the scrim, the 4 x 4 dither and 5 or 6 bits; the expanded 8 bit value in *e. Returns the quantised value. */
-static unsigned dm_quant(int c, unsigned t, int step, unsigned bits, unsigned *e) {
+unsigned dm_quant(int c, unsigned t, int step, unsigned bits, unsigned *e) {
     int v = c + (((int)t * step - 15 * step / 2) >> 4);
     unsigned q;
     if (v < 0) v = 0;

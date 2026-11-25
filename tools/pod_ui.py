@@ -2410,6 +2410,23 @@ def cards_volume():
     return v
 
 
+def cards_cover():
+    """The Cover page's card (patch/plcpage.c): a sensitive transparent view the payload paints (the six thumbnails and the ring in its EVT_BEFORE_PAINT) and takes the touch of, and under each thumbnail its name, pod_covl<k> (14 px centred, insensitive;
+    the payload makes the chosen one white and the others grey)."""
+    import pod_settings as ST
+    v = Widget('view', 0, 0, ST.LIST_W, ST.COVER_ITEM_H, [('name', 'pod_cover')])
+    for st in STATES: styled(v, (st,), 'bg_color', '#00000000')
+    for k, key in enumerate(pod_pages.COVER_STYLES):
+        lab = Widget('label', ST.CM + k % 3 * ST.COVER_PITCH_X, k // 3 * ST.COVER_PITCH_Y + ST.COVER_LAB_Y, ST.COVER_T, ST.COVER_LAB_H, [('name', f'pod_covl{k}'), pod_i18n.text_prop(key), ('sensitive', 'false')])
+        for st in ('normal', 'disable', 'focused'):
+            styled(lab, (st,), 'font_size', str(ST.COVER_PX)); styled(lab, (st,), 'text_color', ST.GREY)
+            styled(lab, (st,), 'text_align_h', 'center'); styled(lab, (st,), 'text_align_v', 'middle')
+            styled(lab, (st,), 'margin_left', '0'); styled(lab, (st,), 'margin_right', '0')
+        v.children.append(lab)
+    v.children += style_labels((('pod_covname', GRID_ALBUM_PX - 4, INK_RGB),))   # the text style of the name drawn on a thumbnail (grid_plc_name)
+    return v
+
+
 def cards_segment():
     """The band page's Peak / Low shelf / High shelf control (patch/peqband.c): a sensitive transparent view (the payload blits the container and the selected pill in its EVT_BEFORE_PAINT and takes the touch) with the three labels pod_seg_l<k> over it
     (white; the selected one is black on its pill, set by the payload), none sensitive."""
@@ -2646,6 +2663,7 @@ def build_cards_page(page):
         elif isinstance(it, pod_pages.VolCard): sv.children.append(cards_volcard(it))
         elif isinstance(it, pod_pages.XfadeCard): sv.children.append(cards_xfade())
         elif isinstance(it, pod_pages.VolumeCard): sv.children.append(cards_volume())
+        elif isinstance(it, pod_pages.CoverCard): sv.children.append(cards_cover())
         elif isinstance(it, pod_pages.Hdr): sv.children.append(cards_text(f'pod_sec{n_hdr}', ST.HDR_LABEL_Y, ST.HDR_LABEL_H, it.text, ST.HDR_PX, ST.HDR_H)); n_hdr += 1
         elif isinstance(it, pod_pages.Hero): sv.children.append(cards_hero(it, n_note)); n_note += 1
         elif isinstance(it, pod_pages.BigCard): sv.children.append(cards_bigcard(n_big)); n_big += 1

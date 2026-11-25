@@ -171,6 +171,10 @@ static struct {
     int tend; /* the text end the tiles were last fitted for (without select mode): a list read again with another one drops them */
     int down_more; /* the press began in a row's "..." zone */
     int down_name; /* Edit mode: the press began on the header's name (a tap renames) */
+    int down_cover; /* Edit mode: the press began on the header's cover (a tap opens the Cover page) */
+    int cover_due; /* the Cover page is open over this page: the header is made again when this page is back in front */
+    void *
+        cbadge; /* Edit mode: the round pencil on the header cover's lower right corner (sg_cbadge, a bitmap painted over the cover); 0: none */
     int pick; /* the Add Songs page (docs/modules/songs.md "Add Songs"): the library over a playlist's Edit page; a tap adds the song to playlist pk_id */
     int pk_id; /* the playlist the picked songs go to */
     unsigned *pk_h; /* the playlist's songs (and those added here) as two FNV words of the path each, pk_n pairs */
@@ -613,6 +617,15 @@ static void sg_paint_float(void *canvas, int tx, int room) {
     sg_handle_paint(canvas, y);
 }
 
+/* Edit mode's round pencil on the header cover's lower right corner, over the cover (a child widget would be under it: the content paints in its EVT_AFTER_PAINT). */
+#define SG_CBADGE 28 /* tools/mod_icons.py SG_CBADGE */
+#define SG_CBADGE_IN 6 /* px in from the cover's corner */
+static void sg_cbadge_paint(void *canvas, int off) {
+    if (!sg_edit() || !sg.cbadge) return;
+    grid_blit_from(canvas, sg.cbadge, 0, 0, SG_CBADGE, SG_CBADGE, PH_COVER_X + PH_COVER - SG_CBADGE - SG_CBADGE_IN,
+                   PH_COVER_Y + PH_COVER - SG_CBADGE - SG_CBADGE_IN - off, GRID_VIEW_H);
+}
+
 static void sg_paint_rows(void *canvas) {
     int r0, r1, r, off = sg_off(), tx = sg_tx(), hair = az_end(&sg.al) - tx, room = sg_text_end() - tx, pass;
     ls_row_t xr[32]; /* a source's row extras, read once per paint (src only; at most 32 rows are in view) */
@@ -621,6 +634,8 @@ static void sg_paint_rows(void *canvas) {
         !sg.wait) { /* a playlist's mosaic (the cover, or the placeholder disc until it is made; not while its tracks are on their way) */
         grid_tile_t *h = grid_find(&sg.hg, 0);
         if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
+        if (h && !sg.src) grid_plc_name(canvas, &sg.hg, h, sg.name, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
+        sg_cbadge_paint(canvas, off);
     }
     if (sg.head && !sg.wait && !sg_edit())
         m1_pill_paint(&sg.pill, canvas, PH_BTN_Y + sg.tsh - off); /* a playlist's Play pill text, over its picture */
@@ -700,6 +715,8 @@ static void sg_paint_add(void *canvas) {
     unsigned n = 0;
     grid_tile_t *h = grid_find(&sg.hg, 0);
     if (h) grid_blit(canvas, &sg.hg, h, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
+    if (h && !sg.src) grid_plc_name(canvas, &sg.hg, h, sg.name, PH_COVER_X, PH_COVER_Y - off, GRID_VIEW_H);
+    sg_cbadge_paint(canvas, off);
     if (sg.add_down) az_fill(canvas, 0, y, y + ROW - 1, SG_W, LIST_PRESS);
     m1_capsule(canvas, GRID_VIEW_H, LIST_ART_X, y + LIST_ART_Y, LIST_ART, LIST_ART, LIST_R, SG_ADD_TILE_RGB);
     sg_add_blit(canvas, sg.add_note, y + LIST_ART_Y);
@@ -818,7 +835,12 @@ static int sg_on_load(const void *unused) {
         return RET_OK;
     }
     if (sg_head_pending()) { /* the header's mosaic first: it is what the page opens on */
-        grid_mosaic(&sg.hg, grid_find(&sg.hg, 0), sg.htmp);
+        grid_tile_t *h = grid_find(&sg.hg, 0);
+        plc_t c;
+        if (h->cov && !sg.src && plc_get(sg.pl_id, sg.name, &c))
+            grid_plc(&sg.hg, h, &c), h->cov = c.sig; /* the playlist's chosen cover, whole */
+        else
+            grid_mosaic(&sg.hg, h, sg.htmp);
         sg_redraw();
         sg_kick();
         return RET_OK;
@@ -1004,10 +1026,13 @@ static void sg_foot_text(void) {
 /* A playlist's header from the list just read: the tile's four album keys (the Playlists page's mosaic, patch/grid.c grid_mosaic_keys, from the first PL_SCAN songs and
  * the library's albums for the lookup), the tile made again only when they changed (a return to the front keeps the mosaic: no flicker), and the count. */
 static void sg_head_prep(void) {
-    unsigned key[4];
+    unsigned key[4], cov = 0;
     int nk, fresh, i, same, miss = 0;
     grid_tile_t *t;
+    plc_t c;
     if (!sg.head) return;
+    if (!sg.src && plc_get(sg.pl_id, sg.name, &c))
+        cov = c.sig; /* a chosen cover (a source's page never looks) replaces the mosaic */
     memset(key, 0, sizeof key);
     if (sg.src) {
         nk = sg.count ? sbs_mosaic_keys(sg.src, sg.list, key, &miss)
@@ -1016,16 +1041,17 @@ static void sg_head_prep(void) {
     } else
         nk = sg.count ? grid_mosaic_keys(sg.list, sg.albums, key, (int *)0) : 0;
     t = grid_tile(&sg.hg, 0, 0, 0, &fresh);
-    if (sg_edit() && !fresh && t->art)
-        return; /* Edit keeps the tile until Done (sg_select): no new mosaic per move, remove or add */
-    for (i = 0, same = !fresh && t->nq == (nk > 1 && !sg.htmp ? 1 : nk) && t->art; i < 4; ++i)
+    if (sg_edit() && !fresh && t->art && t->cov == cov)
+        return; /* Edit keeps the tile until Done (sg_select): no new mosaic per move, remove or add; a cover chosen there shows */
+    for (i = 0, same = !fresh && t->nq == (nk > 1 && !sg.htmp ? 1 : nk) && t->art && t->cov == cov; i < 4; ++i)
         same = same && t->qkey[i] == key[i];
     if (!same) {
         grid_free_art(t);
         t->art = 0, t->qi = 0;
         t->nq = nk > 1 && !sg.htmp ? 1 : nk;
+        t->cov = cov;
         memcpy(t->qkey, key, sizeof key);
-        if (!nk) t->art = 2; /* no album with a cover: the placeholder */
+        if (!nk && !cov) t->art = 2; /* no album with a cover: the placeholder */
     }
 }
 
@@ -1872,6 +1898,25 @@ static int sg_on_move(void *ctx, void *e) {
 
 static void sg_rename(void);
 
+/* Edit mode: the press or release is on the header's cover (a local playlist's: the Cover page). */
+static int sg_in_cover(void *e) {
+    int pt[2];
+    if (!sg_edit() || !e || !sg.view) return 0;
+    grid_ev_local(sg.view, e, pt);
+    return pt[0] >= PH_COVER_X && pt[0] < PH_COVER_X + PH_COVER && pt[1] >= PH_COVER_Y && pt[1] < PH_COVER_Y + PH_COVER;
+}
+
+/* Opens the Cover page for this playlist (Edit mode): its id, name and the albums' cover keys (the header's); this page makes its header again when it is back in front (sg_on_fg). */
+static void sg_cover(void) {
+    unsigned key[4];
+    int nk;
+    if (!sg_edit() || !sg.view) return;
+    memset(key, 0, sizeof key);
+    nk = sg.count ? grid_mosaic_keys(sg.list, sg.albums, key, (int *)0) : 0;
+    sg.cover_due = 1;
+    if (plcpage_open(sg.pl_id, sg.name, key, nk) < 0) sg.cover_due = 0;
+}
+
 /* Edit mode: the press or release is on the header's name (its lines' band, the full width). */
 static int sg_in_name(void *e) {
     int pt[2];
@@ -1893,7 +1938,8 @@ static int sg_on_down(void *ctx, void *e) {
     (void)ctx;
     sg.down = sg.down_more = 0;
     sg.down_name = sg_in_name(e);
-    if (sg.down_name) m1_tap_at(&sg.tap, e);
+    sg.down_cover = sg_in_cover(e);
+    if (sg.down_name || sg.down_cover) m1_tap_at(&sg.tap, e);
     if (sg_in_add(e)) {
         sg.add_down = 1, m1_tap_at(&sg.tap, e);
         sg_redraw();
@@ -1924,9 +1970,9 @@ static int sg_on_down(void *ctx, void *e) {
 }
 
 static int sg_on_up(void *ctx, void *e) {
-    int a = sg.down - 1, more = sg.down_more, act = sg.down_act, name = sg.down_name;
+    int a = sg.down - 1, more = sg.down_more, act = sg.down_act, name = sg.down_name, cover = sg.down_cover;
     (void)ctx;
-    sg.down_name = 0;
+    sg.down_name = sg.down_cover = 0;
     if (sg.lift) {
         sg.down = sg.down_more = sg.down_act = 0;
         sg_lift_drop(e);
@@ -1935,6 +1981,12 @@ static int sg_on_up(void *ctx, void *e) {
     if (name && e && sg.view && m1_tap_near(&sg.tap, e) && sg_in_name(e)) { /* Edit mode: a tap on the name renames */
         sg.down = sg.down_more = sg.down_act = 0;
         sg_rename();
+        return RET_OK;
+    }
+    if (cover && e && sg.view && m1_tap_near(&sg.tap, e) &&
+        sg_in_cover(e)) { /* Edit mode: a tap on the cover opens the Cover page */
+        sg.down = sg.down_more = sg.down_act = 0;
+        sg_cover();
         return RET_OK;
     }
     if (sg.add_down) { /* the Add Songs row: a tap opens the Add Songs page */
@@ -2183,6 +2235,7 @@ static void sg_renamed(const char *name) {
     snprintf(sg.name, sizeof sg.name, "%s", name);
     if (!strcmp((const char *)NAV_TITLE, old)) snprintf((char *)NAV_TITLE, 0x200, "%s", name);
     pins_rename_playlist(id, old, name);
+    plc_rename(id, old, name);
     az_fit(sg.big, sg_name_text());
     sg_head();
     if (sg.head) {
@@ -2303,6 +2356,10 @@ static int sg_on_fg(void *ctx, void *e) {
         sg_spinner(sg.wait && sg.spin);
     } else if (!sg.rv && (!sg_valid() || sg_changes())) /* (the album view reads no stock list: nothing is stale) */
         sg_load(1); /* (a list read again whose rows are the same keeps its tiles: sg_load) */
+    if (sg.cover_due) { /* back from the Cover page: the header's cover from the choice made there (Edit keeps the tile only while the choice is the same) */
+        sg.cover_due = 0;
+        if (sg.head && sg.hg.tiles) sg_head_prep();
+    }
     sg_build_later();
     sg_kick(); /* the loader stops on a list another page replaced (Search's queries), and the list can be valid again by now: covers still to load start it here */
     return RET_OK;
@@ -2330,6 +2387,7 @@ static int sg_on_destroy(void *ctx, void *e) {
     if (sg.pk_add) bitmap_destroy(sg.pk_add);
     if (sg.pk_done) bitmap_destroy(sg.pk_done);
     if (sg.add_note) bitmap_destroy(sg.add_note);
+    if (sg.cbadge) bitmap_destroy(sg.cbadge);
     if (sg.add_badge) bitmap_destroy(sg.add_badge);
     free(sg.pk_h);
     m1_timer_stop(&sg.more_timer);
@@ -2507,9 +2565,13 @@ static int sg_open_page(int cls, int pl_id, const char *key, const char *name, c
         if (grid_init(&sg.hg, sg.win, 1, PH_COVER, PH_COVER_R)) {
             if (sg.src) sg.hg.url = sbs_cover_url;
             grid_placeholder(&sg.hg);
+            sg.hg.st_title = sg.st_gtitle; /* the name on a chosen cover (optional label) */
             sg.head = 1;
             if (sg_cleans()) {
                 sg.handle = sg_make_handle(); /* (without it Edit has no handles) */
+                sg.cbadge =
+                    m1_asset_rgba(sg.win, "sg_cbadge", SG_CBADGE, SG_CBADGE,
+                                  0); /* (without it the cover has no badge; a tap still opens the Cover page) */
                 sg.add_note = sg_make_bmp("sg_addnote", LIST_ART,
                                           SG_HANDLE_RGB); /* (without both an empty playlist says "No songs") */
                 sg.add_badge = sg_make_bmp("sg_addbadge", LIST_ART, 0x00ffffffu);

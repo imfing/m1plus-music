@@ -52,6 +52,7 @@ binary. See [workflow](workflow.md) for commands, [UI](ui.md) for layout and ass
 | [Recently Played](modules/recent.md) | History file, covers, shelf |
 | [Daily Mix](modules/dailymix.md) | Selection job, stored mix, page |
 | [Playlists](modules/playlists.md) | Mosaics, list mode, cleanup |
+| [Playlist covers](modules/plcover.md) | Generated cover styles from album tones |
 | [Add to Playlist](modules/picker.md) | Own picker replacing stock |
 | [Folders](modules/folders.md) | Own Folders page over stock state |
 | [Library rows](modules/rows.md) | Stock row edits, layout, text sizing |

@@ -6,7 +6,7 @@ Modelled on q2-pod's test/patch.py.
 Requires unicorn (venv) and a workdir patched by tools/pod.py (its podbuild/manifest.json).
 test/patch.py calls init(WORKDIR) first, then loads the feature modules, which star-import this one.
 """
-import ctypes, functools, hashlib, importlib.util, json, math, os, re, struct, sys, unicodedata
+import ctypes, functools, hashlib, importlib.util, json, math, os, re, struct, sys, unicodedata, zlib
 from unicorn import Uc, UcError, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_CODE, UC_HOOK_BLOCK, UC_HOOK_INTR
 from unicorn.unicorn_py3.unicorn import uclib as _UCLIB
 from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3,
@@ -179,7 +179,7 @@ REC_SIZE = 0x58
 
 
 _ARG_REGS = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3, UC_MIPS_REG_SP)
-HOT_MOCKS = frozenset(('memcpy', 'memset', 'strlen', 'strcmp', 'pow', 'sqrt', 'cos', 'sin'))
+HOT_MOCKS = frozenset(('memcpy', 'memmove', 'memset', 'strlen', 'strcmp', 'pow', 'sqrt', 'cos', 'sin'))
 _COPY_REGS = (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_RA)
 _MATH_REGS = (UC_MIPS_REG_F12, UC_MIPS_REG_F14, UC_MIPS_REG_RA)
 
@@ -500,7 +500,7 @@ class Machine:
             if w: self.calls.append((w, struct.unpack('<i', struct.pack('<I', u.reg_read(UC_MIPS_REG_A0)))[0]))
             return
         if name in HOT_MOCKS:   # the mocks called by the million (a path joined, a curve's points): answered here, before the long chain below
-            if name == 'memcpy':
+            if name in ('memcpy', 'memmove'):   # (the bytes are read before they are written: an overlap is safe)
                 a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); u.mem_write(a0, bytes(u.mem_read(a1, a2)))
             elif name == 'memset':
                 a0, a1, a2, ra = u.reg_read_batch(_COPY_REGS); u.mem_write(a0, bytes([a1 & 0xff]) * a2)
@@ -530,8 +530,11 @@ class Machine:
             self.calls.append(('access', p))
         elif name == '__xstat':   # a file's state, for the callers that keep a signature (the Home cache check: patch/homecover.c hc_dbsig): path -> [mtime, nsec, size] in self.db; anything else is missing
             p = self.read_cstr(a1); self.calls.append(('__xstat', p)); ret = 0xffffffff
-            if p in self.db:
-                self.u.mem_write(a2, bytes(144)); mt, ns, sz = self.db[p]
+            st = self.db.get(p)
+            if st is None and p in self.stat_fs and p in self.fs and self.card_mounted:   # a file whose state follows its text in fs: the text's CRC as the mtime, its length as the size
+                st = [zlib.crc32(bytes(self.fs[p])), 0, len(self.fs[p])]
+            if st is not None:
+                self.u.mem_write(a2, bytes(144)); mt, ns, sz = st
                 self.setword(a2 + 0x40, mt); self.setword(a2 + 0x44, ns); self.setword(a2 + 0x30, sz); ret = 0
         elif name == 'album_open':   # patch/albumpage.c, trapped: the callers' tests (the Albums grid, Cover Flow, Artists, Recently Played) see the stock album page open; test/pod/albumpage.py runs it for real (real_album)
             if self.real_album: return
@@ -1593,6 +1596,7 @@ class Machine:
     gpio = {}                 # patch/power.c: the levels /dev/gpio's ioctl answers with, by pin name
     fb = None                 # Screenshot: the frame buffer /dev/fb0 answers with (see the ioctl / mmap mocks)
     db = {}                   # __xstat: path -> [mtime, nsec, size]
+    stat_fs = ('/mnt/mmc/.m1plus/playlist-covers',)   # __xstat: paths not in db whose state follows their text in fs (patch/plcover.c keeps the text it read while the state holds)
     card_mounted = True       # statfs tells the card's mount point from its parent
     blits = ()              # the Albums grid's canvas_draw_image calls (bitmap, src rect, dst rect), texts, text measures
     texts = ()
@@ -1720,6 +1724,7 @@ class SelectMachine(Machine):
     def __init__(self):
         super().__init__()
         self.styled, self.sel_vec = [], None
+        self.on_batch_delete = None   # a test's function run when the stock delete is called (what the stock does to its list)
         for n in self.SELECT_CALLS:
             self.handlers[pod.FUNCTIONS[n][2]] = n
 
@@ -1739,6 +1744,7 @@ class SelectMachine(Machine):
         elif name == 'batch_delete_file':
             flag = self.word(sp + 16)
             self.calls.append(('batch_delete_file', a0, a1, a2, a3, flag, [i for i, v in enumerate(self.sel_vec or []) if v]))
+            if self.on_batch_delete: self.on_batch_delete()
             ret = 1
         elif name == 'batch_add_file':   # (class, 0xf00b, the list, the vector, playlist id): recorded with the selected rows
             self.calls.append(('batch_add_file', a0, a1, a2, a3, self.word(sp + 16), [i for i, v in enumerate(self.sel_vec or []) if v]))

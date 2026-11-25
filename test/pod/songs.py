@@ -2868,7 +2868,9 @@ def edit_tests(ctx):
     m.calls = []; rn(m, 'Trip', 3)
     expect(not upd(m.calls), 'a name for another playlist than the page\'s changes nothing')
     pin = [('p', 7, (11, 22, 0, 0), 'Road', ''), ('a', 0x1234, (5, 0, 0, 0), 'Blue', '')]
+    import pod_plcover as PC
     m = page(pin=pin)
+    m.fs['/mnt/mmc/.m1plus/playlist-covers'] = PC.dump([(3, 1, 0, 5, (), 'Other'), (7, 3, 0, 0x77, ((1, 2, 3),), 'Road')])
     m.calls = []; rn(m, "Rock'n Roll")
     hrec = m.playlists[0]
     expect(upd(m.calls) == ["update playlist set filename='Rock''n Roll',name='Rock''n Roll' where id=7 and id<=100"]
@@ -2878,6 +2880,7 @@ def edit_tests(ctx):
            'the header and the small title read the new name')
     expect(m.read_cstr(pod.DATA['NAV_TITLE'][0]) == "Rock'n Roll", f'stock\'s navigation title follows, though the duplicate check\'s read wrote "Playlists" over it ({m.read_cstr(pod.DATA["NAV_TITLE"][0])!r})')
     expect(PH.parse(m.fs[PINS]) == [('p', 7, (11, 22, 0, 0), "Rock'n Roll", ''), pin[1]], f'the Home pin follows, in its place with its covers ({PH.parse(m.fs.get(PINS, b""))})')
+    expect(PC.parse(m.fs['/mnt/mmc/.m1plus/playlist-covers']) == [(3, 1, 0, 5, (), 'Other'), (7, 3, 0, 0x77, ((1, 2, 3),), "Rock'n Roll")], 'the stored cover follows the new name (plc_rename), the other playlist\'s stays')
     m = page()
     m.calls = []; rn(m, 'Other')
     expect(m.read_cstr(pod.DATA['NAV_TITLE'][0]) == name, 'a refused name leaves the navigation title as it was')

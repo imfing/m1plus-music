@@ -127,6 +127,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "peqlib.h"
 #include "peqpage.h"
 #include "playlists.h"
+#include "plcover.h"
 #include "podcasts.h"
 #include "radio.h"
 #include "search.h"
@@ -641,6 +642,7 @@ static const struct pod_switch {
     {ACT_MONO, stereo_mono, stereo_mono_toggle},
     {ACT_DTAUTO, dt_auto, dt_auto_toggle},
     {ACT_DT24, dt_24h, dt_24h_toggle},
+    {ACT_COVNAME, plcpage_name_on, plcpage_name_toggle}, /* the Cover page (patch/plcpage.c) */
 };
 #define SW_N ((int)(sizeof sw_tab / sizeof *sw_tab))
 struct swctx {
@@ -985,6 +987,12 @@ static void page_refresh(void *win, const struct pod_page *page) {
             int on = tl_led() == 3;
             if (item) widget_set_visible(item, on, 0), widget_set_sensitive(item, on);
         }
+        if (row->action ==
+            ACT_COVNAME) { /* the Cover page: Albums stores nothing, so Name on Cover is dimmed and inert for it */
+            void *item = widget_lookup(win, row->name, 1);
+            int on = plcpage_style() != 0;
+            if (item) widget_set_opacity(item, on ? 255 : KB_EN_DIM), widget_set_sensitive(item, on);
+        }
         if (row->action == ACT_DTDATE || row->action == ACT_DTTIME) {
             /* stock disables its Manual (date and time) row while Set Automatically is on: Date and Time are dimmed and take no tap then
                (Time Zone is always live: stock's zone list is only a layout choice, its click handler tests nothing) */
@@ -1247,6 +1255,8 @@ static int open_page(int index, int as_home) {
         xfade_opened(win); /* the duration slider's handlers (after the refresh: setting it is not a change to save) */
     else if (index == POD_VOLUME_PAGE)
         volpage_opened(win); /* stock's volume handlers, bound to our widgets */
+    else if (index == POD_PLCOVER_PAGE)
+        plcpage_opened(win, index); /* the thumbnails and their taps */
     { /* the Settings page is the way out to the grid; the menu may be the Home instance (no navbar) */
         int entry = as_home && index == POD_ENTRY_PAGE;
         if (index == POD_SETTINGS_PAGE || entry) home_menu_opened(win, index == POD_SETTINGS_PAGE, entry);
@@ -1279,6 +1289,9 @@ int pod_open_wifitransfer(void) { return open_page(POD_WIFITRANSFER_PAGE, 0); }
 
 /* The Volume page, for the status bar tap (patch/volume.c vol_tap_open): the normal instance, with Back. */
 int pod_open_volume(void) { return open_page(POD_VOLUME_PAGE, 0); }
+
+/* The Cover page, for the Songs page's Edit mode (patch/plcpage.c plcpage_open): the normal instance, with Back. */
+int pod_open_plcover(void) { return open_page(POD_PLCOVER_PAGE, 0); }
 
 /* The Gain picker, Max Volume and Volume & Sound, for open_shared and the Volume page's rows (patch/volume.c volpage_go): the normal instance, with Back. */
 int pod_open_psgain(void) { return open_page(POD_PSGAIN_PAGE, 0); }

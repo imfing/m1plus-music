@@ -211,6 +211,7 @@ ACT_LUNOW = 193       # action row (Settings > Library > Update Library): Update
 ACT_LUFOLDERS = 194   # link row (Update Library): Choose Folders: the card check, then our folder picker (patch/libupdate.c lu_folders, patch/lupick.c)
 ACT_SWAPKEYS = 196    # switch row (Buttons & Power): Swap Prev / Next, off by default; on swaps the physical previous and next buttons (patch/keyspower.c kp_swap_toggle and kp_key_map, /mnt/data/m1plus/buttons-swap)
 ACT_VOLTAP = 219      # switch row (Buttons & Power): Tap for Volume, on by default; off makes the status bar tap do nothing (patch/volume.c vol_tap_toggle and vol_tap_open, /mnt/data/m1plus/volume-tap)
+ACT_COVNAME = 220     # switch row (the Cover page): Name on Cover, the playlist's PLC_FLAG_NAME (patch/plcpage.c plcpage_name; dimmed and inert while Albums is chosen)
 ACT_CRRUN = 210       # action row (Settings > Developer > Tools > Card Script): Run Now, starts /usr/bin/m1plus-run (patch/cardrun.c cardrun_run); reads Stop during a run and then SIGTERMs it (cardrun_stop); 211 is unused
 ACT_CRLOG = 212       # link row (Card Script): View Log, the log as a Release Notes page of our own (patch/relnotes.c cardlog_open)
 ACT_CRSRC = 214       # link row (Card Script): View Script, the card's m1plus-run.sh as a Release Notes page of our own (patch/relnotes.c cardsrc_open)
@@ -228,7 +229,7 @@ VALUE_INIT = {ACT_ASPAGE: 'Off', ACT_GSPAGE: 'Off', ACT_PCDIR: 'Apple Podcasts',
 VALUE_ACTIONS += (ACT_LANG,)
 CHECK_ACTIONS += (ACT_LANGSET, ACT_BTCODECSET)
 VALUE_INIT[ACT_LANG] = ''   # the language's own name: the payload sets it as the page opens
-SWITCH_ACTIONS += (ACT_DTAUTO, ACT_DT24)   # Settings > General > Date & Time (patch/datetime.c, docs/modules/datetime.md)
+SWITCH_ACTIONS += (ACT_DTAUTO, ACT_DT24, ACT_COVNAME)   # Settings > General > Date & Time (patch/datetime.c, docs/modules/datetime.md)
 VALUE_ACTIONS += (ACT_DTZONE, ACT_DTDATE, ACT_DTTIME, ACT_DTFIELD)
 CHECK_ACTIONS += (ACT_DTZONESET, ACT_DTSET)
 ACTION_ACTIONS += (ACT_DTAPPLY,)
@@ -357,6 +358,10 @@ class XfadeCard:
 class VolumeCard:
     """The Volume page's card (patch/volume.c, docs/modules/volume.md): three rows high, holding stock's widgets by stock's names (vol_label hidden, vol_slider, btn_dec, btn_add) and ours (pod_volnum, pod_volinfo); the payload
     runs stock's volume handlers on them."""
+
+
+class CoverCard:
+    """The Cover page's thumbnail card (patch/plcpage.c, docs/modules/plcover.md "Cover page"): a transparent sensitive view the payload paints (six thumbnails in two rows of three and the selection ring) with the six style names under them as labels."""
 
 
 class HSliders:
@@ -504,6 +509,7 @@ PAGE_ORDER = [   # every page, in the order of its number: this table alone deci
     'm1plus_cardlog',
     'm1plus_cardsrc',
     'm1plus_psxfade',
+    'm1plus_plcover',
 ]
 _PAGE_NUMBER = {k: i for i, k in enumerate(PAGE_ORDER)}
 assert len(_PAGE_NUMBER) == len(PAGE_ORDER), 'PAGE_ORDER lists a page key twice: ' + ', '.join(sorted({k for k in PAGE_ORDER if PAGE_ORDER.count(k) > 1}))
@@ -620,6 +626,7 @@ PSBOOTVOL_PAGE_INDEX = page_index('m1plus_psbootvol')
 PSBAL_PAGE_INDEX = page_index('m1plus_psbal')
 PSXFEED_PAGE_INDEX = page_index('m1plus_psxfeed')   # the Crossfeed picker (last in PAGE_ORDER: no other page's number moved)
 PSXFADE_PAGE_INDEX = page_index('m1plus_psxfade')   # the Crossfade page (last in PAGE_ORDER: no other page's number moved)
+PLCOVER_PAGE_INDEX = page_index('m1plus_plcover')   # a playlist's Cover page (patch/plcpage.c; last in PAGE_ORDER: no other page's number moved)
 LYRSIZE_PAGE_INDEX = page_index('m1plus_lyrsize')   # the Lyrics Text Size picker
 PCSET_PAGE_INDEX = page_index('m1plus_podcastsettings')   # Settings > Library > Podcasts
 PCDIR_PAGE_INDEX = page_index('m1plus_podcastdirectory')   # Settings > Library > Podcasts > Podcast Directory picker
@@ -1296,6 +1303,8 @@ PSXFADE_PAGE = Page('m1plus_psxfade', 'm1plus_psxfade_page', 'Crossfade', layout
     Hdr('Crossfade Duration'), XfadeCard(), Row('Keep Albums Gapless', ACT_XFADEAUTO),
     Note('Overlaps tracks at transitions. Not applied to DSD, CUE, podcasts or audiobooks.', lines=2),
     Note("The sample rate stays the same from track to track; later tracks are resampled to it. Pause or skip to return to a track's own rate.", lines=4))))
+COVER_STYLES = ('Albums', 'Solid', 'Mesh', 'Sunburst', 'Stripes', 'Band')   # the thumbnails' names, by style number (PLC_STYLE_*)
+PLCOVER_PAGE = Page('m1plus_plcover', 'm1plus_plcover_page', 'Playlist Cover', layout=[CoverCard(), Row('Name on Cover', ACT_COVNAME), Note('Colours come from the albums in this playlist.', lines=2)])
 PSFILTER_PAGE = Page('m1plus_psfilter', 'm1plus_psfilter_page', 'Digital Filter', layout=[Row(v, ACT_FILTERSET, i) for i, v in enumerate(FILTER_VALUES)])
 PSDSD_PAGE = Page('m1plus_psdsd', 'm1plus_psdsd_page', 'DSD Output Mode', layout=[Row(v, ACT_DSDSET, i) for i, v in enumerate(DSD_VALUES)])
 PSUSB_PAGE = Page('m1plus_psusb', 'm1plus_psusb_page', 'USB Volume', layout=[Row(v, ACT_USBVOLSET, i) for i, v in enumerate(USBVOL_VALUES)])
@@ -1592,7 +1601,7 @@ CARDRUN_PAGE = Page('m1plus_cardrun', 'm1plus_cardrun_page', 'Card Script', layo
 ])
 CARDLOG_PAGE = Page('m1plus_cardlog', 'm1plus_cardlog_page', 'Card Script Log', kind='relnotes')
 CARDSRC_PAGE = Page('m1plus_cardsrc', 'm1plus_cardsrc_page', 'm1plus-run.sh', kind='relnotes')
-NOGLYPH_ACTIONS = (ACT_LUNOW, ACT_LUFOLDERS, ACT_LUAUTO, ACT_CRRUN, ACT_CRLOG, ACT_CRSRC, ACT_XFADEAUTO, ACT_XFADESET)   # rows with no glyph: Update Library, Card Script, Crossfade's switches (tools/pod_ui.py cards_row)
+NOGLYPH_ACTIONS = (ACT_LUNOW, ACT_LUFOLDERS, ACT_LUAUTO, ACT_CRRUN, ACT_CRLOG, ACT_CRSRC, ACT_XFADEAUTO, ACT_XFADESET, ACT_COVNAME)   # rows with no glyph: Update Library, Card Script, Crossfade's switches (tools/pod_ui.py cards_row)
 
 # PAGES[0] is the entry page. The order is PAGE_ORDER's; a key with no page, or a page missing from PAGE_ORDER, stops the import.
 _missing = [k for k in PAGE_ORDER if k not in _REGISTRY]

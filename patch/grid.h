@@ -20,6 +20,9 @@
  */
 #pragma once
 
+#include "plcover.h"
+
+#define GRID_NAME_MIN 64 /* the smallest cover side that shows a playlist's name (the list rows' 52 px do not) */
 #define GRID_TEXT 48 /* wide chars kept per text, the NUL included */
 #define GRID_CELL_H (GRID_COVER + GRID_TITLE_GAP + GRID_TITLE_H + GRID_SUB_H)
 #define GRID_PITCH (GRID_CELL_H + GRID_ROW_GAP) /* row to row */
@@ -47,6 +50,9 @@ typedef struct {
     int xw; /* a source's row: the width its marks / state value take from the text (the text was cut for it; patch/albumpage.c, patch/songs.c cut it again when it changes) */
     int load; /* a source's cover on its way (the page sets it; with art not 1 the grid draws the spinner on the disc) */
     int subx; /* list mode: the grey line starts this far right of the text (a download ring sits before it); the owner clears GRID_FIT_ARTIST when it changes */
+    unsigned
+        cov; /* a playlist tile: the sig of the chosen cover it was made for (plc_t.sig), 0 the mosaic; the owner compares it to see a cover change */
+    int nm; /* a chosen cover with the Name on Cover flag (grid_plc sets it, grid_free_art clears it): grid_plc_name draws the playlist's name on it */
     int nochev; /* list mode with chevrons: this row opens nothing (a dimmed Not available result): no chevron, the text runs to LIST_TEXT_W */
 } grid_tile_t;
 
@@ -113,6 +119,11 @@ void grid_art_url(grid_t *g, grid_tile_t *t, const char *url);
  * 2: A B / B A, 3: A B / C A, 4: A B / C D). The tile's bitmap exists, unfinished, until the last call, which rounds the corners and sets
  * art 1; 0 keys, or a bitmap that cannot be made, give art 2 (the placeholder). A source that does not decode leaves its quadrants grey. */
 void grid_mosaic(grid_t *g, grid_tile_t *t, unsigned *tmp);
+/* A playlist's chosen cover (patch/plcover.h) as the whole tile in one call: plc_art at the grid's side, the rounded corners, art 1 (art 2 without memory). */
+void grid_plc(grid_t *g, grid_tile_t *t, const plc_t *c);
+/* The name (UTF-8, the owner's current one) in white on the tile's cover at (x, y), top left, up to two lines (g->st_title, wrapped by pw_wrap, a last line cut with an ellipsis), when the tile has
+ * t->nm, a cover (art 1), g->side >= GRID_NAME_MIN and the style; lines not wholly inside 0..view_h (view_h > 0) are not drawn. Sets the canvas' text style. */
+void grid_plc_name(void *canvas, grid_t *g, const grid_tile_t *t, const char *name, int x, int y, int view_h);
 
 /* Cell i (row-major, GRID_COLS a row): its top left in the view when the first row's top is at origin_y. */
 int grid_cell_x(int i);

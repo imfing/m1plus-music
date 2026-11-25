@@ -45,6 +45,7 @@ SAME_AS_ENGLISH |= {'Version %s', 'Apple Podcasts', 'Podcast Index', 'Directory'
 SAME_AS_ENGLISH |= {'Enhanced Open', 'WEP', 'WPA/WPA2', 'WPA2/WPA3', 'WPA3', 'Enterprise'}    # the Wi-Fi page's security labels: the standards' names (Enterprise in German, Italian and Polish)
 SAME_AS_ENGLISH |= {'Date', 'Minute'}    # Date & Time: Date in French, Minute in French and German
 SAME_AS_ENGLISH |= {'Volume', 'Auto-Standby'}    # Buttons & Power: Volume in French and Italian, Auto-Standby in German (the hyphenated Standby is the German word too)
+SAME_AS_ENGLISH |= {'Band', 'Mesh'}    # the Cover page's style names: Band in German, Mesh in German and Italian
 SAME_AS_ENGLISH |= {'Password'}    # the password page's label: Password in Italian
 SAME_AS_ENGLISH |= {'Name'}    # the Other Network page's label: Name in German
 SAME_AS_ENGLISH |= {'NetEase'}    # the service's name outside Chinese (Find Artist Photo's services line and source)

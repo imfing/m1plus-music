@@ -93,8 +93,8 @@ def run(ctx):
            and set(P.NOGLYPH_ACTIONS) >= {210, 212, 214} and P.ACT_CRRUN in P.ACTION_ACTIONS and not hasattr(P, 'ACT_CRSTOP') and P.ACT_CRLOG not in P.ACTION_ACTIONS,
            'cards: Status, [Run Now], [View Script, View Log], then one note; no glyphs; Run Now has no chevron')
     expect(not hasattr(P, 'ACT_CRBOOT') and 'cardrun-boot' not in P.SETTING_FILES and 'cr_boot_setting' not in PSYMS and 'cr_boot_toggle' not in PSYMS, 'no Run at Boot: no switch, no setting file, no payload code')
-    expect(P.PAGE_ORDER[-4:-1] == ['m1plus_cardrun', 'm1plus_cardlog', 'm1plus_cardsrc'] and P.PAGES[-3] is logpage and P.PAGES[-2] is P.CARDSRC_PAGE and logpage.kind == P.CARDSRC_PAGE.kind == 'relnotes' and logpage.title == 'Card Script Log' and P.CARDSRC_PAGE.title == 'm1plus-run.sh',
-           'both pages are at the end of PAGE_ORDER (before m1plus_psxfade); the log is a Release Notes page')
+    expect(P.PAGE_ORDER[-5:-2] == ['m1plus_cardrun', 'm1plus_cardlog', 'm1plus_cardsrc'] and P.PAGES[-4] is logpage and P.PAGES[-3] is P.CARDSRC_PAGE and logpage.kind == P.CARDSRC_PAGE.kind == 'relnotes' and logpage.title == 'Card Script Log' and P.CARDSRC_PAGE.title == 'm1plus-run.sh',
+           'both pages are at the end of PAGE_ORDER (before m1plus_psxfade and m1plus_plcover); the log is a Release Notes page')
     tools = [x.label for x in P.DEVELOPER_PAGE.layout if hasattr(x, 'label')]
     expect(tools[tools.index('Settings Files') + 1] == 'Card Script' and P.DEVELOPER_PAGE.rows[tools.index('Card Script')].arg == P.CARDRUN_PAGE_INDEX
            and mod_icons.CARD_GLYPHS['Card Script'] == 'memory-stick' and mod_icons.card_name('memory-stick') in mod_icons.CARD_IMAGES, 'Developer > Tools: Card Script follows Settings Files')

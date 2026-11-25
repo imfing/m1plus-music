@@ -247,15 +247,32 @@ static void pl_loading(tile_t *t, int a) {
     if (pl.view) ls_cover_poll(&pl.cp, pl.win, pl_cp_ask, pl_cp_spin, pl_cp_giveup);
 }
 
+/* Playlist a's chosen cover (patch/plcover.h; a local playlist only: a source's never looks): its sig, 0 for none, c filled. The picker's rows have none. */
+static unsigned pl_cover(int a, plc_t *c) {
+    if (pl.src || a < pl_v() || !pl.pls || a >= (int)pl.count) return 0;
+    return plc_get(pl_id(a), cc_str(pl_rec(a), REC_TITLE), c) ? c->sig : 0;
+}
+
+/* The tile's cover: the chosen cover of its playlist when it has one, else the next step of its mosaic. */
+static void pl_art(tile_t *t, int a) {
+    plc_t c;
+    if (t->cov && pl_cover(a, &c))
+        grid_plc(&pl.g, t, &c), t->cov = c.sig;
+    else
+        grid_mosaic(&pl.g, t, pl.tmp);
+}
+
 /* The tile's texts and mosaic keys from the playlist's scan (the count shows once the playlist has been read). */
 static void pl_prep(tile_t *t, int a) {
     info_t *in = &pl.info[a];
+    plc_t c;
     grid_free_art(t);
     t->fit = 0, t->art = 0, t->qi = 0;
     t->mid = a < pl_v();
     t->nq = in->nk > 1 && !pl.tmp ? 1 : in->nk;
     memcpy(t->qkey, in->key, sizeof t->qkey);
-    if (in->scanned && !in->nk) t->art = 2; /* no album with a cover: the placeholder */
+    t->cov = pl_cover(a, &c);
+    if (in->scanned && !in->nk && !t->cov) t->art = 2; /* no album with a cover: the placeholder */
     pl_texts(t, a);
     pl_loading(t, a);
 }
@@ -383,6 +400,13 @@ static int pl_on_paint(void *ctx, void *e) {
         last = (r1 + 1) * GRID_COLS;
         if (last > (int)pl.count) last = (int)pl.count;
         grid_paint(canvas, &pl.g, r0 * GRID_COLS, last, GRID_ROW_GAP - co, GRID_VIEW_H, pl_tile_of, (void *)0);
+        /* the names on the covers: the tiles are a ring keyed by the playlist (grid_find), not tiles[a] */
+        for (a = r0 * GRID_COLS; a < last && !pl.src && pl.pls; ++a) {
+            grid_tile_t *t = a >= pl_v() ? grid_find(&pl.g, a) : (grid_tile_t *)0;
+            if (t)
+                grid_plc_name(canvas, &pl.g, t, cc_str(pl_rec(a), REC_TITLE), grid_cell_x(a),
+                              grid_cell_y(a, GRID_ROW_GAP - co), GRID_VIEW_H);
+        }
         for (a = r0 * GRID_COLS; pl.select && pl.sel.mark[0] && a < last; ++a)
             pl_mark(canvas, a, grid_cell_x(a) + GRID_COVER - SG_MARK - 6,
                     grid_cell_y(a, GRID_ROW_GAP - co) + GRID_COVER - SG_MARK - 6);
@@ -472,7 +496,8 @@ static void pl_kick(void) {
 /* The tile's finished picture is made of the albums the scan found, in the same order: pl_prep would compose it again unchanged. */
 static int pl_same_art(const tile_t *t, const info_t *in) {
     int i;
-    if (t->art != 1 || t->nq != (in->nk > 1 && !pl.tmp ? 1 : in->nk)) return 0;
+    plc_t c;
+    if (t->art != 1 || t->nq != (in->nk > 1 && !pl.tmp ? 1 : in->nk) || t->cov != pl_cover(t->album - 1, &c)) return 0;
     for (i = 0; i < t->nq; ++i)
         if (t->qkey[i] != in->key[i]) return 0;
     return 1;
@@ -502,7 +527,7 @@ static int pl_on_load(const void *unused) {
                 pl_prep(t, a);
             pl_loading(t, a);
         } else if (!t->art)
-            grid_mosaic(&pl.g, t, pl.tmp);
+            pl_art(t, a);
         if (top < GRID_VIEW_H && top + pl_height() > 0) pl_redraw();
     }
     pl_kick();
@@ -705,6 +730,12 @@ static void pl_load(void) {
     keep = have && pl.have_sig && pl.info && pl.g.tiles && pl.count && oldn == pl.count &&
            pl_same_list(old, oldn - (unsigned)pl_v(), pl.pls, pl.count - (unsigned)pl_v());
     for (oldn = 0; keep && oldn < PL_SIG; ++oldn) keep = sig[oldn] == pl.sig[oldn];
+    /* A cover chosen, changed or removed meanwhile (the file's, not the database's): that tile is made again (its scan stays). */
+    for (i = 0; keep && i < pl.g.n; ++i) {
+        tile_t *t = &pl.g.tiles[i];
+        plc_t c;
+        if (t->album && t->album - 1 < (int)pl.count && t->cov != pl_cover(t->album - 1, &c)) pl_prep(t, t->album - 1);
+    }
     /* The cover cache grows while another page is open (the Cover Flow build): a playlist whose scan found an album without a file is read again, and its
      * tile composed again, by the loader. Complete scans (every album had its file or none) stay: no query, no decode. */
     for (oldn = 0; keep && oldn < pl.count; ++oldn)
@@ -1125,6 +1156,21 @@ static int pl_stock_selection(void) {
     return 1;
 }
 
+/* The selected playlists the stock delete took out: their chosen covers go (the page's list is still the one they were selected in; a playlist the stock list still has stays). */
+static void pl_forget_deleted(void) {
+    void *list;
+    unsigned i, j, n;
+    if (pl.src || loadLocalClassList(CLASS_PLAYLISTS) < 0) return;
+    list = *(void **)PDEQ_PLAYLIST;
+    n = list ? deque_size(list) : 0;
+    for (i = (unsigned)pl_v(); i < pl.count; ++i) {
+        if (!m1_sel_is(&pl.sel, (int)i)) continue;
+        for (j = 0; j < n && I(deque_at(list, j), REC_DISC) != pl_id((int)i); ++j) {
+        }
+        if (j == n) plc_forget(pl_id((int)i), cc_str(pl_rec((int)i), REC_TITLE));
+    }
+}
+
 /* Delete: the stock handler's sequence (@0x53dbcc): nothing selected is the message msg_delplaylistfailed; the confirm dialog (msg_delplaylist; Yes 0xa); then
  * batch_delete_file(0xf00b, *pdeq_playlist, the selection, 0, 0), which runs deletePlaylist and deleteAllMusicByPlaylist for each selected row; the message
  * msg_delplaylistsuccess. The stock page rebuilds its list afterwards: this page reads it again (pl_load ends select mode). */
@@ -1139,6 +1185,7 @@ static int pl_on_delete(void *ctx, void *e) {
     if (!pl_ask(TR("msg_delplaylist"))) return RET_OK;
     if (pl_stock_selection()) {
         batch_delete_file(CLASS_PLAYLISTS, *(void **)PDEQ_PLAYLIST, *(void **)SEL_VEC, 0, 0);
+        pl_forget_deleted();
         pl_toast(TR("msg_delplaylistsuccess"));
     }
     pl_load();

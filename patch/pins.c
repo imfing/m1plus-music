@@ -91,6 +91,7 @@ static struct {
     char tph
         [PIN_MAX]; /* an artist's tile that shows the placeholder (no photo yet): it looks again when the menu is in front */
     unsigned tkey[PIN_MAX], tck[PIN_MAX][4];
+    unsigned tcov[PIN_MAX]; /* a playlist tile's chosen cover (plc_t.sig), 0 the mosaic */
     rowmenu_t rm; /* the long press sheet */
 } pn __attribute__((section(".scratch")));
 
@@ -551,16 +552,23 @@ static int pn_same_ck(const unsigned *a, const unsigned *b) {
     return a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3];
 }
 
+/* A playlist pin's chosen cover (patch/plcover.h): its sig, 0 for none (c filled). */
+static unsigned pn_cover(const pin_t *e, plc_t *c) {
+    return e->kind == 'p' && plc_get((int)e->key, e->name, c) ? c->sig : 0;
+}
+
 /* A tile made for pin e: its name, and its cover keys (an album's one key; a playlist's up to four, the mosaic, one only when there is no room for the quadrant buffer). */
 static void pn_set(grid_tile_t *t, const pin_t *e) {
     unsigned nk = 0;
+    plc_t c;
     grid_set(t, e->name, "", e->kind != 'p' ? e->ck[0] : 0);
     if (e->kind != 'p') return;
     while (nk < 4 && e->ck[nk]) ++nk;
     t->nq = nk > 1 && !pn.tmp ? 1 : (int)nk;
     t->qi = 0;
     memcpy(t->qkey, e->ck, sizeof t->qkey);
-    if (!nk) t->art = 2; /* no album with a cover: the placeholder */
+    t->cov = pn_cover(e, &c);
+    if (!nk && !t->cov) t->art = 2; /* no album with a cover: the placeholder */
 }
 
 /* The tiles for the pins. A tile whose pin (and cover keys) moved to another place keeps its cover and takes the pin's name again; the others are made again; a tile whose cover was only the placeholder
@@ -568,23 +576,27 @@ static void pn_set(grid_tile_t *t, const pin_t *e) {
 static void pn_tiles(void) {
     grid_tile_t old[PIN_MAX];
     char okind[PIN_MAX], oph[PIN_MAX];
-    unsigned okey[PIN_MAX], ock[PIN_MAX][4], i, j, used = 0;
+    unsigned okey[PIN_MAX], ock[PIN_MAX][4], ocov[PIN_MAX], i, j, used = 0;
     char url[80];
+    plc_t pc;
     if (!pn.g.tiles) return;
     memcpy(old, pn.g.tiles, sizeof old);
     memcpy(okind, pn.tkind, sizeof okind);
     memcpy(oph, pn.tph, sizeof oph);
     memcpy(okey, pn.tkey, sizeof okey);
     memcpy(ock, pn.tck, sizeof ock);
+    memcpy(ocov, pn.tcov, sizeof ocov);
     memset(pn.g.tiles, 0, sizeof old);
     memset(pn.tkind, 0, sizeof pn.tkind);
     memset(pn.tph, 0, sizeof pn.tph);
     memset(pn.tkey, 0, sizeof pn.tkey);
     memset(pn.tck, 0, sizeof pn.tck);
+    memset(pn.tcov, 0, sizeof pn.tcov);
     for (i = 0; i < PIN_MAX && i < pn.n; ++i) {
         const pin_t *e = &pn.ent[i];
         for (j = 0; j < PIN_MAX; ++j)
-            if (!(used >> j & 1) && okey[j] == e->key && okind[j] == e->kind && pn_same_ck(ock[j], e->ck)) {
+            if (!(used >> j & 1) && okey[j] == e->key && okind[j] == e->kind && pn_same_ck(ock[j], e->ck) &&
+                ocov[j] == pn_cover(e, &pc)) {
                 used |= 1u << j;
                 memcpy(&pn.g.tiles[i], &old[j], sizeof old[j]);
                 grid_set(&pn.g.tiles[i], e->name, "",
@@ -606,6 +618,7 @@ static void pn_tiles(void) {
         pn.tkind[i] = e->kind;
         pn.tkey[i] = e->key;
         memcpy(pn.tck[i], e->ck, sizeof pn.tck[i]);
+        pn.tcov[i] = pn.g.tiles[i].cov;
     }
     for (j = 0; j < PIN_MAX; ++j)
         if (!(used >> j & 1)) grid_free_art(&old[j]); /* the bitmaps of the tiles that were not kept */
@@ -644,7 +657,10 @@ static void pn_artist_art(unsigned i) {
 /* The next step of tile i's cover: an album's cache file box-reduced to the tile's size, a playlist's one mosaic source; else the placeholder disc. */
 static void pn_make(unsigned i) {
     grid_tile_t *t = &pn.g.tiles[i];
-    if (pn.tkind[i] == 'p')
+    plc_t pc;
+    if (pn.tkind[i] == 'p' && pn.tcov[i] && plc_get((int)pn.ent[i].key, pn.ent[i].name, &pc))
+        grid_plc(&pn.g, t, &pc);
+    else if (pn.tkind[i] == 'p')
         grid_mosaic(&pn.g, t, pn.tmp);
     else if (pn.tkind[i] == 'r')
         pn_artist_art(i);
@@ -798,6 +814,11 @@ static int pn_on_paint(void *ctx, void *e) {
         t = pn_tile_in(i);
         if (t != lt) grid_blit(canvas, &pn.g, &pn.g.tiles[t], pn_x(i), pn_y(i), 0);
     }
+    for (i = 0; i < n; ++i) {
+        t = pn_tile_in(i);
+        if (t != lt && pn.tkind[t] == 'p')
+            grid_plc_name(canvas, &pn.g, &pn.g.tiles[t], pn.ent[t].name, pn_x(i), pn_y(i), 0);
+    }
     widget_prepare_text_style(pn.st_title, canvas);
     for (i = 0; i < n; ++i) {
         t = pn_tile_in(i);
@@ -808,6 +829,8 @@ static int pn_on_paint(void *ctx, void *e) {
         lx = pn.drag ? pn.fx - PIN_COVER / 2 : pn_x(lt);
         ly = pn.drag ? pn.fy - PIN_COVER / 2 : pn_y(lt);
         pn_lifted(canvas, &pn.g.tiles[lt], lx, ly);
+        if (pn.tkind[lt] == 'p') grid_plc_name(canvas, &pn.g, &pn.g.tiles[lt], pn.ent[lt].name, lx, ly, 0);
+        widget_prepare_text_style(pn.st_title, canvas);
         grid_text(canvas, &pn.g.tiles[lt], 0, lx, ly + PIN_COVER + PIN_TGAP, PIN_COVER, PIN_TH, 0);
     }
     return RET_OK;

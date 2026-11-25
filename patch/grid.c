@@ -30,6 +30,7 @@ int grid_init(grid_t *g, void *win, int n, int side, int round) {
 void grid_free_art(grid_tile_t *t) {
     if (t->bmp) bitmap_destroy(t->bmp);
     t->bmp = (void *)0;
+    t->nm = 0;
 }
 
 void grid_drop(grid_t *g) {
@@ -244,6 +245,45 @@ void grid_mosaic(grid_t *g, grid_tile_t *t, unsigned *tmp) {
         t->art = 1;
     }
     bitmap_unlock_buffer(t->bmp);
+}
+
+void grid_plc(grid_t *g, grid_tile_t *t, const plc_t *c) {
+    unsigned *px;
+    void *b = grid_bitmap(g, &px);
+    if (!b) {
+        t->art = 2;
+        return;
+    }
+    plc_art(px, g->side, c->style, c->tones, c->nt, c->seed);
+    t->nm = (c->flags & PLC_FLAG_NAME) != 0;
+    grid_round(g, px);
+    bitmap_unlock_buffer(b);
+    t->bmp = b, t->art = 1;
+}
+
+void grid_plc_name(void *canvas, grid_t *g, const grid_tile_t *t, const char *name, int x, int y, int view_h) {
+    unsigned s[64], tmp[2], e[2];
+    unsigned short adv[64];
+    pw_line_t ln[2];
+    int n, i, k, nl, inset = g->side * 8 / 100, pitch = g->side >= 120 ? 22 : 18, room = g->side - 2 * inset;
+    if (!t->nm || t->art != 1 || g->side < GRID_NAME_MIN || !g->st_title || !name || !*name) return;
+    tk_utf8_to_utf16_ex(name, strlen(name), s, 64);
+    for (n = 0; s[n] && n < 63; ++n) {
+    }
+    widget_prepare_text_style(g->st_title, canvas);
+    tmp[1] = 0;
+    for (i = 0; i < n; ++i) tmp[0] = s[i], adv[i] = (unsigned short)m1_text_w(g->st_title, tmp);
+    e[0] = ELLIPSIS, e[1] = 0;
+    nl = pw_wrap(s, n, adv, room, 2, m1_text_w(g->st_title, e), ln);
+    for (k = 0; k < nl; ++k) {
+        const unsigned *l = s + ln[k].start;
+        int len = ln[k].len, w = 0, ly = y + inset + k * pitch, rect[4];
+        while (len > 0 && l[len - 1] == ' ') --len;
+        for (i = 0; i < len; ++i) tmp[0] = l[i], w += m1_text_w(g->st_title, tmp);
+        rect[0] = x + inset, rect[1] = ly, rect[2] = w, rect[3] = pitch;
+        if (len > 0 && (view_h <= 0 || (ly >= 0 && ly + pitch <= view_h)))
+            canvas_draw_text_in_rect(canvas, l, (unsigned)len, rect);
+    }
 }
 
 int grid_cell_x(int i) { return GRID_MARGIN + i % GRID_COLS * GRID_COL_PITCH; }
