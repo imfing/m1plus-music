@@ -307,15 +307,36 @@ def build_cover_page(page):
     covers, and the first-run cache build's progress label and Cancel button. patch/coverflow.c
     fills view_covers with a stock slide_menu; the frame's size must match the CF_* constants in
     patch/offsets.inc."""
+    o = OFFSETS
     root = Widget('window', 0, 0, 0, 0, [('name', page.name)])
     styled(root, ('normal', 'disable', 'focused'), 'bg_color', '#000000')
-    root.children.append(navbar(page.title, artist_songs=True))
+    root.children.append(navbar(page.title, artist_songs=True, show_more=True))   # btn_more: the main page's "..." (the artist page's btn_songs shares its slot)
     fy, ay, ah, ry, rh = cover_layout()
     frame = Widget('view', 0, fy, SCREEN_W, COVER_FRAME_H, [('name', 'view_covers')])
     styled(frame, ('normal',), 'bg_color', '#000000')
     root.children.append(frame)
     root.children.append(scroll_caption('label_album', ay, ah, 22, INK_RGB))
     root.children.append(scroll_caption('label_artist', ry, rh, 18, SUB_RGB))
+    # the main page's scrubber (patch/coverflow.c paints the ticks in it and takes its touch), its counter and the bubble over the centre cover; all hidden until the payload shows them
+    scrub = hidden(Widget('view', 0, o['CF_SCRUB_Y'], SCREEN_W, o['CF_SCRUB_H'], [('name', 'cf_scrub')]))
+    for st in STATES: styled(scrub, (st,), 'bg_color', '#00000000')
+    root.children.append(scrub)
+    root.children.append(hidden(label('cf_count', 0, o['CF_COUNT_Y'], SCREEN_W, o['CF_COUNT_H'], '', o['CF_COUNT_PX'], HINT_RGB)))
+    b = o['SG_BUBBLE']
+    bubble = hidden(Widget('view', (SCREEN_W - b) // 2, fy + o['CF_TOP'] + (o['ART_SIZE'] - b) // 2, b, b, [('name', 'cf_bubble')]))
+    for st in STATES:   # the A-Z rail's bubble (azlist_rail)
+        styled(bubble, (st,), 'bg_color', '#262626')
+        styled(bubble, (st,), 'round_radius', '14')
+        styled(bubble, (st,), 'border_color', '#3A3A3A')
+        styled(bubble, (st,), 'border_width', '1')
+    letter = Widget('label', 0, 0, b, b, [('name', 'cf_bubble_letter'), ('text', ''), ('sensitive', 'false')])
+    for st in ('normal', 'disable', 'focused'):
+        styled(letter, (st,), 'text_color', INK_RGB)
+        styled(letter, (st,), 'font_size', str(SG_BUBBLE_PX))
+        styled(letter, (st,), 'text_align_h', 'center')
+        styled(letter, (st,), 'text_align_v', 'middle')
+    bubble.children.append(letter)
+    root.children.append(bubble)
     status = label('label_status', 10, 210, SCREEN_W - 20, 30, '', 20, HINT_RGB)
     root.children.append(hidden(status))
     cancel = Widget('button', 100, 260, 120, 46, [('name', 'btn_cancel'), ('enable', 'true'),
@@ -330,6 +351,7 @@ def build_cover_page(page):
     styled(cancel, ('pressed',), 'text_color', INK_RGB)
     styled(cancel, ('pressed',), 'font_size', '20')
     root.children.append(hidden(cancel))
+    root.children.extend(view_sort_card(select_key='Playing Album', act_glyphs=('pod_ic_vssearch', 'pod_ic_vslocate')))   # the main page's "..." card: Search Albums, Playing Album, the Albums sort rows (patch/coverflow.c)
     return root
 
 

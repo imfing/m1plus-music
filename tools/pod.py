@@ -939,6 +939,7 @@ DATA.update({
     'LOCK_PAGEFLAG':      (0xa059fc, 'lockscreen_pageflag'),   # int: 1 from the lock page's init until its EVT_WINDOW_CLOSE; on_wm_tsmove_fun opens no pull-down while it is 1 (m1plus_tsdown)
     'DROPDOWN_STATE':     (0xa05a2c, 'dropdown_menu_state'),   # int: 0 idle; 1 / 2 / 3 while the pull-down opens, is open, is closing; its dialog's EVT_WINDOW_CLOSE stores 0 (m1plus_tsdown)
     'PRESSDOWN_Y':        (0xa05a30, 'pressdown_y'),           # int: pointer-down y recorded by on_wm_tsdown_fun (state 0 or 3); on_wm_tsmove_fun opens the pull-down only for < 81
+    'BEFORE_PRESS_Y':     (0xa05a28, 'beforechild_pressdown_y'),   # int: pointer-down y recorded by on_wm_before_tsdown_fun (0x4cd608); while it is 450 or more on_wm_before_tsmove_fun (0x4cd5e0) stops every move before the children and on_wm_before_tsup_fun (0x4cd65c) goes Home for a release 50 px above it (patch/coverflow.c on_scrub clears it)
     'USB_PAGE_PENDING':   (0xa041b1, None),   # byte: 1 from check_usb_status's 1 -> 2 until the response timer clears it to open usbmode_page (pd_usb_poll, m1plus_tsdown)
 })
 FUNCTIONS['check_usb_status'] = ('int', 'void', 0x4ce1e8)   # the idle pass's USB step: cable, host, unplug (pd_usb_poll, USBPOLL_SITE)

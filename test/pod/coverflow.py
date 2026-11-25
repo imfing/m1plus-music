@@ -925,8 +925,8 @@ def landscape_tests(ctx, asset):
            'the navbar has no landscape button (the Settings switch replaced it)')
     lbl = tree.find('label_title')
     settings_lbl = awtk_ui.parse(open(os.path.join(WORK, 'rootfs/release/assets/default/raw/ui/m1plus_settings.bin'), 'rb').read()).find('label_title')
-    expect((lbl.x, lbl.w) == (settings_lbl.x, settings_lbl.w) and lbl.x + lbl.w > O['NAV_VIEW_X'] and [c.name for c in tree.find('navigationbar_view').children] == ['label_title', 'btn_return', 'btn_backtoplayer', 'btn_songs'],
-           'the title has the whole navbar between Back and Now Playing, as on the other pages without a toggle')
+    expect(lbl.x == settings_lbl.x and lbl.x + lbl.w == O['NAV_VIEW_X'] and [c.name for c in tree.find('navigationbar_view').children] == ['label_title', 'btn_return', 'btn_backtoplayer', 'btn_more', 'btn_songs'],
+           'the title ends before the capsule\'s left cap (the main page\'s "...", the artist page\'s Songs button share the slot)')
     imgs = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx')
     expect(not any(os.path.exists(os.path.join(imgs, f'pod_nav_rotate{s}.png')) for s in ('', '_down')), 'the rotate glyph images are no longer in the tree')
     m = land_machine(saved=b'1\n')
@@ -1154,4 +1154,189 @@ def volkeys_tests(ctx):
     expect(shelf_value(am) == 2, 'volume up goes back')
 
 
-SECTIONS = [page_tests, volkeys_tests, keyroute_tests]   # tools/check.py runs each as its own task
+LOG_ON, LOG = '/mnt/mmc/m1plus-log', '/mnt/mmc/m1plus.log'   # the opt-in log (patch/home.h)
+CF_EXTRA = VS_WIDGETS + ('cf_scrub', 'cf_count', 'cf_bubble', 'cf_bubble_letter')   # the main page's "..." card and scrubber
+CFSTART_FILE, POS_FILE = '/mnt/data/m1plus/coverflow-start', '/mnt/mmc/.m1plus/coverflow-position'
+
+
+def menu_tests(ctx):
+    """The main page's "..." card and scrubber (docs/modules/coverflow.md "Menu", "Scrubber") and Start At: the capsule, the shared order, Playing Album, the ticks' paint and touch."""
+    expect = ctx.expect
+    expect(cdefs.defines(os.path.join(ROOT, 'patch', 'home.h'), strings=True)['CFSTART_FILE'] == CFSTART_FILE, 'the Start At file')
+
+    def shelf(albums=12, extras=True, **fs):
+        m = cover_machine(albums=albums)
+        if extras:
+            for n in CF_EXTRA: m.widget(n)
+        m.fs.update(fs)
+        m.call(PSYMS['coverflow_open'], count=8000000)
+        return m
+
+    def paint(m):
+        m.fills = []
+        if not getattr(m, 'canvas', 0): m.canvas = m.alloc(0x80)
+        m.call(PSYMS['on_scrub_paint'], a0=0, a1=m.paint_event(), count=4000000)
+        return m.fills
+
+    def scrub(m, kind, x):
+        m.touch(kind, x, 20, fn='on_scrub')
+
+    def shown_album(m):
+        return [c[2] for c in m.calls if c[0] == 'widget_set_text_utf8' and c[1] == m.widgets['label_album']][-1]
+
+    m = shelf()
+    expect(vis(m, 'btn_more') == (1, 1) and vis(m, 'btn_songs')[0] == 0 and m.props.get((m.widgets['btn_backtoplayer'], 'style:normal:icon')) == 'ah_nav_play',
+           'the main page shows "..." as the capsule\'s left cap, Now Playing its right cap; no Songs button')
+    expect(vis(m, 'cf_scrub') == (1, 1) and vis(m, 'cf_bubble')[0] == 0 or (m.widgets['cf_bubble'], 'visible') not in m.props, 'the scrubber is shown, the bubble not')
+    f = paint(m)
+    tops = [r for r in f if r[3] == O['CF_TICK_W']]
+    expect(len(f) == O['CF_TICKS'] and len(tops) == O['CF_TICKS'] and f[0][1] == O['CF_TICK_X0'] - 1 and f[-1][1] == O['CF_TICK_X1'] - 1,
+           f'at rest: {O["CF_TICKS"]} ticks across, nothing else ({len(f)} fills)')
+    hs = [r[4] for r in f]
+    expect(hs[0] == O['CF_REST_H'] + O['CF_REST_BUMP'] and hs[-1] == O['CF_REST_H'] and hs == sorted(hs, reverse=True),
+           f'the swell is on the first album, where the shelf is ({hs[:4]} .. {hs[-1]})')
+    expect(f[0][0] != f[-1][0] and all(c >> 24 == 0xff for c, *_ in f), 'the ticks are opaque blends, brighter at the swell')
+    # a finger on the ticks: the album under it, the bubble and the counter, the needle
+    scrub(m, 'down', O['CF_TICK_X1'])
+    expect(shelf_value(m) == 11 and shown_album(m) == 'Album 11' and ('widget_grab', m.window, m.widgets['cf_scrub']) in m.calls,
+           'a press at the right end jumps to the last album, the scrubber takes the gesture')
+    expect(('widget_set_text_utf8', m.widgets['cf_bubble_letter'], 'A') in m.calls and ('widget_set_text_utf8', m.widgets['cf_count'], '12 of 12') in m.calls
+           and vis(m, 'cf_bubble') == (1, 1) and vis(m, 'cf_count') == (1, 1),
+           'the bubble shows the title\'s initial (Title order), the counter the place')
+    expect(('widget_set_sensitive', m.widgets['cf_bubble'], 1) not in m.calls and ('widget_set_sensitive', m.widgets['cf_count'], 1) not in m.calls,
+           'the bubble and the counter only show: they stay insensitive (no touch)')
+    f = paint(m)
+    needle = [r for r in f if r[3] == O['CF_NEEDLE_W'] and r[4] == O['CF_NEEDLE_H']]
+    expect(len(f) == O['CF_TICKS'] + 1 and len(needle) == 1 and needle[0][1] == O['CF_TICK_X1'] - 1,
+           'dragged: the ticks and the needle on the position (nothing plays: no dot)')
+    expect(max(r[4] for r in f if r[3] == O['CF_TICK_W']) == O['CF_DRAG_H'] + O['CF_DRAG_BUMP'], 'the ticks grow while a finger is on them')
+    x5 = O['CF_TICK_X0'] + 5 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11
+    # a move only notes its x and arms the page's one-shot timer: the turn applies the last one (stock's 20-event queue drops what a slow handler leaves waiting)
+    turn_timer = ('timer_add', PSYMS['on_scrub_turn'], 1)
+    scrub(m, 'move', O['CF_TICK_X0'])
+    expect(shelf_value(m) == 11 and turn_timer in m.calls and not any(c[0].startswith('widget_') for c in m.calls),
+           f'a move sets nothing: it arms the turn ({m.calls})')
+    scrub(m, 'move', x5)
+    expect(shelf_value(m) == 11 and not any(c[0] == 'timer_add' or c[0].startswith('widget_') for c in m.calls), 'more moves in the same turn: the one timer, still nothing set')
+    fired(m, 'on_scrub_turn')
+    expect(shelf_value(m) == 5 and ('widget_set_text_utf8', m.widgets['cf_count'], '6 of 12') in m.calls, 'the turn puts the shelf under the last move')
+    # the covers load while the finger is down, as at any other time: a decode tick never waits for it
+    c = fired(m, 'on_load')
+    expect(not any(k[0] == 'timer_add' and k[2] > 1 for k in c), f'a decode tick during a scrub runs at once ({c})')
+    m.timer_fail = True
+    scrub(m, 'move', O['CF_TICK_X0'] + 3 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11)
+    expect(shelf_value(m) == 3, 'a refused timer: the move is applied as it comes')
+    m.timer_fail = False
+    scrub(m, 'move', -40); fired(m, 'on_scrub_turn')
+    expect(shelf_value(m) == 0, 'past the left end: the first album')
+    # the release carries the finger's last position: applied whatever moves were dropped or still wait, and the waiting turn is dropped
+    scrub(m, 'move', x5)
+    scrub(m, 'up', O['CF_TICK_X0'] + 2 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11)
+    expect(shelf_value(m) == 2 and ('timer_remove', 0x777) in m.calls, f'the release puts the shelf under itself and stops the waiting turn ({shelf_value(m)})')
+    expect(vis(m, 'cf_bubble')[0] == 0 and vis(m, 'cf_count')[0] == 0 and any(c[0] == 'widget_ungrab' for c in m.calls), 'the release hides the bubble and the counter')
+    expect(LOG not in m.fs, 'no log without the card\'s m1plus-log')
+    at = shelf_value(m); fired(m, 'on_scrub_turn')
+    expect(shelf_value(m) == at, 'a turn after the release does nothing')
+    expect(len(paint(m)) == O['CF_TICKS'], 'at rest again')
+    # the opt-in log: what a gesture cost
+    m.fs[LOG_ON] = b''
+    scrub(m, 'down', O['CF_TICK_X1']); m.clock += 30; scrub(m, 'move', x5); m.clock += 250; fired(m, 'on_scrub_turn'); m.clock += 20; scrub(m, 'abort', x5)
+    line = f'coverflow: scrub 300 ms, x {O["CF_TICK_X1"]} to {x5}, y 20, 1 moves in 1 turns, longest wait 250 ms, abort, 12 albums\n'
+    expect(m.fs.get(LOG, b'').decode() == line and shelf_value(m) == 5,
+           f'with m1plus-log each gesture appends its cost; an abort leaves the shelf where it was ({m.fs.get(LOG)})')
+    del m.fs[LOG_ON], m.fs[LOG]
+    # the scrubber's lower half is in stock's swipe-up-to-Home zone (screen y 450 and below): stock's window-manager handler, which runs before the scrubber's, has stored the
+    # press's y, and with that 450 or more it stops every move before the page sees one. The press the scrubber takes clears it (the moves come, the release is no Home swipe).
+    BEFORE_Y = pod.DATA['BEFORE_PRESS_Y'][0]
+    m.setword(BEFORE_Y, 460); scrub(m, 'down', x5)
+    expect(BEFORE_Y == 0xa05a28 and pod.DATA['BEFORE_PRESS_Y'][1] == 'beforechild_pressdown_y' and m.word(BEFORE_Y) == 0,
+           f'a press on the scrubber clears stock\'s bottom-zone press ({m.word(BEFORE_Y)})')
+    scrub(m, 'up', x5)
+    scrub(m, 'down', O['CF_TICK_X0']); scrub(m, 'up', O['CF_TICK_X0'])
+    # the playing album's dot
+    m.play([m.showlist[7]], 0)
+    scrub(m, 'down', O['CF_TICK_X0'])
+    f = paint(m)
+    expect(len(f) == O['CF_TICKS'] + 3, 'with album 7 playing: the dot (two bars) while dragged')
+    scrub(m, 'up', O['CF_TICK_X0'])
+
+    # the card: Search Albums, Playing Album, the sorts on the shared file
+    m.click('btn_more')
+    expect(vis(m, 'vs_card') == (1, 1) and vis(m, 'vs_item6') == (1, 1) and vis(m, 'vs_item7') == (1, 1) and vis(m, 'vs_item4')[0] == 0 and vis(m, 'vs_item5')[0] == 0,
+           'the card: Search and Playing Album, no view rows')
+    m.click('vs_item7')
+    expect(shelf_value(m) == 7 and vis(m, 'vs_card')[0] == 0, 'Playing Album: the shelf jumps to the playing album, the card closes')
+    m.play_pos = -1
+    m.calls = []; m.click('btn_more'); m.click('vs_item7')
+    expect(shelf_value(m) == 7 and [c[1] for c in m.calls if c[0] == 'toast'] == ['Not Playing'], 'nothing playing: a toast, the shelf stays')
+    m.calls = []; m.click('btn_more'); m.click('vs_item1')
+    # the Artist order (numbers in names compare as numbers): Album 7 stays the eighth; the shelf is reordered (album 0 is Artist 0's again)
+    expect(m.fs.get(SORT_FILE) == b'1\n' and shelf_value(m) == 7 and shown_album(m) == 'Album 7', f'a sort row saves the shared order and keeps the centre album ({m.fs.get(SORT_FILE)}, {shelf_value(m)}, {shown_album(m)})')
+    m.click('btn_more')
+    expect(ticks_on(m) == [0, 1, 0, 0], 'the tick follows')
+    m.click('vs_scrim')
+    expect(vis(m, 'vs_card')[0] == 0, 'the scrim closes the card')
+    m.click('vs_item1')
+    expect(vis(m, 'vs_card')[0] == 0, 'a row with the card closed does nothing')
+    m.click('btn_more'); m.click('vs_item1')
+    expect(m.fs.get(SORT_FILE) != b'1\n' and shelf_value(m) == 4 and shown_album(m) == 'Album 7', f'the ticked row reverses the order (Z-A), on the same album ({shelf_value(m)})')
+    scrub(m, 'down', O['CF_TICK_X1'])
+    expect(('widget_set_text_utf8', m.widgets['cf_bubble_letter'], 'A') in m.calls and shown_album(m) == 'Album 0', 'Artist order Z-A: the last album, its artist\'s initial')
+    scrub(m, 'up', O['CF_TICK_X1'])
+    m.click('btn_more'); m.click('vs_item2')
+    m.play([m.showlist[7]], 0)
+    m.calls = []; scrub(m, 'down', O['CF_TICK_X1'])
+    expect(vis(m, 'cf_bubble')[0] == 0 and vis(m, 'cf_count') == (1, 1) and len(paint(m)) == O['CF_TICKS'] + 1,
+           'Recently Added: no bubble and no playing-album dot, the counter and needle only')
+    scrub(m, 'up', O['CF_TICK_X1'])
+    # Back closes an open card first
+    m.click('btn_more'); m.calls = []
+    m.click('btn_return')
+    expect(vis(m, 'vs_card')[0] == 0 and 'navigator_back' not in m.names(), 'Back with the card open closes it, the page stays')
+    # volume keys and the covers' drag wait for an open card / a finger on the ticks (the card's scrim takes touches itself)
+    m.click('btn_more')
+    m.fs[VFILE] = b'1\n'; at = shelf_value(m)
+    expect(key(m, 'down', DOWN) == O['RET_OK'] and shelf_value(m) == at, 'a volume key with the card open is stock\'s')
+    m.click('vs_scrim')
+
+    # small libraries, an asset without the extras, an artist's page
+    m = shelf(albums=O['CF_SCRUB_MIN'] - 1)
+    expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), f'under {O["CF_SCRUB_MIN"]} albums: no scrubber, the card stays')
+    m.setword(pod.DATA['BEFORE_PRESS_Y'][0], 460); m.touch('down', 100, 20, fn='on_scrub')
+    expect(m.word(pod.DATA['BEFORE_PRESS_Y'][0]) == 460, 'no scrubber: a press there is not taken, stock\'s bottom-zone press stays (the Home swipe works)')
+    m = shelf(extras=False)
+    expect(shelf_value(m) == 0 and m.props.get((m.widgets['btn_backtoplayer'], 'style:normal:icon')) != 'ah_nav_play', 'an asset without them: the page works as before')
+    # Settings > Library > Cover Flow > Scroll Bar: on unless its file says 0; the page reads it when it shows its covers
+    BAR_FILE = '/mnt/data/m1plus/coverflow-scroll-bar'
+    expect(cdefs.defines(os.path.join(ROOT, 'patch', 'home.h'), strings=True)['CFBAR_FILE'] == BAR_FILE, 'the Scroll Bar file')
+    m = shelf(**{BAR_FILE: b'0\n'})
+    expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), 'Scroll Bar off: no scrubber, the card stays')
+    m.setword(pod.DATA['BEFORE_PRESS_Y'][0], 460); m.touch('down', O['CF_TICK_X1'], 20, fn='on_scrub')
+    expect(shelf_value(m) == 0 and m.word(pod.DATA['BEFORE_PRESS_Y'][0]) == 460 and not any(c[0] == 'widget_grab' for c in m.calls), 'off: a press where the ticks were does nothing')
+    for data in (b'1\n', b'', b'x'):
+        expect(vis(shelf(**{BAR_FILE: data}), 'cf_scrub') == (1, 1), f'setting {data!r}: on')
+    expect(m.call(PSYMS['coverflow_bar'], count=2000000) == 0 and m.call(PSYMS['coverflow_bar_toggle'], count=2000000) == 1 and m.fs.get(BAR_FILE) == b'1\n'
+           and m.call(PSYMS['coverflow_bar_toggle'], count=2000000) == 0 and m.fs.get(BAR_FILE) == b'0\n', f'the switch reads and flips the file ({m.fs.get(BAR_FILE)})')
+    m = shelf(albums=12); m.fs.pop(BAR_FILE, None)
+    expect(m.call(PSYMS['coverflow_bar'], count=2000000) == 1, 'no file: on (the default)')
+
+    # Start At: Playing Album (the default), Last Position, First Album
+    def key_of(i): return fnv(fnv(O['FNV_SEED'], f'Artist {i}'), f'Album {i}') or 1
+    for data, want in ((None, 4), (b'0\n', 4), (b'1\n', 8), (b'2\n', 0), (b'x', 4)):
+        m = cover_machine(albums=12)
+        m.play([m.showlist[4]], 0)
+        m.fs[POS_FILE] = b'%08x\n' % key_of(8)
+        if data is not None: m.fs[CFSTART_FILE] = data
+        m.call(PSYMS['coverflow_open'], count=8000000)
+        expect(shelf_value(m) == want, f'Start At {data!r}: opens on album {want} ({shelf_value(m)})')
+    m = cover_machine(albums=12); m.fs[CFSTART_FILE] = b'0\n'; m.fs[POS_FILE] = b'%08x\n' % key_of(8)
+    m.call(PSYMS['coverflow_open'], count=8000000)
+    expect(shelf_value(m) == 8, 'Playing Album with nothing playing: the last position')
+    expect(m.call(PSYMS['coverflow_start_set'], a0=2, count=2000000) == 2 and m.fs.get(CFSTART_FILE) == b'2\n' and m.call(PSYMS['coverflow_start'], count=2000000) == 2,
+           'the picker saves the mode')
+
+
+def ticks_on(m): return [vis(m, f'vs_tick{i}')[0] for i in range(4)]
+
+
+SECTIONS = [page_tests, volkeys_tests, keyroute_tests, menu_tests]   # tools/check.py runs each as its own task

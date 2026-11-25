@@ -946,6 +946,8 @@ int cc_sort_mode(void) {
     return sort_read(&rev);
 }
 
+int cc_sort_both(int *rev) { return sort_read(rev); }
+
 int cc_sort_rev(void) {
     int rev;
     sort_read(&rev);

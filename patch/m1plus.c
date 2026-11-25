@@ -57,6 +57,7 @@ enum {
     VK_LOCKSTYLE,
     VK_IDLE,
     VK_LYRSIZE,
+    VK_CFSTART,
     VK_NA,
     VK_LIGHT,
     VK_LED,
@@ -123,6 +124,7 @@ static const char HOME_NAMES[18][3] = {"0", "1",  "2",  "3",  "4",  "5",  "6",  
 #include "albums.h"
 #include "artists.h"
 #include "entries.h"
+#include "coverflow.h"
 #include "lyrics.h"
 #include "peqlib.h"
 #include "peqpage.h"
@@ -327,6 +329,7 @@ static const struct pick_def {
     {ACT_LOCKSTYLE, VK_LOCKSTYLE, ACT_LOCKSET, lk_layout, lk_layout_set},
     {ACT_IDLE, VK_IDLE, ACT_IDLESET, idle_choice, idle_set},
     {ACT_LYRSIZE, VK_LYRSIZE, ACT_LYRSIZESET, ly_size, ly_size_set},
+    {ACT_CFSTART, VK_CFSTART, ACT_CFSTARTSET, coverflow_start, coverflow_start_set},
     {ACT_NEXTALBUM, VK_NA, ACT_NASET, na_setting, na_set},
     {ACT_LIGHT, VK_LIGHT, ACT_LIGHTSET, disp_light, disp_light_set},
     {ACT_LED, VK_LED, ACT_LEDSET, tl_led, tl_led_set},
@@ -607,6 +610,7 @@ static const struct pod_switch {
     {ACT_LOCKON, lk_enabled, lk_enabled_toggle},
     {ACT_LOCKTIME, lk_time, lk_time_toggle},
     {ACT_VOLKEYS, coverflow_volkeys, coverflow_volkeys_toggle},
+    {ACT_CFBAR, coverflow_bar, coverflow_bar_toggle},
     {ACT_LEDFOLLOW, disp_follow, disp_follow_toggle},
     {ACT_TAPWAKE, kp_tap, kp_tap_toggle},
     {ACT_SWAPKEYS, kp_swap, kp_swap_toggle},
@@ -708,6 +712,7 @@ static void bind_switch(void *win, unsigned i, const struct pod_row *row) {
  * cassette theme (ours). */
 static const char *const idle_key[6] = {"Off", "Album Cover", "Cassette", "Vinyl", "Lyrics", "VU Meter"};
 static const char *const lyrsize_key[3] = {"Small", "Medium", "Large"};
+static const char *const cfstart_key[3] = {"Playing Album", "Last Position", "First Album"};
 static const char *const tape_theme_key[4] = {"Normal", "Chrome", "Metal", "Auto"};
 static const char *const record_key[VN_RECS] = {"Black", "Cover"};
 static const char *const vtheme_key[VN_THEMES] = {"Graphite", "Snow"};
@@ -731,6 +736,8 @@ static void value_text(void *label, int kind) {
         key = idle_key[idle_choice()];
     else if (kind == VK_LYRSIZE)
         key = lyrsize_key[ly_size()];
+    else if (kind == VK_CFSTART)
+        key = cfstart_key[coverflow_start()];
     else if (kind == VK_RECORD)
         key = record_key[vinyl_record()];
     else if (kind == VK_VTHEME)

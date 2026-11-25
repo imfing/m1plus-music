@@ -523,7 +523,10 @@ static int ip_run(int d) {
     switch (l->kind) {
     case K_ALBUMS:
     case K_CF:
+        if (l->kind == K_CF) ipcf_order_load(); /* once a visit, before the list: it reads the albums itself */
         if (loadLocalClassList(CLASS_ALBUMS) > 0) cc_drop_unknown_album(*(void **)PDEQ_SHOWLIST);
+        if (l->kind == K_CF)
+            ipcf_arrange(*(void **)PDEQ_SHOWLIST); /* the shelf in the shared order (patch/ipod_cf.c) */
         break;
     case K_ARTISTS:
         loadLocalClassList(CLASS_ARTISTS);

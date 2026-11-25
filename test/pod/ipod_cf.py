@@ -559,4 +559,43 @@ def i18n_tests(ctx):
     expect(O['IPCF_FRAME_MS'] < O['IP_TICK_MS'] and O['IPCF_NEAR'] <= 12, 'the slide runs at 33 ms against the 500 ms rest; a far jump stays bounded')
 
 
-SECTIONS = [enter_tests, wheel_tests, anim_tests, track_tests, life_tests, i18n_tests]
+def order_tests(ctx):
+    """The shared order, Start At and the shared position (docs/modules/ipod-coverflow.md "Order and start"): the shelf in the Albums page's order (the file the Cover Flow page's "..." card
+    changes too), opening where Settings > Library > Cover Flow > Start At says, and leaving its centre album where the Cover Flow page opens."""
+    expect = ctx.expect
+    START, POS = '/mnt/data/m1plus/coverflow-start', '/mnt/mmc/.m1plus/coverflow-position'
+
+    def key_of(i): return album_key(f'Artist {i}', f'Album {i}')
+
+    def opened(sort=None, play=None, **fs):
+        m = machine(); m.fresh_rows = True
+        if sort is not None: m.fs[SORT_FILE] = sort
+        m.fs.update(fs)
+        if play is not None: m.play([m.record(album=f'Album {play}', artist=f'Artist {play}', path=f'Album {play}-0.flac', title=f'Album {play} 0')], 0)
+        enter(m)
+        for _ in range(12): tick(m)
+        return m
+    m = opened(sort=b'b\n')   # Artist, Z-A
+    expect(centre_album(m) == 'Album 11', f'the shelf in the saved order: Artist Z-A starts on the last artist ({centre_album(m)})')
+    m.turn(0, STEP_DEG + 3); settle(m)
+    expect(centre_album(m) == 'Album 10', f'and a step goes on in that order ({centre_album(m)})')
+    m.canvas = m.canvas_mem = m.alloc(0x80)
+    m.calls = []; m.tap(CX, CY)
+    expect(('loadAlbumdetailList', O['CLASS_ALBUMS'], 'Album 10') in m.calls, 'the centre button flips the album in the centre: the reordered row is its record')
+    m = opened(sort=b'1\n')
+    expect(centre_album(m) == 'Album 0', 'Artist A-Z: the stock order\'s first album')
+    # Start At
+    for data, want in ((None, 'Album 4'), (b'0\n', 'Album 4'), (b'1\n', 'Album 8'), (b'2\n', 'Album 0')):
+        fs = {POS: b'%08x\n' % key_of(8)}
+        if data is not None: fs[START] = data
+        m = opened(play=4, **fs)
+        expect(centre_album(m) == want, f'Start At {data!r}: opens on {want} ({centre_album(m)})')
+    m = opened(**{POS: b'%08x\n' % key_of(6)})
+    expect(centre_album(m) == 'Album 6', 'Playing Album with nothing playing: the album last centred on either shelf')
+    # leaving saves the centre album for both shelves
+    m.turn(0, STEP_DEG + 3); settle(m)
+    m.tap(*m.polar(0, 85))
+    expect(m.fs.get(POS) == b'%08x\n' % key_of(7), f'MENU leaves Cover Flow: its centre album is the saved position ({m.fs.get(POS)})')
+
+
+SECTIONS = [enter_tests, wheel_tests, anim_tests, track_tests, life_tests, i18n_tests, order_tests]

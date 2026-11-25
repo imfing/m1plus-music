@@ -230,7 +230,38 @@
 
 /* Cover Flow page geometry (the ui/m1plus_cover.bin asset must match; tools/pod_ui.py) */
 #define CF_COVER_Y 89      /* view_covers' y in the window (NAVBAR_H + 39) */
-
+/* The main page's scrubber (patch/coverflow.c, docs/modules/coverflow.md "Scrubber"): cf_scrub, a transparent view CF_SCRUB_Y .. CF_SCRUB_Y + CF_SCRUB_H in the window (under the artist
+ * caption, to the client's bottom), paints CF_TICKS ticks CF_TICK_W wide with their centres from CF_TICK_X0 to CF_TICK_X1 across the shelf, centred on the line CF_TICK_Y of the view. At rest a
+ * tick is CF_REST_H + CF_REST_BUMP * g high and CF_REST_A + CF_REST_DA * g of 255 from the background to the ink, g = exp(-(d / CF_REST_SIGMA)^2) at d px from the shelf's position; while a
+ * finger is on it CF_DRAG_H, CF_DRAG_BUMP, CF_DRAG_A, CF_DRAG_DA and CF_DRAG_SIGMA, with the needle (CF_NEEDLE_W x CF_NEEDLE_H, the ink) on the position and the playing album's dot
+ * (CF_DOT px, CF_DOT_A, its top CF_DOT_DY above the line). The bubble (cf_bubble, SG_BUBBLE square) is centred on the centre cover; the counter (cf_count) is CF_COUNT_Y .. + CF_COUNT_H in
+ * the window, CF_COUNT_PX px grey. A library of fewer than CF_SCRUB_MIN albums has no scrubber. */
+#define CF_SCRUB_Y 384
+#define CF_SCRUB_H 66
+#define CF_TICK_Y 34
+#define CF_TICKS 46
+#define CF_TICK_W 2
+#define CF_TICK_X0 24
+#define CF_TICK_X1 296
+#define CF_REST_H 6
+#define CF_REST_BUMP 5
+#define CF_REST_A 0x2c
+#define CF_REST_DA 0x54
+#define CF_REST_SIGMA 9
+#define CF_DRAG_H 8
+#define CF_DRAG_BUMP 18
+#define CF_DRAG_A 0x48
+#define CF_DRAG_DA 0x70
+#define CF_DRAG_SIGMA 24
+#define CF_NEEDLE_W 3
+#define CF_NEEDLE_H 32
+#define CF_DOT 4
+#define CF_DOT_A 0xb0
+#define CF_DOT_DY 24
+#define CF_COUNT_Y 436
+#define CF_COUNT_H 14
+#define CF_COUNT_PX 13
+#define CF_SCRUB_MIN 10
 /* ---------------------------------------------------------------------------
  * Shuffle (patch/shuffle.c, docs/architecture.md). Read from this demo with tools/disasm.py.
  */

@@ -695,6 +695,8 @@ static void al_build_later(void) {
 
 static void al_reload_with(void *albums, unsigned n, unsigned *keys, unsigned *years);
 static void al_scoped_reload(void);
+static void al_resort(void);
+
 static int al_on_fg(void *ctx, void *e) {
     (void)ctx;
     (void)e;
@@ -709,6 +711,14 @@ static int al_on_fg(void *ctx, void *e) {
             if (fresh || !cc_list_failed())
                 al_reload_with(fresh, fresh ? deque_size(fresh) : 0, (unsigned *)0,
                                (unsigned *)0); /* (a failed read keeps the grid) */
+        }
+    }
+    if (al.started &&
+        !al.src) { /* the order changed on a page above (Cover Flow's "..." card shares it): this list follows */
+        int sort = al.artist_row ? cc_scoped_sort() : cc_sort_mode(), rev = cc_sort_rev();
+        if (sort != al.sort || rev != al.rev) {
+            al.sort = sort, al.rev = rev;
+            al_resort();
         }
     }
     if (al.finding) { /* back from Find Artist Photo: a photo that was picked shows at once */

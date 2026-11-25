@@ -40,6 +40,8 @@
 #include "home.h"
 #endif
 #include "covercache.h"
+#include "viewsort.h"
+#include "search.h"
 #include "nextalbum.h"
 #include "common.h"
 #include "fnv.h"
@@ -557,6 +559,21 @@ static struct {
     /* the snap animation: from and to offsets, its start (time_now_ms) and length, and its timer */
     int snap_from, snap_to, snap_ms;
     unsigned snap_t0, snap_timer;
+    /* the main page's "..." card and scrubber (an artist's page has neither): the card (vs.card NULL: no card), the order shown (CC_SORT_*, reversed) and for Year each stock row's year
+     * (cc_album_order_years, else NULL); the scrubber's widgets (scrub NULL: none), a finger on it, the playing album's place found when it went down (-1 none), the position its
+     * ticks were last painted at, and the bubble's small font (a year) */
+    vs_t vs;
+    void *more;
+    int sort, rev;
+    unsigned *years;
+    void *scrub, *count_lab, *bubble, *bubble_letter;
+    int scrubbing, play_at, scrub_px, bub_small, bar; /* (bar: the Scroll Bar setting as scrub_show last read it) */
+    /* a finger moving on the scrubber: the x of its last move and the one-shot timer that applies it (0: none waiting), and what the gesture cost, for the opt-in log (its
+     * start, the last event or turn, the longest wait between two, the counts) */
+    int scrub_want;
+    unsigned scrub_timer;
+    unsigned sl_t0, sl_last, sl_gap, sl_moves, sl_turns;
+    int sl_x0, sl_x1, sl_y0; /* (the log's too: the press's and the release's x, the press's screen y) */
 } cf __attribute__((section(".scratch")));
 
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
@@ -586,8 +603,10 @@ static struct {
  * (slide_menu_set_prop 0x613c94 and slide_menu_set_value 0x613a1c -> widget_invalidate 0x668d9c), which is
  * not the landscape frame: without this only that part of the frame changed on the screen. The touch layer
  * is the frame's size in both modes. */
+static void scrub_redraw(void);
 static void redraw(void) {
     if (cf.input) widget_invalidate_force(cf.input, (void *)0);
+    scrub_redraw(); /* the ticks follow the shelf */
 }
 
 static unsigned album_count(void) { return cf.albums ? cf.count : 0; }
@@ -815,7 +834,8 @@ static int fx_fill(int budget) {
 static int on_load(const void *unused) {
     (void)unused;
     fx.load_timer = 0;
-    if (cf.screen == CF_COVERS && shelf_up() && fx_fill(1)) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
+    if (cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
+    if (fx_fill(1)) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
     return RET_OK;
 }
 
@@ -1210,13 +1230,17 @@ static void layout(void) {
     widget_resize(cf.input, SCREEN_W, on ? CFL_W : CF_VIEW_H);
 }
 
-/* The artist page's Songs button (the capsule's left cap at NAV_VIEW_X, as the Artists page's switch): shown, Now Playing becomes the capsule's right cap
- * (the asset has the disc, which the main page keeps); the title ends before the slot. */
-static void artist_nav(void) {
+static void scrub_show(void);
+
+/* The capsule's left cap at NAV_VIEW_X: the artist page's Songs button (as the Artists page's switch), the main page's "..." (its card). Shown, Now Playing becomes the
+ * capsule's right cap (the asset has the disc, which a page without one keeps); the title ends before the slot. */
+static void nav(void) {
     void *title = widget_lookup(cf.win, "label_title", 1), *np = widget_lookup(cf.win, "btn_backtoplayer", 1);
-    if (!cf.scoped) return;
-    m1_show(cf.songs, has_songs());
-    if (has_songs() && np) {
+    int cap = cf.scoped ? has_songs() : cf.vs.card != (void *)0;
+    m1_show(cf.songs, cf.scoped && cap);
+    if (cf.more) m1_show(cf.more, !cf.scoped && cap);
+    if (!cap) return;
+    if (np) {
         widget_set_prop_str(np, "style:normal:icon", "ah_nav_play");
         widget_set_prop_str(np, "style:over:icon", "ah_nav_play");
         widget_set_prop_str(np, "style:pressed:icon", "ah_nav_play_down");
@@ -1234,7 +1258,7 @@ static void to_covers(void) {
     m1_show(cf.cancel, 0);
     m1_show(cf.covers, 1); /* the captions are never hidden, and stay insensitive (the asset): they
                          * lie over the frame's black bottom rows, so its touch layer gets the touch */
-    artist_nav();
+    nav();
     if (!cf.built) {
         unsigned n = album_count(), i;
         cf.built = 1;
@@ -1279,6 +1303,7 @@ static void to_covers(void) {
         }
     }
     show_album();
+    scrub_show();
     widget_invalidate_force(cf.win, (void *)0);
 }
 
@@ -1387,10 +1412,20 @@ static int on_cancel(void *ctx, void *e) {
 /* The albums, exactly as the stock Albums page lists them, copied (cc_albums) so later stock queries (the
  * album page's) cannot pull them away. They are shown in the Settings > Library > Album Order order (patch/covercache.c;
  * the copy itself keeps the stock order, cf.order maps the shelf to it); a library over MAX_ALBUMS is not shown. */
+static void order_load(void) {
+    free(cf.order);
+    free(cf.years);
+    cf.order = cf.years = (unsigned *)0;
+    if (!cf.count || cf.count > MAX_ALBUMS) return;
+    cf.order = cf.sort == CC_SORT_YEAR ? cc_album_order_years(cf.albums, cf.rev, &cf.years)
+                                       : cc_album_order_mode(cf.albums, cf.sort, cf.rev);
+}
+
 static int load_albums(void) {
     cf.albums = cc_albums();
     cf.count = cf.albums ? deque_size(cf.albums) : 0;
-    if (cf.count && cf.count <= MAX_ALBUMS) cf.order = cc_album_order(cf.albums);
+    cf.sort = cc_sort_both(&cf.rev); /* the Albums page's order, which the card changes for both */
+    order_load();
     return (int)cf.count;
 }
 
@@ -1412,15 +1447,374 @@ static int find_playing(void) {
     return -1;
 }
 
+/* Settings > Library > Cover Flow > Start At (CFSTART_FILE), shared with the Pod's Cover Flow (patch/ipod_cf.c): CF_START_PLAYING (the default) opens on
+ * the playing album, else the album last centred, else the first; CF_START_LAST on the album last centred, else the first; CF_START_FIRST on the first.
+ * Reading never writes. */
+int coverflow_start(void) {
+    int c = set_read(CFSTART_FILE, '0');
+    return c == '1' ? CF_START_LAST : c == '2' ? CF_START_FIRST : CF_START_PLAYING;
+}
+
+/* The picker's rows: saved atomically; the mode, or -1. */
+int coverflow_start_set(int mode) { return home_set_digit(CFSTART_FILE, mode, CF_START_FIRST); }
+
+/* The key of the album last centred on either shelf (POSITION_FILE; 0 none), and its save. */
+unsigned coverflow_position(void) { return position_load(); }
+void coverflow_position_save(unsigned key) {
+    if (key) position_save(key);
+}
+
+/* An artist's shelf has no setting and no saved album: the playing album, else its first. */
 static void pick_start(void) {
     unsigned n = album_count(), i;
-    int playing = find_playing();
+    int mode = cf.scoped ? CF_START_PLAYING : coverflow_start();
+    int playing = mode == CF_START_PLAYING ? find_playing() : -1;
     if (playing >= 0) {
         cf.album = playing;
         return;
     }
-    for (i = 0; cf.saved_album && i < n; ++i)
+    for (i = 0; mode != CF_START_FIRST && cf.saved_album && i < n; ++i)
         if (key_at(i) == cf.saved_album) cf.album = (int)i;
+}
+
+/* ---------------------------------------------------------------------------
+ * The main page's "..." card and scrubber (docs/modules/coverflow.md "Menu" and "Scrubber"); an artist's page has neither.
+ * The card is the Albums page's (patch/viewsort.c): Search Albums, Playing Album, then the sort rows of the order both pages
+ * share (cc_sort_mode): a sort row reorders the shelf in place and keeps the centre album. The scrubber is a row of ticks under the
+ * captions spanning the shelf from its first album to its last; the ticks swell around the shelf's position. A finger on it jumps the
+ * shelf to the album under it (no easing): the ticks grow, a needle marks the position and a dot the playing album, the bubble over
+ * the centre cover shows the section (the title's or the artist's initial, the year; none in the Recently Added order) and the
+ * counter the album's place. Portrait depth mode only, CF_SCRUB_MIN albums or more.
+ */
+static const unsigned char bell_tab[49] = {255, 226, 199, 176, 155, 137, 121, 107, 94, 83, 73, 65, 57, 50, 44, 39, 35,
+                                           31,  27,  24,  21,  19,  16,  14,  13,  11, 10, 9,  8,  7,  6,  5,  5,  4,
+                                           4,   3,   3,   3,   2,   2,   2,   2,   1,  1,  1,  1,  1,  1,  1};
+
+/* exp(-(d / sigma)^2) of 256 (255 at the peak: the table is bytes), u = (d / sigma)^2 looked up in eighths */
+static int bell(int d, int sigma) {
+    int k = d * d * 8 / (sigma * sigma);
+    return k < (int)sizeof bell_tab ? bell_tab[k] : 0;
+}
+
+#define TICK_SPAN (CF_TICK_X1 - CF_TICK_X0)
+
+/* Settings > Library > Cover Flow > Scroll Bar (CFBAR_FILE): on unless the file says "0". The page reads it when it shows its covers (scrub_show). */
+int coverflow_bar(void) { return set_read(CFBAR_FILE, 0) != '0'; }
+
+/* Flip it (atomic write, patch/home.c); the new state, or -1 when it could not be saved. */
+int coverflow_bar_toggle(void) {
+    int next = !coverflow_bar();
+    return home_set_digit(CFBAR_FILE, next, 1);
+}
+
+static int scrub_on(void) {
+    return cf.scrub && cf.bar && !cf.scoped && !cf.land && depth() && cf.screen == CF_COVERS && shelf_up() &&
+           album_count() >= CF_SCRUB_MIN;
+}
+
+/* The scrubber's x (in its view) of shelf position p, of 256 albums. */
+static int tick_x(int p256) {
+    int n = count();
+    return n < 2 ? CF_TICK_X0 : CF_TICK_X0 + clamp_i(p256 * TICK_SPAN / ((n - 1) * 256), 0, TICK_SPAN);
+}
+
+/* The shelf's position on the ticks: the visual one, so the swell follows a drag of the covers. */
+static int scrub_x(void) {
+    int c, frac;
+    if (!visual(count(), &c, &frac)) return CF_TICK_X0;
+    return tick_x(c * 256 + (frac >> 8));
+}
+
+/* The album under x. */
+static int index_at(int x) {
+    int n = count();
+    return n < 2 ? 0 : clamp_i(((x - CF_TICK_X0) * (n - 1) + TICK_SPAN / 2) / TICK_SPAN, 0, n - 1);
+}
+
+/* An opaque colour a of 255 of the way from bg to ink (the canvas fill is not blended). */
+static unsigned blend(unsigned bg, unsigned ink, int a) {
+    unsigned c = 0xff000000u;
+    int s;
+    for (s = 0; s < 24; s += 8) {
+        int b = (int)(bg >> s & 0xff), i = (int)(ink >> s & 0xff);
+        c |= (unsigned)(b + (i - b) * a / 255) << s;
+    }
+    return c;
+}
+
+/* The scrubber's EVT_AFTER_PAINT: the ticks over the page's own background (the shelf's colour), the needle and the playing album's dot while a finger is on it. */
+static int on_scrub_paint(void *ctx, void *e) {
+    void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
+    unsigned bg = pal_light() ? LIGHT_PAPER * 0x010101u : pal_map(0xff000000u) & 0xffffffu, ink;
+    int i, x0, on = cf.scrubbing;
+    (void)ctx;
+    if (!canvas || !scrub_on()) return RET_OK;
+    ink = ui_ink(0xffffffffu) & 0xffffffu;
+    x0 = cf.scrub_px = scrub_x();
+    for (i = 0; i < CF_TICKS; ++i) {
+        int x = CF_TICK_X0 + i * TICK_SPAN / (CF_TICKS - 1),
+            g = bell(m1_abs(x - x0), on ? CF_DRAG_SIGMA : CF_REST_SIGMA);
+        int h = (on ? CF_DRAG_H : CF_REST_H) + ((on ? CF_DRAG_BUMP : CF_REST_BUMP) * g + 128) / 256;
+        canvas_set_fill_color(
+            canvas, blend(bg, ink, (on ? CF_DRAG_A : CF_REST_A) + ((on ? CF_DRAG_DA : CF_REST_DA) * g + 128) / 256));
+        canvas_fill_rect(canvas, x - 1, CF_TICK_Y - h / 2, CF_TICK_W, h);
+    }
+    if (on) {
+        canvas_set_fill_color(canvas, 0xff000000u | ink);
+        canvas_fill_rect(canvas, x0 - 1, CF_TICK_Y - CF_NEEDLE_H / 2, CF_NEEDLE_W, CF_NEEDLE_H);
+        if (cf.play_at >= 0 &&
+            cf.sort !=
+                CC_SORT_RECENT) { /* a round dot of CF_DOT px: the cross of two bars cuts its corners (no dot in Recently Added) */
+            int px = tick_x(cf.play_at * 256), y = CF_TICK_Y - CF_DOT_DY;
+            canvas_set_fill_color(canvas, blend(bg, ink, CF_DOT_A));
+            canvas_fill_rect(canvas, px - CF_DOT / 2, y + 1, CF_DOT, CF_DOT - 2);
+            canvas_fill_rect(canvas, px - CF_DOT / 2 + 1, y, CF_DOT - 2, CF_DOT);
+        }
+    }
+    return RET_OK;
+}
+
+/* The shelf moved: the ticks again when their swell moved (a finger on them: always). */
+static void scrub_redraw(void) {
+    if (scrub_on() && (cf.scrubbing || scrub_x() != cf.scrub_px)) widget_invalidate_force(cf.scrub, (void *)0);
+}
+
+/* The scrubber shown when the shelf has one. */
+static void scrub_show(void) {
+    cf.bar = coverflow_bar();
+    if (cf.scrub) m1_show(cf.scrub, scrub_on());
+}
+
+/* The bubble's font: four digits are set smaller than a letter (patch/azlist.c az_bubble). */
+static void bubble_font(int small) {
+    static const char *const key[3] = {"normal:font_size", "disable:font_size", "focused:font_size"};
+    unsigned v[4];
+    int k;
+    if (small == cf.bub_small) return;
+    for (k = 0; k < 3; ++k) {
+        memset(v, 0, sizeof v);
+        value_set_uint32(v, small ? SG_BUBBLE_PX_YEAR : SG_BUBBLE_PX);
+        widget_set_style(cf.bubble_letter, key[k], v);
+    }
+    cf.bub_small = small;
+}
+
+/* The bubble and the counter for the centre album (on), or hidden. Only their visibility changes: they stay insensitive, so they take no touch. */
+static void scrub_labels(int on) {
+    char s[32];
+    int i = value();
+    void *r = on ? album_at((unsigned)i) : (void *)0;
+    s[0] = 0;
+    if (r && cf.sort == CC_SORT_YEAR) {
+        unsigned y = cf.years ? cf.years[cf.order ? cf.order[i] : (unsigned)i] : 0;
+        if (y) snprintf(s, sizeof s, "%u", y);
+    } else if (r && cf.sort != CC_SORT_RECENT) {
+        int c = cc_name_initial(cc_str(r, cf.sort == CC_SORT_ARTIST ? REC_ARTIST : REC_ALBUM));
+        s[0] = (char)(c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c >= 'A' && c <= 'Z' ? c : '#'), s[1] = 0;
+    }
+    if (*s) {
+        bubble_font(s[1] != 0);
+        widget_set_text_utf8(cf.bubble_letter, s);
+    }
+    widget_set_visible(cf.bubble, *s != 0, 0);
+    if (r) {
+        snprintf(s, sizeof s, TR("%d of %d"), i + 1, count());
+        widget_set_text_utf8(cf.count_lab, s);
+    }
+    widget_set_visible(cf.count_lab, r != (void *)0, 0);
+}
+
+/* The shelf on the album under x, where it is not already. */
+static void scrub_seek(int x) {
+    int i = index_at(x);
+    if (offset()) set_offset(0);
+    if (i != value()) set_value(i);
+}
+
+static void scrub_to(int x) {
+    scrub_seek(x);
+    scrub_labels(1);
+    widget_invalidate_force(cf.scrub, (void *)0);
+}
+
+/* The opt-in log's clock (/mnt/mmc/m1plus-log, as the Home log): the longest wait between two of the gesture's events or turns, which is how long the UI thread was away. */
+static void scrub_seen(void) {
+    unsigned now = (unsigned)time_now_ms();
+    if (now - cf.sl_last > cf.sl_gap) cf.sl_gap = now - cf.sl_last;
+    cf.sl_last = now;
+}
+
+static void scrub_log(const char *how) {
+    char line[160];
+    int fd, n;
+    if (access(LOG_ENABLE, F_OK)) return;
+    fd = open(LOG_FILE, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    if (fd < 0) return;
+    n = snprintf(line, sizeof line,
+                 "coverflow: scrub %u ms, x %d to %d, y %d, %u moves in %u turns, longest wait %u ms, %s, %u albums\n",
+                 cf.sl_last - cf.sl_t0, cf.sl_x0, cf.sl_x1, cf.sl_y0, cf.sl_moves, cf.sl_turns, cf.sl_gap, how,
+                 album_count());
+    if (n > 0 && n < (int)sizeof line) write(fd, line, (unsigned)n);
+    close(fd);
+}
+
+/* The finger left (how: the log's word for it): the labels go. */
+static void scrub_end(const char *how) {
+    if (!cf.scrubbing) return;
+    cf.scrubbing = 0;
+    m1_timer_stop(&cf.scrub_timer);
+    widget_ungrab(cf.win, cf.scrub);
+    scrub_labels(0);
+    redraw();
+    widget_invalidate_force(cf.scrub, (void *)0);
+    scrub_seen();
+    scrub_log(how);
+}
+
+/* The last move's x applied: once per main-loop turn, however many moves the turn handed out. */
+static int on_scrub_turn(const void *unused) {
+    (void)unused;
+    cf.scrub_timer = 0;
+    if (!cf.scrubbing) return RET_OK;
+    scrub_seen();
+    ++cf.sl_turns;
+    if (scrub_on())
+        scrub_to(cf.scrub_want);
+    else
+        scrub_end("gone");
+    return RET_OK;
+}
+
+/* The scrubber's touch. DOWN grabs the gesture and jumps at once. A MOVE only notes its x for on_scrub_turn: stock's event queue holds 20 events and drops what arrives
+ * while it is full (event_queue_create(20) @0x693f58, event_queue_send 0x6a3e70), and a turn hands events out for 20 ms at most before its timers and its paint (0x6939d4),
+ * so moves that each set the captions, the bubble and the counter can fall behind the finger, and the later ones and the release are then lost. UP has the finger's last
+ * position, whatever moves came before it, and is applied as it comes.
+ *
+ * The screen's bottom 30 px are stock's swipe-up-to-Home zone, and the scrubber's lower half is in it (the window starts under the 30 px status bar: view y 36 is screen y
+ * 450, two px under the ticks). Stock's handlers on the window manager run before any child: on_wm_before_tsdown_fun (0x4cd608, EVT_POINTER_DOWN_BEFORE_CHILDREN) stores
+ * the press's y in beforechild_pressdown_y, on_wm_before_tsmove_fun (0x4cd5e0) answers RET_STOP to every move while that is 450 or more, so no child sees one, and
+ * on_wm_before_tsup_fun (0x4cd65c) goes Home for a release 50 px or more above such a press. A press the scrubber takes is its own: it clears the stored y (as stock does
+ * after going Home, @0x4cd6d0), so its moves come and its release is no Home swipe. */
+static int on_scrub(void *ctx, void *e) {
+    int type, x;
+    (void)ctx;
+    if (!e) return RET_OK;
+    type = pe(e, 0), x = pe(e, PE_X);
+    if (type == EVT_POINTER_DOWN && scrub_on()) {
+        *(volatile int *)BEFORE_PRESS_Y = 0;
+        snap_stop();
+        if (!cf.scrubbing) widget_grab(cf.win, cf.scrub); /* moves and the release come here wherever they go */
+        cf.scrubbing = 1;
+        m1_timer_stop(&cf.scrub_timer);
+        cf.sl_t0 = cf.sl_last = (unsigned)time_now_ms(), cf.sl_gap = cf.sl_moves = cf.sl_turns = 0;
+        cf.sl_x0 = cf.sl_x1 = x, cf.sl_y0 = pe(e, PE_Y);
+        cf.play_at = find_playing();
+        scrub_to(x);
+    } else if (type == EVT_POINTER_MOVE && cf.scrubbing) {
+        scrub_seen();
+        ++cf.sl_moves;
+        cf.scrub_want = x;
+        if (!cf.scrub_timer && !(cf.scrub_timer = timer_add(on_scrub_turn, (void *)0, LOAD_MS)))
+            on_scrub_turn((void *)0); /* no timer: now */
+    } else if (type == EVT_POINTER_UP || type == EVT_POINTER_ABORT) {
+        cf.sl_x1 = x;
+        if (type == EVT_POINTER_UP && cf.scrubbing && scrub_on()) scrub_seek(x);
+        scrub_end(type == EVT_POINTER_UP ? "up" : "abort");
+    }
+    return RET_OK;
+}
+
+/* The order changed (cf.sort, cf.rev): the shelf in it, on the same album; the textures are by position, so they load again. */
+static void resort(void) {
+    unsigned key = key_at((unsigned)value()), n, i;
+    int at = 0;
+    snap_stop();
+    order_load();
+    for (i = 0, n = album_count(); i < n; ++i)
+        if (key_at(i) == key) {
+            at = (int)i;
+            break;
+        }
+    memset(fx.album, 0, sizeof fx.album);
+    fx.drawn = fx.seen = 0;
+    set_offset(0);
+    if (at != value())
+        set_value(at);
+    else
+        show_album();
+    if (fx_fill(1) && !fx.load_timer) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
+}
+
+/* Playing Album: the shelf jumps to it; "Not Playing" when nothing queued is on the shelf. */
+static void go_playing(void) {
+    int i = find_playing();
+    if (i < 0) {
+        pod_toast(TR("Not Playing"));
+        return;
+    }
+    snap_stop();
+    set_offset(0);
+    if (i != value())
+        set_value(i);
+    else
+        show_album();
+}
+
+/* The card's rows (the Albums page's al_on_item): the ticked sort row reverses the order, another one sets it in its default direction (saved first: a save that
+ * fails leaves the old order). The card closes. */
+static int on_item(void *ctx, void *e) {
+    int k = (int)(long)ctx;
+    (void)e;
+    if (!cf.vs.on) return RET_OK;
+    vs_menu(&cf.vs, 0, cf.sort, cf.rev, 0);
+    if (cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
+    if (k == VS_SEARCH) {
+        if (search_open_in(SEARCH_ALBUMS) < 0) search_open();
+    } else if (k == VS_SELECT) {
+        go_playing();
+    } else if (k >= 0 && k < VS_SORTS) {
+        int rev = k == cf.sort ? !cf.rev : 0;
+        if (cc_sort_mode_set(k, rev) == k) {
+            cf.sort = k, cf.rev = rev;
+            resort();
+        }
+    }
+    return RET_OK;
+}
+
+static int on_scrim(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    vs_menu(&cf.vs, 0, cf.sort, cf.rev, 0);
+    return RET_OK;
+}
+
+static int on_more(void *ctx, void *e) {
+    (void)ctx;
+    (void)e;
+    if (cf.vs.card && cf.screen == CF_COVERS && shelf_up() && !cf.scrubbing)
+        vs_menu(&cf.vs, !cf.vs.on, cf.sort, cf.rev, 0);
+    return RET_OK;
+}
+
+/* The main page's card and scrubber, found and bound at open (an asset without them: the page has neither). */
+static void bind_extras(void) {
+    cf.more = m1_bind(cf.win, "btn_more", on_more, (void *)0);
+    if (!cf.more || vs_bind(&cf.vs, cf.win, on_item, on_scrim, VS_ALL_SORTS | VS_WITH_SEARCH | VS_WITH_SELECT))
+        memset(&cf.vs, 0, sizeof cf.vs);
+    cf.scrub = widget_lookup(cf.win, "cf_scrub", 1);
+    cf.count_lab = widget_lookup(cf.win, "cf_count", 1);
+    cf.bubble = widget_lookup(cf.win, "cf_bubble", 1);
+    cf.bubble_letter = widget_lookup(cf.win, "cf_bubble_letter", 1);
+    if (!cf.scrub || !cf.count_lab || !cf.bubble || !cf.bubble_letter) {
+        cf.scrub = (void *)0;
+        return;
+    }
+    widget_on(cf.scrub, EVT_POINTER_DOWN, on_scrub, (void *)0);
+    widget_on(cf.scrub, EVT_POINTER_MOVE, on_scrub, (void *)0);
+    widget_on(cf.scrub, EVT_POINTER_UP, on_scrub, (void *)0);
+    widget_on(cf.scrub, EVT_POINTER_ABORT, on_scrub, (void *)0);
+    widget_on(cf.scrub, EVT_AFTER_PAINT, on_scrub_paint, (void *)0);
 }
 
 /* One artist's albums, exactly as the stock artist page lists them (loadAlbumList(0xf004, artist),
@@ -1565,6 +1959,7 @@ static int on_back(void *ctx, void *e) {
     (void)ctx;
     (void)e;
     if (cf.screen == CF_PREPARING) return on_cancel((void *)0, (void *)0);
+    if (cf.vs.on) return on_scrim((void *)0, (void *)0); /* an open card closes first */
     navigator_back();
     return RET_OK;
 }
@@ -1577,7 +1972,9 @@ static int on_destroy(void *ctx, void *e) {
     stop_timer();
     snap_stop();
     if (cf.dragging) widget_ungrab(cf.covers, cf.input);
-    cf.dragging = cf.vk_taken = 0;
+    if (cf.scrubbing) widget_ungrab(cf.win, cf.scrub);
+    m1_timer_stop(&cf.scrub_timer);
+    cf.dragging = cf.vk_taken = cf.scrubbing = 0;
     build_end();
     fx_close();
     if (cf.saved_album && !cf.scoped) position_save(cf.saved_album);
@@ -1585,10 +1982,13 @@ static int on_destroy(void *ctx, void *e) {
     if (cf.artist_row) deque_destroy(cf.artist_row);
     free(cf.keys);
     free(cf.order);
+    free(cf.years);
     cf.albums = cf.artist_row = (void *)0;
-    cf.keys = cf.order = (unsigned *)0;
+    cf.keys = cf.order = cf.years = (unsigned *)0;
     cf.win = cf.covers = cf.slide = cf.input = cf.name = cf.artist = (void *)0;
-    cf.status = cf.cancel = cf.songs = (void *)0;
+    cf.status = cf.cancel = cf.songs = cf.more = (void *)0;
+    cf.scrub = cf.count_lab = cf.bubble = cf.bubble_letter = (void *)0;
+    memset(&cf.vs, 0, sizeof cf.vs);
     cf.screen = CF_COVERS;
     cf.album = cf.scoped = cf.land = cf.built = 0;
     cfpos.value = cfpos.off = 0;
@@ -1625,7 +2025,8 @@ static int on_volkey(void *ctx, void *e) {
     if (type != EVT_KEY_DOWN) return RET_OK;
     if (*(volatile int *)ROTATEMODE == 1) key = key == KEY_VOL_UP ? KEY_VOL_DOWN : KEY_VOL_UP;
     h = stride();
-    if (!m1_screen_lit() || cf.screen != CF_COVERS || !shelf_up() || cf.dragging || h <= 0 || !volkeys_on())
+    if (!m1_screen_lit() || cf.screen != CF_COVERS || !shelf_up() || cf.dragging || cf.scrubbing || cf.vs.on ||
+        h <= 0 || !volkeys_on())
         return RET_OK;
     /* from the destination of a running snap (so quick presses add up), else from the committed album; bound() stops at the ends */
     snap((cf.snap_timer ? cf.snap_to / h : 0) + (key == KEY_VOL_DOWN ? -1 : 1));
@@ -1655,6 +2056,7 @@ static int open_page(void) {
     }
     m1_show(cf.status, 0);
     m1_show(cf.cancel, 0);
+    if (!cf.scoped) bind_extras();
     return 0;
 }
 

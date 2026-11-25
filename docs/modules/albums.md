@@ -161,7 +161,7 @@ half-empty row.
 Every page with a "..." menu uses `patch/viewsort.c` (`vs_bind`, `vs_view`, `vs_menu`,
 `vs_offer`, `vs_fit`) and `tools/pod_ui.py` `view_sort_card`. Users: Albums (this page), Artists /
 Genres / Composers ([artists](artists.md)), Songs ([songs](songs.md)), [folders](folders.md),
-[playlists](playlists.md).
+[playlists](playlists.md), Cover Flow ([coverflow](coverflow.md) "Menu").
 
 **This page's card** (`btn_more`, x 214): an Apple-style grouped menu on the card's own glass
 (`vs_glass7`, `mod_icons.GLASS_VIEWSORT`). Full-window scrim `#00000082` (a tap closes it), right
@@ -182,7 +182,9 @@ measured again at every open. Strings: `Search Albums`, `Title`, `Grid`, `List`,
 `Newest First`, `Oldest First` (13 languages in `tools/pod_i18n.py`).
 
 **Order and direction.** A sort row saves `albums-sort` (`cc_sort_mode_set(mode, rev)`, **atomic; a
-failed save changes nothing**), rebuilds `al.order` and restarts the list at the top. A row not
+failed save changes nothing**), rebuilds `al.order` and restarts the list at the top. Cover Flow's
+card saves the same file; a page under it follows when it is in front again (`al_on_fg` compares
+the saved order with its own). A row not
 ticked starts in the order's default direction; **tapping the ticked row reverses it**. Defaults:
 Title and Artist A-Z, Recently Added and Year newest first.
 

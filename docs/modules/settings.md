@@ -102,11 +102,13 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
     its page (below).
   - **List Navigation:** **Index Rail** and **Section Headers** switches, note "Songs, Artists, Albums and
     Radio lists" ([songs](songs.md), [artists](artists.md)).
-  - **Cover Flow:** Landscape and **Volume Buttons** (`coverflow_volkeys`; two-line note "In Cover Flow,
-    the volume buttons move between albums.").
+  - **Cover Flow:** Landscape, **Start At** (value row and picker `m1plus_cfstart`: Playing Album,
+    Last Position, First Album; `coverflow_start`), **Scroll Bar** (switch, on by default;
+    `coverflow_bar`) and **Volume Buttons** (`coverflow_volkeys`;
+    two-line note "In Cover Flow, the volume buttons move between albums.").
   - Last card: **Podcasts** (link row, no value) and **Scrobbling** (value row On / Off, opens
     [scrobble](scrobble.md#settings)).
-  - The album order is set on the Albums "..." card ([albums](albums.md)), not here.
+  - The album order is set on the Albums and Cover Flow "..." cards ([albums](albums.md)), not here.
 - **Library > Podcasts** (`m1plus_podcastsettings`): Podcast Discover switch (on by default; off hides the
   Discover row and the search level), Podcast Directory (Apple Podcasts or Podcast Index) and Podcast
   Region (Automatic and 34 storefronts; serves Discover's charts, which are always Apple's, and the Apple
@@ -172,6 +174,8 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `covers-rebuild` | Rebuild Covers request | exists while requested; written as `1\n`; removed when Home's cover build completes ([homecover](homecover.md#rebuild-covers)) |
 | `coverflow-landscape` | Cover Flow Landscape | `1` landscape; missing/other portrait ([coverflow](coverflow.md)) |
 | `coverflow-volume-keys` | Cover Flow Volume Buttons | `1` the volume buttons step Cover Flow; missing/other off (the default) ([coverflow](coverflow.md) "Volume buttons") |
+| `coverflow-start` | Cover Flow Start At | `1` the last position, `2` the first album; missing/other the playing album (the default) ([coverflow](coverflow.md) "Shelf") |
+| `coverflow-scroll-bar` | Cover Flow Scroll Bar | `0` no row of ticks on the main page; missing/other shown (the default) ([coverflow](coverflow.md) "Scrubber") |
 | `folders-sort` | Folders order | `0` Name, `1` Date Modified, `2` Type, or `a` `b` `c` for the same order reversed; missing/other Name A-Z; one order for every level ([folders](folders.md)) |
 | `home-daily-mix` | Daily Mix | `0` off; missing/other on ([dailymix](dailymix.md)) |
 | `home-menu` | Main Menu / Extras | item ids in order, optional `-` then the hidden ids; invalid = defaults ([menu](menu.md)) |

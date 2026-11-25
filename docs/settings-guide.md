@@ -83,7 +83,7 @@ Settings tile opens its hub and is dimmed on the hub and its Volume & Sound and 
 | Split Genres | List songs under each name of a genre tag such as `Rock; Pop`; choose separators (`;` by default). See [Split Genres](library-guide.md#split-genres). |
 | Index Rail / Section Headers | Show the rail and section letters on supported lists; both are on by default. Albums in Year order use a decades rail in the list. |
 | Folder Album Cover | Show available covers in Folders; on by default. |
-| Cover Flow / Volume Buttons | Choose landscape orientation or use the volume buttons to browse albums. |
+| Cover Flow / Volume Buttons / Start At / Scroll Bar | Choose landscape orientation, use the volume buttons to browse albums, choose where Cover Flow opens (the playing album, the last position or the first album), or turn off the row of ticks under the covers. |
 | Podcasts | Choose discovery, directory and region. Directory and region are unavailable when discovery is off. |
 | Scrobbling | Configure listening history uploads; see [Scrobbling](features-guide.md#scrobbling). |
 

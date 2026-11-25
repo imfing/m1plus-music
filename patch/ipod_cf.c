@@ -72,9 +72,16 @@ static struct {
     const unsigned
         *go_ring[CF_RING]; /* the textures around the album that went (resident while it goes: nothing decodes) */
     int face; /* FACE holds the card's picture (patch/ipod.c ip_cf_face); 0: the flip turns a sketch of it */
+    unsigned *
+        order; /* the shelf's order (ipcf_order_load: the Albums page's, shared with the Cover Flow page) for a list of order_n rows; NULL: the stock order */
+    unsigned order_n;
+    int ordered; /* looked up this visit */
+    unsigned centre; /* the key of the album last painted in the centre (0 none): the shared position, saved at close */
 } ipcf __attribute__((section(".scratch")));
 
 void ipcf_close(void) {
+    coverflow_position_save(ipcf.centre); /* (the Cover Flow page's file: both shelves open where either was left) */
+    free(ipcf.order);
     if (ipcf.frame) bitmap_destroy(ipcf.frame);
     if (ipcf.tex) free(ipcf.tex);
     memset(&ipcf, 0, sizeof ipcf);
@@ -176,22 +183,63 @@ static int fill(void *list, unsigned count, int c) {
 /* The wheel moved the cursor to album sel: the slide goes there via a critically damped spring (no harsh kick from rest:
  * smooth spring ease-in and ease-out, gliding evenly on steady turns). A gap over IPCF_NEAR albums is closed by whole
  * albums at once (keeping fraction and velocity). Turning the wheel cancels any closing flip immediately. */
-/* Entering Cover Flow: the shelf opens on the playing track's album, at once (no slide), as the full-screen page does
- * (find_playing in patch/coverflow.c: the album key, else the album of that name). Its row, or -1 (nothing playing,
- * an online or untagged track, no such album): the shelf stays where it is. */
+/* The shared order (Settings' Albums sort, cc_sort_mode, which the Cover Flow page's "..." card changes too), looked up once a visit, before the
+ * level's list is read: the albums copied and sorted as the Cover Flow page does (cc_albums, cc_album_order; Recently Added and Year read the
+ * song list once). The copy takes the stock rows, so the caller reads the list again after this. */
+void ipcf_order_load(void) {
+    void *albums;
+    if (!ipcf.frame || ipcf.ordered) return;
+    ipcf.ordered = 1;
+    albums = cc_albums();
+    if (!albums) return;
+    ipcf.order_n = deque_size(albums);
+    ipcf.order = cc_album_order(albums);
+    deque_destroy(albums);
+}
+
+/* Cover Flow's list (the stock album rows just read, Unknown Album dropped as cc_albums does) put in that order in place: row i becomes the order's
+ * i-th, the records moved whole (each keeps its strings). A list of another size (the library changed under the visit) keeps the stock order. */
+void ipcf_arrange(void *list) {
+    unsigned n = list ? deque_size(list) : 0, i, j, k;
+    unsigned char tmp[REC_SIZE], *done;
+    if (!ipcf.order || !n || n != ipcf.order_n || !(done = calloc(n, 1))) return;
+    for (i = 0; i < n; ++i) { /* each cycle of the permutation once: new[j] = old[order[j]] */
+        if (done[i]) continue;
+        memcpy(tmp, deque_at(list, i), REC_SIZE);
+        for (j = i;; j = k) {
+            done[j] = 1;
+            k = ipcf.order[j];
+            if (k == i || k >= n) {
+                memcpy(deque_at(list, j), tmp, REC_SIZE);
+                break;
+            }
+            memcpy(deque_at(list, j), deque_at(list, k), REC_SIZE);
+        }
+    }
+    free(done);
+}
+
+/* Entering Cover Flow: the shelf opens at once (no slide) where Settings > Library > Cover Flow > Start At says, as the full-screen page does
+ * (patch/coverflow.c pick_start): the playing track's album (find_playing there: the album key, else the album of that name), else the album
+ * last centred on either shelf (coverflow_position), else the first. Its row, or -1: the shelf stays on the first album. */
 int ipcf_start(void *list, unsigned count) {
     void *t = cc_playing();
     const char *album = t ? cc_str(t, REC_ALBUM) : "";
+    int mode = coverflow_start(), at = -1;
     unsigned key, i;
-    int at = -1;
-    if (!ipcf.frame || !list || !*album) return -1;
-    key = cc_album_key(t);
-    for (i = 0; i < count && at < 0; ++i)
-        if (key_of(deque_at(list, i)) == key) at = (int)i;
-    for (i = 0; i < count && at < 0; ++i) {
-        void *r = deque_at(list, i);
-        if (key_of(r) && !cc_nocase(cc_str(r, REC_ALBUM), album)) at = (int)i;
+    if (!ipcf.frame || !list) return -1;
+    if (mode == CF_START_PLAYING && *album) {
+        key = cc_album_key(t);
+        for (i = 0; i < count && at < 0; ++i)
+            if (key_of(deque_at(list, i)) == key) at = (int)i;
+        for (i = 0; i < count && at < 0; ++i) {
+            void *r = deque_at(list, i);
+            if (key_of(r) && !cc_nocase(cc_str(r, REC_ALBUM), album)) at = (int)i;
+        }
     }
+    if (at < 0 && mode != CF_START_FIRST && (key = coverflow_position()) != 0)
+        for (i = 0; i < count && at < 0; ++i)
+            if (key_of(deque_at(list, i)) == key) at = (int)i;
     if (at < 0) return -1;
     ipcf.pos = ipcf.target = at << 16;
     ipcf.vel = ipcf.fold = ipcf.spd = 0;
@@ -405,6 +453,9 @@ int ipcf_tick(void *list, unsigned count) {
     unsigned now = time_now_ms();
     int changed = 0, c;
     if (!ipcf.frame) return 0;
+    if (list && count) /* the album the shelf stops on: the position kept for both shelves */
+        ipcf.centre =
+            key_of(deque_at(list, (unsigned)(ipcf.target >> 16) < count ? (unsigned)(ipcf.target >> 16) : count - 1));
     if (ipcf.go != ipcf.go_to || ipcf.go_hold)
         return go_step(); /* coming back from Now Playing: nothing slides or decodes meanwhile */
     if (flip_step()) changed = 1;
@@ -519,6 +570,7 @@ void ipcf_paint(void *canvas, void *list, unsigned count, void *style) {
     c = (ipcf.pos + CF_ONE / 2) >> 16;
     if (c < 0) c = 0;
     if (c >= (int)count) c = (int)count - 1;
+    ipcf.centre = key_of(deque_at(list, (unsigned)c));
     if (ipcf.flip > 0) {
         for (j = 0; j < CF_RING; ++j) {
             int a = c + j - CF_REACH;

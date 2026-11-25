@@ -180,7 +180,7 @@ def pin_tests(ctx):
     expect(all(a in pins for a in (0x47dbc8, 0x47dc1c, 0x47dc48, 0x47dc74, 0x47dc7c, 0x47e494, 0x47e4b0)) or all(word_of(stock, a) == w for a, w in ((0x47e494, 0x24050113), (0x47e4b0, 0x24c6e330))),
            'stock\'s init binds the keys (0x113), the buttons (0x10c) and the slider (0x11d) to the handlers we run')
     expect(word_of(stock, 0x47dea8) == 0x24050bb8 and word_of(stock, 0x47dce8) == 0x24060bb8 and word_of(stock, 0x47d650) == 0x8c840024, 'the auto-close timer: 3000 ms, its callback closes the window the timer belongs to')
-    expect(pod_pages.PAGES[pod_pages.VOLUME_PAGE_INDEX] is pod_pages.VOLUME_PAGE and pod_pages.VOLUME_PAGE.key == ASSET and pod_pages.VOLUME_PAGE.name == NAME and pod_pages.PAGE_ORDER[-9] == ASSET, 'the page is the ninth from last in PAGE_ORDER (the Update Library page, its folder picker, Split Genres, the three Card Script pages, Crossfade and the playlist Cover page follow)')
+    expect(pod_pages.PAGES[pod_pages.VOLUME_PAGE_INDEX] is pod_pages.VOLUME_PAGE and pod_pages.VOLUME_PAGE.key == ASSET and pod_pages.VOLUME_PAGE.name == NAME and pod_pages.PAGE_ORDER[-10] == ASSET, 'the page is the tenth from last in PAGE_ORDER (the Update Library page, its folder picker, Split Genres, the three Card Script pages, Crossfade, the playlist Cover page and the Cover Flow Start At picker follow)')
 
 
 def page_tests(ctx):

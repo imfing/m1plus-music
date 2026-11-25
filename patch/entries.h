@@ -129,6 +129,7 @@ unsigned ip_fit(void *canvas, unsigned *s, int maxw); /* the wide string cut wit
 /* patch/ipod_cf.c */
 int ipcf_open(void *win), ipcf_busy(void), ipcf_tick(void *list, unsigned count);
 int ipcf_start(void *list, unsigned count);
+void ipcf_order_load(void), ipcf_arrange(void *list);
 int ipcf_flipping(void), ipcf_flip_tick(void), ipcf_going(void), ipcf_gone(void), ipcf_go_tick(void);
 void ipcf_go_open(void *list, unsigned count, int sel), ipcf_go_close(int quiet), ipcf_rush(void),
     ipcf_go_card(int row), ipcf_paint_go(void *canvas, void *list, unsigned count, void *style);

@@ -883,6 +883,8 @@ class Machine:
             items = self.class_lists.get(a0, self.showlist)
             if a0 == O['CLASS_ARTISTS'] and self.album_artists:   # GetAllAlbumArtist when artist_type == 1
                 items = self.album_artists if self.word(pod.DATA['ARTIST_TYPE'][0]) == 1 else items
+            if self.__dict__.get('fresh_rows'):   # new records each read, as the stock query makes them (a payload that moves records in place moves its own copies)
+                items = [self.u.mem_write(c, bytes(self.u.mem_read(r, REC_SIZE))) or c for r in items for c in (self.alloc(REC_SIZE),)]
             self.setword(pod.DATA['PDEQ_SHOWLIST'][0], self.new_deque(items))
             ret = len(items)
         elif name == 'loadAlbumList':

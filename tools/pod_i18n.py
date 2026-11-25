@@ -399,6 +399,17 @@ TEXT = dict([
     # the Settings > Cover Flow sub-page (landscape switch; sort order, valued Artist or Album: "Album" is the stock key 'album')
     _t('Landscape', '横屏', '橫向', '横向き', '가로 모드', 'Paysage', 'Querformat',
        'Horizontal', 'Orizzontale', 'แนวนอน', 'Poziomo', 'Горизонтально', 'Горизонтально'),
+    # Settings > Library > Cover Flow > Start At and the Cover Flow menu's Playing Album (patch/coverflow.c coverflow_start); machine translations, unreviewed
+    _t('Start At', '起始位置', '起始位置', '開始位置', '시작 위치', 'Début', 'Start bei',
+       'Inicio', 'Inizia da', 'เริ่มที่', 'Start', 'Начать с', 'Почати з'),
+    _t('Scroll Bar', '滚动条', '捲軸', 'スクロールバー', '스크롤 막대', 'Barre de défilement', 'Bildlaufleiste',
+       'Desplazamiento', 'Barra di scorrimento', 'แถบเลื่อน', 'Pasek przewijania', 'Полоса прокрутки', 'Смуга прокрутки'),   # Settings > Library > Cover Flow > Scroll Bar (patch/coverflow.c coverflow_bar); machine translations, unreviewed
+    _t('Playing Album', '正在播放的专辑', '正在播放的專輯', '再生中のアルバム', '재생 중인 앨범', 'Album en cours', 'Aktuelles Album',
+       'Álbum en curso', 'Album in riproduzione', 'อัลบั้มที่กำลังเล่น', 'Odtwarzany album', 'Играющий альбом', 'Альбом, що грає'),
+    _t('Last Position', '上次位置', '上次位置', '前回の位置', '마지막 위치', 'Dernière position', 'Letzte Position',
+       'Última posición', 'Ultima posizione', 'ตำแหน่งล่าสุด', 'Ostatnia pozycja', 'Последняя позиция', 'Остання позиція'),
+    _t('First Album', '第一张专辑', '第一張專輯', '最初のアルバム', '첫 번째 앨범', 'Premier album', 'Erstes Album',
+       'Primer álbum', 'Primo album', 'อัลบั้มแรก', 'Pierwszy album', 'Первый альбом', 'Перший альбом'),
     # Settings > Library > Cover Flow > Volume Buttons (patch/coverflow.c on_volkey) and its note
     _t('Volume Buttons', '音量键', '音量鍵', '音量ボタン', '볼륨 버튼', 'Boutons de volume', 'Lautstärketasten',
        'Teclas de volumen', 'Tasti volume', 'ปุ่มปรับเสียง', 'Przyciski głośności', 'Кнопки громкости', 'Кнопки гучності'),

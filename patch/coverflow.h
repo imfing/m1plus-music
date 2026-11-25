@@ -45,6 +45,18 @@ void coverflow_flip(const cfg_t *g, unsigned *d, int pitch, int u, const unsigne
                     int card_w, int card_h, int card_hdr, int card_rows, int sel_row, int axis, int spin,
                     const unsigned *face);
 
+enum {
+    CF_START_PLAYING,
+    CF_START_LAST,
+    CF_START_FIRST
+}; /* Settings > Library > Cover Flow > Start At (coverflow_start) */
+int coverflow_start(void); /* the saved Start At mode; the main page and the Pod's Cover Flow open by it */
+int coverflow_start_set(int mode); /* the picker's rows: save it; the mode or -1 */
+int coverflow_bar(
+    void); /* Settings > Library > Cover Flow > Scroll Bar: the main page shows its row of ticks (the default) */
+int coverflow_bar_toggle(void); /* flip it; the new state, or -1 when it could not be saved */
+unsigned coverflow_position(void); /* the key of the album last centred (the card's coverflow-position file), 0 none */
+void coverflow_position_save(unsigned key); /* save it (a zero key is not saved) */
 int coverflow_open(void); /* the menu's Cover Flow row, opened over this page */
 int coverflow_artist(void *artists, unsigned index,
                      unsigned scope); /* Cover Flow scoped to an artist; 0 once the page is up */

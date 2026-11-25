@@ -38,10 +38,20 @@ fails, the row opens the full-screen Cover Flow page instead.
 
 ## Albums, wheel and flip
 
-Entering pushes `K_CF` over the main menu or the Music menu, on the playing track's album when it is in the list
-(`ipcf_start`: its album key, else its album name, as the full-screen page's `find_playing`), else on the first. Its list is the stock albums list
-(`loadLocalClassList(0xf003)`, stock query order, not the Albums "..." card's order), read and
-re-read by the iPod page's machinery; paint never queries.
+Entering pushes `K_CF` over the main menu or the Music menu. Its list is the stock albums list
+(`loadLocalClassList(0xf003)`), read and re-read by the iPod page's machinery; paint never queries.
+
+- **Order:** the shared Albums order (`albums-sort`, which the Albums page's and the Cover Flow page's
+  "..." cards change). `ipcf_order_load` sorts a copy once a visit, before the level's list is read
+  (`cc_albums`, `cc_album_order`; Recently Added and Year read the song list once); `ipcf_arrange`
+  then moves the records of every read of the list into that order in place (whole records, a
+  cycle walk). A list of another size than the sorted copy keeps the stock order.
+- **Start:** `ipcf_start` follows Settings > Library > Cover Flow > **Start At**
+  ([coverflow](coverflow.md) "Shelf"): the playing track's album (its album key, else its album
+  name, as the full-screen page's `find_playing`), the last position, or the first album.
+- **Last position:** the album the shelf stops on (`ipcf.centre`, from the tick and the paint) is
+  saved when the screen closes, in the full-screen page's `coverflow-position` file, so either shelf
+  opens where the other was left.
 
 - **Wheel:** the page's own (20 degrees a step, reversal hysteresis, chord dead zone). Cover Flow
   caps wheel acceleration at `IPCF_MAX_TIER` (tiers 1, 2, 3, 5 albums a step on more than 16 albums,

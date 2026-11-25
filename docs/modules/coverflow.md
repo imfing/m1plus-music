@@ -12,8 +12,9 @@ with Cancel (a cancelled build resumes). A 250 ms timer polls the counters; Canc
 stop it (`cc_build_stop`), and `EVT_DESTROY` removes the timer and stops the worker. Rebuild Covers
 is not this page's: it is Home's job ([homecover](homecover.md#rebuild-covers)).
 
-Not ported from q2-pod: Sort and Refresh cards, the rated scope, A-Z jump, the album split by
-album-artist/folder, the audiobook filter, the ffmpeg WebP fallback, wheel/ringnav.
+Not ported from q2-pod: the Refresh card, the rated scope, the album split by album-artist/folder,
+the audiobook filter, the ffmpeg WebP fallback, wheel/ringnav. The sort and the jump are this page's
+own: the "..." card and the scrubber below.
 
 ## Shelf
 
@@ -34,10 +35,16 @@ album-artist/folder, the audiobook filter, the ffmpeg WebP fallback, wheel/ringn
   Stock's `slide_menu` re-lays out every child on each change, O(albums) per drag step with up to
   4000 children, so it is only the fallback. Both modes read through one set of accessors in stock's
   units (`CF_VIEW_H` per cover). Ends, captions and the last-album memory follow `set_value`.
-- **Start:** the page always sets its start album (stock's `slide_menu` starts on item 1). The main
-  page remembers the last album in `/mnt/mmc/.m1plus/coverflow-position`: the centre key as 8 hex
-  digits and a newline, written on close (`m1_card_write`, card mounted only). A missing, short,
-  junk or all-zero file means none. It lives outside the cover cache so a cache wipe keeps it.
+- **Start:** the page always sets its start album (stock's `slide_menu` starts on item 1), where
+  **Settings > Library > Cover Flow > Start At** says (`coverflow_start`, file
+  `/mnt/data/m1plus/coverflow-start`): `0` or missing **Playing Album** (the playing track's album,
+  else the last position, else the first), `1` **Last Position** (else the first), `2` **First
+  Album**. The Pod's Cover Flow opens by the same setting ([ipod-coverflow](ipod-coverflow.md)). An
+  artist's shelf always opens on the playing album, else its first.
+- **Last position:** `/mnt/mmc/.m1plus/coverflow-position`, the centre key as 8 hex digits and a
+  newline, written when the main page or the Pod's shelf closes (`coverflow_position_save`,
+  `m1_card_write`, card mounted only). A missing, short, junk or all-zero file means none. It lives
+  outside the cover cache so a cache wipe keeps it.
 - **Captions:** `label_album` / `label_artist` are `hscroll_label`s set up like Now Playing's info
   lines (22 px white, 18 px `#AAAAAA`, centred, back-and-forth scroll for long titles). They are
   insensitive and never hidden, and lie over the frame's black rows, so a tap on the name reaches
@@ -99,6 +106,72 @@ global LCD orientation changes.
 - `where()` turns the pointer back, so drags and flings along the long side behave as in portrait.
 - A tap on the centre cover (`|x - 200| < 84`) opens the album; a side tap brings that cover in.
 
+## Menu
+
+The main page's navbar is one capsule, **... | Now Playing** (`btn_more`, the left cap on the
+214 slot; the title ends there). The "..." card is the Albums page's ([albums](albums.md) "View sort
+card", `patch/viewsort.c`) with six rows:
+
+- **Search Albums** (slot 6) opens the Search page scoped to albums, else the library search.
+- **Playing Album** (slot 7, `pod_ic_vslocate`) jumps the shelf to the playing album
+  (`find_playing`); with nothing on the shelf playing, the toast "Not Playing".
+- **Title, Artist, Recently Added, Year** are the shared order (`cc_sort_mode`, `albums-sort`): the
+  ticked row reverses it, another sets its default direction. The shelf is reordered in place on
+  the same album (`resort`: the textures are by position, so they load again). The Albums page
+  follows on return (`al_on_fg`), and the Pod's shelf reads the same file.
+
+Back closes an open card first; the volume buttons pass to stock while it is open. An artist's
+page has no card (its left cap is Songs).
+
+## Scrubber
+
+`cf_scrub`, a transparent view under the captions (`CF_SCRUB_Y`, to the client's bottom), spans the
+shelf from its first album to its last. Portrait, depth mode and `CF_SCRUB_MIN` (10) albums or more
+only; never on an artist's page. **Settings > Library > Cover Flow > Scroll Bar** turns it off
+(`coverflow_bar`, `/mnt/data/m1plus/coverflow-scroll-bar`: `0` off, anything else or missing on);
+the page reads the switch when it shows its covers (`scrub_show`), and with it off the view is
+hidden and takes no touch.
+
+- **Paint:** its own `EVT_AFTER_PAINT` draws `CF_TICKS` (46) ticks, 2 px wide, as opaque blends of
+  the page background and the ink (Light and Tinted included). A tick's height and brightness follow
+  a Gaussian of its distance from the shelf's position (`bell`, a byte table of exp(-u) in eighths):
+  at rest a low swell (`CF_REST_*`), with a finger on it a taller, brighter one (`CF_DRAG_*`), a
+  3 x 32 px needle on the position and (outside Recently Added) a 4 px dot over the playing album.
+  The position is the visual one, so the swell follows a drag of the covers; `redraw()` repaints the
+  ticks only when their position moved.
+- **Touch:** down grabs the gesture (`widget_grab` on the window) and jumps the shelf to the album
+  under the finger (`index_at`, no easing). The playing album is looked up once, at down.
+- **Moves are applied once per main-loop turn.** A move only notes its x and arms a one-shot timer
+  (`on_scrub_turn`), which puts the shelf under the last one and sets the captions, the bubble and
+  the counter. Stock's event queue holds 20 events and drops what arrives while it is full
+  (`event_queue_create(20)` `0x693f58`, `event_queue_send` `0x6a3e70`), and a turn hands events
+  out for at most 20 ms before its timers and its paint (`0x6939d4`), so a handler that does that
+  work per move can fall behind the finger, and the later moves and the release are then dropped. A refused
+  timer applies the move as it comes.
+- **Up** has the finger's last position, whatever moves came before it: it is applied at once,
+  then the gesture ends. An abort ends it where the shelf is.
+- **Stock's bottom zone.** The screen's bottom 30 px are stock's swipe-up-to-Home zone, and the
+  scrubber's lower half is in it: the window starts under the 30 px status bar, so view y 36 is
+  screen y 450, two px under the ticks. Stock's handlers on the window manager run before any
+  child: `on_wm_before_tsdown_fun` (`0x4cd608`) stores the press's y in
+  `beforechild_pressdown_y` (`0xa05a28`, `BEFORE_PRESS_Y`); while that is 450 or more
+  `on_wm_before_tsmove_fun` (`0x4cd5e0`) answers `RET_STOP` to every move, so no child sees one;
+  `on_wm_before_tsup_fun` (`0x4cd65c`) goes Home for a release 50 px or more above such a press.
+  A press the scrubber takes clears the stored y (as stock does after going Home, @`0x4cd6d0`), so
+  its moves come and its release is no Home swipe. Without that, a press on or under the ticks gets
+  its jump and its release and no move between. A page with no scrubber shown takes no press, and
+  the Home swipe works there as in stock.
+- **Covers load during a scrub** as at any other time: the loader decodes one wanted cover per
+  turn around wherever the shelf is.
+- **Opt-in log:** with `m1plus-log` on the card ([home guard](home-guard.md)) each gesture appends
+  one line: its length, the x of the press and of the release, the press's screen y, the moves and
+  turns, the longest wait between two of them, how it ended and the album count.
+- **Bubble and counter:** while a finger is down, `cf_bubble` (the A-Z rail's bubble, 110 px, over
+  the centre cover) shows the section of the current order: the title's or the artist's initial
+  (`cc_name_initial`, `#` for a non-letter), or the year (from `cc_album_order_years`, set
+  smaller); none in the Recently Added order. `cf_count` under the ticks shows "%d of %d". Both
+  only change visibility and stay insensitive.
+
 ## Volume buttons
 
 **Settings > Library > Cover Flow > Volume Buttons** (off by default; file
@@ -128,7 +201,7 @@ running snap's destination; the ends stop.
   came from, or to Now Playing from Look up artist.
 - The All albums card on the shelf is not an album: it opens the same Songs page, and falls back to
   the stock page on the All songs row if ours will not open.
-- On an artist page the title ends at x 214; the main page keeps its full width.
+- The title ends at x 214 on both pages (the capsule's left cap).
 
 ## Album open
 

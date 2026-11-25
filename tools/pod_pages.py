@@ -212,6 +212,9 @@ ACT_LUFOLDERS = 194   # link row (Update Library): Choose Folders: the card chec
 ACT_SWAPKEYS = 196    # switch row (Buttons & Power): Swap Prev / Next, off by default; on swaps the physical previous and next buttons (patch/keyspower.c kp_swap_toggle and kp_key_map, /mnt/data/m1plus/buttons-swap)
 ACT_VOLTAP = 219      # switch row (Buttons & Power): Tap for Volume, on by default; off makes the status bar tap do nothing (patch/volume.c vol_tap_toggle and vol_tap_open, /mnt/data/m1plus/volume-tap)
 ACT_COVNAME = 220     # switch row (the Cover page): Name on Cover, the playlist's PLC_FLAG_NAME (patch/plcpage.c plcpage_name; dimmed and inert while Albums is chosen)
+ACT_CFSTART = 221     # value row (Settings > Library > Cover Flow > Start At): Playing Album (default), Last Position or First Album (the saved file /mnt/data/m1plus/coverflow-start); opens its picker page (arg = the page index; patch/coverflow.c coverflow_start)
+ACT_CFBAR = 223       # switch row (Settings > Library > Cover Flow > Scroll Bar): on by default; off, the main Cover Flow page has no row of ticks (the saved file /mnt/data/m1plus/coverflow-scroll-bar; patch/coverflow.c coverflow_bar)
+ACT_CFSTARTSET = 222  # picker row (Start At): choose Playing Album (arg 0), Last Position (1) or First Album (2); a check shows on the chosen row (patch/coverflow.c coverflow_start_set)
 ACT_CRRUN = 210       # action row (Settings > Developer > Tools > Card Script): Run Now, starts /usr/bin/m1plus-run (patch/cardrun.c cardrun_run); reads Stop during a run and then SIGTERMs it (cardrun_stop); 211 is unused
 ACT_CRLOG = 212       # link row (Card Script): View Log, the log as a Release Notes page of our own (patch/relnotes.c cardlog_open)
 ACT_CRSRC = 214       # link row (Card Script): View Script, the card's m1plus-run.sh as a Release Notes page of our own (patch/relnotes.c cardsrc_open)
@@ -220,12 +223,12 @@ ACT_PDLABELS = 209    # switch row (Settings > Appearance): Control Labels, on b
 _ACTS = [v for k, v in globals().items() if k.startswith('ACT_')]
 assert len(set(_ACTS)) == len(_ACTS), 'two ACT_* share an id (patch/m1plus.c mirrors them)'
 SWITCH_ACTIONS = (ACT_ASPLIT, ACT_GSPLIT) + ASSEP_ACTIONS + GSSEP_ACTIONS + (ACT_TAPWAKE, ACT_STANDBY, ACT_STARTUP, ACT_LANDSCAPE, ACT_SHELF, ACT_DAILY, ACT_KB_EN, ACT_KB_FR, ACT_KB_ZH, ACT_PCSEARCH, ACT_BATTPCT, ACT_PEQ_SWITCH, ACT_AZRAIL, ACT_AZHEAD, ACT_LOCKON, ACT_LOCKTIME, ACT_VOLKEYS, ACT_LEDFOLLOW, ACT_SCROBBLE, ACT_LBAUTO, ACT_GAPLESS, ACT_FOLDERSKIP, ACT_DIGITAL, ACT_FOLDERCOVER, ACT_BOOTMEM, ACT_MONO, ACT_BATTHIST, ACT_NPPOS, ACT_NPSHRINK)
-SWITCH_ACTIONS += (ACT_ROTATE, ACT_CARMODE, ACT_NETAIR, ACT_NETDLNA, ACT_LUAUTO, ACT_SWAPKEYS, ACT_VOLTAP, ACT_PDLABELS, ACT_XFADEAUTO, ACT_XFADESET)
+SWITCH_ACTIONS += (ACT_ROTATE, ACT_CARMODE, ACT_NETAIR, ACT_NETDLNA, ACT_LUAUTO, ACT_SWAPKEYS, ACT_VOLTAP, ACT_PDLABELS, ACT_XFADEAUTO, ACT_XFADESET, ACT_CFBAR)
 NO_CHEVRON_ACTIONS = (ACT_PLAYER, ACT_SHUFFLE, ACT_REGEN)   # rows that play or act in place (a switch or a value row has none either)
-VALUE_ACTIONS = (ACT_ASPAGE, ACT_GSPAGE, ACT_PCDIR, ACT_CTHEME, ACT_VREC, ACT_VTHEME, ACT_CCLIST, ACT_SFOLD, ACT_BG, ACT_ACCENT, ACT_REGION, ACT_PEQ, ACT_PEQ_PRESETS, ACT_PEQ_TENBAND, ACT_CHGLIM, ACT_BHPAGE, ACT_LOCKSTYLE, ACT_IDLE, ACT_LYRSIZE, ACT_NEXTALBUM, ACT_NDVALUE, ACT_LIGHT, ACT_LED, ACT_KEYLOCK, ACT_SHUTDOWN, ACT_LB, ACT_LF, ACT_SCROBPAGE, ACT_PLAYMODE, ACT_MEMPLAY, ACT_GAIN, ACT_REPLAYGAIN, ACT_DSD, ACT_USBVOL, ACT_MAXVOL, ACT_BOOTVOL, ACT_BALANCE, ACT_RGBROW, ACT_XFEED, ACT_XFADE)    # rows with a grey value at the right, left of the chevron (the widget pod_value<row>); they open a picker page (arg = its page index)
-CHECK_ACTIONS = (ACT_PCDIRSET, ACT_THEMESET, ACT_RECSET, ACT_VTHSET, ACT_BGSET, ACT_ACCENTSET, ACT_LOCKSET, ACT_REGIONSET, ACT_CHGLIMSET, ACT_PEQ_PICK, ACT_PEQ_CPICK, ACT_PEQ_PAUTO, ACT_PEQ_PVAL, ACT_IDLESET, ACT_LYRSIZESET, ACT_NASET, ACT_LIGHTSET, ACT_LEDSET, ACT_KEYLOCKSET, ACT_SHUTDOWNSET, ACT_RGBTHEME, ACT_PLAYMODESET, ACT_MEMPLAYSET, ACT_GAINSET, ACT_RGSET, ACT_FILTERSET, ACT_DSDSET, ACT_USBVOLSET, ACT_XFEEDSET, ACT_SLEEPSET)   # picker rows: a check at the right of the chosen one (the image pod_check<row>), no icon
+VALUE_ACTIONS = (ACT_ASPAGE, ACT_GSPAGE, ACT_PCDIR, ACT_CTHEME, ACT_VREC, ACT_VTHEME, ACT_CCLIST, ACT_SFOLD, ACT_BG, ACT_ACCENT, ACT_REGION, ACT_PEQ, ACT_PEQ_PRESETS, ACT_PEQ_TENBAND, ACT_CHGLIM, ACT_BHPAGE, ACT_LOCKSTYLE, ACT_IDLE, ACT_LYRSIZE, ACT_CFSTART, ACT_NEXTALBUM, ACT_NDVALUE, ACT_LIGHT, ACT_LED, ACT_KEYLOCK, ACT_SHUTDOWN, ACT_LB, ACT_LF, ACT_SCROBPAGE, ACT_PLAYMODE, ACT_MEMPLAY, ACT_GAIN, ACT_REPLAYGAIN, ACT_DSD, ACT_USBVOL, ACT_MAXVOL, ACT_BOOTVOL, ACT_BALANCE, ACT_RGBROW, ACT_XFEED, ACT_XFADE)    # rows with a grey value at the right, left of the chevron (the widget pod_value<row>); they open a picker page (arg = its page index)
+CHECK_ACTIONS = (ACT_PCDIRSET, ACT_THEMESET, ACT_RECSET, ACT_VTHSET, ACT_BGSET, ACT_ACCENTSET, ACT_LOCKSET, ACT_REGIONSET, ACT_CHGLIMSET, ACT_PEQ_PICK, ACT_PEQ_CPICK, ACT_PEQ_PAUTO, ACT_PEQ_PVAL, ACT_IDLESET, ACT_LYRSIZESET, ACT_CFSTARTSET, ACT_NASET, ACT_LIGHTSET, ACT_LEDSET, ACT_KEYLOCKSET, ACT_SHUTDOWNSET, ACT_RGBTHEME, ACT_PLAYMODESET, ACT_MEMPLAYSET, ACT_GAINSET, ACT_RGSET, ACT_FILTERSET, ACT_DSDSET, ACT_USBVOLSET, ACT_XFEEDSET, ACT_SLEEPSET)   # picker rows: a check at the right of the chosen one (the image pod_check<row>), no icon
 ACTION_ACTIONS = NO_CHEVRON_ACTIONS + (ACT_LUNOW, ACT_SHOT, ACT_REBUILD, ACT_AREBUILD, ACT_CLEARCACHE, ACT_CLEARDUR, ACT_SFDELALL, ACT_RESETALL, ACT_GRID, ACT_NDACT, ACT_SCROBUP)   # rows that act in place on a settings page: no chevron
-VALUE_INIT = {ACT_ASPAGE: 'Off', ACT_GSPAGE: 'Off', ACT_PCDIR: 'Apple Podcasts', ACT_CTHEME: 'Normal', ACT_VREC: 'Black', ACT_VTHEME: 'Graphite', ACT_BG: 'Black', ACT_ACCENT: 'Neutral', ACT_REGION: 'Automatic', ACT_CHGLIM: '100%', ACT_BHPAGE: 'Off', ACT_LOCKSTYLE: 'Large Cover', ACT_IDLE: 'Album Cover', ACT_LYRSIZE: 'Large', ACT_NEXTALBUM: 'Off', ACT_NDVALUE: '', ACT_LIGHT: '30s', ACT_LED: 'Off', ACT_KEYLOCK: 'Off', ACT_SHUTDOWN: 'Off', ACT_LB: 'Not Set', ACT_LF: 'Not Set', ACT_SCROBPAGE: 'Off', ACT_PLAYMODE: 'Repeat All', ACT_MEMPLAY: 'Location', ACT_GAIN: 'Low', ACT_REPLAYGAIN: 'Off', ACT_DSD: 'D2P', ACT_USBVOL: 'Variable', ACT_MAXVOL: '100', ACT_BOOTVOL: 'Memory', ACT_BALANCE: '0', ACT_RGBROW: 'Reference', ACT_XFEED: 'Off', ACT_XFADE: 'Off'}   # what the asset's value label says before the payload sets it
+VALUE_INIT = {ACT_ASPAGE: 'Off', ACT_GSPAGE: 'Off', ACT_PCDIR: 'Apple Podcasts', ACT_CTHEME: 'Normal', ACT_VREC: 'Black', ACT_VTHEME: 'Graphite', ACT_BG: 'Black', ACT_ACCENT: 'Neutral', ACT_REGION: 'Automatic', ACT_CHGLIM: '100%', ACT_BHPAGE: 'Off', ACT_LOCKSTYLE: 'Large Cover', ACT_IDLE: 'Album Cover', ACT_LYRSIZE: 'Large', ACT_CFSTART: 'Playing Album', ACT_NEXTALBUM: 'Off', ACT_NDVALUE: '', ACT_LIGHT: '30s', ACT_LED: 'Off', ACT_KEYLOCK: 'Off', ACT_SHUTDOWN: 'Off', ACT_LB: 'Not Set', ACT_LF: 'Not Set', ACT_SCROBPAGE: 'Off', ACT_PLAYMODE: 'Repeat All', ACT_MEMPLAY: 'Location', ACT_GAIN: 'Low', ACT_REPLAYGAIN: 'Off', ACT_DSD: 'D2P', ACT_USBVOL: 'Variable', ACT_MAXVOL: '100', ACT_BOOTVOL: 'Memory', ACT_BALANCE: '0', ACT_RGBROW: 'Reference', ACT_XFEED: 'Off', ACT_XFADE: 'Off'}   # what the asset's value label says before the payload sets it
 VALUE_ACTIONS += (ACT_LANG,)
 CHECK_ACTIONS += (ACT_LANGSET, ACT_BTCODECSET)
 VALUE_INIT[ACT_LANG] = ''   # the language's own name: the payload sets it as the page opens
@@ -510,6 +513,7 @@ PAGE_ORDER = [   # every page, in the order of its number: this table alone deci
     'm1plus_cardsrc',
     'm1plus_psxfade',
     'm1plus_plcover',
+    'm1plus_cfstart',
 ]
 _PAGE_NUMBER = {k: i for i, k in enumerate(PAGE_ORDER)}
 assert len(_PAGE_NUMBER) == len(PAGE_ORDER), 'PAGE_ORDER lists a page key twice: ' + ', '.join(sorted({k for k in PAGE_ORDER if PAGE_ORDER.count(k) > 1}))
@@ -628,6 +632,7 @@ PSXFEED_PAGE_INDEX = page_index('m1plus_psxfeed')   # the Crossfeed picker (last
 PSXFADE_PAGE_INDEX = page_index('m1plus_psxfade')   # the Crossfade page (last in PAGE_ORDER: no other page's number moved)
 PLCOVER_PAGE_INDEX = page_index('m1plus_plcover')   # a playlist's Cover page (patch/plcpage.c; last in PAGE_ORDER: no other page's number moved)
 LYRSIZE_PAGE_INDEX = page_index('m1plus_lyrsize')   # the Lyrics Text Size picker
+CFSTART_PAGE_INDEX = page_index('m1plus_cfstart')   # the Cover Flow Start At picker
 PCSET_PAGE_INDEX = page_index('m1plus_podcastsettings')   # Settings > Library > Podcasts
 PCDIR_PAGE_INDEX = page_index('m1plus_podcastdirectory')   # Settings > Library > Podcasts > Podcast Directory picker
 LANGUAGE_PAGE_INDEX = page_index('m1plus_language')   # Settings > General > Language picker
@@ -799,7 +804,7 @@ ABOUT_PAGE = Page('m1plus_about', 'm1plus_about_page', 'About', layout=[
 # Settings > Developer > Cache (patch/homecover.c, docs/modules/homecover.md "Cache page"): the Covers card holds the cache folder's counts (INFO_CC_*: homecover_stat reads each, an ellipsis until counted), the build's Status and Clear Cover Cache;
 # the Track Durations card holds Measured Tracks (INFO_DUR: dur_stat, patch/durations.c) and Clear Track Durations.
 INFO_CC_ALBUMS, INFO_CC_COVERS, INFO_CC_NOART, INFO_CC_MISSING, INFO_CC_OLD, INFO_CC_SIZE, INFO_CC_STATUS = range(8, 15)   # (acts.h also names INFO_CC = INFO_CC_ALBUMS: 8 + the index homecover_stat takes)
-INFO_DUR = INFO_CC_STATUS + 68  # patch/m1plus.c INFO_DUR = INFO_SFOLD + 1 (asserted below the Settings Files kinds)
+INFO_DUR = INFO_CC_STATUS + 70  # patch/m1plus.c INFO_DUR = INFO_SFOLD + 1 (asserted below the Settings Files kinds)
 INFO_APHOTOS, INFO_ANONE = INFO_DUR + 1, INFO_DUR + 2   # patch/m1plus.c: the Artist Photos card's counts (homecover_stat 7, 8)
 INFO_LBACCT = INFO_DUR + 3   # patch/m1plus.c: the ListenBrainz page's Account row (patch/scrobpage.c lb_account_text)
 INFO_LFACCT = INFO_DUR + 4   # ... and the Last.fm page's
@@ -831,7 +836,7 @@ COVLIST = Page('m1plus_covlist', 'm1plus_covlist_page', 'Missing Covers', kind='
 
 # Settings > Developer > Tools > Settings Files (patch/setfiles.c, docs/modules/settings.md "Settings Files"): the payload's own files as read when the page opens. The labels are the file names (identifiers, not translated).
 # Only the setting files (ACT_SFDEL) are tappable, while present: a tap deletes the file after a confirm. The guard files and the folder stay ACT_INFO (never deleted).
-SETTING_FILES = ('albums-view', 'albums-sort', 'artists-sort', 'genres-sort', 'composers-sort', 'songs-sort-rev', 'folders-sort', 'playlists-sort', 'playlists-meta', 'playlists-view', 'recently-added-view', 'coverflow-landscape', 'coverflow-volume-keys', 'cassette-theme', 'vinyl-record', 'vinyl-base', 'nowplaying-idle', 'nowplaying-lyrics-size', 'nowplaying-position', 'nowplaying-shrink', 'pod-appearance',
+SETTING_FILES = ('albums-view', 'albums-sort', 'artists-sort', 'genres-sort', 'composers-sort', 'songs-sort-rev', 'folders-sort', 'playlists-sort', 'playlists-meta', 'playlists-view', 'recently-added-view', 'coverflow-landscape', 'coverflow-volume-keys', 'cassette-theme', 'vinyl-record', 'vinyl-base', 'nowplaying-idle', 'nowplaying-lyrics-size', 'coverflow-start', 'coverflow-scroll-bar', 'nowplaying-position', 'nowplaying-shrink', 'pod-appearance',
                  'appearance-accent', 'appearance-background', 'lockscreen-layout', 'appearance-index-rail', 'appearance-headers', 'home-recent-albums', 'home-daily-mix', 'home-menu', 'pulldown-tiles', 'keyboard-pinyin', 'keyboard-french', 'keyboard-english', 'keyboard-last', 'podcast-online-search', 'podcast-region',
                  'battery-percentage', 'battery-charge-limit', 'battery-history', 'playback-shuffle', 'playback-eq', 'playback-next-album', 'scrobbling', 'scrobble-auto', 'search-history', 'radio-view', 'radio-recent', 'covers-rebuild', 'artists-rebuild', 'wifi-networks', 'podcast-directory', 'led-dynamic', 'playback-mono', 'playback-crossfeed', 'library-artist-split', 'buttons-swap', 'volume-tap', 'library-genre-split', 'pulldown-labels', 'playback-crossfade', 'playback-crossfade-auto')
 GUARD_FILES = ('m1plus-start', 'm1plus-run', 'm1plus-bad', 'm1plus-off')
@@ -843,7 +848,7 @@ RETIRED_FILES = ('/mnt/data/m1plus-albums', '/mnt/data/m1plus-playlists', '/mnt/
                  '/mnt/data/m1plus-battpct', '/mnt/data/m1plus-pod-theme', '/mnt/data/m1plus-mix', '/mnt/data/m1plus-mix.art', '/mnt/data/m1plus/recently-played')
 FOLDER_LABEL = 'm1plus/'
 INFO_SF = INFO_CC_STATUS + 1   # patch/m1plus.c INFO_SF = INFO_CC + 7; row k reads setfiles_stat(k): 4 guard files, the folder, the settings
-INFO_SFOLD = INFO_SF + 66     # patch/m1plus.c: the Unsupported Files count (setfiles_old_count), above the setting rows
+INFO_SFOLD = INFO_SF + 68     # patch/m1plus.c: the Unsupported Files count (setfiles_old_count), above the setting rows
 assert len(GUARD_FILES) + 1 + len(SETTING_FILES) <= INFO_SFOLD - INFO_SF, 'the Settings Files rows reach INFO_SFOLD: raise it here'
 assert INFO_DUR == INFO_SFOLD + 1, 'INFO_DUR must follow INFO_SFOLD'
 FILES_PAGE_INDEX = page_index('m1plus_files')
@@ -994,6 +999,8 @@ LIBRARY_PAGE = Page('m1plus_library', 'm1plus_library_page', 'Library', layout=[
     Row('Folder Album Cover', ACT_FOLDERCOVER),
     Hdr('Cover Flow'),
     Row('Landscape', ACT_LANDSCAPE),
+    Row('Start At', ACT_CFSTART, CFSTART_PAGE_INDEX),
+    Row('Scroll Bar', ACT_CFBAR),
     Row('Volume Buttons', ACT_VOLKEYS),
     Note('In Cover Flow, the volume buttons move between albums.', lines=2),
     Row('Podcasts', ACT_PAGE, PCSET_PAGE_INDEX),   # the last card (after a note): a plain page link (ACT_PAGE), no value
@@ -1084,6 +1091,12 @@ LYRSIZE_PAGE = Page('m1plus_lyrsize', 'm1plus_lyrsize_page', 'Lyrics Text Size',
     Row('Medium', ACT_LYRSIZESET, 1),
     Row('Large', ACT_LYRSIZESET, 2),
 ])
+CFSTART_PAGE = Page('m1plus_cfstart', 'm1plus_cfstart_page', 'Start At', layout=[
+    Row('Playing Album', ACT_CFSTARTSET, 0),
+    Row('Last Position', ACT_CFSTARTSET, 1),
+    Row('First Album', ACT_CFSTARTSET, 2),
+])
+CFSTART_VALUES = ('Playing Album', 'Last Position', 'First Album')   # the value the Start At row shows, in the order of the picker's rows
 LYRSIZE_VALUES = ('Small', 'Medium', 'Large')   # the value the Lyrics Text Size row shows, in the order of the picker's rows
 IDLE_VALUES = ('Off', 'Album Cover', 'Cassette', 'Vinyl', 'Lyrics', 'VU Meter')   # the value the Idle Display row shows, in the order of the picker's rows
 # Settings > Now Playing > Theme: the picker (a check on the chosen row).

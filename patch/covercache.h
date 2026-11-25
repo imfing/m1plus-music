@@ -129,6 +129,7 @@ void cc_heapsort(unsigned *v, unsigned n,
 #define CC_SORT_MODES 4
 int cc_sort_mode(
     void); /* the saved order, 0..3; Artist when there is no valid file (the retired album-order file is moved into it once first) */
+int cc_sort_both(int *rev); /* cc_sort_mode and, in *rev, cc_sort_rev from one read of the file */
 int cc_sort_rev(
     void); /* 1 when the saved order is in its other direction (Z-A, Oldest First); 0 for the default direction and for no valid file */
 int cc_sort_mode_set(

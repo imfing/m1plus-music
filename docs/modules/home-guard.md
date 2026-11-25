@@ -81,7 +81,7 @@ Residual risks:
 | `/mnt/data/m1plus-start` | the setting: `0` = Shanling, missing or anything else = M1+ Music (temp + `fsync` + `rename`) |
 | `/mnt/data/m1plus/home-menu` | the menu's items in order and the turned-off ones: [menu](menu.md) |
 | `/mnt/data/m1plus/home-recent-albums`, `/mnt/mmc/.m1plus/recently-played` | the Recently Played shelf: [recent](recent.md) |
-| `/mnt/data/m1plus/albums-view`, `coverflow-landscape`, `coverflow-volume-keys` | page settings: [settings](settings.md) |
+| `/mnt/data/m1plus/albums-view`, `coverflow-landscape`, `coverflow-volume-keys`, `coverflow-start` | page settings: [settings](settings.md) |
 | `/mnt/mmc/m1plus-log` | opt-in: if this empty file exists, events are appended to `/mnt/mmc/m1plus.log` (armed, boot ok, marker found, kill switch) |
 
 The setting is an own file, not `config.ini [M1PLUS]`: `write_int_config` rewrites the shared config

@@ -39,6 +39,10 @@
     "/mnt/data/m1plus/coverflow-landscape" /* "1" = Cover Flow opens in landscape, anything else portrait (the default) */
 #define VOLKEYS_FILE \
     "/mnt/data/m1plus/coverflow-volume-keys" /* "1" = the volume keys step Cover Flow, anything else or missing off (the default) */
+#define CFSTART_FILE \
+    "/mnt/data/m1plus/coverflow-start" /* where Cover Flow opens: "1" the album last centred, "2" the first album, anything else or missing the playing album (the default); docs/modules/coverflow.md "Start At" */
+#define CFBAR_FILE \
+    "/mnt/data/m1plus/coverflow-scroll-bar" /* "0" = the main Cover Flow page has no row of ticks, anything else or missing it has (the default); docs/modules/coverflow.md "Scrubber" */
 #define OLD_ORDER_FILE \
     "/mnt/data/m1plus/album-order" /* the retired Settings > Library > Album Order ("0" Title, else Artist): cc_sort_mode moves it into ALBUMS_SORT_FILE once and deletes it */
 #define TAPETHEME_FILE \
