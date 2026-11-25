@@ -52,6 +52,7 @@ Other hook sites (call-site words and two-word stubs):
 | 26 `mclNextSong` end branch | `0x5d5988` | resumes `0x5d5990` or re-enters `0x5d5950` |
 | 27 Tidal search focus | `0x4c2088` (callback `0x4c1f3c`) | `jalr edit_set_focus` |
 | 28 play-history call | `0x4ce930` | `jalr add_playrecord` `0x4efb08` |
+| 43 Local .lrc open | `0x5d3bdc` | `jalr fopen(path, "r")` in the .lrc reader `0x5d3670` (`mclLoadExLyric` `0x5d41e4` tail-calls it) |
 | 33 Volume page open | `0x4cd964` | `bal navigator_to_with_context("dialog/volume_dialog", 2)` in `on_wm_tsup_fun` `0x4cd8dc` |
 | 31 play-status call | `0x4ce968` | `jalr mclGetPlayStatus` `0x5d3640` |
 | 35 event1 key table load | `0x637bc8` | `lw v0, (v0)`; `sw v0, 0x58(sp)` in the event1 thread `0x637870` (table `0x75b324`); resumes `0x637bd0` |

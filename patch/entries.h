@@ -243,6 +243,7 @@ void volpage_opened(void *win); /* the Volume page's window is up: stock's volum
 void volpage_go(
     int k); /* the Volume page's second card: row k (0 Max Volume, 1 Equalizer, 2 Volume & Sound) opens its page without a second window */
 int vol_tap_open(const char *name, int ctx); /* payload hook 33: the status bar tap's open of the volume dialog */
+void *ly_lrc_open(const char *path, const char *mode); /* payload hook 43: the stock local .lrc reader's fopen */
 int pc_mem_type(
     void); /* payload hook 42: save_memoryplay_info's mclGetPlayType; spoken audio is saved as type 1 (folder) */
 int vol_tap_on(void); /* Tap for Volume, ours (VOLTAP_FILE): 0 off, anything else on (the default) */

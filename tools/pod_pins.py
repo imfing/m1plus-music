@@ -710,6 +710,24 @@ LYRICS_PINS = (   # (address, stock word, what it proves): the stock lyric rows 
     (0x537cbc, 0x8f99c220, '... calls mclLoadExLyric after it copies a downloaded lyric file: lw t9, GOT mclLoadExLyric'), (0x537cc0, 0x0320f809, '... jalr mclLoadExLyric()'),
     (0x537cd0, 0x8f82aa50, '... then lw v0, GOT force_refreshflag (0xa05a63)'), (0x537cd8, 0xa0430000, '... sb 1, force_refreshflag (in the delay slot): the rebuild show_player_face does'),
 )
+# The stock local .lrc reader 0x5d3670 (only caller mclLoadExLyric 0x5d41e4, a tail call; UI thread) opens the file with fopen(path, "r"); the hook (patch/lyrics.c ly_lrc_open, docs/modules/lyrics.md) hands it a FILE* of
+# a cleaned copy of a plain-text lyric file and falls back to stock's fopen, so the parser pinned here must keep reading that copy as it reads a .lrc.
+LRCOPEN_SITE = 0x5d3bdc
+LRCOPEN_PINS = (   # (address, stock word, what it proves)
+    (0x5d3bd4, 0x8f99f25c, 'the .lrc reader: lw t9, GOT fopen'), (0x5d3bd8, 0x266573e8, 'the .lrc reader: a1 = "r" (0x7773e8)'),
+    (LRCOPEN_SITE, 0x0320f809, 'the .lrc reader: jalr fopen(path, "r") (the hook replaces it with jal ly_lrc_open)'), (LRCOPEN_SITE + 4, 0x02002025, 'its delay slot: a0 = the path (s0)'),
+    (0x5d3be4, 0x8fbc0038, 'the reader: lw gp after the call'), (0x5d3be8, 0x104000a2, 'the reader: a null FILE* is "open lyric file failed!" (stock\'s answer when the hook falls back and the open fails)'), (0x5d3bec, 0x00409025, 'the reader: s2 = the FILE*'),
+    (0x5d3ea4, 0x24050600, 'the reader: fgets size 0x600: the hook\'s lines are cut to what fits'), (0x5d3eb4, 0x0320f809, 'the reader: jalr fgets(line, 0x600, file): one line at a time'),
+    (0x5d3ec4, 0x041138aa, 'the reader: bal toolsTrimRight(line): trailing blanks and the newline go'), (0x5d3ed0, 0x1040ff4c, 'the reader: an empty line is skipped'),
+    (0x5d3edc, 0x2405005b, 'the reader: a1 = \'[\''), (0x5d3ee0, 0x0320f809, 'the reader: jalr strchr(line, \'[\')'), (0x5d3eec, 0x1040ff45, 'the reader: a line without \'[\' is skipped (so the hook gives every line a tag)'),
+    (0x5d3ef8, 0x2405005d, 'the reader: a1 = \']\''), (0x5d3efc, 0x0320f809, 'the reader: jalr strrchr(from the first \'[\', \']\'): the text is what follows the LAST \']\''),
+    (0x5d3fbc, 0x2442ffd0, 'the reader: the tag\'s first char minus \'0\''), (0x5d3fc4, 0x2c42000a, 'the reader: ... below 10'), (0x5d3fc8, 0x1040ff0e, 'the reader: a tag that does not start with a digit is skipped (so the hook writes numeric tags)'),
+    (0x5d3fd8, 0x04113c11, 'the reader: bal toolsTimeConvert(tag): the time of the line'),
+    (0x5d4158, 0x83a20e40, 'the reader: lb the text'), (0x5d415c, 0x1040000d, 'the reader: an empty text takes the path at 0x5d4194'), (0x5d4160, 0x8f99f2b4, 'the reader: lw t9, GOT malloc (delay slot)'),
+    (0x5d4194, 0x0320f809, 'the reader: jalr malloc(2) ...'), (0x5d4198, 0x24040002, '... a0 = 2'), (0x5d419c, 0x02802825, '... a1 = s4, the string at 0x757700 (" "; s4 set at 0x5d3bf0 / 0x5d3bfc): an empty text becomes " "'),
+    (0x5d3bf0, 0x8f948020, 'the reader: lw s4, GOT page 0x750000'), (0x5d3bfc, 0x26947700, 'the reader: s4 += 0x7700 (" ")'),
+    (0x5d4270, 0x27393670, 'mclLoadExLyric: addiu t9 = 0x5d3670 (the reader) ...'), (0x5d4274, 0x1000fcfe, '... b 0x5d3670: the tail call; the reader is entered only here'),
+)
 QUERY_PINS = (   # (address, stock word, what it proves): the first word after the prologue the trampolines resume at (the frame), and the sqlite3_exec calls that run the SQL
     (0x5ee788, 0x27bdff28, 'toolsQueryDbTable: addiu sp, sp, -0xd8 (the trampoline resumes here)'), (0x5ee7fc, 0x0320f809, 'toolsQueryDbTable: jalr sqlite3_exec(db, sql=a1, cb=a2)'),
     (0x5ee9b8, 0x27bdfe80, 'toolsQueryDbTableAndSort: addiu sp, sp, -0x180 (the trampoline resumes here)'), (0x5eea2c, 0x0320f809, 'toolsQueryDbTableAndSort: jalr sqlite3_exec(db, sql=a1, cb=a2)'),

@@ -176,12 +176,45 @@ dots show and playback is active.
 `ly_clock` interpolates whole-second playback readings with the monotonic clock, bounded within the
 reported second. Pauses freeze it and seeks reset it. Dots move with the lines during a drag.
 
+## Unsynced lyrics
+
+Stock's `.lrc` reader (`0x5d3670`, tail-called by `mclLoadExLyric`) keeps only lines with a time
+tag: a line without `[` is skipped (`0x5d3eec`). Plain lyrics (LRCLIB's `plainLyrics`, which
+[Cover & Lyrics](onlineart.md) saves as given, or a text file of the user's) gave no rows.
+
+- **The reader's `fopen`** (hook 43, `ly_lrc_open`): a file of at most 64 KB with no time tag
+  (`[`, one to three digits, `:`, a digit; `[ar:…]`, `[Chorus]` are not tags) and some text is
+  handed over as a copy in `/tmp/m1plus-plain.lrc`, opened, then unlinked (the reader's `fclose`
+  frees it). Each line gets `[mm:ss.00]` with its index in whole seconds, the unit of `lrc_time`,
+  so the keys are distinct and the reader's sort keeps the order. The BOM and blank lines at the
+  ends go, and a run of blank lines becomes one blank row (the reader stores `" "`, `ly_lead`
+  strips it). The reader takes the text after a line's last `]` (`0x5d3ef8`), so `[` and `]`
+  become `(` and `)`. A line is cut at 1000 bytes on a character, at most 5999 lines (99:59).
+  Encodings are stock's: it converts UTF-16 and GB18030 files before this `fopen`. Any failure,
+  a file with a tag, or the kill switch `/mnt/mmc/m1plus-off` (checked before the file is read):
+  stock `fopen` on the path. `ly_plain_n` keeps the copy's line count (0 otherwise).
+- **The page**: `ly.plain` is set for new rows when their count is `ly_plain_n` (or `LY_MAX` for
+  a longer copy), the local lyric deque still holds the copy's lines (`mclGetLyricSize`) and the
+  rows' times are 0, 1, 2 and so on. `mclLoadExLyric` empties that deque for every track, also
+  one whose `.lrc` is missing (the reader returns before its `fopen`, so `ly_plain_n` stays),
+  and online lyrics have their own deque: neither a short synced file nor online rows after a
+  plain file pass. Then no line is current, every line is white (only the edge
+  fades), the first line's row centre sits where the top fade ends (`LY_PLAIN_TOP`, `ly_anchor`),
+  the lines never move with the song, a tap seeks nothing and the lines stay where a drag leaves
+  them (`browse` still ends after 3 s, so the idle countdown is stock's again). `ly_norm` picks
+  the anchored line around `LY_PLAIN_TOP` instead of `LY_ANCHOR`, so a drag stops at
+  the first line's place and when the last line is whole above the bottom fade
+  (`ly_plain_floor`); lines shorter than the view stay at the top. The idle page reads them the
+  same way.
+
 ## Pins and safety
 
 `LYRICS_PINS` checks the row properties, stock timer reads, row-click flag accesses, font fallback,
-label pitch instructions and style resolution. Called functions are checked against `FUNCTIONS`.
+label pitch instructions and style resolution. `LRCOPEN_PINS` checks hook 43's site and the
+reader's steps the copy relies on. Called functions are checked against `FUNCTIONS`.
 
-All work runs on the UI thread from page timers and listeners. No stock code word is written; the
+All work runs on the UI thread from page timers and listeners (hook 43 in the reader, which
+`mclLoadExLyric` runs there). No stock code word is written but hook 43's site; the
 one stock data word written is Now Playing's idle countdown, with the value stock's own handlers
 store. No stock widget is renamed or removed, and no thread or lock is added. Startup failures keep
 the stock list; animation failures snap. Destroy removes timers and ignores stray events.

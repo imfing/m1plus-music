@@ -68,6 +68,7 @@ class LyMachine(nowplaying.NowMachine):
         self.src_w, self.view, self.box = self.widget('scroll_lrc'), self.widget('view_lrc'), self.widget('np_lyrics')
         self.msg = self.widget('label_lyricmsg')
         self.play, self.status, self.clock = 0, 2, 5000
+        self.lyric_n = 0
         self.measure_fn = measure or (lambda s: 10 * len(s))
         self.set_lines(lines)
         self.seeks, self.seek_moves = [], True        # seek_time's arguments; whether the player then reads the new position
@@ -101,6 +102,8 @@ class LyMachine(nowplaying.NowMachine):
             self.calls.append(('get_playtime',)); ret = self.play
         elif name == 'mclGetPlayStatus':
             ret = self.status
+        elif name == 'mclGetLyricSize':   # the local lyric deque's entries (a test sets lyric_n: the reader's lines; mclLoadExLyric empties it)
+            ret = self.lyric_n
         elif name == 'timer_add' and self.no_dtimer and a0 == PSYMS['ly_dframe']:
             self.calls.append(('timer_add', a0, u.reg_read(UC_MIPS_REG_A2))); ret = 0   # the dots' timer refused, the others not
         elif name == 'seek_time':
@@ -475,7 +478,7 @@ def asset_tests(ctx):
     expect(all(word(stock, a) == w for a, w, _ in pod.LYRICS_PINS) and all(word(built, a) == w for a, w, _ in pod.LYRICS_PINS), 'the stock words patch/lyrics.c relies on are pinned and untouched (get_playtime, the rows\' "lrc_time", the timer)')
     expect(pod.FUNCTIONS['get_playtime'][2] == 0x4e02e4, 'get_playtime is the stock position call the lyric timer compares "lrc_time" with')
     expect(not any(a for a in (MANIFEST.get('hook_lyrics'),)), 'no new hook: the manifest has none for the lyrics')
-    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_check_cpumem', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_pulldown_dialog', 'hook_tsdown', 'hook_usbpoll', 'hook_usbtake', 'hook_format_lamp', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_light_on', 'hook_light_off', 'hook_lineout', 'hook_synclink', 'hook_wifihub', 'hook_bthub', 'hook_volume', 'hook_memtype', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_keys', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_loadclass', 'hook_loadclass_assign', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_autochange', 'hook_notice', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer', 'hook_libupdate', 'hook_libupdate_commit', 'hook_libupdate_commit_spec', 'hook_libupdate_batch'}, 'the hook set is the one the project documents')
+    expect(set(k for k in MANIFEST if k.startswith('hook')) == {'hook', 'hook_init', 'hook_playing', 'hook_bigcover', 'hook_lockscreen', 'hook_check_cpumem', 'hook_playmore', 'hook_pulldown', 'hook_pulldown_open', 'hook_pulldown_dialog', 'hook_tsdown', 'hook_usbpoll', 'hook_usbtake', 'hook_format_lamp', 'hook_id3', 'hook_query', 'hook_sorted_query', 'hook_scan', 'hook_battery', 'hook_light_on', 'hook_light_off', 'hook_lineout', 'hook_synclink', 'hook_wifihub', 'hook_bthub', 'hook_volume', 'hook_lrc_open', 'hook_memtype', 'hook_idle', 'hook_tidalkb', 'hook_playrecord', 'hook_eq_row', 'hook_next_album', 'hook_lock_row', 'hook_keys', 'hook_style_color', 'hook_style_gradient', 'hook_image_add', 'hook_setmode', 'hook_loadplaylist', 'hook_file_created', 'hook_loadclass', 'hook_loadclass_assign', 'hook_clear_queue', 'hook_display_mode', 'hook_timezone', 'hook_start_player', 'hook_autochange', 'hook_notice', 'hook_save_stop', 'hook_save_start', 'hook_backtoplayer', 'hook_libupdate', 'hook_libupdate_commit', 'hook_libupdate_commit_spec', 'hook_libupdate_batch'}, 'the hook set is the one the project documents')
 
 
 def start_tests(ctx):
@@ -1777,4 +1780,141 @@ def slide_view_tests(ctx):
     expect(flags[0] == 1 and xoff != 0, f'a sideways swipe still drags the page (dragged {flags[0]}, xoffset {xoff})')
 
 
-SECTIONS = [reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests, slide_view_tests, standdown_tests]
+LRC_TMP = '/tmp/m1plus-plain.lrc'
+
+
+class PlainMachine(LyMachine):
+    """LyMachine whose fwrite keeps the bytes per open file (the harness counts the calls only)."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.written = {}
+
+    def _hook(self, u, address, size, _):
+        if self.handlers.get(address, '') == 'fwrite':
+            a0, a1, a2 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2))
+            self.written[self.fh[1]] = self.written.get(self.fh[1], b'') + bytes(u.mem_read(a0, a1 * a2)) if a1 * a2 else self.written.get(self.fh[1], b'')
+            self.calls.append(('fwrite', self.fh[1]))
+            u.reg_write(UC_MIPS_REG_V0, a2); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA))
+            return
+        return super()._hook(u, address, size, _)
+
+    def lrc_open(self, path, data=None):
+        """The reader's fopen of path ("r"), the file's bytes data (None: no such file); the FILE (0 for none)."""
+        self.written.pop(LRC_TMP, None)
+        if data is not None: self.fs[path] = data
+        f = self.call(PSYMS['ly_lrc_open'], a0=self.cstr(path), a1=self.cstr('r'), count=20000000)
+        self.lyric_n = self.plain_n()   # (the reader pushes the copy's lines; a file it reads itself: its own, never a copy's count here)
+        return f
+
+    def plain_n(self): return struct.unpack('<H', bytes(self.u.mem_read(PSYMS['ly_plain_n'], 2)))[0]
+    def opens(self): return [(c[1], c[2]) for c in self.calls if c[0] == 'fopen']
+
+
+def plain_copy(data):
+    """The model of ly_lrc_copy: the timed copy's lines of a file with no time tag."""
+    import re
+    if data.startswith(b'\xef\xbb\xbf'): data = data[3:]
+    out, blank = [], False
+    for ln in re.split(rb'\r\n|\r|\n', data):
+        ln = ln.rstrip(b' \t')
+        if len(ln) > 1000:
+            n = 1000
+            while n > 0 and ln[n] & 0xc0 == 0x80: n -= 1
+            ln = ln[:n]
+        if not ln.strip(b' \t'):
+            blank = bool(out); continue
+        if blank: out.append(b'')
+        blank = False
+        out.append(ln.replace(b'[', b'(').replace(b']', b')'))
+    return b''.join(b'[%02d:%02d.00]' % (k // 60, k % 60) + t + b'\n' for k, t in enumerate(out))
+
+
+def plain_tests(ctx):
+    expect = ctx.expect
+    pins = {a: w for a, w, _ in pod.LRCOPEN_PINS}
+    expect(pins.get(pod.LRCOPEN_SITE) == 0x0320f809 and pod.LRCOPEN_SITE == 0x5d3bdc,
+           'the hook replaces the stock .lrc reader\'s `jalr fopen` (0x5d3bdc, pinned in LRCOPEN_PINS with the parse steps the copy relies on)')
+    # a plain file: a timed copy, opened, unlinked; the reader gets the copy
+    song = '七色の黄昏降りて来て\n風はなんだか涼しげ\n\nDown townへ くりだそう\n'.encode()
+    m = PlainMachine(); m.init()
+    f = m.lrc_open('/mnt/mmc/a/02 - DOWN TOWN.lrc', song)
+    got = m.written.get(LRC_TMP, b'')
+    expect(f and got == b'[00:00.00]\xe4\xb8\x83\xe8\x89\xb2\xe3\x81\xae\xe9\xbb\x84\xe6\x98\x8f\xe9\x99\x8d\xe3\x82\x8a\xe3\x81\xa6\xe6\x9d\xa5\xe3\x81\xa6\n'
+           b'[00:01.00]' + '風はなんだか涼しげ'.encode() + b'\n[00:02.00]\n[00:03.00]' + 'Down townへ くりだそう'.encode() + b'\n',
+           f'plain lyrics: one tag a line, whole seconds from 0, the blank line between stanzas kept as a tagged empty line ({got[:80]!r})')
+    expect(m.opens() == [(LRC_TMP, 'w'), (LRC_TMP, 'r')] and ('unlink', LRC_TMP) in m.calls and m.calls.index(('unlink', LRC_TMP)) > [c[:2] for c in m.calls].index(('fopen', LRC_TMP)) and LRC_TMP not in m.files,
+           f'the copy is written in /tmp, opened for the reader and unlinked while open; the card file is only read ({m.opens()})')
+    expect(m.plain_n() == 4, f'ly_plain_n is the copy\'s line count ({m.plain_n()})')
+    # the edges: BOM, CRLF, a lone CR, blanks at the start, runs and the end, trailing blanks, brackets, a long line cut at a character
+    data = b'\xef\xbb\xbf\r\n \n[Chorus]  \r\nla la\t\r\r\n\n\n a [b] c\r' + ('あ' * 400).encode() + b'\n\n  \n'
+    m = PlainMachine(); m.init()
+    f = m.lrc_open('/mnt/mmc/b.lrc', data)
+    got, want = m.written.get(LRC_TMP, b''), plain_copy(data)
+    expect(f and got == want and got.startswith(b'[00:00.00](Chorus)\n[00:01.00]la la\n[00:02.00]\n[00:03.00] a (b) c\n[00:04.00]') and len(got.split(b'\n')[4]) == 10 + 999,
+           f'BOM dropped, CRLF and CR end lines, blanks at the ends dropped and a run of them is one, [ and ] become ( and ), a line cut at 1000 bytes on a character ({got[:90]!r})')
+    expect(m.plain_n() == 5, 'five lines (one blank)')
+    # files left to stock: a time tag anywhere, no file, only blank lines, over the cap; ly_plain_n is 0 after each
+    for name, data, why in (('synced', b'[ar:Someone]\nintro text\n[00:12.34]la\n', 'a time tag anywhere (an untagged line before it too)'),
+                            ('short tag', b'words\n[1:02]x\n', 'a one-digit-minute tag'),
+                            ('blank', b'\n \r\n\t\n', 'only blank lines'),
+                            ('big', b'x' * 65537, 'a file over 64 KB')):
+        m = PlainMachine(); m.init(); m.setword(PSYMS['ly_plain_n'], 7)
+        f = m.lrc_open('/mnt/mmc/c.lrc', data)
+        expect(f and m.opens() == [('/mnt/mmc/c.lrc', 'r')] and LRC_TMP not in m.written and m.plain_n() == 0, f'{name}: {why} is stock\'s fopen of the file as it is ({m.opens()})')
+    m = PlainMachine(); m.present.add('/mnt/mmc/m1plus-off'); m.init(); m.setword(PSYMS['ly_plain_n'], 7)
+    f = m.lrc_open('/mnt/mmc/k.lrc', b'one\ntwo\n')
+    expect(f and m.opens() == [('/mnt/mmc/k.lrc', 'r')] and LRC_TMP not in m.written and m.plain_n() == 0 and not any(c[0] == 'read' for c in m.calls),
+           f'the kill switch: the file is not read, stock\'s fopen of it as it is ({m.opens()})')
+    m = PlainMachine(); m.init()
+    expect(m.lrc_open('/mnt/mmc/none.lrc') == 0 and m.opens() == [('/mnt/mmc/none.lrc', 'r')], 'no file: stock\'s fopen (it fails, the reader says so as before)')
+    for fail, why in ((('fopen', LRC_TMP), 'the copy cannot be made'), (('read', '/mnt/mmc/d.lrc'), 'the file cannot be read')):
+        m = PlainMachine(); m.init(); m.fail.add(fail)
+        f = m.lrc_open('/mnt/mmc/d.lrc', b'one\ntwo\n')
+        expect(m.opens()[-1] == ('/mnt/mmc/d.lrc', 'r') and m.plain_n() == 0, f'{why}: stock\'s fopen of the file ({m.opens()})')
+
+    # the page: the rows of a timed copy are unsynced lines, read from the top
+    lines = [(i, f'Plain {i}') for i in range(12)]
+    top = FADE - LINE_H // 2
+    m = PlainMachine(lines); m.init(); m.lrc_open('/mnt/mmc/e.lrc', b'\n'.join(t.encode() for _, t in lines)); m.set_lines(lines); m.at(0)   # (the reader runs, then stock builds the rows)
+    s = m.shown()
+    expect(s['Plain 0'][0] == top and s['Plain 1'][0] == top + PITCH and all(v[1] == edge(v[0], 1) for v in s.values()) and s['Plain 0'][1] == 255,
+           f'unsynced: the first line at the top ({top} px, whole above the fade), every line white (only the edge fades), none highlighted ({[(k, v[0], v[1]) for k, v in sorted(s.items())][:3]})')
+    before = {k: v[:2] for k, v in m.shown().items()}
+    m.at(5); m.frame(10000); m.at(9); m.frame(10000)
+    expect({k: v[:2] for k, v in m.shown().items()} == before and not m.ly_timers(), 'the song moves on: the lines do not')
+    m.down(50, top + 10); m.up(50, top + 10)
+    expect(m.seeks == [] and {k: v[:2] for k, v in m.shown().items()} == before, 'a tap seeks nothing (a line\'s time is its index)')
+    m.down(100, 200); m.move(100, 170); m.move(100, 120); m.up(100, 120)
+    dragged = {k: v[0] for k, v in m.shown().items()}
+    expect(dragged['Plain 3'] == before['Plain 3'][0] - 50, f'a drag scrolls the lines from where it became one ({dragged.get("Plain 3")})')
+    m.clock += O['LY_IDLE_MS'] + 500; m.at(9); m.frame(10000)
+    expect({k: v[0] for k, v in m.shown().items()} == dragged and not m.ly_timers(), 'let go: the lines stay where the finger left them (no way back to a current line)')
+    IDLE_N = pod.DATA['NP_IDLE_COUNT'][0]
+    m.setword(IDLE_N, 7); m.at(9)
+    expect(struct.unpack('<i', bytes(m.u.mem_read(IDLE_N, 4)))[0] == 7, 'and the idle countdown is stock\'s again 3 s after the touch')
+    m.down(100, 230); [m.move(100, 230 - 40 * k) for k in range(1, 30)]; m.up(100, 230 - 40 * 29)
+    s = m.shown(); last = s.get('Plain 11')
+    expect(last and last[0] == VIEW_H - FADE - LINE_H // 2 and last[1] == 255 and 'Plain 0' not in s,
+           f'scrolled up to the end: the last line stops whole, its row above the bottom fade ({last})')
+    m.down(100, 10); [m.move(100, 10 + 40 * k) for k in range(1, 30)]; m.up(100, 10 + 40 * 29)
+    expect(m.shown()['Plain 0'][0] == top, 'scrolled down to the start: the first line stops at the top')
+    m.down(100, 100); m.move(100, 112); m.move(100, 127); held = m.shown()['Plain 0'][0]; m.up(100, 127)
+    expect(held == top and m.shown()['Plain 0'][0] == top, f'a short drag down at the start does not pull the first line below the top ({held}, then {m.shown()["Plain 0"][0]})')
+    # a short text stays at the top
+    short = [(0, 'One'), (1, 'Two')]
+    m = PlainMachine(short); m.init(); m.lrc_open('/mnt/mmc/f.lrc', b'One\nTwo\n'); m.set_lines(short); m.at(0)
+    m.down(100, 100); m.move(100, 60); m.move(100, 20); m.up(100, 20)
+    expect(m.shown()['One'][0] == top, 'lines shorter than the view do not scroll away from the top')
+    # the same times without the copy, or with another count: synced lyrics as before
+    m = PlainMachine(lines); m.init(); m.at(0)
+    expect(m.shown()['Plain 0'][0] == ANCHOR and is_cur(m.shown(), 'Plain 0'), 'rows timed 0, 1, 2 from a real .lrc (no copy) are synced: the anchor, the highlight')
+    m = PlainMachine(lines); m.init(); m.lrc_open('/mnt/mmc/g.lrc', b'a\nb\nc\n'); m.set_lines(lines); m.at(0)
+    expect(m.shown()['Plain 0'][0] == ANCHOR, 'rows that are not the last copy\'s (another count: online lyrics after a plain file) are synced')
+    m = PlainMachine([(0, 'Hello')]); m.init(); m.lrc_open('/mnt/mmc/h.lrc', b'Hello\n'); m.set_lines([(0, 'Hello')]); m.at(0)
+    expect(m.shown()['Hello'][0] == top, 'a one-line plain file is unsynced')
+    m.lyric_n = 0; m.set_lines([(0, 'Online')]); m.at(0)   # the next track has no .lrc: mclLoadExLyric empties the deque, the reader returns before its fopen; online lyrics, one line at 0
+    expect(m.shown()['Online'][0] == ANCHOR and is_cur(m.shown(), 'Online'), f'online lyrics of the same shape after it are synced: the deque is not the copy\'s ({m.shown()["Online"][0]})')
+
+
+SECTIONS = [plain_tests, reload_tests, asset_tests, size_tests, retarget_tests, size_setting_tests, start_tests, follow_tests, dots_tests, face_tests, touch_tests, wrap_tests, tall_tests, overflow_tests, cost_tests, font_tests, slide_view_tests, standdown_tests]

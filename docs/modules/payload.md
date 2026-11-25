@@ -99,6 +99,7 @@ stock's own behaviour.
 | 40 | SyncLink shown, call sites `0x545068` / `0x475bb0` | [lineout](lineout.md) | stock `widget_set_visible`; hides SyncLink only when stock's marks would reach the clock |
 | 41 | `check_cpumem` `0x50b810` | `patch/power.c` | stock `check_cpumem` (boot); skips the 6 s `drop_caches=3` thread unless `/mnt/mmc/m1plus-off` exists (checked at boot and once after 15 s for async SD mount) |
 | 42 | `save_memoryplay_info`'s `mclGetPlayType` call, call site `0x4e3384` | [podcasts](podcasts.md) | stock type; one compare, a record read only for type `0xf001` |
+| 43 | stock local .lrc reader's `fopen`, call site `0x5d3bdc` (reader `0x5d3670`, called only by `mclLoadExLyric`) | [lyrics](lyrics.md) | stock `fopen` (boot: `tools/reach.py` reaches it through the Tidal player start from `platform_init`; also under the kill switch, checked first); one file read of at most 64 KB, a copy in `/tmp` only for a file with no time tag |
 
 Sites without a number:
 
@@ -126,7 +127,8 @@ Rules for the table:
   timer pass (two while a USB page is requested); hook 37 runs on every home timer pass and does stock's `access`,
   then the same checks only when a marker exists.
 - Kill switch `/mnt/mmc/m1plus-off`: scope in [safety](safety.md#kill-switch). Hooks 5, 6, 22 and 33
-  never read it (bounded work or tap-only, stock fallback); 13 and 14 use stock's own switch; 16, 36
+  never read it (bounded work or tap-only, stock fallback); 43 reads `/mnt/mmc/m1plus-off` on every
+  call, before the file; 13 and 14 use stock's own switch; 16, 36
   and 37 read both switch files (`home_off`) only while the radio owns the player; 30, 38 and 39 read
   them once (cached) at the first stale word or USB state.
 - `tools/reach.py` decides boot reachability; hooks not marked "boot" are reached only through the navigator's page-init dispatcher, a tap or the status bar, never from `main` / `platform_init`.

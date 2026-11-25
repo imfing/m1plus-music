@@ -67,6 +67,8 @@ static const struct {
 #define LYVH (ly.vh ? ly.vh : LY_VIEW_H) /* (a stopped engine is Now Playing's geometry) */
 #define LYANC (ly.vh ? ly.anc : LY_ANCHOR)
 #define LYOFF (4 * LYVH)
+/* Unsynced lyrics are read from the top: the first line's row centre where the top fade (ly_edge) ends, so it is whole. */
+#define LY_PLAIN_TOP (LY_FADE - LYH / 2)
 
 static struct {
     int vh, anc; /* the view's height and the anchor's place in it (ly_target) */
@@ -86,6 +88,7 @@ static struct {
     unsigned sig; /* what the stock rows were when we last read them */
     int n; /* the rows, at most LY_MAX */
     int cur; /* the highlighted line, -1 before the first */
+    int plain; /* unsynced lyrics (ly_is_plain): no line is current, all are white, the lines start at the top and stay where the finger leaves them, a tap seeks nothing */
     int base; /* the line anchored at ly_anchor(base) + man */
     int man; /* the manual scroll: where the anchored line's top is, from its anchor (px) */
     int gd, gcur; /* the latest move: its distance and its target line (a line new to a slot moves with it) */
@@ -114,6 +117,105 @@ static struct {
 
 /* Replacement lyrics are on the way (ly_reload) and stock has not rebuilt its rows yet. Kept outside ly: ly_release and ly_retarget clear ly, the mark stays. */
 static unsigned char ly_reloading __attribute__((section(".scratch")));
+
+/* Plain lyrics: the lines the last .lrc the stock reader opened gave it through ly_lrc_open's timed copy (0: it read the file itself). Kept outside ly, as ly_reloading. */
+static unsigned short ly_plain_n __attribute__((section(".scratch")));
+
+/* ---- The stock .lrc reader's fopen (payload hook, LRCOPEN_SITE in the reader 0x5d3670, mclLoadExLyric's tail call; the UI thread).
+ * The reader keeps only lines with a time tag: one without '[' is skipped (0x5d3eec), so plain lyrics (LRCLIB's plainLyrics, which Cover & Lyrics saves as given, or a
+ * text file of the user's) gave no rows at all. A file with no time tag anywhere is handed over as a copy with one tag a line, [00:00.00], [00:01.00] and so on: whole
+ * seconds (the unit of lrc_time), so the keys are distinct and the reader's sort keeps the order. ly_tick sees those times and shows the lines unsynced (ly.plain).
+ * The copy lives in /tmp (tmpfs), unlinked as soon as it is open: the reader's fclose frees it. The text after the last ']' is the reader's line (0x5d3ef8), so '[' and ']'
+ * in a line become '(' and ')'; a blank line stays a blank row (the reader's " ", 0x5d4194; runs of them are one). Any failure, a file over LY_LRC_CAP or one with a tag:
+ * stock fopen on the path, as before; so is the kill switch. */
+#define LY_LRC_CAP 65536
+/* The bytes of a line kept (cut at a character): far more than LY_LINES_MAX rows, well inside the reader's 0x600 buffer. */
+#define LY_LRC_LINE 1000
+#define LY_LRC_LINES 5999 /* 99:59, the most a two-digit minute takes */
+#define LY_LRC_TMP "/tmp/m1plus-plain.lrc"
+
+/* A time tag at s: '[', one to three digits, ':', a digit (as [00:12.34], [1:02]). Not [ar:...], [Chorus] or [Verse 1]. */
+static int ly_lrc_tag(const char *s, const char *end) {
+    int d = 0;
+    if (*s++ != '[') return 0;
+    while (s < end && *s >= '0' && *s <= '9' && d < 4) ++s, ++d;
+    return d >= 1 && d <= 3 && s + 1 < end && *s == ':' && s[1] >= '0' && s[1] <= '9';
+}
+
+/* "[mm:ss.00]" for line k (k < 6000) at out; its length, 10. */
+static int ly_lrc_stamp(char *out, unsigned k) {
+    unsigned m = k / 60, s = k % 60;
+    out[0] = '[', out[1] = (char)('0' + m / 10), out[2] = (char)('0' + m % 10), out[3] = ':';
+    out[4] = (char)('0' + s / 10), out[5] = (char)('0' + s % 10), out[6] = '.', out[7] = out[8] = '0', out[9] = ']';
+    return 10;
+}
+
+/* The timed copy of the n bytes at src (its BOM skipped) into f; the lines written, 0 for none (a write failed). */
+static unsigned ly_lrc_copy(void *f, const char *p, const char *end) {
+    unsigned k = 0, blank = 0;
+    char line[10 + LY_LRC_LINE + 1];
+    while (p < end && k < LY_LRC_LINES) {
+        const char *e = p, *b;
+        int o, t, len;
+        while (e < end && *e != '\n' && *e != '\r') ++e;
+        b = e;
+        while (b > p && (b[-1] == ' ' || b[-1] == '\t')) --b; /* (the reader trims the right too) */
+        len = (int)(b - p);
+        if (len > LY_LRC_LINE) {
+            len = LY_LRC_LINE;
+            while (len > 0 && ((unsigned char)p[len] & 0xc0) == 0x80) --len; /* p[len] starts the character cut off */
+        }
+        t = 0;
+        while (t < len && (p[t] == ' ' || p[t] == '\t')) ++t;
+        if (t == len) { /* blank: one between two lines of text, none at the start or the end */
+            blank = k > 0;
+        } else {
+            if (blank && k + 1 < LY_LRC_LINES) {
+                o = ly_lrc_stamp(line, k);
+                line[o++] = '\n';
+                if (fwrite(line, 1, (unsigned)o, f) != (unsigned)o) return 0;
+                ++k;
+            }
+            blank = 0;
+            o = ly_lrc_stamp(line, k);
+            for (t = 0; t < len; ++t) line[o++] = p[t] == '[' ? '(' : p[t] == ']' ? ')' : p[t];
+            line[o++] = '\n';
+            if (fwrite(line, 1, (unsigned)o, f) != (unsigned)o) return 0;
+            ++k;
+        }
+        p = e < end && *e == '\r' && e + 1 < end && e[1] == '\n' ? e + 2 : e + 1;
+    }
+    return k;
+}
+
+void *ly_lrc_open(const char *path, const char *mode) {
+    unsigned n = 0, i, b = 0, k = 0, text = 0;
+    char *src;
+    void *f;
+    ly_plain_n = 0;
+    if (!access(KILL_SD, F_OK)) return fopen(path, mode); /* the kill switch: stock's reader as it is */
+    src = m1_read_file(path, LY_LRC_CAP + 1, &n);
+    if (!src) return fopen(path, mode);
+    if (n >= 3 && (unsigned char)src[0] == 0xef && (unsigned char)src[1] == 0xbb && (unsigned char)src[2] == 0xbf)
+        b = 3;
+    for (i = b; i < n && n <= LY_LRC_CAP; ++i) {
+        if (src[i] == '[' && ly_lrc_tag(src + i, src + n)) break;
+        text |= src[i] != ' ' && src[i] != '\t' && src[i] != '\r' && src[i] != '\n';
+    }
+    if (n > LY_LRC_CAP || i < n || !text || !(f = fopen(LY_LRC_TMP, "w"))) {
+        free(src);
+        return fopen(path, mode);
+    }
+    k = ly_lrc_copy(f, src + b, src + n);
+    free(src);
+    if (fclose(f) || !k || !(f = fopen(LY_LRC_TMP, mode))) {
+        unlink(LY_LRC_TMP);
+        return fopen(path, mode);
+    }
+    unlink(LY_LRC_TMP); /* (open: the reader reads it to its fclose) */
+    ly_plain_n = (unsigned short)k;
+    return f;
+}
 
 /* The damped spring, 1024 x g(t) every 10 ms, g = e^(-zeta wn t) (cos wd t + zeta / sqrt(1 - zeta^2) sin wd t), zeta 0.72, wn 12 /s, wd = wn sqrt(1 - zeta^2):
  * 1 at 0, -0.038 at 380 ms (the overshoot), -0.001 at 640 ms. test/pod/lyrics.py computes the same numbers. */
@@ -199,6 +301,19 @@ static unsigned ly_sig(int n) {
     h = (h ^ (unsigned)ly_time(0)) * FNV_PRIME;
     h = (h ^ (unsigned)ly_time(n - 1)) * FNV_PRIME;
     return h | !h;
+}
+
+/* The n rows (n > 0) are unsynced lyrics: the last file the reader opened was ly_lrc_open's timed copy of as many lines (or more than LY_MAX of them), the local lyric deque
+ * still holds that copy's entries, and the rows' times are the copy's, 0, 1, 2 and so on. mclLoadExLyric empties the deque for every track, also one whose .lrc is missing (the
+ * reader returns before its fopen, so ly_plain_n is not reset); online lyrics fill a deque of their own (pdeq_onlinelyric). So neither a short synced file (one line at 0) nor rows
+ * of another source (online lyrics after a plain file) pass for it. */
+static int ly_is_plain(int n) {
+    int i;
+    if (!ly_plain_n || (n != ly_plain_n && !(n == LY_MAX && ly_plain_n > LY_MAX))) return 0;
+    if (mclGetLyricSize() != (int)ly_plain_n) return 0;
+    for (i = 0; i < n; ++i)
+        if (ly_time(i) != i) return 0;
+    return 1;
 }
 
 /* The code points of the bold face lyrics.ttf (the Inter Bold subset of tools/font_inter.py, less the combining marks and U+200B): test/pod/lyrics.py checks every
@@ -389,6 +504,7 @@ static int ly_pitch(int i) { return ly_rows(i) * LYH + LYG; }
  * LY_ANCHOR_ROOM px above the view's bottom, but not above LY_ANCHOR_MIN (LY_LINES_MAX rows from there end inside the view). */
 __attribute__((noinline)) int ly_anchor(int i) {
     int a = LYVH - LY_ANCHOR_ROOM - LYH - ly_pitch(i);
+    if (ly.plain) return LY_PLAIN_TOP;
     return a >= LYANC ? LYANC : a < LY_ANCHOR_MIN ? LY_ANCHOR_MIN : a;
 }
 
@@ -503,7 +619,9 @@ static void ly_hide(int slot) {
 /* Line i at y in the box: the label of its slot takes the text, style, size, opacity and place it needs. */
 static void ly_place(int i, int y) {
     int slot = i % LY_POOL, rows = ly_rows(i), face = ly.fc[i];
-    unsigned op = ly.browse ? (i == ly.cur ? 255 : LY_BROWSE_OP) : ly_opacity(i - (ly.cur < 0 ? -1 : ly.cur));
+    unsigned op = ly.plain    ? 255
+                  : ly.browse ? (i == ly.cur ? 255 : LY_BROWSE_OP)
+                              : ly_opacity(i - (ly.cur < 0 ? -1 : ly.cur));
     void *w = ly.lab[slot];
     op = op * ly_edge(y, rows) / 255;
     if (!op) { /* faded out at the edge */
@@ -644,10 +762,12 @@ static void ly_move(int nb) {
 /* The anchored line is the current one's (or the first): the song moved on, or the user stopped scrolling. */
 static void ly_follow(void) { ly_move(ly.cur < 0 ? 0 : ly.cur); }
 
-/* After a manual move: the anchored line is the one nearest LY_ANCHOR again (its top under half a pitch from it), and the first / last line stop at their anchor.
- * t is the anchored line's top from LY_ANCHOR; man is counted from the line's own anchor (ly_anchor), so nothing jumps when the anchored line changes. */
-static void ly_rebase(void) {
-    int t = ly.man + ly_anchor(ly.base) - LYANC;
+/* After a manual move: the anchored line is the one nearest the reference line again (its top under half a pitch from it), and the first / last line stop at their anchor.
+ * The reference is LY_ANCHOR, for unsynced lyrics LY_PLAIN_TOP (every line's ly_anchor): measured from LY_ANCHOR, a small drag down at their start would move base off the
+ * first line, so the first line's stop (ly_rebase) would not hold. t is the anchored line's top from the reference; man is counted from the line's own anchor (ly_anchor), so
+ * nothing jumps when the anchored line changes. */
+static void ly_norm(void) {
+    int ref = ly.plain ? LY_PLAIN_TOP : LYANC, t = ly.man + ly_anchor(ly.base) - ref;
     while (ly.base > 0 && t > ly_pitch(ly.base - 1) / 2) {
         ly.base -= 1;
         t -= ly_pitch(ly.base);
@@ -656,9 +776,31 @@ static void ly_rebase(void) {
         t += ly_pitch(ly.base);
         ly.base += 1;
     }
-    ly.man = t - (ly_anchor(ly.base) - LYANC);
-    if (ly.base == 0 && ly.man > 0) ly.man = 0;
-    if (ly.base >= ly.n - 1 && ly.man < 0) ly.man = 0;
+    ly.man = t - (ly_anchor(ly.base) - ref);
+}
+
+/* Unsynced lyrics stop when the last line is in full view: its top no higher than where its first row's centre meets the bottom fade (ly_edge), and its last row LY_ANCHOR_ROOM px
+ * above the view's bottom for a tall line. Scrolled further, the lines come down by the difference. The walk stops at the first line at or below that place, so a drag far from
+ * the end measures only the lines on the screen. */
+static void ly_plain_floor(void) {
+    int i, y = ly_anchor(ly.base) + ly.man, lim = LYVH - LY_FADE - LYH / 2, tall;
+    for (i = ly.base; i < ly.n; ++i) {
+        if (y >= lim) return;
+        if (i < ly.n - 1) y += ly_pitch(i);
+    }
+    tall = LYVH - LY_ANCHOR_ROOM - ly_rows(ly.n - 1) * LYH;
+    if (tall < lim) lim = tall;
+    if (y < lim) {
+        ly.man += lim - y;
+        ly_norm();
+    }
+}
+
+static void ly_rebase(void) {
+    ly_norm();
+    if (ly.plain) ly_plain_floor();
+    if (ly.base == 0 && ly.man > 0) ly.man = 0; /* (unsynced lines shorter than the view stay at the top) */
+    if (!ly.plain && ly.base >= ly.n - 1 && ly.man < 0) ly.man = 0;
 }
 
 /* The last line whose time has come at pos (-1 none), searched from the current one: the times grow. */
@@ -696,7 +838,7 @@ static void ly_poll(unsigned now) {
     pos = st == 1 ? 0 : get_playtime(); /* as the stock tick (0x5385b4..0x5385e8): stopped is 0 */
     if (pos >= 0) {
         ly_clock(pos, now, st == MB_PLAYING);
-        if (!ly.hold) {
+        if (!ly.hold && !ly.plain) { /* (unsynced: no line is ever current) */
             int cur = ly_find(pos);
             if (cur != ly.cur) {
                 ly.cur = cur;
@@ -743,7 +885,8 @@ void ly_tick(void) {
     if (n <= 0) {
         if (ly.n) { /* the lyrics are gone: the stock message shows */
             memset(ly.ht, 0, sizeof ly.ht), ly.miss = ly.redo = ly.skip = 0;
-            ly.n = 0, ly.cur = -1, ly.base = 0, ly.man = 0, ly.browse = ly.hold = 0, ly.sig = 0, ly.dirty = 1;
+            ly.n = 0, ly.cur = -1, ly.base = 0, ly.man = 0, ly.browse = ly.hold = 0, ly.sig = 0, ly.dirty = 1,
+            ly.plain = 0;
             ly.pad = ly.fresh = ly.ck_ok = 0, memset(ly.dop, 0, sizeof ly.dop);
             memset(ly.line, 0xff, sizeof ly.line);
             memset(ly.mv, 0xff, sizeof ly.mv);
@@ -754,6 +897,7 @@ void ly_tick(void) {
         for (i = 0; i < LY_POOL; ++i) ly.line[i] = ly.mv[i] = -1, ly.sel[i] = 0xff, ly.o0[i] = 0;
         ly.n = n, ly.cur = -1, ly.base = 0, ly.man = 0, ly.gd = 0, ly.browse = ly.hold = 0, ly.sig = ly_sig(n),
         ly.dirty = 1;
+        ly.plain = ly_is_plain(n);
         ly.pad = ly.ck_ok = 0, ly.fresh = 1, memset(ly.dop, 0, sizeof ly.dop);
     }
     if (ly.n > 0) {
@@ -762,9 +906,10 @@ void ly_tick(void) {
         ly_poll(now);
         if (ly.down || ly.browse) ly_awake();
         if (ly.browse && !ly.down &&
-            (int)(now - ly.touch_at) >= LY_IDLE_MS) { /* the user let go: back to the current line, eased */
+            (int)(now - ly.touch_at) >=
+                LY_IDLE_MS) { /* the user let go: back to the current line, eased; unsynced lines stay */
             ly.browse = 0;
-            ly_follow();
+            if (!ly.plain) ly_follow();
         }
     }
     if (ly.dirty) {
@@ -791,7 +936,7 @@ static void ly_goto(int line) {
 
 static void ly_tap(int x, int y) {
     int pt[2], s;
-    if (ly.noseek) return;
+    if (ly.noseek || ly.plain) return; /* (an unsynced line's time is its index, no place in the song) */
     pt[0] = x, pt[1] = y;
     widget_to_local(ly.box, pt);
     for (s = 0; s < LY_POOL; ++s)
