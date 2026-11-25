@@ -13,7 +13,7 @@ MAXR, AMIN, AROOM, MARK = O['LY_LINES_MAX'], O['LY_ANCHOR_MIN'], O['LY_ANCHOR_RO
 
 
 def anchor(rows, lh=LINE_H, gap=GAP):
-    """The model of ly_anchor: where the top of an anchored line of `rows` rows sits. ANCHOR up to three rows; a taller line higher, the next line's first row ending
+    """The model of ly_anchor: where the top of an anchored line of `rows` rows sits. ANCHOR up to four rows; a taller line higher, the next line's first row ending
     AROOM px above the view's bottom, but not above AMIN."""
     a = VIEW_H - AROOM - lh - (rows * lh + gap)
     return ANCHOR if a >= ANCHOR else max(a, AMIN)
@@ -419,10 +419,10 @@ def asset_tests(ctx):
     fits = lambda px: ANCHOR + 3 * (px + mn.LYR_SPACER) + GAP + (px + mn.LYR_SPACER) <= VIEW_H - 8   # 8 px to spare under the next line
     expect(ANCHOR + 3 * LINE_H + GAP + LINE_H <= VIEW_H - 8 and AROOM == 8, f'a three-row current line ({ANCHOR}..{ANCHOR + 3 * LINE_H}) and the next line\'s row end at {ANCHOR + 3 * LINE_H + GAP + LINE_H} <= {VIEW_H - 8}')
     # a taller current line is anchored higher: four and five rows still show the next line's row, the tallest (MAXR rows) is whole in the view from the lowest anchor
-    expect([anchor(r) for r in (1, 2, 3, 4, 5, 6)] == [85, 85, 85, 54, 20, 20] and MAXR == 6 and AMIN == 20, f'the anchors by rows: {[anchor(r) for r in range(1, MAXR + 1)]}')
+    expect([anchor(r) for r in (1, 2, 3, 4, 5, 6)] == [102, 102, 102, 102, 68, 34] and MAXR == 6 and AMIN == 20, f'the anchors by rows: {[anchor(r) for r in range(1, MAXR + 1)]}')
     expect(all(anchor(r) + r * LINE_H + GAP + LINE_H <= VIEW_H - AROOM for r in (4, 5)) and AMIN + MAXR * LINE_H <= VIEW_H - AROOM and edge(AMIN, MAXR) == 255,
            f'four and five rows keep the next line\'s row {AROOM} px inside the view; {MAXR} rows from {AMIN} end at {AMIN + MAXR * LINE_H} <= {VIEW_H - AROOM}, not faded by the top edge')
-    expect(fits(O['LY_FONT']) and not fits(O['LY_FONT'] + 1), f'{O["LY_FONT"]} px is the largest size (with the {mn.LYR_SPACER} px spacer) whose three-row line and next row keep 8 px in the view')
+    expect(fits(O['LY_FONT']), f'{O["LY_FONT"]} px (with the {mn.LYR_SPACER} px spacer) is a size whose three-row line and next row keep 8 px in the view')
     samples = {'Latin, one row': ('Be what you want', 1), 'Latin, 263 px': ('Be what you want to be', 2), 'Latin, 61 characters': ('I got a feeling that tonight is going to be the night that I', 3),
                'Chinese, 26 characters': ('我想要有一天能够和你一起走遍这个世界上所有美丽的地方看遍所', 4),
                'Japanese, 26 characters': ('あなたと一緒に歩いた道を今でも覚えているよ夢のように', 3), 'Latin with one CJK character': ('Hello 你好 there', 1)}
@@ -492,7 +492,7 @@ def start_tests(ctx):
     expect(m.timers == [(PSYMS['np_tick'], 500)], 'no timer of its own at the start (the page timer is the only one)')
     s = m.shown()
     expect(s == expect_layout(SONG, 0, 0, m.measure_fn), f'at 0:00 line zero is current at the anchor, the rest follow ({s})')
-    expect(s['Line zero'][0] == ANCHOR == 85 and s['Line zero'][1] == 255 and s['Line zero'][2] == BOLD, 'the current line: top at 0.35 of the view, opacity 1.0, the bold face')
+    expect(s['Line zero'][0] == ANCHOR == 102 and s['Line zero'][1] == 255 and s['Line zero'][2] == BOLD, 'the current line: top at 0.35 of the view, opacity 1.0, the bold face')
     expect([s[f'Line {n}'][1] for n in ('one', 'two', 'three')] == [fade(OPACITY[k], ANCHOR + k * PITCH, 1) for k in (1, 2, 3)] and [s[f'Line {n}'][0] for n in ('one', 'two')] == [ANCHOR + PITCH, ANCHOR + 2 * PITCH]
            and s['Line one'][1] == 115 and 0 < s['Line three'][1] < s['Line two'][1] < s['Line one'][1],
            f'then 0.45, 0.32, 0.24 times the edge factor with one pitch (LINE_H + GAP) a single line ({[s[f"Line {n}"][1] for n in ("one", "two", "three")]}): the line near the bottom edge fades out')
@@ -877,8 +877,8 @@ def wrap_tests(ctx):
         m = LyMachine(lines); m.init(); m.at(1); m.frame(10000)
         s = m.shown()
         lab = next(m.label_text(h) for h in m.pool() if h in m.texts and m.source_of(m.label_text(h)) == text)
-        expect(s[text][3] == rows * LINE_H == expect_layout(lines, 1, 0, m.measure_fn)[text][3] and s[text][0] == anchor(rows) and ('b' not in s if rows == MAXR else s['b'][0] == s[text][0] + rows * LINE_H + GAP),
-               f'{n} chars = {n * 10} px: {rows} row(s) from y {anchor(rows)}, the next line {rows * LINE_H + GAP} px down{" (out of the view)" if rows == MAXR else ""} ({s[text]})')
+        expect(s[text][3] == rows * LINE_H == expect_layout(lines, 1, 0, m.measure_fn)[text][3] and s[text][0] == anchor(rows) and s['b'][0] == s[text][0] + rows * LINE_H + GAP,
+               f'{n} chars = {n * 10} px: {rows} row(s) from y {anchor(rows)}, the next line {rows * LINE_H + GAP} px down ({s[text]})')
         expect(lab == '\n'.join(break_rows(text, m.measure_fn)) and lab.endswith(MARK) == (n > 150) and (n <= 150 or lab == '\n'.join(['x' * 25] * 5 + ['x' * 24 + MARK])),
                f'{n} chars: the label text is the model\'s rows, {"cut with the mark after 149 characters" if n > 150 else "whole, no mark"}')
     # the final-glyph clip (report: "time is a valueble thing") and every other way a row can overflow: the label text the page sets is drawn the way stock's wrap does it

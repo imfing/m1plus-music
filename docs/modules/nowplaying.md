@@ -33,8 +33,8 @@ The window is 320 x 450 px. `tools/mod_nowplaying.py` defines widget geometry an
 has 12 px corners. Existing widget names are kept.
 
 - Art page: `np_tint.png`, a black gradient with alpha 38..235 over the window tone.
-- Info page: `np_scrim.png`, 320 x 324 at y 8, alpha 128 in the centre, 36-row linear edges.
-- Lyrics page: `np_scrim_lyrics.png`, 320 x 332 at y 0, alpha 68, 44-row smoothstep edges.
+- Info page: `np_scrim.png`, 320 x 364 at y 8, alpha 128 in the centre, 36-row linear edges.
+- Lyrics page: `np_scrim_lyrics.png`, 320 x 378 at y 0, alpha 68, 42-row smoothstep edges.
 - Notes page: `img_np_scrim_notes` (the info scrim again) and `np_n_scroll` in `view_lyrics`, both hidden and
   insensitive in the asset, so without the payload the page is the lyrics page.
 - Decorative images and time labels are insensitive.
@@ -55,6 +55,8 @@ has 12 px corners. Existing widget names are kept.
 - The mode button keeps its four steps and looks; the shown mode follows the Shuffle flag, see
   [shuffle](shuffle.md). While an episode or an audiobook part plays it is the speed button, see
   "Spoken audio controls".
+- The star and More buttons are children of the art page (slide page 1), as the title and artist
+  are, so a swipe takes them away with the cover.
 - Favourite is a filled or outline star. While a podcast plays it is a saved/unsaved bookmark.
   While a server track plays it is the server's favourite ([subsonic](subsonic.md)); stock's
   `manage_myfav` never writes the stream record.
@@ -90,6 +92,15 @@ each time it returns to the front). Stock writes `label_index` only on a track c
 tick (`np_index`) writes `%d/%d` from `mclGetPlayPos() + 1` and the play queue size, only when the text changed,
 so Play Next, Add to Queue and Clear show at once. The label is hidden when the setting is off, the queue holds
 fewer than two tracks, or the position is outside it. A page without `label_index` is left alone.
+
+**Page dots.** `slide_indicator` (`DOTS`, 4 px dots) sits in the same place, centred on the times' digits. With the
+middle free the dots show. While the position shows, `np_dots_sync` (each tick, after `np_index`) keeps the dots at
+opacity 0 and the label at 255. A page change (the slide view's `EVT_VALUE_CHANGED`, `np_dots_flash`) brings the dots
+in over `NP_DOTS_FADE_MS` (200), holds them until `NP_DOTS_MS` (1500) after the change, and fades them out again;
+`label_index` always has 255 minus the dots' opacity (`np_dots_set`). A change during a fade restarts from the
+opacity it has. The frame timer (`np_dots_frame`, every `NP_FRAME_MS`) ends when the dots are out, or at once when
+the position goes away (the dots then stay). Without a frame timer the position keeps the middle. A page without
+`slide_indicator` leaves `label_index` alone. Without the payload the dots always show and `label_index` is hidden.
 
 ## Spoken audio controls
 
@@ -182,7 +193,7 @@ failed style calls or refused listeners leave the bar untouched.
 ## Information page
 
 Page 3 (`view_info`) is text and hairlines on the existing `np_scrim`. Everything but the scrim is
-inside one scroll container, `np_i_scroll` (y 36, 320 x 252), which clips it. Y values below are
+inside one scroll container, `np_i_scroll` (y 36, 320 x 300), which clips it. Y values below are
 at offset 0.
 
 | part | layout |
@@ -196,7 +207,7 @@ at offset 0.
   (`np_bare`, `np_ihead_vis`): the notes page already shows the same one. The header's widgets are
   hidden, the rows start at `NPI_BARE_Y` (30, the first label's text at the notes title's y 38),
   and the first row shown has no hairline. The five rows and a two-line path end at y 267, inside
-  the 252 px view, so the page does not scroll. The header's text is still written. Model:
+  the 300 px view, so the page does not scroll. The header's text is still written. Model:
   `flow(..., bare=True)`; preview `page=2,notes=NAME`.
 - **Title.** One line when it fits; otherwise it breaks at the last space that fits 212 px, even
   when line 2 then ends in an ellipsis. Only with no such space (CJK, a first word wider than the
@@ -227,7 +238,7 @@ at offset 0.
 - Fallback is per part: a part whose widgets the asset lacks, or whose stock text is unreadable,
   shows stock's label again. The next good text takes it back.
 - **Scrolling.** `np_info_scroll(off)` is the one place that moves the content, clamped to
-  `0..ih-252`. A vertical drag of 10 px or more moves the content with the finger; no overscroll
+  `0..ih-300`. A vertical drag of 10 px or more moves the content with the finger; no overscroll
   and no fling. A swipe that goes sideways first still turns the page, and a tap does nothing.
   Once the drag is vertical its MOVEs return `RET_STOP`, so the slide view is aborted and a
   sideways drift turns no page (the direction lock in [lyrics](lyrics.md)). Only the container
@@ -243,7 +254,7 @@ at offset 0.
 While spoken audio plays (`np.spoken`: a podcast episode or a book part) the lyrics slot (page 2) shows
 an episode notes page; music keeps the lyrics page. It is the information page's look: the same
 `np_scrim` (`img_np_scrim_notes`), the same header, one hairline, then the notes, all inside one
-clipping scroll container `np_n_scroll` (y 36, 320 x 252). The asset has them hidden, and hidden
+clipping scroll container `np_n_scroll` (y 36, 320 x 300). The asset has them hidden, and hidden
 widgets are insensitive; only the container is made sensitive while the page shows. A page with
 any of the widgets missing (`np.nok` is 0) keeps the lyrics page, and the information page keeps
 its header; otherwise the information page is bare. Model: `notes_layout` in

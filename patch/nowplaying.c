@@ -176,6 +176,9 @@ static struct {
     int scrub; /* 1 while a finger is on it: the bar goes to NP_BAR_SCRUB px thick, 0 to NP_BAR */
     int bsz, bfrom; /* its bar_size now, and where the ease started */
     unsigned bt0, btimer; /* the ease's start (time_now_ms), its frame timer (0 none) */
+    void *dots; /* slide_indicator, the page dots in the middle of the times row (np_dots_*) */
+    int dop, dfrom; /* the dots' opacity now (label_index has 255 - dop), and where a page change's fade started */
+    unsigned dt0, dtimer; /* that page change's time (time_now_ms), its frame timer (0 none) */
 } np __attribute__((section(".scratch")));
 
 /* A dark, a little desaturated tone of the cover's average colour (r, g, b bytes), as a color_t word
@@ -1282,6 +1285,49 @@ static int np_on_info_fade(void *ctx, void *e) {
     return RET_OK;
 }
 
+/* The page dots share the middle of the times row with the track position (label_index, np_index). With the middle free the dots show; while
+ * the position shows there, the dots take its place for NP_DOTS_MS after a page change and hand it back: each fades over NP_DOTS_FADE_MS,
+ * the other at 255 - the dots' opacity. */
+static void np_dots_set(int op) {
+    if (op == np.dop || !np.dots) return; /* (a page without the dots leaves the position alone) */
+    np.dop = op;
+    widget_set_opacity(np.dots, op), widget_invalidate_force(np.dots, (void *)0);
+    if (np.idx) widget_set_opacity(np.idx, 255 - op), widget_invalidate_force(np.idx, (void *)0);
+}
+
+/* The dots' opacity el ms after a page change, from np.dfrom: in over NP_DOTS_FADE_MS, held, out over NP_DOTS_FADE_MS from NP_DOTS_MS. */
+static int np_dots_at(int el) {
+    if (el < NP_DOTS_FADE_MS) return np.dfrom + (255 - np.dfrom) * el / NP_DOTS_FADE_MS;
+    if (el < NP_DOTS_MS) return 255;
+    if (el < NP_DOTS_MS + NP_DOTS_FADE_MS) return 255 - 255 * (el - NP_DOTS_MS) / NP_DOTS_FADE_MS;
+    return 0;
+}
+
+static int np_dots_frame(const void *timer) {
+    int el;
+    (void)timer;
+    if (!np.win || !np.dtimer) return RET_OK;
+    el = (int)(time_now_ms() - np.dt0);
+    np_dots_set(np.idxn ? np_dots_at(el) : 255); /* the position went away meanwhile: the dots stay */
+    if (np.idxn && el < NP_DOTS_MS + NP_DOTS_FADE_MS) return RET_REPEAT;
+    np.dtimer = 0; /* RET_OK ends this timer */
+    return RET_OK;
+}
+
+/* Each tick, after np_index: the dots with the middle free, the position without a page change's fade running. */
+static void np_dots_sync(void) {
+    if (!np.dtimer) np_dots_set(np.idxn ? 0 : 255);
+}
+
+/* The slide view's page changed: the dots come in over the position (a second change restarts the hold from where the fade is). */
+static void np_dots_flash(void) {
+    if (!np.dots || !np.idxn) return;
+    np.dfrom = np.dop;
+    np.dt0 = time_now_ms();
+    if (!np.dtimer) np.dtimer = timer_add(np_dots_frame, (void *)0, NP_FRAME_MS);
+    if (!np.dtimer) np_dots_set(0);
+}
+
 /* The slide view left the info page or the notes page: its content is at the top when the page comes back. */
 static void np_page_reset(void) {
     if (np.si.off && np.sv && widget_get_prop_int(np.sv, "value", NPI_PAGE) != NPI_PAGE) np_info_scroll(0);
@@ -1290,7 +1336,7 @@ static void np_page_reset(void) {
 
 static int np_on_page(void *ctx, void *e) {
     (void)e;
-    if (np.win && ctx == np.sv) np_page_reset();
+    if (np.win && ctx == np.sv) np_page_reset(), np_dots_flash();
     return RET_OK;
 }
 
@@ -1608,6 +1654,7 @@ static void np_work_lit(void) {
     np_cover();
     np_time();
     np_index();
+    np_dots_sync();
     np_info();
     ly_tick(); /* the lyrics page (patch/lyrics.c) */
     np_fav_sync();
@@ -1691,6 +1738,7 @@ static void np_stop(void) {
     m1_timer_stop(&np.anim);
     m1_timer_stop(&np.pchk);
     m1_timer_stop(&np.btimer);
+    m1_timer_stop(&np.dtimer);
     if (np.sbmp) bitmap_destroy(np.sbmp);
     mb_art_free(&np.ia);
     memset(&np, 0, sizeof np);
@@ -1837,6 +1885,8 @@ static void np_start(void *win) {
     np.shown = np.eshown = -1;
     np.idx = widget_lookup(win, "label_index", 1);
     np.idxon = np_pos_setting();
+    np.dots = widget_lookup(win, "slide_indicator", 1);
+    np.dop = 255; /* the asset's: the dots and the (hidden) position both opaque */
     np.shrinkon = np_shrink_setting();
     for (n = 0; n < NP_INFO_N; ++n) np.info[n] = widget_lookup(win, np_info_names[n], 1);
     for (n = 0; n < NI_N; ++n) np.iw[n] = widget_lookup(win, np_iw_names[n], 1);
@@ -1872,6 +1922,8 @@ static void np_start(void *win) {
     m1_bind(win, "btn_queue", np_on_queue, (void *)0);
     np.sv = widget_lookup(win, "slide_view",
                           1); /* its page: the cover springs only while the art page shows; the info page's reset */
+    if (np.sv)
+        widget_on(np.sv, EVT_VALUE_CHANGED, np_on_page, np.sv); /* the scroll resets and the dots (np_dots_flash) */
     ly_start(win);
     np.si.w = np.iw[NI_SCROLL];
     if (np.irow && np.ihead) np_scroll_listen(np.si.w); /* the content's touch and fades */
@@ -1884,7 +1936,6 @@ static void np_start(void *win) {
     if (np.ihead) {
         mb_art_size(&np.ia, NPI_ART, NPI_ART_R);
         widget_on(np.iw[NI_ART], EVT_AFTER_PAINT, np_on_info_art, (void *)0);
-        if (np.sv) widget_on(np.sv, EVT_VALUE_CHANGED, np_on_page, np.sv);
         if (np.info[1]) { /* label_album: the header shows the record's album */
             widget_set_visible(np.info[1], 0, 0);
             widget_set_sensitive(np.info[1], 0);

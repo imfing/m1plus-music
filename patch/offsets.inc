@@ -522,6 +522,10 @@
 #define NP_BAR 6
 #define NP_BAR_SCRUB 12
 #define NP_SCRUB_MS 250 /* the ease either way (np_bar_frame) */
+/* The page dots (slide_indicator) in the middle of the times row: while the track position shows there, a page change brings the dots in for NP_DOTS_MS
+ * (from the change to the start of their fade out), each fade NP_DOTS_FADE_MS (np_dots_at). */
+#define NP_DOTS_MS 1500
+#define NP_DOTS_FADE_MS 200
 /* Paused, the cover is NP_ART_SMALL px (0.80), centred on the full cover at window x NP_ART_X; its shadow (img_np_shadow, NP_SHADOW_PAD px round the art at full size)
  * scales with it and fades with the size to NP_SHADOW_DIM opacity at the small one. np_art_size: a critically damped spring of NP_SHRINK_MS to the small size, an underdamped one of NP_GROW_MS
  * (about 3 % overshoot, 2 px) back, a frame every NP_FRAME_MS. A tap on
@@ -558,7 +562,7 @@
 #define NPI_X 16
 #define NPI_R 304
 #define NPI_TOP 36
-#define NPI_VIEW_H 252
+#define NPI_VIEW_H 300
 #define NPI_ART 64
 #define NPI_ART_Y 36
 #define NPI_ART_R 8
@@ -593,7 +597,7 @@
 #define NPN_PAGE 1 /* the notes page: the slide view's second page, the lyrics slot while spoken audio plays (np_notes_layout: the hairline at NPI_ROW_Y plus the title shift, the notes NPN_GAP under it and NPN_GAP of air under the last line; its header, scrim, scroll and fades are the info page's) */
 #define NPN_GAP 12
 #define NP_SCRIM_Y 8
-#define NP_SCRIM_H 324
+#define NP_SCRIM_H 364
 #define NP_SCRIM_ALPHA 128
 #define NP_SCRIM_EDGE 36
 /* The status bar follows the page (EXPERIMENTAL, np_bar_*): the window events of the page (widget_on on the window:
@@ -615,10 +619,10 @@
  * (at most LY_MAX; each row's int property "lrc_time" and its text, LY_BUF bytes). A move of the anchored line is a damped spring of LY_SPRING_MS per line (a table of 65 entries, overshoot cut at LY_OVERSHOOT_MAX px), each line starting LY_DELAY_MS
  * (shrinking 20/21 a line) after the one before, in LY_FRAME_MS steps; a move over LY_SNAP_LINES lines jumps. The window of lines laid out round the anchor is LY_POOL, those
  * further than LY_OFF_MAX px are not measured (4 x LY_VIEW_H, the most an offset can be, ly_move: a move of LY_SNAP_LINES lines of LY_LINES_MAX rows is 929 px, and a line that was on the screen has to stay laid out until its spring has taken it out). Touch: a vertical drag over LY_TAP_PX scrolls, LY_IDLE_MS after the last touch the lines come back, a tap under LY_TAP_PX (not within
- * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_FIT_W (LY_W less the style's 0 px left and 4 px right margins) is what a one-row line may measure, LY_ROW_W (one less: stock's wrap check adds 1 px) what a row of a broken line may (ly_break). A line past LY_LINES_MAX rows is cut and ends in LY_MARK (U+2026). An anchored line of more than three rows sits higher (ly_anchor): the next line's first row ends LY_ANCHOR_ROOM px above the view's bottom, the line's top not above LY_ANCHOR_MIN. get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
+ * LY_COAST_MS of a started move) seeks (seek_time) and the tick leaves the lines alone for LY_HOLD_MS. Opacity table 1.0 / 0.45 / 0.32 / 0.24 / 0.18, times an edge factor over the last LY_FADE px at the top and bottom of the view. LY_FIT_W (LY_W less the style's 0 px left and 4 px right margins) is what a one-row line may measure, LY_ROW_W (one less: stock's wrap check adds 1 px) what a row of a broken line may (ly_break). A line past LY_LINES_MAX rows is cut and ends in LY_MARK (U+2026). An anchored line of more than four rows sits higher (ly_anchor): the next line's first row ends LY_ANCHOR_ROOM px above the view's bottom, the line's top not above LY_ANCHOR_MIN. get_playtime is the stock call the lyric timers compare "lrc_time" with (0x5385e0). */
 #define LY_W 264
-#define LY_VIEW_H 244
-#define LY_ANCHOR 85
+#define LY_VIEW_H 292
+#define LY_ANCHOR 102
 #define LY_FONT 30
 #define LY_LINE_H 34
 #define LY_GAP 12
@@ -636,7 +640,7 @@
 #define LY_OVERSHOOT_MAX 6
 #define LY_DELAY_MS 50
 #define LY_SNAP_LINES 4
-#define LY_OFF_MAX 976
+#define LY_OFF_MAX 1168
 /* The idle lyrics page (patch/idlelyrics.c, docs/modules/idlelyrics.md; tools/pod_ui.py build_idlelyrics_page reads these): a fullscreen 320 x 480 window (no status bar). Header IL_HEAD_H high: the cover IL_ART px at
  * (IL_ART_X, IL_ART_Y) with IL_ART_R px corners (the mini bar's mb_art_* machinery at another size), the title (IL_TITLE_PX) and the artist (IL_ARTIST_PX) IL_TEXT_W wide from IL_TEXT_X, centred on the cover
  * with a 23 px line pitch (a size up from the mini bar's 17 / 16 px at 21). The lyrics view np-lyrics-like: IL_BOX_X, IL_BOX_Y, LY_W x IL_BOX_H (the engine's anchor is 0.35 of it, ly_retarget); the hint IL_HINT_PX px

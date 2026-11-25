@@ -178,7 +178,7 @@ class Painter:
         return im
     def info_page(self, win):
         """The information page as patch/nowplaying.c lays it out (np_header, np_quality, np_row, np_flow), from the shared model (mod_nowplaying qparse / flow / loc_wrap) and the built font. The content is drawn in
-        page coordinates on a canvas as tall as it is; the scroll_view shows the 252 px from y 36 + self.scroll, or with self.full the whole content is returned as a taller window image."""
+        page coordinates on a canvas as tall as it is; the scroll_view shows the 300 px from y 36 + self.scroll, or with self.full the whole content is returned as a taller window image."""
         I = self.info
         adv = lambda t, px: self.stb(px).layout(t)[1] if t else 0
         rows = {r: (getattr(self, 'key1', None) if r == 1 and getattr(self, 'key1', None) else MN.I_KEYS[r], v) for r, v in MN.qparse(I['quality']).items()}
@@ -250,7 +250,7 @@ class Painter:
         return self.scroll_out(win, cv, bottom)
 
     def scroll_out(self, win, cv, bottom):
-        """The content canvas cv (page coordinates, bottom its end) shown through the 252 px scroll area at self.scroll with the edge fades, or with self.full the whole content as a taller window image."""
+        """The content canvas cv (page coordinates, bottom its end) shown through the 300 px scroll area at self.scroll with the edge fades, or with self.full the whole content as a taller window image."""
         if self.full:
             tall = Image.new('RGBA', (W, bottom + 12), win.getpixel((2, 2))); tall.alpha_composite(cv); return tall
         view = cv.crop((0, MN.I_TOP + self.scroll, W, MN.I_BOTTOM + self.scroll))

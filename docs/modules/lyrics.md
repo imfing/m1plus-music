@@ -19,7 +19,7 @@ calls `ly_start`, the 500 ms `np_work` tick calls `ly_tick`, `np_stop` calls `ly
   announced by `ly_reload`: the mark waits until stock clears `force_refreshflag` (its rebuild
   ran), then the next tick reads the rows as new lyrics. The mark survives `ly_release` and
   `ly_retarget`; `ly_stop` and `ly_start` drop it.
-- `np_lyrics` is a sensitive, non-slidable, clipping `scroll_view` at (28, 44, 264, 244) in
+- `np_lyrics` is a sensitive, non-slidable, clipping `scroll_view` at (28, 44, 264, 292) in
   `view_lyrics`. `ly_start` creates 20 reusable labels and a measurement label, hides `view_lrc`
   (`visible=false`, `sensitive=false`) and installs the coverage gamma on the `lyrics` font
   ([fonts](fonts.md)). Stock's no-lyrics message stays stock's. Missing widgets or a failed label leave stock's list in
@@ -33,15 +33,15 @@ calls `ly_start`, the 500 ms `np_work` tick calls `ly_tick`, `np_stop` calls `ly
 
 ## Layout and appearance
 
-- The current line's top is anchored at 85 px (0.35 of the 244 px view). A label has up to six
+- The current line's top is anchored at 102 px (0.35 of the 292 px view). A label has up to six
   wrapped rows (`LY_LINES_MAX`), `LYH` px per row and a `LYG` px gap (see "Text size").
-- A line of more than three rows is anchored higher (`ly_anchor`): its top sits where the next
+- A line of more than four rows is anchored higher (`ly_anchor`): its top sits where the next
   line's first row still ends 8 px (`LY_ANCHOR_ROOM`) above the view's bottom, not above 20 px
-  (`LY_ANCHOR_MIN`). At Large that is 85 px up to three rows, 54 for four, 20 for five and six.
+  (`LY_ANCHOR_MIN`). At Large that is 102 px up to four rows, 68 for five and 34 for six.
   Why: LRC files with several sentences under one time stamp lost everything after row three.
 - `ly.man` counts from the anchored line's own anchor; `ly_move` adds the two anchors' difference
-  to a move and `ly_rebase` picks the line nearest the 85 px anchor, so nothing jumps.
-- Lines up to `LY_OFF_MAX` (976 px, 4 x the view, also the cap of a spring's offset) outside the
+  to a move and `ly_rebase` picks the line nearest the 102 px anchor, so nothing jumps.
+- Lines up to `LY_OFF_MAX` (1168 px, 4 x the view, also the cap of a spring's offset) outside the
   view stay laid out. The longest move that does not snap is 929 px, and a line on screen must stay
   laid out until its spring has taken it out.
 - With the intro dots a six-row first line starts one pitch (`LYH + LYG`) lower and its last row
@@ -94,7 +94,7 @@ Settings > Now Playing > **Lyrics Text Size** (picker `m1plus_lyrsize`: Small / 
   probe measures in the size it draws in. `LYH` is the font plus `spacer`, which AWTK's label paint
   uses, so layout and paint agree.
 - **Follows the size:** pitch, gap, intro pad, dot centring, `ly_anchor`, edge-fade row centres,
-  the tap map and label heights. Fixed: the 85 px anchor, the 6-row cap, `LY_ANCHOR_MIN/ROOM`,
+  the tap map and label heights. Fixed: the 102 px anchor, the 6-row cap, `LY_ANCHOR_MIN/ROOM`,
   `LY_OFF_MAX`, the pool of 20 labels and the 259 / 260 px row widths.
 - **When read.** `ly_start` reads the file. `ly_refresh` (from `np_on_foreground`) takes a changed
   size when Now Playing is in front again: it resets every label's style, height and place and drops
@@ -133,9 +133,9 @@ state is large and the lines, clock and timers would each need an owner.
   about them, so the next tick lays out from the stock rows. It is idempotent and also runs at the
   top of `ly_refresh`, so Now Playing never ticks an engine bound to a closing page. `ly_stop` clears
   the parked widgets too.
-- **Follows the view's height** (`ly.vh`): the anchor (`ly.anc`: 85 on Now Playing, 130 on the page),
+- **Follows the view's height** (`ly.vh`): the anchor (`ly.anc`: 102 on Now Playing, 130 on the page),
   `ly_anchor`'s limit, `ly_edge`'s bottom, the laid-out windows, `ly_rebase` and the offset bound
-  (4 x the height: 976, and 1488 on the page). Fixed: the pool of 20 labels and the row widths.
+  (4 x the height: 1168, and 1488 on the page). Fixed: the pool of 20 labels and the row widths.
 - **Source rows.** The page reads Now Playing's `scroll_lrc` while another window covers it. Now
   Playing's own `np_tick` does no work then (`np.fg`), so the page timer calls `ly_tick` itself.
   See [idlelyrics](idlelyrics.md) for the page.

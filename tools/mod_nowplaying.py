@@ -6,11 +6,10 @@
   28   +----------------------------+
        |   cover 264 x 264, r 12    |       slide page 1: the file is 264 px (1:1); the payload rounds the corners
  292   +----------------------------+
- 296           . o .                         micro page dots (4 px)
  305   Title                  (star)(...)   20 px white; star and More 44 px targets on 32 px translucent discs
  329   Artist                              18 px #AAAAAA
  348   ================---------------        6 px rounded progress bar (ink 360..366) in the stock 30 px seek target
- 379   1:23          5/10         -3:42    14 px #AAAAAA (digits 382..391); the right one is the remaining time, the middle one the optional track position (patch/nowplaying.c)
+ 379   1:23      . o . / 5/10     -3:42    14 px #AAAAAA (digits 382..391); the right one is the remaining time, the middle holds the 4 px page dots or the optional track position (patch/nowplaying.c)
  392   [mode] [<<]   [ || ]   [>>]  [queue]   58 px transport row in the five stock slots (glyphs 407..435)
  450
 
@@ -66,20 +65,20 @@ TINT_ALPHA = (38, 235)           # np_tint.png: black, alpha at the top .. at th
 # The lyrics and info pages put text over whatever the cover's tone is; a translucent black scrim (np_scrim.png, an asset-only
 # image, the first child of view_lyrics and view_info, insensitive) darkens the band behind it, soft at its top and bottom
 # edges. The art page keeps the full tint.
-SCRIM = (0, 8, W, 324)            # x, y, w, h in the page: y 8 .. 332; the text lies in 44 .. 288, inside the full-strength middle
+SCRIM = (0, 8, W, 364)            # x, y, w, h in the page: y 8 .. 372; the text lies in 36 .. 336, inside the full-strength middle
 SCRIM_ALPHA, SCRIM_EDGE = 128, 36 # 50 % black; the edges ramp from 0 over SCRIM_EDGE rows (test/pod/nowplaying.py)
 # The lyrics page has its own, lighter scrim (np_scrim_lyrics.png): Apple Music shows the cover's colour with no heavy black band. The bold white
 # lines need less behind them than the info page's small grey text; 68 (27 %) is the lowest alpha that keeps the current line at 4.5:1 and the next at
-# 2.3:1 on the worst tone (test/pod/lyrics.py). The edges ease in over LSCRIM_EDGE rows (smoothstep), so there is no visible band edge; the text area (44..288) is the full-strength middle.
-LSCRIM = (0, 0, W, 332)
-LSCRIM_ALPHA, LSCRIM_EDGE = 68, 44
+# 2.3:1 on the worst tone (test/pod/lyrics.py). The edges ease in over LSCRIM_EDGE rows (smoothstep), so there is no visible band edge; the text area (44..336) is the full-strength middle.
+LSCRIM = (0, 0, W, 378)
+LSCRIM_ALPHA, LSCRIM_EDGE = 68, 42
 IH = 480                         # the idle lyrics page is fullscreen (320 x 480, no status bar; patch/offsets.inc IL_H)
 ISCRIM = (0, 0, W, IH)           # np_scrim_idle.png: the same scrim over the whole window of the idle lyrics page (patch/idlelyrics.c; its ramps at the window's top and bottom, as preview_idlelyrics); np_tint_idle.png is the tint over the same 480 rows
 DOT = 10                         # the interlude dots' diameter (patch/offsets.inc LY_DOT): np_dot.png, white, anti-aliased; the payload makes three image widgets
 
 # ---- the info page (page 3): header, then eight rows; text and hairlines only, all in one scroll_view (patch/offsets.inc NPI_*, patch/nowplaying.c np_header / np_quality / np_row / np_flow)
 I_X, I_R, I_W = 16, 304, 288                       # the page's text column
-I_TOP, I_BOTTOM = 36, 288                          # the scroll_view: the text area of the page (window y 36 .. 288); a child's y is its page y minus I_TOP minus the content offset
+I_TOP, I_BOTTOM = 36, 336                          # the scroll_view: the text area of the page (window y 36 .. 336); a child's y is its page y minus I_TOP minus the content offset
 I_ART, I_ART_Y, I_ART_R = 64, 36, 8                # the cover thumbnail (patch/minibar.c mb_art_*)
 I_TEXT_X, I_TEXT_W = 92, 212                       # title / artist / album column (the title has all of it)
 I_TITLE_Y, I_TITLE_PX, I_ARTIST_Y, I_ALBUM_Y, I_META_PX = 38, 20, 62, 82, 16
@@ -242,8 +241,8 @@ def shadow_opacity(side):
 # blur: 24 > 3 sigma, and the 312 px image (4 .. 316) stays inside the 320 px page.
 SHADOW_PAD, SHADOW_SIGMA, SHADOW_DY, SHADOW_ALPHA = 24, 7.0, 4, 140
 SHADOW_SIZE = ART + 2 * SHADOW_PAD
-SLIDE_H = 352                    # slide pages 0..352 hold art, dots, title and artist; lyrics and info end at 288
-DOTS = (145, 296, 30, 4)         # 3 dots of size 4, 10 apart, centred in the window
+SLIDE_H = 378                    # slide pages 0..378 hold art, title, artist, star and More; lyrics and info end at 336
+DOTS = (145, 384, 30, 4)         # 3 dots of size 4, 10 apart, centred in the window and on the times' digits (ink 382..391), where label_index sits: patch/nowplaying.c np_dots_* swaps the two
 TITLE_Y, TITLE_H, ARTIST_Y, ARTIST_H, TEXT_W = 305, 24, 329, 22, 182   # the 46 px block is centred on the star / More discs (y 310..346, centre 328)
 BTN, FAV_X, MORE_X, BTN_Y = 44, 210, 254, 306       # star and More: 44 px targets right of the text, 32 px discs in the PNGs; the More disc ends at W - M (292), as the text starts at M
 RETURN = (100, 0, 120, 44)       # the grabber pill is drawn in the button (np_grabber), over the art's top 16 px
@@ -280,7 +279,7 @@ def lyr_vmargin(spacer): return min(LYR_DEFAULT_MARGIN, spacer // 2)
 LYR_GAPS = {'': 12, '_m': 10, '_s': 9}   # the gap between lines (patch/lyrics.c ly_sizes: about 0.4 of the font; Large is LY_GAP)
 LYR_BOLD_SIZES = ('', '_m')      # the sizes whose Latin lines use the bold face; Small (22 px) draws them in the default font like every other line
 LYRIC_SIZE_STYLES = {n + suf: (face if suf in LYR_BOLD_SIZES else None, *LYR_SIZES[suf]) for suf in LYR_SIZES for n, face in (('np_lyric_style', LYR_FACE), ('np_lyric_cjk_style', None))}
-LYR_Y, LYR_H = 44, 244           # the lyrics list; the info lines end at 288 too (the dots sit at 296)
+LYR_Y, LYR_H = 44, 292           # the lyrics list; the info lines end at 336 too, just above the progress bar
 
 # The A-B repeat markers: demo moves img_repeata/b to x = 12 + (pos - cue) * 296 / len, y = 364 (getx_by_playtime
 # 0x53b824 and its caller 0x53b8f0, only from this page's timer): `addiu v0, zero, 0x128`, `addiu v0, v0, 0xc` and three
@@ -493,7 +492,7 @@ def apply_ui(root):
         page.children.insert(0, awtk_ui.Widget('image', *box, [('name', 'img_np_scrim_' + page.name.removeprefix('view_')), ('image', img), ('draw_type', 'default'),
                                                        ('clickable', 'false'), ('sensitive', 'false')]))
 
-    # slide_view_view spans the window down to the times row so the controls it parents (more, fav, times, dots) stay
+    # slide_view_view spans the window down to the times row so the controls it parents (times, dots) stay
     # inside it; later siblings (btn_return, slider, buttons) sit on top for touch
     move(svv, 0, 0, W, SVV_H)
     sv.set('self_layout', f'default(x=0,y=0,w=100%,h={SLIDE_H})'); move(sv, 0, 0, W, SLIDE_H)
@@ -511,6 +510,9 @@ def apply_ui(root):
     move(title, M, TITLE_Y, TEXT_W, TITLE_H); text_style(title, TITLE_PX, TITLE_RGB, 'left')
     move(artist, M, ARTIST_Y, TEXT_W, ARTIST_H); text_style(artist, META_PX, GREY, 'left')
     page1.children += [title, artist]
+    # the star and More sit on page 1 too (same place: the page starts at the window's origin), so they slide away with the title; on top of the text for touch
+    for w in (fav, more): parent_of(root, w).children.remove(w)
+    page1.children += [fav, more]
     # the cover's shadow: right over the cover (its hole is the art), under the title and artist; a child of page 1, so it slides away with the art.
     # Drawn scaled to its box (1:1 here): the payload shrinks it with the cover while paused (patch/nowplaying.c np_art_place)
     shadow = awtk_ui.Widget('image', ART_X - SHADOW_PAD, ART_Y - SHADOW_PAD, SHADOW_SIZE, SHADOW_SIZE, [('name', 'img_np_shadow'), ('image', 'np_shadow'),
@@ -518,7 +520,7 @@ def apply_ui(root):
     assert cover in page1.children, 'the cover is not on page 1'
     page1.children.insert(page1.children.index(cover) + 1, shadow)
 
-    # ---- page 2: lyrics (below the grabber, above the dots); page 3: info (album, genre, year, size, location)
+    # ---- page 2: lyrics (below the grabber, above the progress bar); page 3: info (album, genre, year, size, location)
     lrc = find(root, 'view_lrc'); move(lrc, M, LYR_Y, W - 2 * M, LYR_H)
     # our own lyrics (patch/lyrics.c, docs/modules/lyrics.md): a scroll_view (it clips its children) on the stock list's rectangle, empty in the asset, sensitive (it takes the touches: patch/lyrics.c listeners; neither axis slidable, so it never scrolls itself); the
     # payload fills it with a pool of labels and hides view_lrc. Without the payload the stock list shows and this box is empty.

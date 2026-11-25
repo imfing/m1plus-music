@@ -14,7 +14,7 @@
  *
  * Layout: line i has LYH pixels a text row (1..LY_LINES_MAX rows, estimated from the line's measured width) and LYG below (the chosen text size, ly_sizes; Large is LY_LINE_H / LY_GAP).
  * The anchored line's top sits at LY_ANCHOR (0.35 of the view) plus `man`, the manual scroll; the other lines follow from it up and down. A line of more
- * than three rows is anchored higher (ly_anchor), so that it and, while there is room, the next line's first row stay in the view.
+ * than four rows is anchored higher (ly_anchor), so that it and, while there is room, the next line's first row stay in the view.
  * Opacity by distance from the current line: 1.0, 0.45, 0.32, 0.24, 0.18 (ly_opacity) times an edge factor that takes a line to 0 over the last LY_FADE px at the top and bottom
  * of the view (ly_edge); while the user has scrolled, every other line is LY_BROWSE_OP. Every line is white; the current one is only the most opaque. Face: a line of
  * Latin, Greek and Cyrillic only is drawn in the bold font file lyrics.ttf (style np_lyric_style, Large and Medium), any other in the default font (np_lyric_cjk_style): AWTK picks a glyph from one font. At Small (22 px) both styles name the default font, so every line is in it.
@@ -385,7 +385,7 @@ static void ly_wrapped(int i, int rows, char *out) {
 /* The pixels line i occupies, its gap included. */
 static int ly_pitch(int i) { return ly_rows(i) * LYH + LYG; }
 
-/* Where line i's top sits when it is the anchored one: LY_ANCHOR for up to three rows; a taller line higher, so that the next line's first row still ends
+/* Where line i's top sits when it is the anchored one: LY_ANCHOR for up to four rows; a taller line higher, so that the next line's first row still ends
  * LY_ANCHOR_ROOM px above the view's bottom, but not above LY_ANCHOR_MIN (LY_LINES_MAX rows from there end inside the view). */
 __attribute__((noinline)) int ly_anchor(int i) {
     int a = LYVH - LY_ANCHOR_ROOM - LYH - ly_pitch(i);

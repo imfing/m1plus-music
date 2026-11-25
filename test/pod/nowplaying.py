@@ -395,6 +395,56 @@ def run(ctx):
     expect(m.visible('label_index') == 0, 'back in front with the setting off: hidden')
     m.fs[NPPOS] = b'1\n'; m.call(PSYMS['np_on_foreground'], a0=WIN, a1=0, count=6000000)
     expect(m.visible('label_index') == 1 and ixset(m)[-1] == '5/10', 'and on again when it is switched on')
+
+    # the page dots share the middle of the times row with the track position: with the middle free they show; while "5/10" shows there they are clear, and a page
+    # change brings them in over it for NP_DOTS_MS (each fade NP_DOTS_FADE_MS, label_index at 255 - the dots' opacity), then hands the middle back
+    DMS, DFADE, FR = O['NP_DOTS_MS'], O['NP_DOTS_FADE_MS'], O['NP_FRAME_MS']
+    def dpage(on, n=10, dots=True):
+        m = NowMachine(); m.page(); m.src(0); m.pt = (30, 200, 1); m.widget('label_index'); sv = m.widget('slide_view')
+        if dots: m.widget('slide_indicator')
+        if on is not None: m.fs[NPPOS] = on
+        m.play([m.record(title=f't{i}', rid=i + 1) for i in range(n)], 4); m.init(); return m, sv
+    def dop(m, name): return [c[2] for c in m.calls if c[0] == 'widget_set_opacity' and c[1] == m.widgets.get(name)]
+    def dswipe(m, sv, t):
+        m.clock = t; fn, ctx = m.bound[(sv, O['EVT_VALUE_CHANGED'])]; return m.call(fn, a0=ctx, a1=m.alloc(0x30), count=2000000)
+    def dframes(m, t0, until):
+        rs, ops = [], []
+        for t in range(t0 + FR, until + 1, FR):
+            m.calls = []; m.clock = t; rs.append(m.call(PSYMS['np_dots_frame'], count=400000)); ops += dop(m, 'slide_indicator')
+            if rs[-1] != O['RET_REPEAT']: break
+        return rs, ops
+    m, sv = dpage(None); m.tick()
+    expect(not dop(m, 'slide_indicator') and not dop(m, 'label_index'), 'Track Position off: the dots keep the asset\'s full opacity, nothing set')
+    dswipe(m, sv, 1000)
+    expect(not [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['np_dots_frame']] and not dop(m, 'slide_indicator'), 'and a page change leaves them as they are')
+    m, sv = dpage(b'1\n')
+    expect(dop(m, 'slide_indicator') == [0] and dop(m, 'label_index') == [255], f'"5/10" in the middle: the dots clear, the position opaque ({dop(m, "slide_indicator")}, {dop(m, "label_index")})')
+    m.calls = []; m.tick(); expect(not dop(m, 'slide_indicator'), 'a tick sets nothing again')
+    m.calls = []; dswipe(m, sv, 1000)
+    expect(('timer_add', PSYMS['np_dots_frame'], FR) in m.calls and not dop(m, 'slide_indicator'), f'a page change starts a frame timer every {FR} ms')
+    rs, ops = dframes(m, 1000, 1000 + DMS + DFADE + 4 * FR)
+    want = [255 * min(el, DFADE) // DFADE if el < DMS else max(0, 255 - 255 * (el - DMS) // DFADE) for el in range(FR, DMS + DFADE + FR, FR)]
+    want = [o for i, o in enumerate(want) if o != ([0] + want)[i]]
+    expect(ops == want and ops[-1] == 0 and 255 in ops and rs[-1] == O['RET_OK'] and all(r == O['RET_REPEAT'] for r in rs[:-1]),
+           f'the dots fade in over {DFADE} ms, stay until {DMS} ms, fade out over {DFADE} ms, each opacity set once, then the timer ends ({ops}, {rs})')
+    m.calls = []; dswipe(m, sv, 5000); dframes(m, 5000, 5000 + DFADE + FR)
+    m.calls = []; m.clock = 5000 + DFADE + 2 * FR; m.call(PSYMS['np_dots_frame'], count=400000); ix = dop(m, 'label_index')
+    expect(not dop(m, 'slide_indicator') and not ix, 'a frame in the hold sets nothing')
+    m.calls = []; m.tick(); expect(not dop(m, 'slide_indicator'), 'nor does a tick while the dots are in')
+    rs, ops = dframes(m, 5000 + DFADE + 2 * FR, 5000 + DMS + DFADE // 2); mid = ops[-1] if ops else None
+    m.calls = []; dswipe(m, sv, m.clock); rs, ops = dframes(m, m.clock, m.clock + DFADE + FR)
+    expect(mid and 0 < mid < 255 and ops and ops[0] > mid and ops[-1] == 255 and ops == sorted(ops),
+           f'a second page change while they fade out brings them back in from where they are ({mid}: {ops})')
+    m.play([m.record(rid=1)], 0); m.calls = []; m.tick()
+    rs, ops = dframes(m, m.clock, m.clock + DMS + 4 * FR)
+    expect(not ops and rs[-1] == O['RET_OK'] and m.visible('label_index') == 0, f'the position goes away while the dots are in: they stay, the timer ends ({ops})')
+    m.calls = []; m.tick(); expect(not dop(m, 'slide_indicator'), 'and the tick keeps them')
+    m.play([m.record(title=f't{i}', rid=i + 1) for i in range(10)], 4); m.calls = []; m.tick()
+    expect(dop(m, 'slide_indicator') == [0] and dop(m, 'label_index') == [255], 'the position back: the middle is its again')
+    m, sv = dpage(b'1\n'); m.timer_fail = True; m.calls = []; dswipe(m, sv, 1000)
+    expect(not dop(m, 'slide_indicator'), 'no frame timer: the position keeps the middle')
+    m, sv = dpage(b'1\n', dots=False)
+    expect(not dop(m, 'label_index'), 'a page without the dots: the position is left alone')
     N = pod_pages.NPSET_PAGE
     expect(('Track Position', pod_pages.ACT_NPPOS) in [(r.label, r.action) for r in N.rows] and pod_pages.ACT_NPPOS in pod_pages.SWITCH_ACTIONS and pod_pages.row_kind(next(r for r in N.rows if r.action == pod_pages.ACT_NPPOS)) == 'switch' and 'nowplaying-position' in pod_pages.SETTING_FILES and NPPOS.rsplit('/', 1)[1] == 'nowplaying-position',
            'Settings > Now Playing has the Track Position switch, saved in nowplaying-position and listed on Settings Files')
@@ -435,7 +485,7 @@ def run(ctx):
                                                    ('I_ALBUM_Y', 'NPI_ALBUM_Y'), ('I_META_PX', 'NPI_META_PX'), ('I_PAD', 'NPI_PAD'), ('I_BADGE_H', 'NPI_BADGE_H'), ('I_BADGE_GAP', 'NPI_BADGE_GAP'),
                                                    ('I_ROW_Y', 'NPI_ROW_Y'), ('I_BARE_Y', 'NPI_BARE_Y'), ('I_ROW_PITCH', 'NPI_ROW_PITCH'), ('I_ROW_TEXT', 'NPI_ROW_TEXT'), ('I_ROW_PX', 'NPI_ROW_PX'), ('I_KEY_GAP', 'NPI_KEY_GAP'),
                                                    ('I_ROWS', 'NPI_ROWS'), ('I_LOC_ROW', 'NPI_LOC_ROW'), ('I_LOC_Y', 'NPI_LOC_Y'), ('I_LOC_LH', 'NPI_LOC_LH'), ('I_LOC_LINES', 'NPI_LOC_LINES'), ('I_FOOT', 'NPI_FOOT'),
-                                                   ('I_ROW_TAIL', 'M1_FIT_TAIL'), ('I_RELAY', 'NP_RELAY'), ('I_TITLE_LH', 'NPI_TITLE_LH'), ('I_TAP_PX', 'NPI_TAP_PX'), ('I_FADE', 'NPI_FADE'), ('I_PAGE', 'NPI_PAGE'))) and (mn.SCRIM[1], mn.SCRIM[3], mn.SCRIM_ALPHA, mn.SCRIM_EDGE) == (O['NP_SCRIM_Y'], O['NP_SCRIM_H'], O['NP_SCRIM_ALPHA'], O['NP_SCRIM_EDGE']) and mn.I_W == O['NPI_R'] - O['NPI_X'] and mn.I_TOP + O['NPI_VIEW_H'] == mn.I_BOTTOM == 288 and
+                                                   ('I_ROW_TAIL', 'M1_FIT_TAIL'), ('I_RELAY', 'NP_RELAY'), ('I_TITLE_LH', 'NPI_TITLE_LH'), ('I_TAP_PX', 'NPI_TAP_PX'), ('I_FADE', 'NPI_FADE'), ('I_PAGE', 'NPI_PAGE'))) and (mn.SCRIM[1], mn.SCRIM[3], mn.SCRIM_ALPHA, mn.SCRIM_EDGE) == (O['NP_SCRIM_Y'], O['NP_SCRIM_H'], O['NP_SCRIM_ALPHA'], O['NP_SCRIM_EDGE']) and mn.I_W == O['NPI_R'] - O['NPI_X'] and mn.I_TOP + O['NPI_VIEW_H'] == mn.I_BOTTOM == 336 and
            mn.I_BADGE_W == {'HI-RES': O['NPI_BADGE_HIRES_W'], 'DSD': O['NPI_BADGE_DSD_W']}, 'the payload\'s info page constants equal the asset builder\'s')
 
     # ---- the rows: Format, Sample Rate, Bit Depth, Bitrate (stock's quality line), Genre, Year, File Size, Location; a hairline above each, 33 px apart, a missing row leaves a gap that closes
@@ -457,7 +507,7 @@ def run(ctx):
         if pr[7]:
             for k, yy in enumerate(loc):
                 if P(m, f'np_i_v{7 + k}')[1] + 2 != yy - 36 - m_off(m) or P(m, f'np_i_v{7 + k}')[0::2] != (16, 288): bad.append(('loc', k, P(m, f'np_i_v{7 + k}')))
-        hv = max(bottom - 36, 252)
+        hv = max(bottom - 36, 300)
         expect(not bad and vhigh(m) == hv, f'{what}: the rows are where the model puts them, virtual_h {hv} ({bad[:2]}, {vhigh(m)})')
     m_off = lambda m: 0
     m = info({'label_info': QS})
@@ -618,7 +668,7 @@ def run(ctx):
     moved = {n: P(m, n) for n in at0}
     expect(all(moved[n][1] == at0[n][1] - 40 and moved[n][0::2] == at0[n][0::2] for n in at0), f'offset 40: every widget moves up 40 px, x and size unchanged ({[n for n in at0 if moved[n][1] != at0[n][1] - 40][:3]})')
     m.call(PSYMS['np_info_scroll'], a0=10000)
-    top = vhigh(m) - 252
+    top = vhigh(m) - 300
     expect(P(m, 'np_i_art')[1] == -top, f'the offset is clamped to the content height less the view ({top})')
     m.call(PSYMS['np_info_scroll'], a0=-5)
     expect({n: P(m, n) for n in at0} == at0, 'a negative offset is the top')
@@ -636,14 +686,14 @@ def run(ctx):
     on = [m.bound.get((m.widgets['np_i_scroll'], ev), (0,))[0] for ev in (D_, MV_, UP_, AB_, EVT_AFTER_PAINT)]
     expect(on == [PSYMS['np_on_info_touch']] * 4 + [PSYMS['np_on_info_fade']], f'np_i_scroll listens to DOWN, MOVE, UP, ABORT and paints the fades after its children ({on})')
     expect(m.bound[(m.widgets['slide_view'], O['EVT_VALUE_CHANGED'])][0] == PSYMS['np_on_page'], 'the slide view\'s page change is listened to')
-    m.calls = []; top = vhigh(m) - 252
+    m.calls = []; top = vhigh(m) - 300
     r = [ptr(m, D_, 100, 200), ptr(m, MV_, 100, 195), ptr(m, MV_, 101, 191), ptr(m, UP_, 101, 191)]
     expect(r == [0] * 4 and offs(m) == 0 and not sets(m), 'a tap or a wobble under 10 px: nothing moves, RET_OK (never RET_STOP)')
     r = [ptr(m, D_, 100, 200), ptr(m, MV_, 100, 185)]
     expect(offs(m) == 0 and r == [0, O['RET_STOP']], 'the drag has begun at 10 px, the content does not jump; the MOVE that began it is stopped (the slide view gets an ABORT)')
     expect(ptr(m, MV_, 100, 165) == O['RET_STOP'] and offs(m) == 20, 'then it follows the finger up: 20 px, every MOVE stopped')
     ptr(m, MV_, 100, 175); expect(offs(m) == 10, 'and back down 10 px')
-    expect(ptr(m, MV_, 140, 100) == O['RET_STOP'] and offs(m) == 85, 'a sideways wobble after the drag began does not stop it, and the slide view never sees it (RET_STOP)')
+    expect(ptr(m, MV_, 140, 100) == O['RET_STOP'] and offs(m) == top, 'a sideways wobble after the drag began does not stop it, and the slide view never sees it (RET_STOP); the drag is clamped at the content end')
     ptr(m, MV_, 100, -300); expect(offs(m) == top, f'clamped at the content end ({top})')
     ptr(m, MV_, 100, -280); expect(offs(m) == top - 20, 'coming back moves at once (no overscroll to unwind)')
     r = [ptr(m, UP_, 100, -280), ptr(m, MV_, 100, -100)]
@@ -661,7 +711,7 @@ def run(ctx):
     expect(ptr(m, D_, 1, 1) == 0 and ptr(m, MV_, 1, 1) == 0, 'DOWN and a MOVE that is no drag answer RET_OK')
     short = info({'label_info': 'FLAC|44.1kHz|16bit|950kbps'}, rec=REC)
     ptr(short, D_, 100, 200); ptr(short, MV_, 100, 150); ptr(short, MV_, 100, 100)
-    expect(vhigh(short) == 252 and offs(short) == 0, 'content that fits is not scrolled')
+    expect(vhigh(short) == 300 and offs(short) == 0, 'content that fits is not scrolled')
     # back at the top whenever the info page is entered again
     m = info(stock_en, rec=REC); sv = m.widgets['slide_view']
     m.call(PSYMS['np_info_scroll'], a0=50); m.tick()
@@ -717,7 +767,7 @@ def run(ctx):
     for genre in ('\U0001F3B5' * 50 + 'Progressive Rock', '\u200b' * 70 + 'Progressive Rock and more', 'i' * 201):
         m = info(dict(stock_en, label_genre='Genres:' + genre)); room = P(m, 'np_i_v4')[2]; got = T(m, 'np_i_v4')
         expect(got == EF(genre, room) and got.endswith('...') and ms(got, 16) <= room, f'a value over {mn.I_ROW_TAIL} bytes is never shown whole, even when its measured start fits ({len(genre.encode())} bytes -> {ms(got, 16)} of {room} px)')
-    m.call(PSYMS['np_info_scroll'], a0=10000); expect(P(m, 'np_i_art')[1] == -(vhigh(m) - 252), 'the scroll range follows')
+    m.call(PSYMS['np_info_scroll'], a0=10000); expect(P(m, 'np_i_art')[1] == -(vhigh(m) - 300), 'the scroll range follows')
     m.play([m.record(title='Short', artist='X', album='Y', path='/mnt/mmc/x/9.flac', name='9.flac', rid=9)], 0); m.tick()
     expect(not shown(m, 'np_i_title2') and T(m, 'np_i_title2') == '' and P(m, 'np_i_artist')[1] == 24 and vhigh(m) == h1, 'the next track with a short title: one line again, the second label hidden and empty')
     for lang in pod_i18n.LOCALES:
@@ -742,7 +792,7 @@ def run(ctx):
     expect(not any(shown(m, n) for n in HEAD) and not shown(m, f'np_i_h{first}') and P(m, f'np_i_k{first}')[1] + 2 == mn.I_TITLE_Y - 36,
            f'an episode: the info page is bare (the notes page has the header): no cover or header lines, the first row without its hairline, its text at the notes title\'s y ({P(m, f"np_i_k{first}")})')
     check_flow(m, 'an episode, a two line path')
-    expect(shown(m, 'np_i_v8') and vhigh(m) == 252, f'an episode: every row and both path lines fit the 252 px view, nothing to scroll (virtual_h {vhigh(m)})')
+    expect(shown(m, 'np_i_v8') and vhigh(m) == 300, f'an episode: every row and both path lines fit the 300 px view, nothing to scroll (virtual_h {vhigh(m)})')
     m.play([m.record(**REC)], 0)
     for _ in range(3): m.tick()
     expect(shown(m, 'np_i_art') and shown(m, 'np_i_title') and shown(m, 'np_i_h0'), 'music after an episode: the header and the first hairline are back')
@@ -776,7 +826,7 @@ def run(ctx):
         return list(m.drawn)
     def want_body(text, sh, off):
         hair, lines, bottom = mn.notes_layout(text, wrap_par, sh)
-        return hair, [(t, (16, y - 36 - off - 2, 288, 20)) for t, y in lines if y - 36 - off - 2 >= 0 and y - 36 - off - 2 + 20 <= 252], bottom
+        return hair, [(t, (16, y - 36 - off - 2, 288, 20)) for t, y in lines if y - 36 - off - 2 >= 0 and y - 36 - off - 2 + 20 <= 300], bottom
     nvh = lambda m: m.props.get((m.widgets['np_n_scroll'], 'virtual_h'))
     noffs = lambda m: -P(m, 'np_n_hair')[1] + (mn.I_ROW_Y - mn.I_TOP)
     m = info(stock_en, rec=NREC, fs=dict(NOTE_FS))
@@ -787,7 +837,7 @@ def run(ctx):
     hair, wl, bottom = want_body(text, 0, 0)
     got = body_texts(m)
     expect(P(m, 'np_n_hair')[:2] == (16, hair - 36) and not shown(m, 'np_n_hint') and got == wl and len(wl) >= 5, f'the hairline at 112 and the notes 12 px under it, wrapped as the model ({len(got)} of {len(wl)} lines inside): {[g for g in got if g not in wl][:2]}')
-    expect(nvh(m) == bottom - 36 and bottom - 36 > 252, f'the content ends 12 px under the last line ({nvh(m)})')
+    expect(nvh(m) == bottom - 36 and bottom - 36 > 300, f'the content ends 12 px under the last line ({nvh(m)})')
     expect(len({t[1][1] for t in got}) == len(got) and all(b[1][1] - a[1][1] in (22, 32) for a, b in zip(got, got[1:])), 'lines 22 px apart, 32 between paragraphs')
     expect(not shown(m, 'np_n_title2'), 'a one line title: the second label stays hidden')
     # the hooks: touch, fades and the cover paint are the info page's handlers
@@ -796,9 +846,9 @@ def run(ctx):
     # scrolling: the header, hairline and lines move; clamped; the info page's offset is its own
     m.call(PSYMS['np_notes_scroll'], a0=50); hair, wl, bottom = want_body(text, 0, 50)
     expect(P(m, 'np_n_art')[1] == -50 and P(m, 'np_n_hair')[1] == hair - 36 - 50 and body_texts(m) == wl and offs(m) == 0, 'offset 50: the header, the hairline and the lines move up 50 px, nothing of the info page does')
-    m.call(PSYMS['np_notes_scroll'], a0=10000); top = nvh(m) - 252
+    m.call(PSYMS['np_notes_scroll'], a0=10000); top = nvh(m) - 300
     hair, wl, bottom = want_body(text, 0, top)
-    expect(P(m, 'np_n_art')[1] == -top and body_texts(m) == wl and wl and wl[-1][1][1] + 20 <= 252 - 12, f'clamped at the content end ({top}): the last line, 12 px of air under it')
+    expect(P(m, 'np_n_art')[1] == -top and body_texts(m) == wl and wl and wl[-1][1][1] + 20 <= 300 - 12, f'clamped at the content end ({top}): the last line, 12 px of air under it')
     m.call(PSYMS['np_notes_scroll'], a0=-5); expect(P(m, 'np_n_art')[1] == 0, 'a negative offset is the top')
     def nptr(m, kind, x, y):
         e = m.alloc(0x30); m.u.mem_write(e, bytes(0x30)); m.setword(e, kind); m.setword(e + O['PE_X'], x); m.setword(e + O['PE_Y'], y)
@@ -811,8 +861,8 @@ def run(ctx):
         e = m.alloc(0x40); m.u.mem_write(e, bytes(0x40)); m.setword(e + O['EVENT_PAINT_CANVAS'], 0x7000a000)
         m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=m.widgets['np_n_scroll'], a1=e, count=2000000)
         return sorted({f[2] for f in m.fills})
-    m.call(PSYMS['np_notes_scroll'], a0=0); expect(nfades(m) == list(range(236, 252)), 'at the top the bottom 16 rows fade')
-    m.call(PSYMS['np_notes_scroll'], a0=20); expect(nfades(m) == list(range(16)) + list(range(236, 252)), 'scrolled: both edges')
+    m.call(PSYMS['np_notes_scroll'], a0=0); expect(nfades(m) == list(range(284, 300)), 'at the top the bottom 16 rows fade')
+    m.call(PSYMS['np_notes_scroll'], a0=20); expect(nfades(m) == list(range(16)) + list(range(284, 300)), 'scrolled: both edges')
     m.call(PSYMS['np_notes_scroll'], a0=10000); expect(nfades(m) == list(range(16)), 'at the end the top 16 rows')
     # back at the top: a page change, Now Playing in front again, a track change; the relay re-reads nothing
     sv = m.widgets['slide_view']; m.call(PSYMS['np_notes_scroll'], a0=50); m.props[(sv, 'value')] = mn.N_PAGE; m.tick()
@@ -844,10 +894,10 @@ def run(ctx):
     expect(shown(m, 'np_n_title2') and P(m, 'np_n_hair')[1] == hair2 - 36 and body_texts(m) == wl2 and hair2 == mn.I_ROW_Y + 24, 'a two line title: the second label shows, the hairline and the notes move down 24 px')
     # the description when there is no note; the hint when there is neither
     m = info(stock_en, rec=dict(NREC, title='Ep Two', path='/mnt/mmc/Podcasts/Show/e2.mp3', name='e2.mp3'), fs=dict(NOTE_FS))
-    expect(body_texts(m) == want_body('Just the short description', 0, 0)[1] and not shown(m, 'np_n_hint') and nvh(m) == 252, 'no .notes line: the entry\'s description, short enough not to scroll')
+    expect(body_texts(m) == want_body('Just the short description', 0, 0)[1] and not shown(m, 'np_n_hint') and nvh(m) == 300, 'no .notes line: the entry\'s description, short enough not to scroll')
     for what, rec in (('an episode with no entry', dict(NREC, path='/mnt/mmc/Podcasts/Show/nofile.mp3', name='nofile.mp3')), ('a book part', dict(REC, path='/mnt/mmc/Audiobooks/Book One/01.mp3', name='01.mp3'))):
         m = info(stock_en, rec=rec, fs=dict(NOTE_FS))
-        expect(body_texts(m) == [] and shown(m, 'np_n_hint') and T(m, 'np_n_hint') == 'No description' and P(m, 'np_n_hint') == (16, mn.I_ROW_Y + 12 - 2 - 36, 288, 20) and shown(m, 'np_n_scroll') and nvh(m) == 252, f'{what}: the hint, one grey line 12 px under the hairline')
+        expect(body_texts(m) == [] and shown(m, 'np_n_hint') and T(m, 'np_n_hint') == 'No description' and P(m, 'np_n_hint') == (16, mn.I_ROW_Y + 12 - 2 - 36, 288, 20) and shown(m, 'np_n_scroll') and nvh(m) == 300, f'{what}: the hint, one grey line 12 px under the hairline')
     # music: the notes page is hidden again, nothing of it shows, the info page is untouched
     m = info(stock_en, rec=NREC, fs=dict(NOTE_FS))
     m.play([m.record(**REC)], 0)
@@ -1455,7 +1505,7 @@ def run(ctx):
         m.fills = []; m.call(PSYMS['np_on_info_fade'], a0=m.widgets['np_i_scroll'], a1=e, count=2000000)
         return {f[2]: f for f in m.fills}, len(m.fills)
     def want_fades(rgb, off, ih):
-        vh = 252; out = {}
+        vh = 300; out = {}
         for y in mn.fade_rows(off, ih):
             k = min(y, vh - 1 - y); out[y] = (mn.fade_color(rgb, y) | mn.fade_alpha(k) << 24, 0, y, 320, 1)
         return out
@@ -1464,13 +1514,13 @@ def run(ctx):
         if name[4] != 'n': m.jpeg(P2, pix=half, size=(4, 4))
         m.info_page(stock_en); m.play([m.record(**REC)], 0); m.init()
         for _ in range(mn.I_RELAY): m.tick()
-        ih = vhigh(m); top = ih - 252
+        ih = vhigh(m); top = ih - 300
         for off in (0, 1, 40, top - 1, top):
             m.call(PSYMS['np_info_scroll'], a0=off); got, n = fades(m)
             exp_ = want_fades(tint_rgb, off, ih)
             expect({y: f[:5] for y, f in got.items()} == exp_ and n == len(exp_), f'{name}, offset {off} of {top}: {sorted(got)[:1]}.. {n} fade rows ({"top" if off else ""}{" and " if off and off < top else ""}{"bottom" if off < top else ""}), colour and alpha as the model')
         m.call(PSYMS['np_info_scroll'], a0=0); got, n = fades(m)
-        expect(sorted(got) == list(range(236, 252)) and all(got[236 + k][0] >> 24 == mn.fade_alpha(15 - k) for k in range(16)) and mn.fade_alpha(0) >= 240 and mn.fade_alpha(15) <= 16 and
+        expect(sorted(got) == list(range(284, 300)) and all(got[284 + k][0] >> 24 == mn.fade_alpha(15 - k) for k in range(16)) and mn.fade_alpha(0) >= 240 and mn.fade_alpha(15) <= 16 and
                all(mn.fade_alpha(k) > mn.fade_alpha(k + 1) for k in range(15)), 'at the top only the bottom 16 rows fade, strongest at the edge, ramping to nothing')
         m.call(PSYMS['np_info_scroll'], a0=top)
         expect(sorted(fades(m)[0]) == list(range(16)), 'at the end only the top 16 rows')
@@ -1491,8 +1541,8 @@ def run(ctx):
            and f('label_info').get('style:normal:text_color') == mn.TITLE_RGB and f('label_album').get('style:normal:text_color') == mn.GREY,
            f'the info page: stock\'s six labels stay where their rows are (the data source, and what shows without the payload) ({lines})')
     sc = f('np_i_scroll'); vi = f('view_info')
-    expect(sc.type == 'scroll_view' and (sc.x, sc.y, sc.w, sc.h) == (0, 36, 320, 252) and sc.get('floating') == 'false' and sc.get('sensitive') != 'false' and not sc.get('xslidable') and not sc.get('yslidable') and vi.children[1:] == [sc] and vi.children[0].name == 'img_np_scrim_info',
-           'every widget of the info page is in one scroll_view over the text area, y 36..288 (not slidable, takes the touches); the scrim stays outside')
+    expect(sc.type == 'scroll_view' and (sc.x, sc.y, sc.w, sc.h) == (0, 36, 320, 300) and sc.get('floating') == 'false' and sc.get('sensitive') != 'false' and not sc.get('xslidable') and not sc.get('yslidable') and vi.children[1:] == [sc] and vi.children[0].name == 'img_np_scrim_info',
+           'every widget of the info page is in one scroll_view over the text area, y 36..336 (not slidable, takes the touches); the scrim stays outside')
     expect(all(n in [c.name for c in sc.children] for n in ('label_info', 'label_album', 'label_genre', 'label_year', 'label_size', 'label_location')), 'stock\'s six labels are in it too')
     own = [w for w in sc.walk() if w.name and w.name.startswith('np_i_') and w.name != 'np_i_scroll']
     expect(len(own) == 32 and all(w.get('sensitive') == 'false' for w in own) and all(w.get('visible') == 'false' for w in own if w.name != 'np_i_art' and not w.name.startswith('np_i_h')),
@@ -1517,7 +1567,7 @@ def run(ctx):
     expect(imm == [264] * 4 and all(word(stock, a) in (0x240700fe, 0x240600fe) for a in mod_lockscreen.COVER_IMM), 'demo writes the cover file at 264 px (the four pinned words)')
     expect(rect('btn_return') == (100, 0, 120, 44) and f('btn_return').get('style') == 'img_btn_style' and f('btn_return').get('style:normal:bg_image') == 'np_grabber',
            'Back is the grabber: 120x44, the pill in its image')
-    expect(rect('slide_indicator') == (145, 296, 30, 4) and f('slide_indicator').get('size') == '4', 'micro dots: 4 px, centred under the art')
+    expect(rect('slide_indicator') == (145, 384, 30, 4) and f('slide_indicator').get('size') == '4', 'micro dots: 4 px, in the middle of the times row')
     expect(rect('scrlabel_title') == (28, 305, 182, 24) and rect('scrlabel_artist') == (28, 329, 182, 22), 'title and artist in the 28 px text column left of the buttons')
     expect(mn.TITLE_PX == 20 and mn.META_PX == 18 and mn.TITLE_H >= mn.TITLE_PX + 4 and mn.ARTIST_H >= mn.META_PX + 4
            and mn.TITLE_Y + mn.TITLE_H == mn.ARTIST_Y and (mn.TITLE_Y + mn.ARTIST_Y + mn.ARTIST_H) / 2 == mn.BTN_Y + mn.BTN // 2 + 0.0
@@ -1546,13 +1596,16 @@ def run(ctx):
     expect(len(mn.check_touch(ui)) == len(mn.PROBES), 'check_touch: every control\'s centre reaches it, the art and the title rows reach the slide_view')
     expect(all(min(rect(n)[2:]) >= 44 for n in mn.PROBES if n != 'slider_play') and rect('slider_play')[3] == 30, 'touch targets are 44 px or the stock 30 px seek bar')
     lyr = f('view_lrc')
-    expect(lyr.y >= 44 and lyr.y + lyr.h <= mn.DOTS[1] and f('view_info').children and all(c.y + c.h <= mn.DOTS[1] for c in f('view_info').children if c.name and not c.name.startswith('img_np_scrim')), 'lyrics and info text end above the dots (the scrim runs under them)')
+    expect(lyr.y >= 44 and lyr.y + lyr.h <= mn.SLIDER[1] and f('view_info').children and all(c.y + c.h <= mn.SLIDER[1] for c in f('view_info').children if c.name and not c.name.startswith('img_np_scrim')), 'lyrics and info text end above the progress bar (the scrim runs under them)')
+    dots, idx = rect('slide_indicator'), rect('label_index')
+    expect(dots[1] + dots[3] // 2 == mn.TIMES_Y + 3 + 9 // 2 and dots[0] >= idx[0] and dots[0] + dots[2] <= idx[0] + idx[2] and dots[0] + dots[2] // 2 == 160,
+           'the page dots sit in the middle of the times row, centred on the digits, inside label_index\'s box (np_dots_* swaps the two)')
     expect(f('view').y + f('slide_view').h <= f('view_buttons').y and f('slide_view').h == mn.SLIDE_H, 'the slide pages end above the transport row')
     # vertical rhythm
     art_end = 28 + 264
     sy = mn.SLIDER[1]
-    expect(mn.DOTS[1] - art_end == 4 and mn.TITLE_Y - (mn.DOTS[1] + mn.DOTS[3]) == 5 and mn.ARTIST_Y + mn.ARTIST_H - sy <= 3 and sy + 30 <= mn.TIMES_Y
-           and mn.TIMES_Y + mn.TIMES_H == mn.SVV_H and mn.SVV_H - mn.ROW_Y <= 5, 'art, dots, title, artist, bar, times and the transport row follow each other (the insensitive artist box overlaps the bar\'s 30 px target by 3 px at most)')
+    expect(mn.TITLE_Y - art_end == 13 and mn.ARTIST_Y + mn.ARTIST_H - sy <= 3 and sy + 30 <= mn.TIMES_Y
+           and mn.TIMES_Y + mn.TIMES_H == mn.SVV_H and mn.SVV_H - mn.ROW_Y <= 5, 'art, title, artist, bar, times and the transport row follow each other (the insensitive artist box overlaps the bar\'s 30 px target by 3 px at most)')
     # the lower half's rhythm on ink: the gaps artist -> bar -> digits -> transport glyphs are equal, the glyphs keep ~15 px from the bottom
     bar_top, bar_bot = sy + 15 - mn.BAR // 2, sy + 15 + mn.BAR // 2
     dig_top, dig_bot = mn.TIMES_Y + 3, mn.TIMES_Y + 3 + 9              # 14 px digits: ink 9 rows, 3 under the label's top (device screenshot)
