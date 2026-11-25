@@ -1,0 +1,96 @@
+#!/bin/sh
+# M1+ (tools/mod_boot.py, docs/modules/boot.md "Card logo"): stock's splash script, plus a logo
+# from the card. /boot-logo.jpg on the card is stretched to 320x480 and kept in /mnt/data, which
+# is mounted before this runs (the card is not), so it shows from the next power-on.
+
+CUSTOM=/mnt/data/m1plus/boot-logo
+CARD_LOGO=/mnt/mmc/boot-logo.jpg
+
+jpeg_display()
+{
+    while true
+    do
+        if [ -e "/dev/fb0" ]; then
+            break
+        fi
+        sleep 0.02
+    done
+	if [ `grep -c "ROTATEMODE=1" /mnt/data/config.ini` -eq '1' ];then
+		logo=/release/assets/default/raw/images/xx/logo180.jpg; custom=${CUSTOM}180.jpg
+	else
+		logo=/release/assets/default/raw/images/xx/logo.jpg; custom=$CUSTOM.jpg
+	fi
+	[ -f $custom ] && logo=$custom
+	display_logo $logo
+}
+
+# Prints a JPEG's width and height from its frame header (SOF0-15), nothing for another file: the
+# size is known before anything is decoded.
+jpeg_size()
+{
+    [ "`od -A n -t x1 -N 2 $1 | tr -d ' \n'`" = ffd8 ] || return
+    o=2; n=0
+    while [ $n -lt 64 ]
+    do
+        set -- $1 `od -A n -t u1 -j $o -N 9 $1`
+        [ $# -eq 10 ] && [ $2 -eq 255 ] || return
+        case $3 in
+            192|193|194|195|197|198|199|201|202|203|205|206|207) echo $(($9 * 256 + ${10})) $(($7 * 256 + $8)); return;;
+        esac
+        o=$((o + 2 + $4 * 256 + $5)); n=$((n + 1))
+    done
+}
+
+# Waits up to 60 s for the card in /proc/mounts (not /tmp/mmc_add: add_removesd.sh touches it even
+# when the mount fails, as for the whole-disk mmcblk4 event at boot), then follows its logo:
+# converted when it changed, deleted when the card has none, ignored over 2 MB. The source's md5 is
+# kept once the logo is installed, or when the file is refused: not a JPEG, or over 4096 px a side or
+# 8 megapixels (ffmpeg decodes the whole frame, about 2 bytes a pixel, on a 128 MiB player). A failed
+# conversion keeps no md5, so the next boot tries again (a frame over the decoder's bound fails
+# there, before its memory is taken, at every boot).
+card_import()
+{
+    i=0
+    until grep -q ' /mnt/mmc ' /proc/mounts
+    do
+        [ $i -ge 300 ] && return
+        sleep 0.2
+        i=$((i + 1))
+    done
+    if [ ! -f $CARD_LOGO ]; then
+        rm -f $CUSTOM.jpg ${CUSTOM}180.jpg $CUSTOM.md5
+        return
+    fi
+    [ `wc -c < $CARD_LOGO` -le 2097152 ] || return
+    sum=`md5sum < $CARD_LOGO`
+    [ "$sum" = "`cat $CUSTOM.md5 2>/dev/null`" ] && return
+    mkdir -p /mnt/data/m1plus
+    set -- `jpeg_size $CARD_LOGO`
+    if [ $# -ne 2 ] || [ $1 -gt 4096 ] || [ $2 -gt 4096 ] || [ $(($1 * $2)) -gt 8388608 ]; then
+        echo "$sum" > $CUSTOM.md5
+        sync
+        return
+    fi
+    # -max_pixels: the decoder's own bound (ffmpeg follows a later frame header that jpeg_size never
+    # reads). The turned copy comes from the small 320x480 one: the large source is decoded once.
+    if nice -n 19 ffmpeg -nostdin -v error -y -max_pixels 8388608 -i $CARD_LOGO -frames:v 1 -vf scale=320:480 -q:v 2 -f image2 $CUSTOM.tmp.jpg &&
+       nice -n 19 ffmpeg -nostdin -v error -y -i $CUSTOM.tmp.jpg -frames:v 1 -vf hflip,vflip -q:v 2 -f image2 ${CUSTOM}180.tmp.jpg &&
+       [ -s $CUSTOM.tmp.jpg ] && [ -s ${CUSTOM}180.tmp.jpg ] &&
+       mv -f $CUSTOM.tmp.jpg $CUSTOM.jpg && mv -f ${CUSTOM}180.tmp.jpg ${CUSTOM}180.jpg; then
+        echo "$sum" > $CUSTOM.md5
+    fi
+    rm -f $CUSTOM.tmp.jpg ${CUSTOM}180.tmp.jpg
+    sync
+}
+
+case "$1" in
+    start)
+        jpeg_display &
+        card_import &
+
+    ;;
+    *)
+        exit 1
+esac
+
+exit 0

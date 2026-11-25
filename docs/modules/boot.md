@@ -1,6 +1,7 @@
 # Boot logo, quotes, settings slides
 
-**Sources:** `tools/mod_boot.py`, `tools/boot_logo.py`, `assets/boot-logo.svg`.
+**Sources:** `tools/mod_boot.py`, `tools/boot_logo.py`, `assets/boot-logo.svg`,
+`assets/S11logo_display_shell`.
 
 ## Logo
 
@@ -14,6 +15,41 @@ renaming the launcher does not touch it (q2-pod style). `tools/boot_logo.py` (`b
 librsvg`) renders it into the committed `assets/boot-logo.jpg` and `boot-logo180.jpg`.
 `mod_boot.py` checks both stock files by SHA-256 and each new file's frame header, and keeps
 mode 755.
+
+## Card logo
+
+The stock splash script, pinned by SHA-256, is replaced by `assets/S11logo_display_shell` (stock
+mode and mtime). It works like q2-pod's card logo, but in shell only, with no payload code.
+
+- **Display:** `/mnt/data/m1plus/boot-logo.jpg`, or `boot-logo180.jpg` under `ROTATEMODE=1`, when
+  present, else the built-in file. There is one `display_logo` call.
+- **Import** (in the background, beside the display): waits up to 60 s for `/mnt/mmc` in
+  `/proc/mounts`, since the card mounts after the splash. `/tmp/mmc_add` is no sign:
+  `add_removesd.sh` touches it even when the mount fails, as for the whole-disk `mmcblk4` event
+  early in boot (exFAT "failed to read boot sector"). Then it follows `/boot-logo.jpg` on the card:
+  - **Changed** (its md5 differs from `boot-logo.md5`): `jpeg_size` reads the width and height
+    from the JPEG's frame header (SOF0-15, after any APP segments) with `od`, before anything is
+    decoded. The stock `ffmpeg`, at `nice 19`, scales the card file to 320x480 with no aspect kept,
+    with the decoder bound `-max_pixels 8388608`: ffmpeg follows a later frame header, which
+    `jpeg_size` never reads. It then turns that small copy with `hflip,vflip`, so the source is
+    decoded once. Both go through
+    `.tmp` files and `mv`; the md5 is written only once both are installed, then `sync` runs.
+  - **Unchanged:** nothing runs.
+  - **Missing** from a mounted card: the three files are deleted.
+  - **No card:** nothing changes.
+- **Limits:**
+  - Files over 2 MB are ignored, with no md5.
+  - **Refused**, with the md5 kept so the file is not looked at again: no JPEG frame header (a PNG,
+    say), over 4096 px a side, or over 8 megapixels. ffmpeg decodes the whole frame before scaling,
+    about 2 bytes a pixel (a 10000x10000 JPEG of 1.6 MB needs about 190 MB), and the player has
+    128 MiB.
+  - **A failed conversion** (ffmpeg, a frame over `-max_pixels`, a full `/mnt/data`, `mv`) keeps
+    the old logo and writes no md5, so the next boot tries again; the decoder refuses an oversized
+    frame before taking its memory.
+  - ffmpeg's mjpeg output is an 8-bit, three-component baseline JPEG, as `display_logo` needs. A
+    JPEG's EXIF orientation is not applied.
+- A new file shows from the second power-on: the first imports it.
+- The power-off splash stays the M1+ logo ([overlays](overlays.md)).
 
 ## Quotes
 

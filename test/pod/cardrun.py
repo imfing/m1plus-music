@@ -22,6 +22,7 @@ def run(ctx):
     expect(mc.added_rels() == ['usr/bin/m1plus-run'], 'the step adds one file')
     expect(built == open(mc.SRC, 'rb').read() and stat.S_IMODE(os.stat(os.path.join(root, mc.REL)).st_mode) == 0o755, 'it is the pinned script, executable')
     for n in os.listdir(os.path.join(stock, 'etc', 'init.d')):
+        if n == 'S11logo_display_shell': continue   # the card logo's splash script (test/pod/bootlogo.py)
         expect(open(os.path.join(initd, n), 'rb').read() == open(os.path.join(stock, 'etc', 'init.d', n), 'rb').read(), f'stock {n} is unchanged')
     expect(sorted(os.listdir(initd)) == sorted(os.listdir(os.path.join(stock, 'etc', 'init.d'))), 'nothing in /etc/init.d: rcS never starts it')
     text = built.decode()

@@ -5,7 +5,7 @@ Run `make help` for common tasks. Direct tools use `uv run python -I tools/<name
 ## Setup
 
 ```sh
-brew install uv squashfs llvm lld
+brew install uv squashfs llvm lld ffmpeg
 make setup
 cp "M1 Plus Firmware V2.1.zip" firmware/
 uv run python -I tools/mod_font.py --fetch
@@ -15,7 +15,7 @@ make doctor
 
 - Each checkout and worktree runs its own `make setup`: its own uv `.venv` (Python 3.15) and its
   own `work/` and `out/`. Never borrow another checkout's interpreter or write into its outputs.
-- Firmware, fonts and a matching stock tree may be read from the main checkout through
+- Firmware, fonts and a matching stock tree can be read from the main checkout via
   `tools/paths.py`, which resolves read-only inputs.
 - Update `pyproject.toml` and `uv.lock` together (`uv sync --locked`).
 - Use Homebrew LLVM/LLD (Apple clang lacks MIPS support); override with `LLVM_BIN` / `LLD_BIN`.

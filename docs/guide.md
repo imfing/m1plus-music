@@ -129,6 +129,9 @@ Open **Extras → Settings** to change the player. A few places to start:
 - **Playback → EQ:** adjust the sound or choose a preset.
 - **Now Playing:** change the idle display, cassette theme or lyrics size.
 - **Appearance:** choose an accent colour and customize Control Center, which also has Wi-Fi Transfer and Screenshot tiles.
+- **Boot logo:** put a JPG named `boot-logo.jpg` at the top of the card: under 2 MB, at most 4096
+  pixels a side and 8 megapixels. It is stretched to fill the screen, so use a 2:3 portrait picture
+  such as 320 × 480. It shows from the second power-on. Delete the file to get the M1+ logo back.
 
 To return to Shanling Home, open **Settings → Developer → Startup → Open Shanling Home**. Tap the
 M1+ Music icon on Shanling Home to return.

@@ -270,6 +270,7 @@ touches none of these.
 | the Podcasts folder | episode folders (its name as the card spells it, patch/podcasts.h) | [podcasts](podcasts.md) |
 | `screenshots/` | screenshots (`shot-NNNN.bmp`) | [screenshot](screenshot.md) |
 | `lockscreenimage/` | the lock screen pictures (up to five) | [lockscreen](lockscreen.md) |
+| `boot-logo.jpg` | the boot logo, imported at boot into `/mnt/data/m1plus/boot-logo*.jpg` | [boot](boot.md#card-logo) |
 
 ## Cache
 

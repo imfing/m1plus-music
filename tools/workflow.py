@@ -86,10 +86,11 @@ def environment():
     for package in ('capstone', 'pyelftools', 'pillow', 'fonttools', 'unicorn'):
         try: out['requirements'][package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError: out['requirements'][package] = 'missing'
-    for tool in ('clang', 'llvm-objcopy', 'llvm-readelf', 'ld.lld', 'mksquashfs', 'unsquashfs'):
-        binary = os.path.join(lld if tool == 'ld.lld' else llvm, tool) if tool not in ('mksquashfs', 'unsquashfs') else tool
+    # ffmpeg: test/pod/bootlogo.py runs the boot logo's conversion with the host's
+    for tool in ('clang', 'llvm-objcopy', 'llvm-readelf', 'ld.lld', 'mksquashfs', 'unsquashfs', 'ffmpeg'):
+        binary = os.path.join(lld if tool == 'ld.lld' else llvm, tool) if tool not in ('mksquashfs', 'unsquashfs', 'ffmpeg') else tool
         try:
-            r = subprocess.run([binary, '-version' if 'squashfs' in tool else '--version'], capture_output=True, text=True, timeout=10)
+            r = subprocess.run([binary, '-version' if 'squashfs' in tool or tool == 'ffmpeg' else '--version'], capture_output=True, text=True, timeout=10)
             out[tool] = (r.stdout + r.stderr).splitlines()[0]
         except (OSError, subprocess.SubprocessError, IndexError): out[tool] = 'missing'
     return out

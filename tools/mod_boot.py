@@ -6,6 +6,9 @@
            are upright 320x480 baseline JPEGs; nothing else on the rootfs reads them. Replaced by
            assets/boot-logo.jpg and assets/boot-logo180.jpg (tools/boot_logo.py renders them from
            assets/boot-logo.svg), whose frame headers are checked first (q2-pod's jpeg_size checks).
+  card     the stock S11logo_display_shell (pinned) is replaced by assets/S11logo_display_shell: it
+           shows /mnt/data/m1plus/boot-logo.jpg (boot-logo180.jpg when rotated) when present, and in
+           the background imports the card's /boot-logo.jpg there with the stock ffmpeg.
   quotes   default.ttf ("微软雅黑+Arial") gives U+2018/2019/201C/201D the CJK em advance (256 of
            256 units, against 48 for ' and 90 for "), so "Paul’s" shows a wide gap. As in q2-pod
            1.0.4, the Unicode cmap now maps them to the straight ASCII glyphs. Done in pure Python:
@@ -33,6 +36,9 @@ IMAGES = 'rootfs/release/assets/default/raw/images/xx'
 LOGOS = {f'{IMAGES}/logo.jpg':    ('8875337c5b522e6bf4b80bdf131811929460820dedbb1c8d6adf298da57f9f42', 'boot-logo.jpg'),
          f'{IMAGES}/logo180.jpg': ('b4eb7ff15878ac85ae4411d547fb533f0c5c93294768d33650b7ce3f7c88787f', 'boot-logo180.jpg')}
 LOGO_SIZE = (320, 480)          # stock: upright portrait, the panel's own orientation; display_logo does not scale
+INIT = 'rootfs/etc/init.d/S11logo_display_shell'
+INIT_SHA = '7deb9c95aae3d3d988a22b79bcffbf5b3c42d883f7cabf100348fe69ce93cfcb'
+INIT_SRC = os.path.join(ROOT, 'assets', 'S11logo_display_shell')
 FONT = 'rootfs/release/assets/default/raw/fonts/default.ttf'
 FONT_SHA = '9a16af0aead992a2ad64f86d0de8d38bea60d6f605d42ffd0501684666161872'
 QUOTES = {0x2018: 0x27, 0x2019: 0x27, 0x201c: 0x22, 0x201d: 0x22}   # as q2-pod tools/build.py
@@ -81,6 +87,12 @@ def apply_logo(work, logo, logo180):
         check(new.endswith(b'\xff\xd9'), f'{src}: no JPEG end marker')
         write_keep_mode(p, new)
         print(f'logo: {rel} <- {os.path.relpath(src, ROOT)} ({len(new)} bytes, sha256 {sha256(new)[:16]})')
+
+def apply_init(work):
+    p = os.path.join(work, INIT)
+    check(sha256(open(p, 'rb').read()) == INIT_SHA, f'{INIT} is not the stock V2.1 file')
+    write_keep_mode(p, open(INIT_SRC, 'rb').read())
+    print(f'card: {INIT} <- {os.path.relpath(INIT_SRC, ROOT)}')
 
 # ---- curly quotes -------------------------------------------------------------------------------
 
@@ -258,6 +270,7 @@ def main():
     src, out = sys.argv[1:]
     clone_workdir(src, out)
     apply_logo(out, os.path.join(ROOT, 'assets', LOGOS[f'{IMAGES}/logo.jpg'][1]), os.path.join(ROOT, 'assets', LOGOS[f'{IMAGES}/logo180.jpg'][1]))
+    apply_init(out)
     apply_quotes(out)
     apply_anim(out)
 
