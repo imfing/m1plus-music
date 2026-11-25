@@ -437,7 +437,8 @@ NP = {'np_play': ('pil:play', 44, 0, 'fg', 'np_play_down'), 'np_pause': ('pil:pa
       'np_cycle1': ('repeat-1', 30, 18, 'mid', None), 'np_order': ('repeat-off', 30, 18, 'off', None),
       'np_fav': ('star:filled', 44, 18, 'fg', None, 32), 'np_unfav': ('star', 44, 18, 'fg', 'np_unfav_down', 32),
       'np_save': ('bookmark:filled', 44, 18, 'fg', None, 32), 'np_unsave': ('bookmark', 44, 18, 'fg', 'np_unsave_down', 32),   # an episode's favourite button (docs/modules/podcasts.md "Saved")
-      'np_more': ('ellipsis', 44, 18, 'fg', 'np_more_down', 32), 'np_playqueue': ('list-music', 30, 18, 'mid', 'np_playqueue_down')}
+      'np_more': ('ellipsis', 44, 18, 'fg', 'np_more_down', 32), 'np_playqueue': ('list-music', 30, 17, 'mid', 'np_playqueue_down')}
+# np_playqueue 17: list-music is wide and short, so an 18 px box scales it to 22 px against the mode glyphs' 18 (20 % larger); 17 renders it at 19 px, the shuffle / repeat ink
 NP_FG, NP_DIM = (0xEE, 0xEE, 0xEC), (0x8C,) * 3        # q2-pod's off-white and its muted pressed grey
 NP_MID, NP_OFF = (0xC8,) * 3, (0x6E,) * 3               # the mode and queue glyphs (brighter than the secondary grey #AAAAAA); repeat-off, dimmer
 NP_TONES = {'fg': (NP_FG, 255), 'mid': (NP_MID, 255), 'off': (NP_OFF, 255), 'ghost': ((255, 255, 255), 110), 'white': ((255, 255, 255), 255)}   # rgb, alpha
@@ -1765,7 +1766,7 @@ def np_images():
             elif g == 'pil:glass_peqdialog': out[name] = glass_image(*GLASS_PEQDIALOG, fill=GLASS_SHEET_FILL)
             elif g.startswith('pil:'): out[name] = pil_glyph(g[4:], px, rgb, alpha)
             elif rest: out[name] = np_disc(px, rest[0], NP_DISC_ALPHA_DOWN if pressed else NP_DISC_ALPHA, g, ink, rgb)
-            else: out[name] = glyph_fit(g, px, px, rgb, (px - ink) // 2, 1.5 if ink < 22 else None)   # the small mode / queue glyphs keep a 1.5 px stroke
+            else: out[name] = glyph_fit(g, px, px, rgb, (px - ink) / 2, 1.5 if ink < 22 else None)   # the small mode / queue glyphs keep a 1.5 px stroke
     return out
 
 # ---------------------------------------------------------------- one flat disc style for every pull-down tile (docs/modules/pulldown.md "Look")
