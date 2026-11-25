@@ -426,6 +426,19 @@ int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) 
     return rowmenu_open_rows(rm, row, rows, (int)(sizeof rows / sizeof rows[0]), fn);
 }
 
+int rowmenu_open_playlist(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn) {
+    const rowmenu_row_t rows[] = {
+        {"Play", "rm_ic_pplay", RMA_PLAY},
+        {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
+        RM_GROUP,
+        {pinned ? "Unpin Playlist" : "Pin Playlist", pinned ? "rm_ic_unpin" : "rm_ic_pin", RMA_PIN},
+        {"Add to Playlist", "rm_ic_add", RMA_ADD},
+        RM_GROUP,
+        {"Play Next", "rm_ic_next", RMA_NEXT},
+        {"Play After", "rm_ic_after", RMA_AFTER}};
+    return rowmenu_open_rows(rm, row, rows, (int)(sizeof rows / sizeof rows[0]), fn);
+}
+
 int rowmenu_bind(rowmenu_t *rm, void *win) { return rm_bind(rm, win, RM_ROWS, 0); }
 
 int rowmenu_bind_popup(rowmenu_t *rm, void *win) { return rm_bind(rm, win, RM_POPUP_ROWS, 1); }

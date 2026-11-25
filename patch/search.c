@@ -18,6 +18,7 @@
  *             before, so only those are tested; anything else scans the library. se_key builds one key per record; a record with Chinese characters has a second, the initials of the characters' readings (the engine's dictionary, held open for the page's life), tested the same way.
  *   rows      Top Results: the best quality first, in each quality artists, albums, playlists, songs, SE_CAP_TOP rows; a type chip: that type's matches, best quality first, up to its cap.
  *   touch     a tap on a row: an artist opens Cover Flow (coverflow_artist), an album our album page (cc_open_album), a playlist our Songs page, a song plays the library in its order from it.
+ *             A press held RM_LONG_MS opens the row's sheet (song: the track sheet; album, playlist: the six-row sheets; artist: Play, Shuffle, Pin Artist), on the library's page only.
  *             Dragging the list hides the keyboard, a tap on the field shows it, the keyboard's action key hides it, Back (the X or the hardware key) leaves.
  * No hook, no import; the one timer ends with the page.
  */
@@ -38,6 +39,10 @@
 #include "albums.h"
 #include "coverflow.h"
 #include "entries.h"
+#include "rowmenu.h"
+#include "pins.h"
+#include "picker.h"
+#include "artistphoto.h"
 
 #define SE_TERMS 8 /* terms taken from the query (the rest are ignored) */
 #define SE_QMAX 64 /* the keyboard's 63 bytes and the NUL */
@@ -108,6 +113,9 @@ static struct {
         cp; /* a source's cover was asked for and is not there yet: the shared cover poll (patch/libsrc.c ls_cover_poll) */
     void *spin; /* a source's page: the loading spinner (se_spin) */
     int titles; /* search_titles_open: the matcher is held for the Podcasts page's in-show search (no page of ours) */
+    rowmenu_t
+        sheet; /* the long press sheet (docs/modules/search.md "Touch"): bound on the library's page only (a source's results have none) */
+    int sk; /* the kind of the row the sheet is open for (the record is se.lists[sk] at the row it was given) */
 } se __attribute__((section(".scratch")));
 
 static void se_redraw(void) { grid_sv_redraw(se.sv); }
@@ -550,6 +558,7 @@ static void se_kick(void);
 
 static void se_free_data(void) {
     int k;
+    if (se.sheet.on) rowmenu_close(&se.sheet); /* the sheet's rows are records of these lists */
     for (k = 0; k < SE_KINDS; ++k) {
         if (se.lists[k] && (k != SE_SONG || se.src)) deque_destroy(se.lists[k]); /* the song list is the stock's own */
         free(se.cand[k]);
@@ -1191,6 +1200,79 @@ static __attribute__((noinline)) void se_open_row(int i) {
     }
 }
 
+/* The long press sheet: the record of a result row, from the list it came from (the sheet's `row` is the record's place in that list, which holds until se_free_data closes the sheet). */
+static void *se_sheet_rec(int kind, int idx) {
+    if (!se.sheet.on || se.src || kind < 0 || kind >= SE_KINDS || !se.lists[kind] || idx < 0 || idx >= (int)se.n[kind])
+        return (void *)0;
+    if (kind == SE_SONG && !se_valid()) return (void *)0;
+    return deque_at(se.lists[kind], (unsigned)idx);
+}
+
+static int se_artist_pinnable(void *rec) {
+    const char *name = cc_str(rec, REC_TITLE);
+    return I(rec, REC_ID) != -1 && *name && ap_key(name) && strlen(name) < PIN_STR;
+}
+
+/* Add to Playlist of a song row: the picker on a one-row copy of the record. */
+static void se_add_song(int idx) {
+    void *rec = se_sheet_rec(SE_SONG, idx);
+    if (rec && picker_open_rec(CLASS_ALL_SONGS, rec) < 0) pod_toast(TR("msg_addfailed"));
+}
+
+/* A row of the sheet (it has closed): the album, playlist or artist the sheet was opened on (a song's rows are the track sheet's own). */
+static void se_sheet(int idx, int act) {
+    void *rec = se_sheet_rec(se.sk, idx);
+    const char *name;
+    if (!rec) return;
+    name = cc_str(rec, se.sk == SE_ALBUM ? REC_ALBUM : REC_TITLE);
+    if (se.sk == SE_ALBUM) {
+        pins_album_act(name, cc_album_key(rec), cc_str(rec, REC_PATH), act);
+    } else if (se.sk == SE_PLAYLIST) {
+        int id = I(rec, REC_DISC);
+        if (act != RMA_PIN)
+            pins_playlist_act(id, name, act);
+        else if (pins_has_playlist(id, name))
+            pins_unpin_playlist(id, name);
+        else
+            pins_pin_playlist(id, name, (const unsigned *)0, 0); /* (no mosaic keys here: Home draws the placeholder) */
+    } else if (act == RMA_PIN) {
+        if (pins_has_artist(name))
+            pins_unpin_artist(name);
+        else
+            pins_pin_artist(name);
+    } else if (songs_play_artist(rec, CLASS_ARTISTS, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER) < 0)
+        pod_toast(TR("Can't play"));
+}
+
+/* A press held RM_LONG_MS on a result row: the sheet of its type opens while the finger is down; the press is forgotten, so the release opens nothing. */
+static void se_on_hold(int a) {
+    void *rec;
+    int kind, idx;
+    se.down = se.pressing = 0;
+    grid_set_press(&se.press, 0, se.sv);
+    if (se.rm || se.src || a < 0 || a >= se.nrows) return;
+    kind = se.rows[a].kind, idx = (int)se.rows[a].idx;
+    rec = se_sheet_rec(kind, idx);
+    if (!rec) return;
+    se.sk = kind;
+    if (kind == SE_SONG) {
+        rowmenu_open_src(&se.sheet, idx, rec, se_add_song, (const lib_src_t *)0);
+    } else if (kind == SE_ALBUM) {
+        if (I(rec, REC_ID) != -1 && *cc_str(rec, REC_ALBUM))
+            rowmenu_open_album(&se.sheet, idx, pins_has_album(cc_str(rec, REC_ALBUM)), se_sheet);
+    } else if (kind == SE_PLAYLIST) {
+        rowmenu_open_playlist(&se.sheet, idx, pins_has_playlist(I(rec, REC_DISC), cc_str(rec, REC_TITLE)), se_sheet);
+    } else {
+        int has = pins_has_artist(cc_str(rec, REC_TITLE));
+        const rowmenu_row_t rows[] = {
+            {"Play", "rm_ic_pplay", RMA_PLAY},
+            {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
+            RM_GROUP,
+            {has ? "Unpin Artist" : "Pin Artist", has ? "rm_ic_unpin" : "rm_ic_pin", RMA_PIN}};
+        rowmenu_open_rows(&se.sheet, idx, rows, se_artist_pinnable(rec) ? 4 : 2, se_sheet);
+    }
+}
+
 static int se_on_down(void *ctx, void *e) {
     int a;
     (void)ctx;
@@ -1201,12 +1283,20 @@ static int se_on_down(void *ctx, void *e) {
     se.dx = se.hitx;
     se.down = a + 1, m1_tap_at(&se.tap, e);
     grid_set_press(&se.press, a + 1, se.sv);
+    if (a >= 0 && !se.rm && se.sheet.on) rowmenu_hold_start(a, se_on_hold);
+    return RET_OK;
+}
+
+static int se_on_move(void *ctx, void *e) {
+    (void)ctx;
+    if (se.down && e) rowmenu_hold_move(&se.tap, e); /* a drift of SC_DRAG_PX or more is a drag, not a long press */
     return RET_OK;
 }
 
 static int se_on_up(void *ctx, void *e) {
     int a = se.down - 1;
     (void)ctx;
+    rowmenu_hold_stop();
     se.down = 0, se.pressing = 0;
     grid_set_press(&se.press, 0, se.sv);
     if (a < 0 || !e || !se.view) return RET_OK;
@@ -1230,6 +1320,7 @@ static int se_on_abort(void *ctx, void *e) {
     int drag = se.pressing;
     (void)ctx;
     (void)e;
+    rowmenu_hold_stop();
     se.down = se.pressing = 0;
     grid_set_press(&se.press, 0, se.sv);
     if (drag && keyboard_shown()) se_kb_hide();
@@ -1240,6 +1331,7 @@ static int se_on_bg(void *ctx,
                     void *e) { /* the page goes behind another: the press is let go, the keyboard stays as it is */
     (void)ctx;
     (void)e;
+    if (se.sheet.on) rowmenu_close(&se.sheet);
     se.down = se.pressing = 0;
     grid_set_press(&se.press, 0, se.sv);
     return RET_OK;
@@ -1388,6 +1480,7 @@ static int se_on_destroy(void *ctx, void *e) {
     ls_cover_end(&se.cp);
     if (se.py) pinyin_release(); /* the engine's megabyte goes back with the page */
     free(se.hz);
+    rowmenu_free(&se.sheet);
     m1_timer_stop(&se.timer);
     se_free_data();
     grid_free(&se.ga);
@@ -1442,9 +1535,11 @@ static int se_open(int scope, const lib_src_t *src) {
         navigator_back();
         return -1;
     }
+    if (!se.src) rowmenu_bind(&se.sheet, se.win); /* the long press sheet (an asset without it: no long press) */
     widget_on(se.win, EVT_WINDOW_TO_FG, se_on_fg, (void *)0);
     widget_on(se.win, EVT_WINDOW_TO_BG, se_on_bg, (void *)0);
     widget_on(se.view, EVT_POINTER_DOWN, se_on_down, (void *)0);
+    widget_on(se.view, EVT_POINTER_MOVE, se_on_move, (void *)0);
     widget_on(se.view, EVT_POINTER_UP, se_on_up, (void *)0);
     widget_on(se.view, EVT_POINTER_ABORT, se_on_abort, (void *)0);
     widget_on(se.view, EVT_AFTER_PAINT, se_on_paint, (void *)0);

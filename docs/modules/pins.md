@@ -52,7 +52,7 @@ event and the scroll view takes every drag.
   Playlists page's tap, the stock page if ours will not open). An item the library does not list now (or an empty or failed list)
   says "Not found"; the pin stays.
 - **Long press** (`RM_LONG_MS`, `rowmenu_hold_start`) lifts the tile (see Reorder) and opens at once the bottom sheet (a drag of `SC_DRAG_PX` closes it again; a release where it was leaves it open) bound with `rowmenu_bind_album` (`rm_scrim` and `rm_card` are the window's last two children, over the bar, `row_menu(album=True)`). The rows follow the tile (`pn_open_sheet`, tables through `rowmenu_open_rows`, [rowmenu](rowmenu.md) "Sheets from a table"; acts `RMA_*`, Unpin is `RMA_PIN` for every kind): an album has the album sheet,
-  **Play**, **Shuffle** | **Unpin Album**, **Add to Playlist** | **Play Next**, **Play After** (glyphs `play`, `shuffle`, `pin-off`, `list-plus`, `list-start`, `list-end`; `pc_sheet6`); a playlist or artist **Play**, **Shuffle** | **Unpin Playlist** / **Unpin Artist**; a song **Play** | **Unpin Song**.
+  **Play**, **Shuffle** | **Unpin Album**, **Add to Playlist** | **Play Next**, **Play After** (glyphs `play`, `shuffle`, `pin-off`, `list-plus`, `list-start`, `list-end`; `pc_sheet6`); a playlist the same with **Unpin Playlist** (`rowmenu_open_playlist`; Add to Playlist, Play Next and Play After act on its songs through `pins_playlist_act`, in the order of the playlist, "Not found" when it is gone or empty); an artist **Play**, **Shuffle** | **Unpin Artist**; a song **Play** | **Unpin Song**.
   Play and Shuffle start the whole album or playlist as the album page's Play pill and Shuffle disc do
   (`so_play`, Now Playing opens): album via `loadAlbumList`, `loadAlbumdetailList`, `loadLocalClassList`;
   playlist via classinfo[1] and `loadLocalClassList(CLASS_PLAYLIST_SONGS)`.
@@ -133,9 +133,9 @@ already there returns `PINS_OK` and changes nothing. A live menu shows the chang
 **Playlist entry:** the Songs page of a playlist: "..." card, the fourth row (slot `VS_ACT3`, under Select, Rename and Clean
 Up) **Pin Playlist** / **Unpin Playlist** (`pod_ic_vspin` / `pod_ic_vsunpin`). `sg_pin_row` sets
 words and glyph at each open; `sg_pin` takes the mosaic keys from the list the page holds
-(`grid_mosaic_keys`). The Playlists page's row long press (`pl_on_hold`: Play, Shuffle, Pin Playlist /
-Unpin Playlist; [playlists](playlists.md)) is another entry; it pins with the page's mosaic keys and plays through
-`pins_play_playlist(id, name, shuffle)`.
+(`grid_mosaic_keys`). The Playlists page's row long press (`pl_on_hold`: the playlist sheet, Play, Shuffle | Pin Playlist /
+Unpin Playlist, Add to Playlist | Play Next, Play After; [playlists](playlists.md)) is another entry; it pins with the page's mosaic keys and
+runs the other rows through `pins_playlist_act(id, name, act)` (Play and Shuffle are `pins_play_playlist(id, name, shuffle)`).
 
 ## Checks against the library
 

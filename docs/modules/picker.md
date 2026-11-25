@@ -64,9 +64,15 @@ after every query it runs (`picker_restore`: after each playlist scan, the playl
 the page's destroy), so the caller's own restore on its to-foreground (which `so_add` still sets up: `title_save`, `*picker`) finds them as they were, and its
 reload of the list uses them. The stock picker's side effects (class `0xf00b`, the saved title) do not happen: stock's page never runs.
 
-**Over our Playlists page's Songs page.** The Playlists page keeps its state in one struct (`pl`). When the picker opens while the Playlists page is below (Playlists >
-a playlist's Songs page > Add), the state is copied aside (`calloc`) and `pl` is the picker's; the page's destroy puts the copy back (the Playlists page below
-was in the background all along: its loader stopped, to-foreground reads it again).
+**Over our Playlists page.** The Playlists page keeps its state in one struct (`pl`). When the picker opens while the Playlists page exists (Playlists >
+a playlist's Songs page > Add, or the Playlists page's own long press sheet > Add to Playlist), the state is copied aside (`calloc`) and `pl` is the picker's; the
+page's destroy puts the copy back. A Playlists page still in front is sent to the background first (`pl_on_bg`: its loader stopped, its sheet closed), and its
+window's to-foreground and to-background handlers act only for their own window (`ctx` is the window), so the original window's events never touch the
+picker's state. Its to-foreground, once the picker has gone, reads it again.
+
+**Over an embedded keyboard.** A page that keeps our keyboard embedded (Search, [keyboard](keyboard.md)) holds the one keyboard, so New playlist's
+`keyboard_open` would refuse. `pk_open` sets the embedded keyboard aside (`keyboard_park`) before the page opens and `picker_release` gives it back
+(`keyboard_unpark`): the field's text, the layer and the pad's shown state come back; a pinyin composition in progress is dropped.
 
 **Fallback.** `picker_open` returns -1 and `so_add` runs the stock path exactly as before (the selection into the stock vector, `playlist_page` with `PICKER_ADD |
 class`) when: the stock list is not the one the marks are of, the copies cannot be made, the window `m1plus_playlists` does not open, the asset lacks a widget,

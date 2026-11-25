@@ -1311,8 +1311,8 @@ def stock_tests(ctx):
 
 
 def hold_tests(ctx):
-    """The long press (docs/modules/pins.md): a playlist held RM_LONG_MS on the library's Playlists page (grid and list) opens the three-row sheet (Play, Shuffle, Pin Playlist / Unpin Playlist by the pins
-    file) and its release opens no playlist; Play and Shuffle play that playlist; Pin writes the page's mosaic keys; no hold in select mode, in the picker, on a source's page or under a card."""
+    """The long press (docs/modules/pins.md): a playlist held RM_LONG_MS on the library's Playlists page (grid and list) opens the six-row sheet (Play, Shuffle | Pin Playlist / Unpin Playlist by the pins
+    file, Add to Playlist | Play Next, Play After) and its release opens no playlist; Play and Shuffle play that playlist; Pin writes the page's mosaic keys; Play Next / Play After queue its songs in order, Add to Playlist marks them all for the picker; no hold in select mode, in the picker, on a source's page or under a card."""
     expect = ctx.expect
     import pod_pins_home as PH_
     RM = sibling('rowmenu')
@@ -1351,6 +1351,8 @@ def hold_tests(ctx):
         expect(len(timers(m)) == 1 and timers(m)[0][2] == O['RM_LONG_MS'] and not shown(m), f'{mode}: a press on a playlist arms the one {O["RM_LONG_MS"]} ms timer')
         m.call(PSYMS['rm_on_hold'], count=900000000)
         expect(shown(m) and m.wtext[m.widgets['rm_label2']] == 'Pin Playlist' and m.props.get((m.widgets['rm_icon2'], 'image')) == 'rm_ic_pin', f'{mode}: held, the sheet opens with Pin Playlist and the pin glyph')
+        expect(m.props.get((m.widgets['rm_card'], 'style:normal:bg_image')) == 'pc_sheet6' and [m.wtext[m.widgets[f'rm_label{i}']] for i in (0, 1, 3, 4, 5)] == ['Play', 'Shuffle', 'Add to Playlist', 'Play Next', 'Play After']
+               and all(RM.vis(m, f'rm_item{i}') == (1, 1) for i in range(6)), f'{mode}: six rows on pc_sheet6: Play, Shuffle | Pin Playlist, Add to Playlist | Play Next, Play After')
         m.calls = []; up(m, y)
         expect(shown(m) and not opened(m.calls), f'{mode}: the release opens no playlist and leaves the sheet open')
         RM.SG.click(m, 'rm_item2')
@@ -1366,6 +1368,17 @@ def hold_tests(ctx):
             m.played.clear(); m.click(item, count=900000000)
             expect(not shown(m) and len(m.played) == 1 and m.played[0][0] == O['CLASS_PLAYLIST_SONGS'] and m.played[0][2] == 4 and m.played[0][3] == (-1 if how else 0) and m.played[0][4] == 1 + how
                    and m.word(pod.DATA['CLASSINFO'][0] + 4) == 2, f'{mode}: {name} plays Night ({m.played})')
+        # Play Next / Play After queue the four songs of Night in order; Add to Playlist marks them all
+        night = [f'/mnt/mmc/m/{a}/1.flac' for a in (2, 2, 3, 4)]
+        for item, after, say in (('rm_item4', 0, 'Playing Next'), ('rm_item5', 1, 'Added to Queue')):
+            down(m, y, 3700 + after * 100); m.call(PSYMS['rm_on_hold'], count=900000000); up(m, y, 3800 + after * 100)
+            m.up_calls.clear(); m.calls = []; m.click(item, count=900000000)
+            paths = [m.read_cstr(m.word(r + O['REC_PATH'])) for r in m.up_calls[0][0]] if m.up_calls else None
+            expect(not shown(m) and len(m.up_calls) == 1 and paths == night and m.up_calls[0][1] == after and RM.toasts_in(m.calls) == [say], f'{mode}: {item} queues Night in order ({paths}, {RM.toasts_in(m.calls)})')
+        down(m, y, 3900); m.call(PSYMS['rm_on_hold'], count=900000000); up(m, y, 4000)
+        m.pk_ret = 0; m.pk_calls.clear(); m.calls = []; m.click('rm_item3', count=900000000)
+        expect(not shown(m) and m.pk_calls and m.pk_calls[0][0] == O['CLASS_PLAYLIST_SONGS'] and m.pk_calls[0][1] == 4 and m.pk_calls[0][2][0] & 15 == 15 and not RM.toasts_in(m.calls),
+               f'{mode}: Add to Playlist opens the picker with the four songs all marked ({m.pk_calls})')
         # cancelled: a drift, an abort, an early release (a tap still opens the playlist)
         m.calls = []; down(m, y, 5000); m.calls = []
         m.touch('move', MARGIN + 60, SCREEN_Y0 + y, 5100, fn='pl_on_move')
@@ -1382,6 +1395,18 @@ def hold_tests(ctx):
     # the picker and a source's page: no sheet
     m = machine('grid'); m.call(PSYMS['playlists_pick'], count=60000000); settle(m); m.calls = []; down(m, TOP + 10)
     expect(not timers(m), 'the Add to Playlist picker: no hold')
+    # the picker opened from the page's own sheet (the page in front, pl is one struct): the page's to-background, delivered to its window afterwards, leaves the picker's state alone; its to-foreground runs when the picker is gone
+    m = machine('grid'); open_page(m); settle(m)
+    bg, fg = m.bound[(m.window, O['EVT_WINDOW_TO_BG'])], m.bound[(m.window, O['EVT_WINDOW_TO_FG'])]
+    win2 = m.alloc(0x80); m.windows['m1plus_playlists'] = win2; m.calls = []
+    expect(m.call(PSYMS['playlists_pick'], count=60000000) == 0, 'the picker opens over the Playlists page in front')
+    m.calls = []; m.call(bg[0], a0=bg[1], a1=0, count=4000000)
+    expect(not [c for c in m.calls if c[0] == 'timer_remove'], 'the page below going to the background (its window\'s event) stops nothing of the picker\'s loader')
+    log = []; settle(m, log=log)
+    expect(any(c[0] == 'loadLocalClassList' for c in log), 'the picker still reads its playlists after it')
+    fn, c = m.bound[(win2, O['EVT_DESTROY'])]; m.call(fn, a0=c, a1=0, count=20000000)
+    m.calls = []; m.call(fg[0], a0=fg[1], a1=0, count=60000000)
+    expect(('loadLocalClassList', O['CLASS_PLAYLISTS']) in m.calls, 'the picker gone: the page below comes to the front and reads its playlists again')
     m = machine('grid'); src = m.fake_src(); m.call(PSYMS['playlists_open_src'], a0=src, count=60000000); settle(m); m.calls = []; down(m, R0 + 10)
     expect(not timers(m), 'a source\'s page: no hold')
 

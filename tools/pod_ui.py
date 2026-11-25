@@ -900,7 +900,7 @@ def build_playlists_page(page):
     root.children[0].children.append(selall_button())   # the navbar's select mode text (the card's Delete Playlists starts select mode: patch/playlists.c)
     root.children.append(select_bar('pl_bar', [('pl_del', 'one')]))
     root.children.extend(view_sort_card(sort_keys=('Name',) * len(VS_SORT_KEYS), act_keys=pod_pages.PLAYLIST_MENU, act_glyphs=[n for n, _ in PL_MENU_ICONS]))   # above the list, the bar and the navbar
-    root.children.extend(row_menu(pins=True))   # last: the long press sheet of a playlist (Play, Shuffle, Pin Playlist / Unpin Playlist; patch/playlists.c, docs/modules/pins.md)
+    root.children.extend(row_menu(album=True))   # last: the long press sheet of a playlist (the album sheet's six rows with Pin Playlist / Unpin Playlist; patch/playlists.c, docs/modules/pins.md)
     return root
 
 
@@ -924,7 +924,7 @@ def row_menu(queue=False, pins=False, album=False):
     Hidden AND insensitive until the payload shows them; nothing is placed or sized at open. Put it last in the window, above the list, the bars and the navbar.
     queue: the Queue page's sheet, three rows (Play Next, Play After, Remove from Queue) on the three-row glass.
     pins: the Artists page's long press sheet, three rows: Play, Shuffle, Unpin Album (the payload sets Pin Artist / Unpin Artist).
-    album: the album long press sheet (Home pins, Recently Played, Albums page), five rows: Play, Shuffle, Play Next, Play After, Unpin Album on pc_sheet5 (Home shrinks it to three rows for a pinned playlist or artist, and two for a pinned song)."""
+    album: the album long press sheet (Home pins, Recently Played, Albums page, Playlists page), six rows in three groups on pc_sheet6: Play, Shuffle | Pin / Unpin, Add to Playlist | Play Next, Play After (Home shrinks it to three rows for a pinned artist, and two for a pinned song)."""
     from mod_icons import RM_MENU_ICONS, RM_REMOVE, RM_PIN_ICONS, BARE_PX
     if album:
         keys, icons, glass, rows = ALBUM_SHEET_KEYS, RM_PIN_ICONS + (RM_MENU_ICONS[2],) + RM_MENU_ICONS[:2], ALBUM_SHEET_GLASS, OFFSETS['RM_ALBUM_ROWS']
@@ -1309,6 +1309,7 @@ def build_search_page(page):
     root.children += style_labels((('label_row_title', LIST_TITLE_PX, PS.TITLE_RGB), ('label_row_sub', LIST_SUB_PX, PS.SUB_RGB), ('label_chip', PS.SE_CHIP_PX, PS.CHIP_INK, 'center'),
                                    ('label_chip_on', PS.SE_CHIP_PX, PS.CHIP_ON_INK, 'center')), {'label_chip_on': PS.CHIP_ON_RGB})   # the dark text is on the selected pill (the contrast scan reads the label's own background)
     root.children += keyboard_pad_widgets()
+    root.children.extend(row_menu())   # last: the long press sheet of a result row (patch/search.c; the song's track sheet, the album, playlist and artist sheets worded from the same rows)
     return root
 
 
@@ -3744,7 +3745,7 @@ def build_page(page):
         sv.children.append(hidden(Widget('view', 0, len(page.rows) * ROW_H, sv.w, MB_PAD, [('name', 'pod_pad')])))   # last child; the payload shows it with the bar
         root.children.append(cache_pill())   # (hidden; the bar stays the last child: it paints over everything)
         root.children.append(minibar())
-        root.children.extend(row_menu(album=True))   # the pins' / Recently Played long press sheet: five rows for an album (shrunk to three for playlist/artist, two for song), above the bar
+        root.children.extend(row_menu(album=True))   # the pins' / Recently Played long press sheet: six rows for an album or a playlist (shrunk to three for an artist, two for a song), above the bar
     return root
 
 

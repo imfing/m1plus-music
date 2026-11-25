@@ -2,7 +2,7 @@
 
 A grey "..." at the right end of every track row opens a bottom sheet in the look of Now Playing's More sheet ([playmore](playmore.md)).
 Pages: the album page (`patch/albumpage.c`) and the Songs page (`patch/songs.c`) with every list it hosts (the library, a playlist, genre, artist, Most Played,
-Recently Played / Added, Hi-Res, Favourites; whatever `sg.cls` covers). Not covered: Search, Daily Mix, the Albums grid, Folders, Podcasts rows; a "..." pressed state.
+Recently Played / Added, Hi-Res, Favourites; whatever `sg.cls` covers). Not covered: Daily Mix, the Albums grid, Folders, Podcasts rows; a "..." pressed state.
 
 **Sources:** `patch/rowmenu.c` / `rowmenu.h` (open, close, the "..." bitmap and its painter, the actions), `patch/songinfo.c` (Get Info, [songinfo](songinfo.md)), the pages' row painters, hit tests and one-row
 `Add to Playlist`, `patch/upnext.c` (`upnext_add`, [queue](queue.md)), `patch/songops.c` (`so_add`), `patch/picker.c`, `tools/pod_ui.py` (`row_menu`),
@@ -81,12 +81,13 @@ The Queue page ([queue](queue.md) "Row edit") reuses this menu for its Up Next r
 
 | Sheet | Rows (act) |
 |---|---|
-| Album (`rowmenu_open_album`: Albums long press, the Recently Added album grid, Home's Recently Played, an album pin on Home) | Play, Shuffle \| Pin Album / Unpin Album, Add to Playlist \| Play Next, Play After (`RMA_*`); the album form of the asset (`row_menu(album=True)`, `rowmenu_bind_album`, 6 rows) or the track sheet's |
+| Album (`rowmenu_open_album`: Albums long press, a Search album result, the Recently Added album grid, Home's Recently Played, an album pin on Home) | Play, Shuffle \| Pin Album / Unpin Album, Add to Playlist \| Play Next, Play After (`RMA_*`); the album form of the asset (`row_menu(album=True)`, `rowmenu_bind_album`, 6 rows) or the track sheet's |
 | Album page "..." (the library's, [album-page](album-page.md)): the popup form, below | Select \| Pin Album / Unpin Album (a titled album), Add to Playlist \| Play Next, Play After (20 px `pod_ic_vs*` glyphs) |
-| Home: a pinned playlist or artist | Play, Shuffle \| Unpin Playlist / Unpin Artist |
+| Playlist (`rowmenu_open_playlist`: the library's Playlists long press, a playlist pin on Home, a Search result) | The album sheet's six rows with Pin Playlist / Unpin Playlist; the album form of the asset |
+| Home: a pinned artist, a Search artist result | Play, Shuffle \| Unpin Artist (Search: Pin Artist when not pinned) |
 | Home: a pinned song | Play \| Unpin Song |
 
-The album sheet's rows go to `pins_album_act` ([pins](pins.md)) on the Albums page, the Recently Added grid and Recently Played. `rowmenu_upnext_toast` formats the toast of any `upnext_add` status.
+The album sheet's rows go to `pins_album_act` ([pins](pins.md)) on the Albums page, the Recently Added grid and Recently Played; the playlist sheet's go to `pins_playlist_act` (the Playlists page and the Home pin). `rowmenu_upnext_toast` formats the toast of any `upnext_add` status.
 
 ## Popup form
 

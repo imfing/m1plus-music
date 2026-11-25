@@ -18,6 +18,7 @@
 #include "picker.h"
 #include "home.h"
 #include "playlists.h"
+#include "keyboard.h"
 
 static struct {
     int on, done;
@@ -47,6 +48,7 @@ void picker_release(void) {
     free(pk.keys);
     free(pk.seen);
     memset(&pk, 0, sizeof pk);
+    keyboard_unpark();
 }
 
 static int pk_less(const unsigned *a, const unsigned *b) { return a[0] != b[0] ? a[0] < b[0] : a[1] < b[1]; }
@@ -128,6 +130,7 @@ static int pk_open(int cls, void *list, unsigned count, const unsigned char *sel
     pk.cls0 = *(int *)G_CLASS_TYPE;
     memcpy(pk.ci, (void *)CLASSINFO, sizeof pk.ci);
     memcpy(pk.title, (void *)NAV_TITLE, sizeof pk.title);
+    keyboard_park(); /* a page under it with the keyboard embedded (Search): New Playlist opens the keyboard page; picker_release gives it back */
     if (playlists_pick() < 0) {
         picker_release();
         return -1;

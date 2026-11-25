@@ -111,6 +111,9 @@ void rowmenu_upnext_toast(int r, int after);
  * puts the track words back). `fn(row, act)` with act RMA_* runs after the sheet has closed. 1 when open. */
 int rowmenu_open_album(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn);
 
+/* The playlist sheet: the album sheet's six rows with Pin Playlist / Unpin Playlist (by `pinned`), on the album asset. `fn(row, act)` with act RMA_* runs after the sheet has closed. 1 when open. */
+int rowmenu_open_playlist(rowmenu_t *rm, int row, int pinned, rowmenu_queue_fn fn);
+
 /* Frees the bitmap and the row copy (the window's destroy). */
 void rowmenu_free(rowmenu_t *rm);
 

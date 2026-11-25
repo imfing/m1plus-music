@@ -66,7 +66,9 @@ GROUPED = (   # every grouped sheet: (panel title, rows (key, glyph)); the group
     ('Song: a playlist\'s row', (('Pin Song', 'rm_ic_pin'), ('Add to Playlist', 'rm_ic_add'), ('Favorite', 'rm_ic_fav'), ('Get Info', 'rm_ic_info'),
                                  ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'), ('Remove from Playlist', 'pod_ic_remove_red'))),
     ('Song: Navidrome', tuple(zip(*ND_STATES['new']))),
-    ('Artist / Playlist: long press', (('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Pin Artist', 'rm_ic_pin'))),
+    ('Playlist: long press', (('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Pin Playlist', 'rm_ic_pin'), ('Add to Playlist', 'rm_ic_add'),
+                              ('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'))),
+    ('Artist: long press', (('Play', 'rm_ic_pplay'), ('Shuffle', 'rm_ic_pshuffle'), ('Pin Artist', 'rm_ic_pin'))),
     ('Home: a pinned song', (('Play', 'rm_ic_pplay'), ('Unpin Song', 'rm_ic_unpin'))),
     ('Queue: Up Next row', (('Play Next', 'rm_ic_next'), ('Play After', 'rm_ic_after'), ('Remove from Queue', 'pod_ic_remove_red'))))
 

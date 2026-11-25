@@ -945,7 +945,7 @@ def asset_tests(ctx):
     for n in ('label_status', 'label_title', 'label_row_title', 'label_row_sub', 'label_chip', 'label_chip_on'):
         expect(by[n].get('visible') == 'false' and by[n].get('sensitive') == 'false', f'{n} starts hidden and out of the hit test')
     expect(by['label_chip_on'].get('style:normal:text_color') == PS.CHIP_ON_INK and by['label_chip_on'].get('style:normal:bg_color') == PS.CHIP_ON_RGB, 'the selected chip\'s text is dark, on the pill\'s grey')
-    cols = [v for w in t.walk() for k, v in w.props if isinstance(v, str) and re.fullmatch(r'#[0-9a-fA-F]{6,8}', v) and 'color' in k]
+    cols = [v for w in t.walk() if w.name != 'rm_label6' for k, v in w.props if isinstance(v, str) and re.fullmatch(r'#[0-9a-fA-F]{6,8}', v) and 'color' in k]   # (the sheet's Remove from Playlist row is red and never shown here)
     def neutral(c):
         c = c.lstrip('#'); r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4)); return max(r, g, b) - min(r, g, b) <= 12
     expect(all(neutral(c) for c in cols), f'no accent colour: every colour is a grey ({sorted({c for c in cols if not neutral(c)})})')
@@ -1392,4 +1392,138 @@ def src_tests(ctx):
     expect(rows(m) == [] and said(m, 'label_status') == "Can't connect to the server", f"a failed request: the failure line ({said(m, 'label_status')})")
 
 
-SECTIONS = [recent_tests, fold_tests, query_tests, pinyin_tests, rank_tests, incremental_tests, page_tests, chips_tests, scope_tests, chip_cover_tests, live_tests, tap_tests, perf_tests, loader_tests, entry_tests, return_tests, embed_tests, asset_tests, src_tests, split_tests]   # tools/check.py runs each as its own task
+def hold_tests(ctx):
+    """The long press (docs/modules/search.md "Touch"): a row held RM_LONG_MS opens its type's sheet on the library's page (a song: the track sheet; an album and a playlist: the six-row sheets; an artist: Play, Shuffle |
+    Pin Artist), the release afterwards opens nothing, a drag or an abort cancels, the recent searches and a source's results have no hold; the acts read the record the sheet was opened for."""
+    expect = ctx.expect
+    import pod_pins_home as PH_
+    RM = sibling('rowmenu')
+    PINS = '/mnt/mmc/.m1plus/home-pins'
+    songs = [('Alpha one', 'Ann', 'First'), ('Alpha two', 'Bob', 'Second'), ('Beta', 'Ann', 'First')]
+    timers = lambda m: [c for c in m.calls if c[0] == 'timer_add' and c[1] == PSYMS['rm_on_hold']]
+    shown = lambda m: RM.vis(m, 'rm_card') == (1, 1)
+    y_of = lambda i: i * ROW_H + ROW_H // 2
+    words = lambda m, n: [m.wtext[m.widgets[f'rm_label{i}']] for i in range(n)]
+
+    def fresh(real_picker=False, **kw):
+        m = page_machine(songs, ['Alphaville', 'Ann'], [('Alpha Album', 'Ann'), ('Gamma', 'Bob')], playlists=['Alpha Mix'], cls=kw.pop('cls', ListMachine), **kw)
+        RM.with_menu(m, 0)
+        m.handlers[PSYMS['picker_open_rec']] = 'picker_open_rec'
+        m.pr_calls = []
+        inner = m._hook
+        if real_picker:   # picker_open_rec / pk_open / keyboard_park run for real; only the Playlists page behind them (playlists_pick) is stubbed, as opened
+            del m.handlers[PSYMS['picker_open_rec']]
+            m.handlers[PSYMS['playlists_pick']] = 'playlists_pick'
+        def hook(u, address, size, _):
+            if m.handlers.get(address) == 'playlists_pick':
+                m.calls.append(('playlists_pick',)); u.reg_write(UC_MIPS_REG_V0, 0); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+            if m.handlers.get(address) == 'picker_open_rec':
+                a1 = u.reg_read(UC_MIPS_REG_A1)   # noqa: F821
+                m.pr_calls.append(m.read_cstr(m.word(a1 + O['REC_TITLE']))); m.calls.append(('picker_open_rec',))
+                u.reg_write(UC_MIPS_REG_V0, 1); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+            return inner(u, address, size, _)
+        m._hook = hook
+        assert m.call(PSYMS['search_open'], count=40000000) == 0
+        typed(m, 'alpha')
+        return m
+
+    def down(m, y, t=1000, x=100): m.touch('down', x, LIST_Y0 + y, t, fn='se_on_down', count=30000000)
+    def up(m, y, t=1600, x=100): m.touch('up', x, LIST_Y0 + y, t, fn='se_on_up', count=30000000)
+    def hold(m, i, t=1000):
+        m.calls = []; down(m, y_of(i), t)
+        t = timers(m); m.call(PSYMS['rm_on_hold'], count=900000000)
+        return t
+
+    m = fresh()
+    expect([k for k, _ in rows(m)] == [ARTIST, ALBUM, PLAYLIST, SONG, SONG], f'the rows ({rows(m)})')
+    # the song: the track sheet, its release opens nothing, Play Next queues the row, Add to Playlist opens the picker on its record
+    t = hold(m, 4)
+    expect(len(t) == 1 and t[0][2] == O['RM_LONG_MS'] and shown(m) and words(m, 5)[:2] == ['Play Next', 'Play After'] and state(m, 'press') == 0, f'a song held: one timer, the track sheet opens ({words(m, 5)})')
+    m.calls = []; up(m, y_of(4))
+    expect(shown(m) and not [c for c in m.calls if c[0] in ('navigator_to_with_context', 'loadSongList', 'window_open')] and not getattr(m, 'played', None), 'the release afterwards opens and plays nothing')
+    m.click('rm_item0', count=900000000)
+    expect(not shown(m) and len(m.up_calls) == 1 and m.read_cstr(m.word(m.up_calls[0][0][0] + O['REC_TITLE'])) == 'Alpha two' and m.up_calls[0][1] == 0, 'Play Next queues the held song')
+    hold(m, 3); up(m, y_of(3)); m.click('rm_item2', count=900000000)
+    expect(m.pr_calls == ['Alpha one'] and not shown(m), f'Add to Playlist opens the picker on the held song ({m.pr_calls})')
+    m.pk_ret = -1
+    # the album: the six-row sheet; Pin Album writes the album's line, then reads Unpin Album
+    hold(m, 1); up(m, y_of(1))
+    expect(shown(m) and words(m, 6) == ['Play', 'Shuffle', 'Pin Album', 'Add to Playlist', 'Play Next', 'Play After'] and m.props.get((m.widgets['rm_card'], 'style:normal:bg_image')) == 'pc_sheet6', f'an album held: the album sheet ({words(m, 6)})')
+    expect(not [c for c in m.calls if c[0] in ('navigator_to_with_context', 'albuminfo_page')], 'the album release opens no album page')
+    m.click('rm_item2', count=900000000)
+    got = PH_.parse(m.fs.get(PINS, b''))
+    expect(len(got) == 1 and got[0][0] == 'a' and got[0][3] == 'Alpha Album' and not shown(m), f'Pin Album writes the album\'s line ({got})')
+    hold(m, 1); up(m, y_of(1))
+    expect(words(m, 3)[2] == 'Unpin Album', 'a pinned album reads Unpin Album')
+    m.click('rm_item2', count=900000000)
+    expect(PH_.parse(m.fs.get(PINS, b'')) == [], 'Unpin Album removes the line')
+    # the playlist: the six-row sheet; Pin Playlist writes the line with no mosaic keys
+    hold(m, 2); up(m, y_of(2))
+    expect(shown(m) and words(m, 6) == ['Play', 'Shuffle', 'Pin Playlist', 'Add to Playlist', 'Play Next', 'Play After'], f'a playlist held: the playlist sheet ({words(m, 6)})')
+    expect(not [c for c in m.calls if c[0] in ('navigator_to_with_context', 'window_open')], 'the playlist release opens no page')
+    m.click('rm_item2', count=900000000)
+    got = PH_.parse(m.fs.get(PINS, b''))
+    expect(len(got) == 1 and got[0][0] == 'p' and got[0][1] == 40 and got[0][3] == 'Alpha Mix' and not any(got[0][2]), f'Pin Playlist writes id 40 and the name, no cover keys ({got})')
+    hold(m, 2); up(m, y_of(2))
+    expect(words(m, 3)[2] == 'Unpin Playlist', 'a pinned playlist reads Unpin Playlist')
+    m.click('rm_item2', count=900000000)
+    expect(PH_.parse(m.fs.get(PINS, b'')) == [], 'Unpin Playlist removes the line')
+    # the artist: three rows, Pin Artist
+    hold(m, 0); up(m, y_of(0))
+    expect(shown(m) and words(m, 3) == ['Play', 'Shuffle', 'Pin Artist'] and RM.vis(m, 'rm_item3') == (0, 0), f'an artist held: Play, Shuffle, Pin Artist ({words(m, 3)})')
+    expect(not [c for c in m.calls if c[0] in ('window_open', 'loadAlbumList')], 'the artist release opens no page')
+    m.click('rm_item2', count=900000000)
+    got = PH_.parse(m.fs.get(PINS, b''))
+    expect(len(got) == 1 and got[0][0] == 'r' and got[0][3] == 'Alphaville' and not shown(m), f'Pin Artist writes the artist\'s line ({got})')
+    hold(m, 0); up(m, y_of(0))
+    expect(words(m, 3)[2] == 'Unpin Artist', 'a pinned artist reads Unpin Artist')
+    m.click('rm_scrim', count=900000000)
+    expect(not shown(m), 'the scrim closes the sheet')
+    # cancelled: a drift of 20 px, an abort, a release before the time (a tap still opens the row)
+    m.calls = []; down(m, y_of(4)); m.calls = []
+    m.touch('move', 120, LIST_Y0 + y_of(4), 1100, fn='se_on_move', count=30000000)
+    expect(any(c[0] == 'timer_remove' for c in m.calls), 'a drift of 20 px stops the timer')
+    m.call(PSYMS['se_on_abort'], count=2000000); m.calls = []
+    down(m, y_of(1), 2000); m.touch('move', 102, LIST_Y0 + y_of(1) + 2, 2100, fn='se_on_move', count=30000000)
+    expect(not any(c[0] == 'timer_remove' for c in m.calls), 'a drift under the threshold keeps the hold')
+    up(m, y_of(1), 2200)
+    expect(any(c[0] == 'timer_remove' for c in m.calls) and ('navigator_to_with_context', 'albuminfo_page', ALBUMS, 0) in m.calls and not shown(m), 'a release before the time is a tap: the album opens, no sheet')
+    # a rebuild of the library under the open sheet closes it (the rows are records of the lists that are freed)
+    m = fresh(); hold(m, 4)
+    expect(shown(m), 'a sheet is open')
+    m.setword(SHOWLIST, m.new_deque([])); m.call(m.bound[(m.window, O['EVT_WINDOW_TO_FG'])][0], count=900000000)
+    m.call(PSYMS['se_tick'], count=900000000)
+    expect(not shown(m), 'the library read again closes the sheet')
+    m = fresh(); hold(m, 4)
+    m.call(m.bound[(m.window, O['EVT_WINDOW_TO_BG'])][0], count=900000000)
+    expect(not shown(m), 'the page going behind another closes the sheet')
+    # the stock song list replaced under the open sheet: Add to Playlist reads nothing
+    m = fresh(); hold(m, 4); m.setword(SHOWLIST, m.new_deque([])); m.click('rm_item2', count=900000000)
+    expect(not m.pr_calls, 'a replaced song list: Add to Playlist opens no picker')
+    # Add to Playlist over the embedded keyboard: the picker's New Playlist opens the keyboard page (keyboard_open), the Search pad is back once the picker is gone
+    kb = sibling('keyboard')
+    m = fresh(real_picker=True); hold(m, 3); up(m, y_of(3)); m.calls = []
+    m.click('rm_item2', count=900000000)
+    expect(('playlists_pick',) in m.calls and not shown(m), 'Add to Playlist runs the real picker_open_rec (the Playlists page behind it is stubbed)')
+    expect(kb.kopen(m, title='New playlist', ph='Name', flags=2) == 0 and ('window_open', 'm1plus_keyboard') in m.calls, 'the picker up over Search: New Playlist opens the keyboard page (keyboard_open works)')
+    fn, c = m.bound[(m.window, O['EVT_DESTROY'])]; m.call(fn, a0=c, a1=0, count=20000000)   # the keyboard page ends (Done / Back); the picker's page after it
+    m.call(PSYMS['picker_release'], count=900000000)
+    expect(m.call(PSYMS['keyboard_shown'], count=400000) == 1, 'the picker gone: the Search page\'s keyboard is back')
+    typed(m, 'beta')
+    expect(titles(m, SONG) == ['Beta'], f'and the typing reaches the page again ({titles(m, SONG)})')
+    # recent searches: no hold
+    m = page_machine(songs, ['Alphaville'], [('Alpha Album', 'Ann')], playlists=['Alpha Mix']); RM.with_menu(m, 0)
+    m.fs[REC_FILE] = b'alpha\n'
+    assert m.call(PSYMS['search_open'], count=40000000) == 0
+    ticks(m); m.calls = []; down(m, REC_HEAD + 10)
+    expect(not timers(m), 'the recent searches arm no hold')
+    # a source's results: no sheet, no hold
+    m = src_machine({6: [('Miles Davis', '', '')], 7: [('Kind of Blue', 'Kind of Blue', 'Miles Davis')], 8: [('So What', 'Kind of Blue', 'Miles Davis')]})
+    m.dirs.add('/mnt/mmc/.m1plus/subsonic')
+    assert m.call(PSYMS['search_open_src'], a0=m.fake_src, count=40000000) == 0
+    ticks(m); typed(m, 'miles'); m.sstate, m.gen = 2, 2; ticks(m)
+    m.calls = []; down(m, y_of(0))
+    expect(len(rows(m)) == 3 and not timers(m), 'a source\'s results arm no hold')
+
+
+SECTIONS = [recent_tests, fold_tests, query_tests, pinyin_tests, rank_tests, incremental_tests, page_tests, chips_tests, scope_tests, chip_cover_tests, live_tests, tap_tests, perf_tests, loader_tests, entry_tests, return_tests, embed_tests, asset_tests, src_tests, split_tests, hold_tests]   # tools/check.py runs each as its own task

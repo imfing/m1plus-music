@@ -146,6 +146,24 @@ query ranks above 周杰伦, and a library without Chinese costs nothing extra.
 
 A tap is a press and lift within `SC_DRAG_PX` on the same row. Back returns to Search.
 
+**Long press.** A press held `RM_LONG_MS` on a result row opens that row's sheet over the page (the
+keyboard may stay up under it); the release afterwards opens nothing. There is no "..." glyph.
+Only the library's page has it: no hold in the recent searches, none on a source's results (the
+sheet is bound only when `se.src` is unset; `se.sheet`, the `row_menu()` widgets last in
+`build_search_page`). A drift of `SC_DRAG_PX`, an abort, a release or the page going to the
+background stops the hold or closes the sheet.
+
+| Row | Sheet |
+|---|---|
+| song | the track sheet of the Songs page (`rowmenu_open_src`; Add to Playlist is `picker_open_rec` on the record) |
+| album | the album sheet (`rowmenu_open_album`, acts `pins_album_act`, key `cc_album_key`); not for "Unknown Album" |
+| playlist | the playlist sheet (`rowmenu_open_playlist`, acts `pins_playlist_act`); Pin Playlist writes no cover keys, so the Home tile shows the placeholder |
+| artist | Play, Shuffle \| Pin Artist / Unpin Artist (`rowmenu_open_rows`; `songs_play_artist`); the pin row only for a name the Artists page can pin |
+
+The sheet's `row` is the record's place in `se.lists[kind]` and the acts read the record from there,
+so a rebuilt row list changes nothing. `se_free_data` (the library read again) closes the sheet, and
+a stale song list (`se_valid`) leaves Add to Playlist doing nothing.
+
 ## `keyboard_attach` (`patch/keyboard.c`)
 
 `keyboard_open` is unchanged for its callers (Playlists New, the Developer Keyboard page). Its body

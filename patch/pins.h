@@ -39,6 +39,10 @@ int pins_queue_album(const char *album, unsigned ckey, const char *path, int aft
 /* A row of the album sheet (rowmenu_open_album, act RMA_*; the sheet has closed) for an album of the library: Play / Shuffle (pins_play_album, "Can't play" when nothing plays), Pin / Unpin Album,
  * Add to Playlist (every track marked, our picker over the page: picker_open; "Not found" without the album, "Adding Failed" when the picker cannot open), Play Next / Play After (pins_queue_album). */
 void pins_album_act(const char *album, unsigned ckey, const char *path, int act);
+/* A row of the playlist sheet (rowmenu_open_playlist, act RMA_*; the sheet has closed) for stock playlist `id` called `name`: Play / Shuffle (pins_play_playlist, "Can't play"), Add to Playlist (every song
+ * marked, our picker: picker_open; "Not found" without the playlist, "Adding Failed" when the picker cannot open), Play Next / Play After (the songs in order via upnext_add, "Not found" when gone or empty).
+ * RMA_PIN does nothing here: pinning needs the page's cover keys (pins_pin_playlist / pins_unpin_playlist). */
+void pins_playlist_act(int id, const char *name, int act);
 
 /* A song (the track row sheet's Pin Song): the stock record of a local file, identified by its path. `rec` is an stSongInfo: its REC_PATH (a file of the card, under PIN_PATH bytes), REC_TITLE (else the file name)
  * and REC_ALBUM (its cover is the album's: cc_album_rep_key, else the record's own key). Pinning a pinned song changes nothing and answers PINS_OK; a seventh pin shows the toast and answers PINS_FULL. */

@@ -97,8 +97,7 @@ static struct {
     int down;
     m1_tap_t tap;
     rowmenu_t
-        rm; /* the long press sheet (Play, Shuffle, Pin Playlist / Unpin Playlist; the library's page only: rm.on) */
-    void *rm_label, *rm_icon; /* its third row's label and glyph */
+        rm; /* the long press sheet (Play, Shuffle | Pin / Unpin Playlist, Add to Playlist | Play Next, Play After; the library's page only: rm.on) */
     int menu; /* a card is open: 0 none, 1 the "..." card (views, order), 2 the list-plus button's (the four actions) */
     unsigned more_timer;
     vs_t vs; /* the "..." card (patch/viewsort.c) */
@@ -971,7 +970,8 @@ static void *pl_pin_rec(int a) {
     return pl_rec(a);
 }
 
-/* A row of the sheet (it has closed): Play, Shuffle, Pin Playlist / Unpin Playlist for the playlist it was opened on. The scans run in this thread's ticks, so none is between the row and the player. */
+/* A row of the sheet (it has closed): Play, Shuffle, Pin Playlist / Unpin Playlist, Add to Playlist, Play Next, Play After for the playlist it was opened on (pins_playlist_act for all but the pin, which
+ * needs the page's cover keys). The scans run in this thread's ticks, so none is between the row and the player. */
 static void pl_sheet(int a, int act) {
     void *rec = pl_pin_rec(a);
     const char *name;
@@ -979,28 +979,24 @@ static void pl_sheet(int a, int act) {
     unsigned nk;
     if (!rec || !pl.info) return;
     id = I(rec, REC_DISC), name = cc_str(rec, REC_TITLE);
-    if (act == RMP_UNPIN) {
+    if (act == RMA_PIN) {
         if (pins_has_playlist(id, name))
             pins_unpin_playlist(id, name);
         else {
             nk = (unsigned)pl.info[a].nk;
             pins_pin_playlist(id, name, pl.info[a].key, nk > 4 ? 4 : nk);
         }
-    } else if (pins_play_playlist(id, name, act == RMP_SHUFFLE) < 0)
-        pod_toast(TR("Can't play"));
+    } else
+        pins_playlist_act(id, name, act);
 }
 
 /* A press held RM_LONG_MS on a playlist: the sheet opens while the finger is down; the press is forgotten, so the release opens nothing. */
 static void pl_on_hold(int a) {
     void *rec = pl_pin_rec(a);
-    int has;
     pl.down = 0;
     if (pl.list) grid_set_press(&pl.press, 0, pl.sv);
     if (!rec || pl.bg) return;
-    has = pins_has_playlist(I(rec, REC_DISC), cc_str(rec, REC_TITLE));
-    if (pl.rm_label) widget_set_tr_text(pl.rm_label, has ? "Unpin Playlist" : "Pin Playlist");
-    if (pl.rm_icon) widget_set_prop_str(pl.rm_icon, "image", has ? "rm_ic_unpin" : "rm_ic_pin");
-    rowmenu_open_queue(&pl.rm, a, pl_sheet);
+    rowmenu_open_playlist(&pl.rm, a, pins_has_playlist(I(rec, REC_DISC), cc_str(rec, REC_TITLE)), pl_sheet);
 }
 
 static int pl_on_down(void *ctx, void *e) {
@@ -1303,9 +1299,10 @@ static int pl_on_gen(const void *unused) {
     return RET_REPEAT;
 }
 
+/* ctx is the event's window: while the picker is up pl is the picker's state, and the page below it (playlists_pick) has its own in the stash. */
 static int pl_on_fg(void *ctx, void *e) {
-    (void)ctx;
     (void)e;
+    if (ctx != pl.win) return RET_OK;
     pl.bg = 0;
     if (pl.view && pl.g.tiles) pl_load();
     return RET_OK;
@@ -1314,6 +1311,7 @@ static int pl_on_fg(void *ctx, void *e) {
 /* Behind another window (the stock songs page of a playlist, a dialog) the loader stops: a scan sets classinfo[1] and replaces *pdeq_showlist,
  * the list the songs page draws its rows from and plays. The to-foreground reads everything again and restarts it. */
 static int pl_on_bg(void *ctx, void *e) {
+    if (ctx != pl.win) return RET_OK;
     pl.bg = 1;
     rowmenu_close(&pl.rm);
     m1_timer_stop(&pl.more_timer);
@@ -1412,9 +1410,7 @@ static int pl_open_page(const lib_src_t *src) {
     pl.btn_plactions = m1_bind(pl.win, "btn_plactions", pl_on_actions, (void *)0);
     pl.view = widget_lookup(pl.win, "view_grid", 1);
     if (!pl.src && !pl_v()) { /* the long press sheet (an asset without it: no long press) */
-        rowmenu_bind_queue(&pl.rm, pl.win);
-        pl.rm_label = widget_lookup(pl.win, "rm_label2", 1);
-        pl.rm_icon = widget_lookup(pl.win, "rm_icon2", 1);
+        rowmenu_bind_album(&pl.rm, pl.win);
     }
     pl.sv = widget_lookup(pl.win, "playlists_scrollview", 1);
     pl.status = widget_lookup(pl.win, "label_status", 1);
@@ -1472,8 +1468,8 @@ static int pl_open_page(const lib_src_t *src) {
     }
     if (pl.big) az_fit(pl.big, pl_v() ? TR("Add to Playlist") : TR("Playlists")); /* (296 px, an ellipsis when wider) */
     pl.noscroll = grid_scroll_bind(pl.sv, pl_on_scroll, pl.title, &pl.title_on);
-    widget_on(pl.win, EVT_WINDOW_TO_FG, pl_on_fg, (void *)0);
-    widget_on(pl.win, EVT_WINDOW_TO_BG, pl_on_bg, (void *)0);
+    widget_on(pl.win, EVT_WINDOW_TO_FG, pl_on_fg, pl.win);
+    widget_on(pl.win, EVT_WINDOW_TO_BG, pl_on_bg, pl.win);
     widget_on(pl.view, EVT_POINTER_DOWN, pl_on_down, (void *)0);
     widget_on(pl.view, EVT_POINTER_MOVE, pl_on_move, (void *)0);
     widget_on(pl.view, EVT_POINTER_UP, pl_on_up, (void *)0);
@@ -1499,11 +1495,16 @@ __attribute__((noinline)) int playlists_open_src(const lib_src_t *src) {
 /* The Add to Playlist picker's page (patch/picker.c picker_open): this page in pick mode. Over our own Playlists page's Songs page the state of the Playlists page below
  * is kept aside first (pl is one struct) and put back by pl_on_destroy. 0 once the page is up; < 0 where it could not open (the caller falls back to the stock picker). */
 int playlists_pick(void) {
-    int r;
+    int r, front = pl.win && !pl.bg;
     if (pick.on) return -1;
     if (pl.win) {
         pick.stash = calloc(1, sizeof pl);
         if (!pick.stash) return -1;
+        if (!pl.bg)
+            pl_on_bg(
+                pl.win,
+                (void
+                     *)0); /* the page in front (its long press sheet's Add to Playlist): it goes behind now, its loader stopped, as its own to-background would (that event finds pl the picker's and leaves it) */
         memcpy(pick.stash, &pl, sizeof pl);
         memset(&pl, 0, sizeof pl);
     }
@@ -1515,6 +1516,7 @@ int playlists_pick(void) {
             memcpy(&pl, pick.stash, sizeof pl);
             free(pick.stash);
             pick.stash = (void *)0;
+            if (front) pl_on_fg(pl.win, (void *)0); /* still in front: its loader runs again */
         }
     }
     return r;

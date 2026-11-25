@@ -1449,8 +1449,55 @@ void keyboard_go(void) {
     if (kb.win && kb.embedded) kb_finish(1);
 }
 
+/* An embedded keyboard set aside (keyboard_park): its state and the Chinese layer's, one allocation. */
+static struct kb_parked {
+    __typeof__(kb) kb;
+    __typeof__(zh) zh;
+} *kb_park_st __attribute__((section(".scratch")));
+
+/* A page over the embedded keyboard's page that may open the keyboard page (the Add to Playlist picker's New Playlist over the Search page, patch/picker.c): the embedded keyboard set aside,
+ * so keyboard_open finds the keyboard free. What is in the air (a held key, a pop-up, a pinyin composition) is dropped; the text, the layer and the pad's shown state are kept. The engine stays
+ * open (the keyboard page's layer uses it as one somebody else opened). 0 when set aside; -1 when there is no embedded keyboard or one is set aside already. */
+int keyboard_park(void) {
+    if (!kb.win || !kb.embedded || kb_park_st) return -1;
+    kb_park_st = calloc(1, sizeof *kb_park_st);
+    if (!kb_park_st) return -1;
+    kb_gap_end(0);
+    kb_unpop();
+    kb_stop();
+    zh_reset();
+    memcpy(&kb_park_st->kb, &kb, sizeof kb);
+    memcpy(&kb_park_st->zh, &zh, sizeof zh);
+    memset(&zh, 0, sizeof zh);
+    memset(&kb, 0, sizeof kb);
+    return 0;
+}
+
+/* The page over it has gone: the keyboard set aside is back, once the keyboard is free again (a keyboard page still up keeps it aside; the page's destroy, keyboard_detach, drops it). */
+void keyboard_unpark(void) {
+    if (!kb_park_st || kb.win) return;
+    memcpy(&kb, &kb_park_st->kb, sizeof kb);
+    memcpy(&zh, &kb_park_st->zh, sizeof zh);
+    free(kb_park_st);
+    kb_park_st = (struct kb_parked *)0;
+    kb_refresh();
+}
+
 /* The page's window is going: the timer, the engine's megabyte and the state go with it. */
 void keyboard_detach(void) {
+    if (kb_park_st &&
+        (!kb.win ||
+         !kb.embedded)) { /* the page of a keyboard set aside: the engine it opened goes with it, or to a keyboard page using it now */
+        if (kb_park_st->zh.ready && kb_park_st->zh.own) {
+            if (kb.win && zh.ready)
+                zh.own = 1;
+            else
+                im_close_decoder();
+        }
+        free(kb_park_st);
+        kb_park_st = (struct kb_parked *)0;
+        return;
+    }
     if (!kb.win || !kb.embedded) return;
     kb_stop();
     zh_leave();

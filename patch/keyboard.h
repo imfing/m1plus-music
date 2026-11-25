@@ -52,6 +52,9 @@ void keyboard_set_max(
 void keyboard_go(
     void); /* the action key as if pressed (a page's own Search button): what is pending is committed, then on_go; nothing while the key is dimmed */
 void keyboard_detach(void); /* the page's destroy event */
+int keyboard_park(
+    void); /* a page over the embedded keyboard's page that may open the keyboard page: the embedded keyboard set aside (0), keyboard_open works; -1 none embedded */
+void keyboard_unpark(void); /* that page has gone: the keyboard set aside is back (once no keyboard page is up) */
 void keyboard_show(int on); /* show or hide the embedded pad (hidden: no touch, no caret) */
 int keyboard_shown(void);
 int pinyin_hold(void); /* the Pinyin engine open for a page's life (0 ready); the search page's initials index */

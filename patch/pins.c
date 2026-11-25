@@ -1155,27 +1155,84 @@ static void pn_play_song(const pin_t *e) {
     if (pn_play_album(e, SO_IN_ORDER) < 0) pod_toast(TR("Can't play"));
 }
 
-/* The whole playlist the same way (the Songs page's Play and Shuffle: classinfo[1] the playlist id, loadLocalClassList, so_play). -1 when nothing plays: not in the list, no list (empty or failed),
- * no songs. */
-static int pn_play_playlist(const pin_t *e, int how) {
+/* The playlist's songs in *PDEQ_SHOWLIST (the Songs page's list: classinfo[1] the playlist id, loadLocalClassList). NULL when it is not in the list, has no list (empty or failed) or no songs. */
+static void *pn_playlist_tracks(const pin_t *e) {
     void *list;
-    if (pn_pl_find(e) < 0) return -1;
+    if (pn_pl_find(e) < 0) return (void *)0;
     *(int *)(CLASSINFO + CLASSINFO_ARG) = (int)e->key;
-    if (loadLocalClassList(CLASS_PLAYLIST_SONGS) <= 0) return -1;
+    if (loadLocalClassList(CLASS_PLAYLIST_SONGS) <= 0) return (void *)0;
     list = *(void **)PDEQ_SHOWLIST;
-    if (!list || !deque_size(list)) return -1;
+    if (!list || !deque_size(list)) return (void *)0;
+    return list;
+}
+
+/* The whole playlist the same way (the Songs page's Play and Shuffle: so_play on pn_playlist_tracks). -1 when nothing plays: not in the list, no list (empty or failed), no songs. */
+static int pn_play_playlist(const pin_t *e, int how) {
+    void *list = pn_playlist_tracks(e);
+    if (!list) return -1;
     *(int *)G_CLASS_TYPE = CLASS_PLAYLIST_SONGS;
     so_play(CLASS_PLAYLIST_SONGS, list, how == SO_SHUFFLE ? -1 : 0, how, pod_open_player);
     return 0;
 }
 
+/* The playlist's songs in order to the playing queue (Play Next: after == 0; Play After: after != 0), as pn_queue_album ("Not found" when the playlist is gone or empty). */
+static int pn_queue_playlist(const pin_t *e, int after) {
+    void *list = pn_playlist_tracks(e);
+    int r;
+    if (!list) {
+        pod_toast(TR("Not found"));
+        return 0;
+    }
+    r = upnext_add(list, after);
+    rowmenu_upnext_toast(r, after);
+    return r;
+}
+
+/* The whole playlist to another playlist: its songs all marked, our picker over the page, as pn_add_album. */
+static void pn_add_playlist(const pin_t *e) {
+    unsigned n, bytes;
+    unsigned char *sel;
+    void *list = pn_playlist_tracks(e);
+    if (!list) {
+        pod_toast(TR("Not found"));
+        return;
+    }
+    n = deque_size(list), bytes = (n + 7) / 8;
+    sel = (unsigned char *)calloc(bytes, 1);
+    if (sel) memset(sel, 0xff, bytes);
+    if (!sel || picker_open(CLASS_PLAYLIST_SONGS, n, sel) < 0) pod_toast(TR("msg_addfailed"));
+    free(sel);
+}
+
+/* The playlist `id` called `name` as a pin (kind 'p') for the playlist actions without a pin. */
+static void pn_playlist_of(pin_t *e, int id, const char *name) {
+    memset(e, 0, sizeof *e);
+    e->kind = 'p';
+    e->key = (unsigned)id;
+    pn_copy(e->name, sizeof e->name, name ? name : "");
+}
+
+/* One act of a playlist sheet (RMA_*; the sheet has closed) on a pin: Add to Playlist, Play Next / Play After, else Play / Shuffle ("Can't play" when nothing plays). */
+static void pn_playlist_run(const pin_t *e, int act) {
+    if (act == RMA_ADD)
+        pn_add_playlist(e);
+    else if (act == RMA_NEXT || act == RMA_AFTER)
+        pn_queue_playlist(e, act == RMA_AFTER);
+    else if (pn_play_playlist(e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER) < 0)
+        pod_toast(TR("Can't play")); /* not in the library now (or it could not be read): the pin stays */
+}
+
 int pins_play_playlist(int id, const char *name, int shuffle) {
     pin_t e;
-    memset(&e, 0, sizeof e);
-    e.kind = 'p';
-    e.key = (unsigned)id;
-    pn_copy(e.name, sizeof e.name, name ? name : "");
+    pn_playlist_of(&e, id, name);
     return pn_play_playlist(&e, shuffle ? SO_SHUFFLE : SO_IN_ORDER);
+}
+
+void pins_playlist_act(int id, const char *name, int act) {
+    pin_t e;
+    if (act == RMA_PIN) return;
+    pn_playlist_of(&e, id, name);
+    pn_playlist_run(&e, act);
 }
 
 /* Once, the first to-foreground after PIN_CHECK_MS: an album pin whose row now has another cover key takes it (as Recently Played re-keys). Nothing is ever dropped here: the library can be
@@ -1276,10 +1333,9 @@ static void pn_open(int i) {
         pn_open_playlist(&e);
 }
 
-/* A row of the long press sheet (the sheet has closed): Play, Shuffle, (Add to Playlist, Play Next, Play After for an album), Unpin for the tile it was opened on. */
+/* A row of the long press sheet (the sheet has closed): Play, Shuffle, (Add to Playlist, Play Next, Play After for an album or a playlist), Unpin for the tile it was opened on. */
 static void pn_sheet(int tile, int act) {
     pin_t e;
-    int r = 0;
     if (!pn_pin_of(tile, &e)) return;
     if (act == RMA_PIN) {
         pn_remove(e.kind, e.key);
@@ -1302,8 +1358,7 @@ static void pn_sheet(int tile, int act) {
         pn_play_artist(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
         return;
     }
-    r = pn_play_playlist(&e, act == RMA_SHUFFLE ? SO_SHUFFLE : SO_IN_ORDER);
-    if (r < 0) pod_toast(TR("Can't play")); /* not in the library now (or it could not be read): the pin stays */
+    pn_playlist_run(&e, act);
 }
 
 /* A row of the sheet opened for a Recently Played tile (the sheet has closed): the album sheet's rows. Home stays in front, so no to-foreground redoes the section: the pin and the unpin redo it
@@ -1323,13 +1378,13 @@ int pins_album_sheet(const char *album, unsigned ckey, const char *path) {
 }
 
 /* The sheet for tile `row`: a press held and released where it was. It follows the tile's type: an album has the album sheet (Play, Shuffle | Unpin Album, Add to Playlist | Play Next, Play After),
- * a playlist or artist Play, Shuffle | Unpin, a song Play | Unpin Song. */
+ * a playlist the same with Unpin Playlist, an artist Play, Shuffle | Unpin Artist, a song Play | Unpin Song. */
 static void pn_open_sheet(int row) {
     const rowmenu_row_t song[] = {{"Play", "rm_ic_pplay", RMA_PLAY}, RM_GROUP, {"Unpin Song", "rm_ic_unpin", RMA_PIN}};
-    rowmenu_row_t set[] = {{"Play", "rm_ic_pplay", RMA_PLAY},
-                           {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
-                           RM_GROUP,
-                           {"Unpin Artist", "rm_ic_unpin", RMA_PIN}};
+    const rowmenu_row_t artist[] = {{"Play", "rm_ic_pplay", RMA_PLAY},
+                                    {"Shuffle", "rm_ic_pshuffle", RMA_SHUFFLE},
+                                    RM_GROUP,
+                                    {"Unpin Artist", "rm_ic_unpin", RMA_PIN}};
     int k;
     if (!pn.win || !pn.shown || !pn.fg || row < 0 || row >= PIN_MAX) return;
     k = pn.tkind[row];
@@ -1337,9 +1392,10 @@ static void pn_open_sheet(int row) {
         rowmenu_open_album(&pn.rm, row, 1, pn_sheet);
     } else if (k == 's') {
         rowmenu_open_rows(&pn.rm, row, song, (int)(sizeof song / sizeof song[0]), pn_sheet);
+    } else if (k == 'p') {
+        rowmenu_open_playlist(&pn.rm, row, 1, pn_sheet);
     } else {
-        if (k == 'p') set[3].text = "Unpin Playlist";
-        rowmenu_open_rows(&pn.rm, row, set, (int)(sizeof set / sizeof set[0]), pn_sheet);
+        rowmenu_open_rows(&pn.rm, row, artist, (int)(sizeof artist / sizeof artist[0]), pn_sheet);
     }
 }
 

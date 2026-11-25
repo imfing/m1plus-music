@@ -201,6 +201,8 @@ void keyboard_set_go(const char *key, int enabled);   /* action key label and wh
 void keyboard_go(void);              /* the action key as if pressed */
 const char *keyboard_text(void);
 int  keyboard_refocus(placeholder, text_w, flags, text, on_change, on_go);
+int  keyboard_park(void);            /* set the embedded keyboard aside: keyboard_open works (0) */
+void keyboard_unpark(void);          /* put it back once no keyboard page is up */
 ```
 
 - The pad starts shown. The host window holds `kb_pad`, `kb_strip`, `kb_stem`, `kb_pop` and a field (`kb_field`, `kb_mag`,
@@ -210,6 +212,10 @@ int  keyboard_refocus(placeholder, text_w, flags, text, on_change, on_go);
   the field (the caller ignores a repeat). A candidate still being composed is not in it.
 - The action key commits what is pending and calls `on_go`; no page closes and there is no cancel.
 - `keyboard_open` and `keyboard_attach` refuse while either exists; `keyboard_detach` frees it.
+- `keyboard_park` (the Add to Playlist picker over Search, [picker](picker.md)) copies the embedded state and the Chinese layer's aside and clears them, so a
+  keyboard page can open over a page above the host. A held key, a pop-up and a pinyin composition are dropped first; an open engine stays open (a keyboard
+  page's layer uses it without owning it). `keyboard_unpark` restores the copy only when no keyboard is up. The host's `keyboard_detach` while it is aside
+  drops the copy, and closes the engine it owned, or hands it to a keyboard page that is using it.
 - `keyboard_refocus` (-1 when no embedded keyboard exists) lets another field of the same page take the pad: widgets and bindings stay; the
   flags, text room, placeholder, text and callbacks are replaced; pending composition, held key and
   pop-up are dropped; layers and first page are chosen again. An open Chinese engine stays open.
