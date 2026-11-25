@@ -267,6 +267,7 @@ class Machine:
         self.playlist_songs = {}    # playlist id -> its song rows (loadLocalClassList(0xff13) with classinfo[1] = the id)
         self.genre_songs = {}       # (genre name, Unknown Genre byte) -> its song rows (loadLocalClassList(0xff09) with classinfo[0], classinfo + 0x30d, classinfo + 0xc as the stock row tap leaves them)
         self.create_ret = 5         # createPlayListItem's result (-1 full, -2 exists)
+        self.import_ret, self.on_import = 1, None   # importPlayList's result (-2 no card, -6 no file) and a test's function run in it
         self.pl_names = set()       # playlist names createPlayListItem answers -2 for (a test sets them)
         self.fav_rows = []          # myfav as stock has it, in insertion order: (name, path, title); checkFavExist / addMyFav / deleteMusicFromFav and loadLocalClassList(0xf00a) read them
         self.pl_rows = []           # the playlist table's song rows addPlayList was given: (row id, playlist id, path, title); checkPlayListExist / getPlayListMaxId read them
@@ -315,8 +316,7 @@ class Machine:
         self.watch.update({PSYMS[n]: n for n in ('set_value', 'set_offset') if n in PSYMS})
         self.handlers[pod.HOME_INIT + 12] = 'stock_init_resume'
         self.handlers[pod.TF_UPDATE] = 'tf_update_click'
-        self.handlers[pod.PLAYLIST_IMPORT] = 'stock_playlist_import'   # the stock Playlists page's Import / Export click handlers
-        self.handlers[pod.PLAYLIST_EXPORT] = 'stock_playlist_export'
+        self.handlers[pod.PLAYLIST_EXPORT] = 'stock_playlist_export'   # the stock Playlists page's Export click handler
         self.handlers[pod.GLYPH_CACHE_LOOKUP] = 'glyph_cache_lookup'   # the stb font's glyph path (patch/textgamma.c wraps it): mocked, test/pod/textgamma.py
         self.handlers[pod.MCL_GAPLESS_PRELOAD] = 'mcl_gapless_preload'   # Crossfade early preload (patch/xfadeset.c; XFADE_PINS)
         self.handlers[O['STB_GET_GLYPH']] = 'font_stb_get_glyph'
@@ -531,7 +531,7 @@ class Machine:
         elif name == '__xstat':   # a file's state, for the callers that keep a signature (the Home cache check: patch/homecover.c hc_dbsig): path -> [mtime, nsec, size] in self.db; anything else is missing
             p = self.read_cstr(a1); self.calls.append(('__xstat', p)); ret = 0xffffffff
             st = self.db.get(p)
-            if st is None and p in self.stat_fs and p in self.fs and self.card_mounted:   # a file whose state follows its text in fs: the text's CRC as the mtime, its length as the size
+            if st is None and p in self.stat_fs and p in self.fs and (self.card_mounted or not p.startswith('/mnt/mmc/')):   # a file whose state follows its text in fs: the text's CRC as the mtime, its length as the size
                 st = [zlib.crc32(bytes(self.fs[p])), 0, len(self.fs[p])]
             if st is not None:
                 self.u.mem_write(a2, bytes(144)); mt, ns, sz = st
@@ -1065,8 +1065,12 @@ class Machine:
         elif name == 'addPlayList':   # (song record): the row's id is REC_ID, its playlist REC_DISC
             row = (self.s32(a0 + O['REC_ID']), self.s32(a0 + O['REC_DISC']), self.read_cstr(self.word(a0 + O['REC_PATH'])), self.read_cstr(self.word(a0 + O['REC_TITLE'])))
             self.pl_rows.append(row); self.calls.append(('addPlayList',) + row); ret = 1
-        elif name in ('stock_playlist_import', 'stock_playlist_export'):
+        elif name == 'stock_playlist_export':
             self.calls.append((name, self.word(pod.DATA['NAVIGATION_STATUS'][0])))
+        elif name == 'importPlayList':   # the stock import: on_import (a test's) changes the playlists as stock would; import_ret is its answer
+            self.calls.append(('importPlayList',))
+            if self.on_import: self.on_import()
+            ret = self.import_ret
         elif name == 'albumcoverinfo_init':
             self.calls.append(('albumcoverinfo_init', a0))
         elif name == 'batchadd_albumcover_task':
@@ -1596,7 +1600,7 @@ class Machine:
     gpio = {}                 # patch/power.c: the levels /dev/gpio's ioctl answers with, by pin name
     fb = None                 # Screenshot: the frame buffer /dev/fb0 answers with (see the ioctl / mmap mocks)
     db = {}                   # __xstat: path -> [mtime, nsec, size]
-    stat_fs = ('/mnt/mmc/.m1plus/playlist-covers',)   # __xstat: paths not in db whose state follows their text in fs (patch/plcover.c keeps the text it read while the state holds)
+    stat_fs = ('/mnt/mmc/.m1plus/playlist-covers', '/mnt/data/m1plus/playlists-meta')   # __xstat: paths not in db whose state follows their text in fs (patch/plcover.c, patch/plmeta.c keep the text they read while the state holds)
     card_mounted = True       # statfs tells the card's mount point from its parent
     blits = ()              # the Albums grid's canvas_draw_image calls (bitmap, src rect, dst rect), texts, text measures
     texts = ()

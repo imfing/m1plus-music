@@ -19,8 +19,8 @@ int picker_open_rec(int cls, void *rec);
 #define PICKER_FAVOURITES (-1)
 
 /* The playlist's songs (or Favourites): batch_add_file on the copy and the marks, then the stock message, or "Added N of M songs" where have (picker_in of the playlist,
- * 0 when not read) of the M were there already. Once per picker. Playlists page only. */
-void picker_add(int playlist, int have);
+ * 0 when not read) of the M were there already. A playlist (not Favourites, whose `name` is unused) is stamped as updated (patch/plmeta.c). Once per picker. Playlists page only. */
+void picker_add(int playlist, int have, const char *name);
 
 /* How many songs the picker adds (the marked rows, a song marked twice once); 0 with no picker. */
 unsigned picker_count(void);

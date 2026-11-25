@@ -19,12 +19,13 @@
  *             decodes, and neither does the loader while the scroll_view drags or flings.
  *   modes     the card's Grid / List rows switch the grid and the list (LIST_ROW_H rows, 52 px mosaics, patch/grid.c grid_list_paint) in place;
  *             the choice is saved in PLAYLISTS_FILE.
- *   order     the card's Name row (A-Z, Z-A when ticked again, PLAYLISTS_SORT_FILE): pl.ord is the stock row at each display position, the stock list is never reordered.
+ *   order     the card's Title, Date Added, Last Played and Updated rows (the ticked row again reverses, PLAYLISTS_SORT_FILE; the times are patch/plmeta.c's): pl.ord is the stock row at each
+ *             display position, the stock list is never reordered.
  *   touch     a tap on a cell or row opens the playlist in our Songs page (patch/songs.c, class 0xff13), or the stock songs page (allmusic_page) as the stock
  *             Playlists page does when ours does not open.
  *   menu      the "..." button opens the shared view-sort card (patch/viewsort.c): New Playlist, Import, Export (the stock code), Delete Playlists (select mode on this
  *             page: marks, a bar with the Delete pill, the stock delete handler's sequence on the stock selection vector; the stock Playlists page only where the page
- *             cannot), then Grid / List, then Name. No hook.
+ *             cannot), then Grid / List, then Title, Date Added, Last Played, Updated. No hook.
  */
 #include "selmode.h"
 #include "offsets.inc"
@@ -47,6 +48,7 @@
 #include "entries.h"
 #include "rowmenu.h"
 #include "pins.h"
+#include "plmeta.h"
 
 #define CELL_H GRID_CELL_H
 #define PITCH GRID_PITCH
@@ -102,7 +104,10 @@ static struct {
     unsigned more_timer;
     vs_t vs; /* the "..." card (patch/viewsort.c) */
     unsigned *ord; /* the stock playlist at each display position (after the picker's rows), NULL = the stock order */
-    int rev; /* the name order is Z-A */
+    int sort,
+        rev; /* the order: 0 Title, 1 Date Added, 2 Last Played, 3 Updated (PLAYLISTS_SORT_FILE); rev = the other direction (Z-A, Oldest First) */
+    unsigned msig
+        [3]; /* PLAYLISTS_META_FILE's state (pl_metasig) when the playlists were last read: a date order sorts again when it moved */
     void *fade; /* the navbar's fade (img_nb_fade, optional): shown only while the list is scrolled */
     void *big; /* pl_title, the large title: the first thing in the content (optional) */
     int title_on; /* the navbar's small title (pl.title) is shown: the large one has scrolled away, or select mode, or the scroll events are missing */
@@ -155,6 +160,7 @@ static struct {
     void *star; /* the Favourites row's glyph: a 24 px white star, alpha bitmap */
     void *
         tick; /* the mark of a row that holds every song being added: the Add Songs page's grey tick (sg_pdone), RM_DOTS_PX */
+    char name[0x100]; /* the playlist id belongs to while the add waits on its timer (pl_pick_later) */
 } pick __attribute__((section(".scratch")));
 
 /* A playlist just made on the Playlists page (not the picker): its page opens once the keyboard has gone (pl_new_later). */
@@ -589,6 +595,16 @@ static int pl_dbsig(unsigned sig[PL_SIG]) {
     return 1;
 }
 
+/* PLAYLISTS_META_FILE's state, as pl_dbsig takes a file's: all ones when there is none. A date order that moved (a playlist was played, a song added) sorts again. */
+static void pl_metasig(unsigned sig[3]) {
+    unsigned st[40];
+    memset(st, 0, sizeof st);
+    if (__xstat(3, PLAYLISTS_META_FILE, st) != 0)
+        sig[0] = sig[1] = sig[2] = 0xffffffffu;
+    else
+        sig[0] = st[0x40 / 4], sig[1] = st[0x44 / 4], sig[2] = st[0x30 / 4];
+}
+
 static int pl_same_str(const char *a, const char *b) {
     while (*a && *a == *b) ++a, ++b;
     return *a == *b;
@@ -612,12 +628,24 @@ static int pl_same_list(void *old, unsigned oldn, void *fresh, unsigned n) {
     return 1;
 }
 
-/* The name order (the card's Name row): pl.ord[k] = the stock playlist shown at position k. Names compare as the Artist order does (cc_name_keys / cc_key_cmp: digit runs by value, ASCII case
- * folded, a CJK name by its pinyin initials; ties keep the stock order); Z-A is the whole order reversed. The stock list is never reordered. No memory: NULL (the stock order). */
+/* The order (the card's rows): pl.ord[k] = the stock playlist shown at position k. Title compares names as the Artist order does (cc_name_keys / cc_key_cmp: digit runs by value, ASCII case
+ * folded, a CJK name by its pinyin initials; ties keep the stock order); Z-A is the whole order reversed. A date order puts the newest first (Oldest First reversed) by the time patch/plmeta.c keeps
+ * for the playlist (stock id and name); a playlist with no such time is after all the others in both directions, and ties (and those) go by Title A-Z. A source's playlists are Title only.
+ * The stock list is never reordered. No memory: NULL (the stock order). */
 static const char **pl_key __attribute__((section(".scratch")));
+static unsigned *pl_when
+    __attribute__((section(".scratch"))); /* the time of each stock playlist for the date order, 0 = none */
+
+static int pl_sort_now(void) { return pl.src ? 0 : pl.sort; }
+static int pl_rev_now(void) { return pl.src && pl.sort ? 0 : pl.rev; }
 
 static int pl_cmp(unsigned a, unsigned b) {
-    int d = cc_key_cmp(pl_key[a], pl_key[b]);
+    int d;
+    if (pl_when && pl_when[a] != pl_when[b]) {
+        if (!pl_when[a] || !pl_when[b]) return pl_when[a] ? -1 : 1;
+        return (pl_when[a] > pl_when[b]) != (pl_rev_now() != 0) ? -1 : 1;
+    }
+    d = cc_key_cmp(pl_key[a], pl_key[b]);
     return d ? d : a < b ? -1 : a > b;
 }
 
@@ -625,22 +653,32 @@ static const char *pl_ntext(const void *ctx, unsigned i) { return cc_str(deque_a
 
 static void pl_sort(void) {
     unsigned n = pl.count > (unsigned)pl_v() ? pl.count - (unsigned)pl_v() : 0, i;
+    int sort = pl_sort_now(), title_rev = !sort && pl_rev_now();
     free(pl.ord);
     pl.ord = (unsigned *)0;
     if (n < 2 || !pl.pls) return;
     pl.ord = calloc(n, sizeof *pl.ord);
     pl_key = pl.ord ? cc_name_keys(n, pl_ntext, pl.pls) : (const char **)0;
+    pl_when = sort && pl_key ? calloc(n, sizeof *pl_when) : (unsigned *)0;
+    if (sort && !pl_when) sort = 0; /* no memory for the times: Title */
     if (!pl.ord || !pl_key) {
         free(pl.ord);
         pl.ord = (unsigned *)0;
     } else {
+        if (sort) {
+            plm_read();
+            for (i = 0; i < n; ++i)
+                pl_when[i] = plm_get(I(deque_at(pl.pls, i), REC_DISC), cc_str(deque_at(pl.pls, i), REC_TITLE), sort);
+        }
         for (i = 0; i < n; ++i) pl.ord[i] = i;
         cc_heapsort(pl.ord, n, pl_cmp);
-        for (i = 0; pl.rev && i < n / 2; ++i) {
+        for (i = 0; title_rev && i < n / 2; ++i) {
             unsigned t = pl.ord[i];
             pl.ord[i] = pl.ord[n - 1 - i], pl.ord[n - 1 - i] = t;
         }
     }
+    free(pl_when);
+    pl_when = (unsigned *)0;
     free((void *)pl_key);
     pl_key = (const char **)0;
 }
@@ -709,12 +747,16 @@ static int pl_carry(void *old, unsigned oldn, const unsigned *oldord, unsigned n
     return 1;
 }
 
+static void pl_reorder(void);
+static void pl_resort(void);
+
 static void pl_load(void) {
     void *list, *old = pl.pls;
     unsigned oldn = pl.count, *oldord = pl.ord, was = pl.count;
     int carry = 0;
     unsigned sig[PL_SIG];
-    int have, keep, i;
+    int have, keep, i, redo = 0;
+    unsigned msig[3];
     pl_select(0); /* a page read again is not in select mode (the marks were of the old list) */
     m1_timer_stop(&pl.more_timer);
     pl.pls = (void *)0;
@@ -775,6 +817,11 @@ static void pl_load(void) {
     if (old) deque_destroy(old);
     pl.have_sig = have;
     memcpy(pl.sig, sig, sizeof pl.sig);
+    pl_metasig(msig);
+    redo = keep && pl_sort_now() &&
+           (msig[0] != pl.msig[0] || msig[1] != pl.msig[1] ||
+            msig[2] != pl.msig[2]); /* nothing else changed, but a time did: the order may be another */
+    memcpy(pl.msig, msig, sizeof msig);
     m1_sel_reset(&pl.sel, pl.count); /* none: no select mode (the menu's Delete opens the stock page) */
     {
         int st = pl.src && !pl.count && pl.src->state ? pl.src->state(pl.src, LS_PLAYLISTS, (void *)0) : LS_ST_READY;
@@ -789,6 +836,7 @@ static void pl_load(void) {
     pl.seen = pl_off();
     pl_redraw();
     pl_kick();
+    if (redo) pl_resort();
 }
 
 /* The card's Name row: the order changes (pl.rev is set). The playlists are put in the new order and every playlist keeps its scan (info follows its playlist); the tiles are made again for the
@@ -840,6 +888,19 @@ static void pl_reorder(void) {
     pl_kick();
 }
 
+/* A date order after a read that kept everything else: the playlists are put in the order the times give now, only when that is another one (the list stays where it is otherwise). */
+static void pl_resort(void) {
+    unsigned n = pl.count > (unsigned)pl_v() ? pl.count - (unsigned)pl_v() : 0, k, *old = pl.ord;
+    int same = 1;
+    pl.ord = (unsigned *)0;
+    pl_sort();
+    for (k = 0; k < n; ++k)
+        if ((old ? old[k] : k) != (pl.ord ? pl.ord[k] : k)) same = 0;
+    free(pl.ord);
+    pl.ord = old;
+    if (!same) pl_reorder();
+}
+
 /* ---------------------------------------------------------------------------
  * Touch: a tap on a cell opens the playlist in the stock songs page
  */
@@ -862,8 +923,8 @@ static int pl_item_of(void *e) {
  * stock Playlists page's row handler (@0x53d300, mode 0): the name for the page's title, the id into classinfo[1], then the stock Songs page with the
  * playlist class. Back returns here. */
 static void pl_create(void);
-static void pl_pick_add(int id, int have);
-static void pl_pick_later(int id);
+static void pl_pick_add(int id, int have, const char *name);
+static void pl_pick_later(int id, const char *name);
 static void pl_new_later(int id, const char *name);
 
 /* A tap on a source's playlist: its Songs page; if that page does not open, the playlist plays in order (the tap of a row). */
@@ -884,7 +945,8 @@ static void pl_open(int i) {
         else if (pl_full(i)) /* every song being added is there: said, and the picker stays for another choice */
             pod_toast(TR(i == 1 ? "Already in Favorites" : "Already in Playlist"));
         else
-            pl_pick_add(i == 1 ? PICKER_FAVOURITES : pl_id(i), pl.info[i].has);
+            pl_pick_add(i == 1 ? PICKER_FAVOURITES : pl_id(i), pl.info[i].has,
+                        i == 1 ? "" : cc_str(pl_rec(i), REC_TITLE));
         return;
     }
     rec = pl_rec(i);
@@ -1043,10 +1105,12 @@ static int pl_on_abort(void *ctx, void *e) {
 }
 
 /* ---------------------------------------------------------------------------
- * The "..." card (patch/viewsort.c): New Playlist, Import, Export and Delete Playlists, then Grid / List, then Name. New playlist, Import and Export run the stock code and the page reads the
- * playlists again; Delete is select mode (above); Grid and List switch the view in place (below); the Name row sets the order (below).
+ * The "..." card (patch/viewsort.c): New Playlist, Import, Export and Delete Playlists, then Grid / List, then Title, Date Added, Last Played, Updated. New playlist, Import and Export run the
+ * stock code and the page reads the playlists again; Delete is select mode (above); Grid and List switch the view in place (below); the four sort rows set the order (below).
  */
-#define PL_ROWS_MORE (VS_WITH_VIEWS | 1u << 0) /* the "..." card: Grid, List, Name (the one sort row is slot 0) */
+#define PL_ROWS_MORE \
+    (VS_WITH_VIEWS | VS_ALL_SORTS) /* the "..." card: Grid, List, then the four sort rows (slots 0..3) */
+#define PL_ROWS_MORE_SRC (VS_WITH_VIEWS | 1u << 0) /* a source's: Title only */
 #define PL_ROWS_ACTIONS \
     (VS_WITH_SEARCH | VS_WITH_SELECT | VS_WITH_ACT2 | \
      VS_WITH_ACT3) /* the list-plus button's card: New Playlist, Import, Export, Delete Playlists (slots 6..9) */
@@ -1054,8 +1118,8 @@ static int pl_on_abort(void *ctx, void *e) {
 /* Closes the open card, or opens card `kind` (1 the "..." card, 2 the list-plus button's: the one card's rows offered again). */
 static void pl_menu_kind(int kind) {
     pl.menu = kind;
-    if (kind) vs_offer(&pl.vs, kind == 1 ? PL_ROWS_MORE : PL_ROWS_ACTIONS);
-    vs_menu(&pl.vs, kind != 0, 0, pl.rev, pl.list);
+    if (kind) vs_offer(&pl.vs, kind == 1 ? (pl.src ? PL_ROWS_MORE_SRC : PL_ROWS_MORE) : PL_ROWS_ACTIONS);
+    vs_menu(&pl.vs, kind != 0, pl_sort_now(), pl_rev_now(), pl.list);
 }
 static void pl_menu(int on) { pl_menu_kind(on ? 1 : 0); }
 
@@ -1081,6 +1145,7 @@ static void pl_named(const char *name) {
     loadLocalClassList(CLASS_PLAYLISTS);
     r = createPlayListItem(*(void **)PDEQ_PLAYLIST, name);
     picker_restore();
+    if (r >= 0) plm_added(r, name); /* its Date Added (a failed write only leaves it without one) */
     if (r == -1)
         pl_toast(TR("msg_playlistfull"));
     else if (r == -2)
@@ -1088,17 +1153,132 @@ static void pl_named(const char *name) {
     else if (
         r >= 0 && pl_v() &&
         pl.win) { /* the picker: the new playlist gets the songs, the page closes, once the keyboard page has gone (pl_pick_later) */
-        pl_pick_later(r);
+        pl_pick_later(r, name);
         return;
     }
     if (pl.win && pl.view) pl_load();
     if (r >= 0 && pl.win && !pl_v()) pl_new_later(r, name);
 }
 
+/* What stock Import reads (importPlayList @0x4ef394 through toolsGetDirectoryM3u8 @0x5e9794): the regular files (d_type 8) of this folder ending .m3u8 or .m3u, any case, in readdir
+ * order. Each is made a playlist by createPlayListItem @0x4eeca8, named after the file without its last extension cut to PL_IMPORT_NAME bytes (snprintf into 0x40; an empty one is
+ * "Playlist<its id>"), at the lowest free id. Before that checkPlayListByName @0x4ef2e4 deletes, with its songs, the playlist whose name is the whole uncut one: so a file whose name
+ * is longer is never a replacement, each Import makes another playlist of the cut name. createPlayListItem returns -1 only at 100 playlists: Import stops there, returning 1. */
+#define PL_IMPORT_DIR "/mnt/mmc/_explaylist_data"
+#define PL_DT_REG 8
+#define PL_IMPORT_NAME 63
+
+/* name is the text from fn up to (not including) end. */
+static int pl_same_span(const char *name, const char *fn, const char *end) {
+    while (fn < end && *name == *fn) ++name, ++fn;
+    return fn == end && !*name;
+}
+
+/* Whether the first n playlists of list have one with this id and this name. */
+static int pl_has_pair(void *list, unsigned n, int id, const char *name) {
+    unsigned i;
+    for (i = 0; i < n; ++i)
+        if (I(deque_at(list, i), REC_DISC) == id && pl_same_str(cc_str(deque_at(list, i), REC_TITLE), name)) return 1;
+    return 0;
+}
+
+/* Takes for a file the first playlist Import made that is not taken yet and has the name stock gave it: fn up to end, or for an empty one (fn == end) "Playlist<its id>". */
+static int pl_take_made(void *list, unsigned m, const unsigned char *made, unsigned char *used, const char *fn,
+                        const char *end) {
+    char gen[16];
+    unsigned i;
+    for (i = 0; i < m; ++i) {
+        const char *nm = cc_str(deque_at(list, i), REC_TITLE);
+        if (!made[i] || used[i]) continue;
+        if (fn == end) snprintf(gen, sizeof gen, "Playlist%d", I(deque_at(list, i), REC_DISC));
+        if (fn == end ? pl_same_str(nm, gen) : pl_same_span(nm, fn, end)) return used[i] = 1, (int)i;
+    }
+    return -1;
+}
+
+/* After importPlayList ran: the stock list read again against this page's copy, read before (nothing else changes the list in between). A playlist (id, name) the copy did not have is
+ * one Import made: new (its Date Added), or the replacement of the copy's playlist of that name that is gone (its times move to the new id). One the copy had is as it was, unless
+ * its file was imported and stock made it again under the same id (Updated). One write. */
+static void pl_stamp_imported(void) {
+    void *list, *d;
+    char *ent;
+    int id[PL_MAX], was[PL_MAX], from[PL_MAX];
+    const char *name[PL_MAX];
+    unsigned char made[PL_MAX], used[PL_MAX], hit[PL_MAX], took[PL_MAX];
+    unsigned i, j, n = 0, m, old = pl.pls ? deque_size(pl.pls) : 0;
+    int k;
+    if (loadLocalClassList(CLASS_PLAYLISTS) <= 0) return;
+    list = *(void **)PDEQ_PLAYLIST;
+    m = list ? deque_size(list) : 0;
+    if (m > PL_MAX) m = PL_MAX;
+    if (old > PL_MAX) old = PL_MAX;
+    memset(used, 0, sizeof used), memset(hit, 0, sizeof hit), memset(took, 0, sizeof took);
+    for (i = 0; i < m; ++i) from[i] = -1;
+    for (i = 0; i < m; ++i)
+        made[i] = !pl_has_pair(pl.pls, old, I(deque_at(list, i), REC_DISC), cc_str(deque_at(list, i), REC_TITLE));
+    /* The folder once, in stock's order, each file taking what stock did with it, to find where stock stopped and which playlists it made again under their own id. Every file stock
+     * reached has its playlist now (made empty when its songs are not found); the first that has none is where it stopped (100 playlists): it and the files after it were not
+     * imported. A cut or empty name is never a replacement: its file takes one playlist Import made. A whole name takes the copy's playlist of that name that is gone (deleted, made
+     * again under another id: one playlist Import made), else one still there (made again under its own id: Updated), else one playlist Import made. */
+    if (m && (d = opendir(PL_IMPORT_DIR)) != (void *)0) {
+        while ((ent = readdir(d)) != (char *)0) {
+            const char *fn = ent + 11, *dot = strrchr(fn, '.'); /* (struct dirent: d_type at 10, d_name at 11) */
+            if ((unsigned char)ent[10] != PL_DT_REG || !dot || (strcasecmp(dot, ".m3u8") && strcasecmp(dot, ".m3u")))
+                continue;
+            if (dot == fn || dot - fn > PL_IMPORT_NAME) {
+                if (pl_take_made(list, m, made, used, fn, dot == fn ? fn : fn + PL_IMPORT_NAME) < 0) break;
+                continue;
+            }
+            for (i = 0; i < m && !pl_same_span(cc_str(deque_at(list, i), REC_TITLE), fn, dot); ++i) {
+            }
+            if (i == m) break;
+            for (j = 0; j < old; ++j) {
+                void *o = deque_at(pl.pls, j);
+                if (!took[j] && pl_same_span(cc_str(o, REC_TITLE), fn, dot) &&
+                    !pl_has_pair(list, m, I(o, REC_DISC), cc_str(o, REC_TITLE)))
+                    break;
+            }
+            if (j < old) { /* the copy's playlist of this name is gone: the playlist this file made replaces it */
+                took[j] = 1;
+                if ((k = pl_take_made(list, m, made, used, fn, dot)) >= 0) from[k] = I(deque_at(pl.pls, j), REC_DISC);
+                continue;
+            }
+            for (i = 0; i < m && (made[i] || hit[i] || !pl_same_span(cc_str(deque_at(list, i), REC_TITLE), fn, dot));
+                 ++i) {
+            }
+            if (i < m)
+                hit[i] = 1;
+            else
+                pl_take_made(list, m, made, used, fn, dot);
+        }
+        closedir(d);
+    }
+    for (i = 0; i < m; ++i) {
+        void *r = deque_at(list, i);
+        const char *nm = cc_str(r, REC_TITLE);
+        int w = -1;
+        if (!made[i] && !hit[i]) continue; /* there before and not imported: as it was */
+        if (hit[i])
+            w = I(r, REC_DISC);
+        else if (from[i] >= 0)
+            w = from[i]; /* the playlist its file replaced */
+        else
+            for (j = 0; j < old && w < 0; ++j) { /* (a file the folder walk did not see) */
+                void *o = deque_at(pl.pls, j);
+                if (took[j] || !pl_same_str(cc_str(o, REC_TITLE), nm) || pl_has_pair(list, m, I(o, REC_DISC), nm))
+                    continue;
+                took[j] = 1,
+                w = I(o, REC_DISC); /* the copy's playlist of this name, gone and not taken by a file: replaced */
+            }
+        id[n] = I(r, REC_DISC), name[n] = nm, was[n++] = w;
+    }
+    plm_imported(n, id, name, was);
+}
+
 /* The picker's add (patch/picker.c: batch_add_file, the message), then the page closes as the stock picker's handler closes its window (window_close on the row's window). */
-static void pl_pick_add(int id, int have) {
+static void pl_pick_add(int id, int have, const char *name) {
     void *win = pl.win;
-    picker_add(id, have);
+    picker_add(id, have, name);
     if (win) window_close(win);
 }
 
@@ -1108,15 +1288,16 @@ static void pl_pick_add(int id, int have) {
 static int pl_pick_fire(const void *unused) {
     (void)unused;
     pick.timer = 0;
-    if (pick.on && pl.win) pl_pick_add(pick.id, 0);
+    if (pick.on && pl.win) pl_pick_add(pick.id, 0, pick.name);
     return RET_OK;
 }
 
-static void pl_pick_later(int id) {
+static void pl_pick_later(int id, const char *name) {
     if (pick.timer) return;
     pick.id = id;
+    snprintf(pick.name, sizeof pick.name, "%s", name);
     pick.timer = timer_add(pl_pick_fire, (void *)0, PL_PICK_MS);
-    if (!pick.timer) pl_pick_add(id, 0); /* no timer: now */
+    if (!pick.timer) pl_pick_add(id, 0, name); /* no timer: now */
 }
 
 /* The new playlist's own page (empty: its Add Songs row, patch/songs.c), as a tap on its row opens it; PL_PICK_MS after the keyboard's Done, for the reason pl_pick_later waits.
@@ -1152,6 +1333,16 @@ static int pl_ask(const char *text) {
     return pod_confirm_dialog(&info) == CONFIRM_YES;
 }
 
+/* Import: the stock row's handler (@0x53dedc) run here, so the page knows the answer: the stock confirm (msg_importplaylist; Yes 0xa), importPlayList, then its message box (-2
+ * msg_nottf, -6 msg_notplaylist, else msg_importsuccess). No, or nothing imported, stamps nothing. */
+static void pl_import(void) {
+    int r;
+    if (!pl_ask(TR("msg_importplaylist"))) return;
+    r = importPlayList();
+    if (r != -2 && r != -6) pl_stamp_imported();
+    pl_toast(TR(r == -2 ? "msg_nottf" : r == -6 ? "msg_notplaylist" : "msg_importsuccess"));
+}
+
 /* The page's marks into the stock selection: a vector of ints as long as *pdeq_playlist, 1 for each selected row. The stock list is read first (another page's
  * query may have replaced it) and must be what the page shows (as many playlists, the same ids in the same order): else nothing is selected and the page reads again. */
 static int pl_stock_selection(void) {
@@ -1171,19 +1362,26 @@ static int pl_stock_selection(void) {
     return 1;
 }
 
-/* The selected playlists the stock delete took out: their chosen covers go (the page's list is still the one they were selected in; a playlist the stock list still has stays). */
+/* The selected playlists the stock delete took out: their chosen covers and their times go (the page's list is still the one they were selected in; a playlist the stock list still
+ * has stays). */
 static void pl_forget_deleted(void) {
+    int id[PL_MAX];
+    const char *name[PL_MAX];
     void *list;
-    unsigned i, j, n;
+    unsigned i, j, n, gone = 0;
     if (pl.src || loadLocalClassList(CLASS_PLAYLISTS) < 0) return;
     list = *(void **)PDEQ_PLAYLIST;
     n = list ? deque_size(list) : 0;
-    for (i = (unsigned)pl_v(); i < pl.count; ++i) {
+    for (i = (unsigned)pl_v(); i < pl.count && gone < PL_MAX; ++i) {
         if (!m1_sel_is(&pl.sel, (int)i)) continue;
         for (j = 0; j < n && I(deque_at(list, j), REC_DISC) != pl_id((int)i); ++j) {
         }
-        if (j == n) plc_forget(pl_id((int)i), cc_str(pl_rec((int)i), REC_TITLE));
+        if (j < n) continue;
+        id[gone] = pl_id((int)i), name[gone] = cc_str(pl_rec((int)i), REC_TITLE);
+        plc_forget(id[gone], name[gone]);
+        ++gone;
     }
+    plm_forget_many(gone, id, name);
 }
 
 /* Delete: the stock handler's sequence (@0x53dbcc): nothing selected is the message msg_delplaylistfailed; the confirm dialog (msg_delplaylist; Yes 0xa); then
@@ -1234,7 +1432,8 @@ enum { PL_NEW, PL_IMPORT, PL_EXPORT, PL_DELETE };
 
 static void pl_set_mode(int list);
 
-/* A tap on a card row: the slots 6..9 are the page's actions (VS_SEARCH + PL_NEW ..), 4 and 5 Grid and List, 0 the Name row, whose tap reverses the order (it is always the ticked one). */
+/* A tap on a card row: the slots 6..9 are the page's actions (VS_SEARCH + PL_NEW ..), 4 and 5 Grid and List, 0..3 the sort rows: a row sets its order in its default direction (Title A-Z, the dates
+ * Newest First), the ticked row again reverses it. */
 static int pl_on_item(void *ctx, void *e) {
     int which = (int)(long)ctx;
     (void)e;
@@ -1248,12 +1447,12 @@ static int pl_on_item(void *ctx, void *e) {
         }
         return RET_OK;
     }
-    if (which == 0) { /* Name: A-Z, the ticked row the other way; saved first (a save that fails changes nothing) */
-        int rev = !pl.rev;
+    if (which >= 0 && which < VS_SORTS) { /* a sort row; saved first (a save that fails changes nothing) */
+        int rev = which == pl_sort_now() ? !pl_rev_now() : 0;
         char text[3];
-        text[0] = rev ? 'a' : '0', text[1] = '\n', text[2] = 0;
+        text[0] = (char)((rev ? 'a' : '0') + which), text[1] = '\n', text[2] = 0;
         if (home_write_atomic(PLAYLISTS_SORT_FILE, text) != 0) return RET_OK;
-        pl.rev = rev;
+        pl.sort = which, pl.rev = rev;
         pl_reorder();
         return RET_OK;
     }
@@ -1263,9 +1462,9 @@ static int pl_on_item(void *ctx, void *e) {
     if (which == PL_NEW) {
         pl_create(); /* the keyboard is not modal: pl_named reads the list when the name is in */
         return RET_OK;
-    } else if (which == PL_IMPORT)
-        stock_playlist_import((void *)0, (void *)0);
-    else if (which == PL_EXPORT)
+    } else if (which == PL_IMPORT) {
+        pl_import();
+    } else if (which == PL_EXPORT)
         stock_playlist_export((void *)0, (void *)0);
     else { /* Delete Playlists: select mode on this page (nothing to select with no playlist); where it cannot be (the asset or the marks lack it) the stock Playlists page, whose multi-select deletes */
         if (!pl.count) return RET_OK;
@@ -1427,13 +1626,17 @@ static int pl_open_page(const lib_src_t *src) {
         return -2;
     }
     if (vs_bind(&pl.vs, pl.win, pl_on_item, pl_on_scrim,
-                1u << 0 | VS_WITH_VIEWS | VS_WITH_SEARCH | VS_WITH_SELECT | VS_WITH_ACT2 | VS_WITH_ACT3)) {
+                VS_ALL_SORTS | VS_WITH_VIEWS | VS_WITH_SEARCH | VS_WITH_SELECT | VS_WITH_ACT2 | VS_WITH_ACT3)) {
         navigator_back(); /* an asset that is not ours */
         return -2;
     }
-    vs_dated(&pl.vs, 0); /* Name reads A-Z / Z-A */
-    pl.rev = set_read(PLAYLISTS_SORT_FILE, '0') == 'a';
-    vs_offer(&pl.vs, PL_ROWS_MORE);
+    vs_dated(&pl.vs, 1u << 1 | 1u << 2 | 1u << 3); /* Title reads A-Z / Z-A, the dates Newest First / Oldest First */
+    {
+        int c = set_read(PLAYLISTS_SORT_FILE, '0');
+        pl.sort = c >= '0' && c <= '3' ? c - '0' : c >= 'a' && c <= 'd' ? c - 'a' : 0;
+        pl.rev = c >= 'a' && c <= 'd';
+    }
+    vs_offer(&pl.vs, pl.src ? PL_ROWS_MORE_SRC : PL_ROWS_MORE);
     pl.tmp = calloc((GRID_COVER / 2) * (GRID_COVER / 2),
                     4); /* one quadrant of a mosaic; without it a mosaic falls back to its first cover */
     { /* the stock grid, its two text styles are this page's hidden labels */

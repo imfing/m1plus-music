@@ -46,6 +46,7 @@
 #include "albums.h"
 #include "coverflow.h"
 #include "pins.h"
+#include "plmeta.h"
 #include "scroll.h"
 
 #define PN_MAGIC "M1P1\n"
@@ -1171,7 +1172,8 @@ static int pn_play_playlist(const pin_t *e, int how) {
     void *list = pn_playlist_tracks(e);
     if (!list) return -1;
     *(int *)G_CLASS_TYPE = CLASS_PLAYLIST_SONGS;
-    so_play(CLASS_PLAYLIST_SONGS, list, how == SO_SHUFFLE ? -1 : 0, how, pod_open_player);
+    if (so_play(CLASS_PLAYLIST_SONGS, list, how == SO_SHUFFLE ? -1 : 0, how, pod_open_player) == 0)
+        plm_played((int)e->key, e->name); /* its Last Played (patch/plmeta.c); nothing started: so_play said why */
     return 0;
 }
 

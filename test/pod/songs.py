@@ -2731,10 +2731,12 @@ def clean_tests(ctx):
     for card, want in ((True, 'File not found'), (False, 'Storage unavailable')):
         m = page(gone=(1,), card=card); settle(m)
         calls = tap(m, 150, lay.row_y(1) + 30)
-        expect([c[1] for c in calls if c[0] == 'toast'] == [want] and not m.played, f'a tap on a row whose file is gone, the card {"in" if card else "out"}: "{want}", nothing plays')
+        expect([c[1] for c in calls if c[0] == 'toast'] == [want] and not m.played and '/mnt/data/m1plus/playlists-meta' not in m.fs,
+               f'a tap on a row whose file is gone, the card {"in" if card else "out"}: "{want}", nothing plays, no Last Played')
     m = page(gone=(1,)); settle(m)
     tap(m, 150, lay.row_y(0) + 30)
-    expect(m.played and m.played[1] == 0, 'a row whose file is there plays as before')
+    expect(m.played and m.played[1] == 0 and [l.split(b' ')[3] != b'0' for l in m.fs.get('/mnt/data/m1plus/playlists-meta', b'').split(b'\n')[1:-1]] == [True],
+           f'a row whose file is there plays as before, and stamps the playlist\'s Last Played ({m.fs.get("/mnt/data/m1plus/playlists-meta")})')
 
 
 def edit_tests(ctx):
@@ -2878,6 +2880,7 @@ def edit_tests(ctx):
            f'a new name: one statement on the header row, both name columns, the quote doubled ({upd(m.calls)})')
     expect(m.wtext[m.widgets['sg_hname']] == "Rock'n Roll" and m.wtext[m.widgets['label_title']] == "Rock'n Roll" and not said(m.calls),
            'the header and the small title read the new name')
+    expect(m.fs.get('/mnt/data/m1plus/playlists-meta') == b"M1PLMETA 1\n7 0 %d 0 Rock'n Roll\n" % m.wall, f'the rename stamps the playlist as updated under its new name ({m.fs.get("/mnt/data/m1plus/playlists-meta")})')
     expect(m.read_cstr(pod.DATA['NAV_TITLE'][0]) == "Rock'n Roll", f'stock\'s navigation title follows, though the duplicate check\'s read wrote "Playlists" over it ({m.read_cstr(pod.DATA["NAV_TITLE"][0])!r})')
     expect(PH.parse(m.fs[PINS]) == [('p', 7, (11, 22, 0, 0), "Rock'n Roll", ''), pin[1]], f'the Home pin follows, in its place with its covers ({PH.parse(m.fs.get(PINS, b""))})')
     expect(PC.parse(m.fs['/mnt/mmc/.m1plus/playlist-covers']) == [(3, 1, 0, 5, (), 'Other'), (7, 3, 0, 0x77, ((1, 2, 3),), "Rock'n Roll")], 'the stored cover follows the new name (plc_rename), the other playlist\'s stays')

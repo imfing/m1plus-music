@@ -30,7 +30,9 @@
 #define PLAYLISTS_FILE \
     "/mnt/data/m1plus/playlists-view" /* the Playlists page's mode, as ALBUMS_FILE: "1" the grid (default), "0" the list */
 #define PLAYLISTS_SORT_FILE \
-    "/mnt/data/m1plus/playlists-sort" /* the Playlists page's name order (its "..." card): "a" Z-A; missing or anything else A-Z (patch/playlists.c) */
+    "/mnt/data/m1plus/playlists-sort" /* the Playlists page's order (its "..." card): "0" Title, "1" Date Added, "2" Last Played, "3" Updated, or "a" .. "d" for the same order reversed (Z-A, Oldest First); missing or anything else Title A-Z (patch/playlists.c) */
+#define PLAYLISTS_META_FILE \
+    "/mnt/data/m1plus/playlists-meta" /* when each playlist was added, updated and played, keyed by stock id and name (patch/plmeta.c): the dates behind the Playlists page's three date orders */
 #define RECENTADD_VIEW_FILE \
     "/mnt/data/m1plus/recently-added-view" /* Recently Added on the Songs page: "1" the albums grid, anything else (missing too) the songs (docs/modules/recent-albums.md) */
 #define LANDSCAPE_FILE \

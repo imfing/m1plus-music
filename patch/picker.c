@@ -19,6 +19,7 @@
 #include "home.h"
 #include "playlists.h"
 #include "keyboard.h"
+#include "plmeta.h"
 
 static struct {
     int on, done;
@@ -153,8 +154,8 @@ int picker_open_rec(int cls, void *rec) {
 /* The stock row handler's sequence: the selection into the stock vector, batch_add_file (duplicates skipped by checkPlayListExist; the rows of the copy get the new
  * ids), the message. A selection that cannot be made is msg_addfailed. PICKER_FAVOURITES is the stock Add button's Favourites choice (@0x5281c8):
  * batch_add_file(class, 0xf00a, list, vector, 0), then msg_addfavsuccess. Where some of the songs were there already (have of picker_count), the message says how many
- * of them were added ("Added 3 of 5 songs"): stock skips the others. */
-void picker_add(int playlist, int have) {
+ * of them were added ("Added 3 of 5 songs"): stock skips the others. A playlist (not Favourites, whose `name` is unused) is stamped as updated (patch/plmeta.c). */
+void picker_add(int playlist, int have, const char *name) {
     int fav = playlist == PICKER_FAVOURITES, n = (int)picker_count();
     char msg[96];
     if (!pk.on || pk.done) return;
@@ -164,6 +165,7 @@ void picker_add(int playlist, int have) {
         return;
     }
     batch_add_file(pk.cls, fav ? CLASS_FAV : CLASS_PLAYLISTS, pk.list, *(void **)SEL_VEC, fav ? 0 : playlist);
+    if (!fav) plm_updated(playlist, name);
     if (have > 0 && have < n) {
         snprintf(msg, sizeof msg, TR("Added %d of %d songs"), n - have, n);
         pod_toast(msg);

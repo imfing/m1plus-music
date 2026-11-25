@@ -74,6 +74,7 @@
 #include "pins.h"
 #include "selmode.h"
 #include "keyboard.h"
+#include "plmeta.h"
 
 #define ROW LIST_ROW_H
 #define SG_MARK_UP \
@@ -307,6 +308,13 @@ static int sg_cleans(void) {
 } /* a stock playlist's songs: the card has Clean Up Playlist under Select (a source's playlist is the server's: nothing to clean) */
 /* A stock playlist's Edit mode: select mode with the pills gone, the rows higher, the name tappable and the bar's Delete | + (docs/modules/songs.md "A playlist's header"). */
 static int sg_edit(void) { return sg.select && sg.head && sg_cleans(); }
+/* The stock playlist's page changed its songs or their order, or played it: its time in patch/plmeta.c (Updated, Last Played; a failed write leaves the playlist as it was). Other lists: nothing. */
+static void sg_updated(void) {
+    if (sg_cleans()) plm_updated(sg.pl_id, sg.name);
+}
+static void sg_played(void) {
+    if (sg_cleans()) plm_played(sg.pl_id, sg.name);
+}
 /* Edit mode's reorder handles (docs/modules/songs.md "Reorder"): at the right of every row of a plain list (a playlist has no sections); the row text ends at their zone. */
 static int sg_handles(void) { return sg_edit() && sg.handle && !sg.al.nsec && sg.count; }
 static int sg_direct(void) {
@@ -1448,7 +1456,8 @@ static void sg_play_at(int at, int how) {
         so_play_own(sg.list, at, how, pod_start_player);
         return;
     }
-    so_play_dir(sg.cls, sg.list, at, how, pod_start_player, sg_flipped());
+    if (so_play_dir(sg.cls, sg.list, at, how, pod_start_player, sg_flipped()) == 0)
+        sg_played(); /* (nothing started: no Last Played) */
 }
 
 static int sg_on_play(void *ctx, void *e) {
@@ -1550,6 +1559,7 @@ static int sg_remove_marked(void) {
     if (yes) done = so_remove_ids(ids, n);
     free(ids);
     if (!yes) return 0;
+    if (done) sg_updated();
     pod_toast(TR(done ? "Removed from Playlist" : "Can't remove from playlist"));
     return 1;
 }
@@ -1629,6 +1639,7 @@ static void sg_pick_tap(int a) {
         pod_toast(TR("msg_addfailed"));
         return;
     }
+    plm_updated(sg.pk_id, sg.name); /* (the Add Songs page's name is the playlist's) */
     so_song_key(rec, h);
     g = calloc(2 * (sg.pk_n + 1), sizeof *g);
     if (g) {
@@ -1708,6 +1719,7 @@ static void sg_remove_one(void *rec) {
     unsigned done;
     if (!sg_cleans() || !sg.view || I(rec, REC_DISC) != sg.pl_id) return;
     done = so_remove_ids(&id, 1);
+    if (done) sg_updated();
     pod_toast(TR(done ? "Removed from Playlist" : "Can't remove from playlist"));
     if (done) sg_load(1);
 }
@@ -1863,6 +1875,7 @@ static void sg_reorder(int from, int to) {
         pod_toast(TR("Can't reorder playlist"));
         return;
     }
+    sg_updated();
     sg_move_marks(from, to);
     sg_edit_reload();
 }
@@ -2141,6 +2154,7 @@ static void sg_clean(void) {
         free(ids);
     }
     if (sg.sel.bits && sg.count) memset(sg.sel.bits, 0, (sg.count + 7) / 8);
+    if (done || fixed) sg_updated();
     if (done) {
         pod_toast(TR("Playlist cleaned up"));
         sg_load(1);
@@ -2222,6 +2236,7 @@ static void sg_renamed(const char *name) {
         return;
     }
     memcpy(old, sg.name, sizeof old);
+    plm_rename(id, old, name); /* its times follow the name (and it is updated) */
     snprintf(sg.name, sizeof sg.name, "%s", name);
     if (!strcmp((const char *)NAV_TITLE, old)) snprintf((char *)NAV_TITLE, 0x200, "%s", name);
     pins_rename_playlist(id, old, name);

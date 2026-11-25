@@ -77,7 +77,11 @@ def run(ctx):
         m2 = caller(PL); m2.fs['/mnt/data/m1plus/playlists-sort'] = saved
         open_picker(m2); blits, texts, styles = PL.settle(m2)
         got = [x[0] for x, s in zip(texts, styles) if s == 'label_row_title'][2:]
-        expect(got == want, f'the saved order {saved!r} ("a" Name Z-A; the retired Recently Added values "1" and "b" read as A-Z) orders the picker\'s playlists ({got})')
+        expect(got == want, f'the saved order {saved!r} ("a" Title Z-A; the date orders "1" and "b" with no times in the file: Title A-Z) orders the picker\'s playlists ({got})')
+    m2 = caller(PL); m2.fs['/mnt/data/m1plus/playlists-sort'] = b'1\n'; m2.fs['/mnt/data/m1plus/playlists-meta'] = b'M1PLMETA 1\n1 5 5 0 Road Trip\n'
+    open_picker(m2); blits, texts, styles = PL.settle(m2)
+    got = [x[0] for x, s in zip(texts, styles) if s == 'label_row_title'][2:]
+    expect(got[0] == 'Road Trip', f'Date Added: the picker follows the Playlists page\'s date order too, the stamped playlist first ({got})')
     expect(record_ok(m), 'the browsing class, classinfo[0..1] and the navigation title are the caller\'s after the picker\'s own stock queries')
 
     # 2. A playlist row: the stock add on the copy and the marks, the message, the page closes
@@ -92,6 +96,7 @@ def run(ctx):
            'the stock vector is filled from the marks just before')
     expect(('toast', 'msg_addplaylistsuccess', 1, 2000) in calls and ('window_close', m.window) in calls and not [c for c in calls if c[0] == 'navigator_back'],
            'the stock "Added To Playlist" message, then the picker\'s window is closed as the stock handler closes its own')
+    expect(m.fs.get('/mnt/data/m1plus/playlists-meta') == b'M1PLMETA 1\n2 0 %d 0 Late Night\n' % m.wall, f'the playlist is stamped as updated ({m.fs.get("/mnt/data/m1plus/playlists-meta")})')
     calls = PL.tap(m, 100, PL.TOP + 4 * ROW + 20)
     expect(not [c for c in calls if c[0] == 'batch_add_file'], 'a second tap adds nothing again')
     destroy(m)
@@ -142,6 +147,7 @@ def run(ctx):
     expect(len(add) == 1 and add[0][1:3] == (CLS, O['CLASS_PLAYLISTS']) and add[0][5] == 9 and add[0][6] == [1, 3]
            and ('toast', 'msg_addplaylistsuccess', 1, 2000) in m.calls and ('window_close', m.window) in m.calls,
            'the timer: the new playlist (id 9) gets the marked songs, the message, the page closes')
+    expect(m.fs.get('/mnt/data/m1plus/playlists-meta') == b'M1PLMETA 1\n9 %d %d 0 Mix\n' % (m.wall, m.wall + 1), f'the new playlist has its Date Added, then the add stamps it as updated ({m.fs.get("/mnt/data/m1plus/playlists-meta")})')
     expect(record_ok(m), 'the browsing record is the caller\'s after the creating queries')
     destroy(m)
     # Back (or anything that ends the page) before the timer fires: the timer is removed and nothing is added

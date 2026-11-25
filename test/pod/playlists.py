@@ -18,7 +18,8 @@ CPITCH = COVER + GAP
 SVW, CW = 310, 320
 SC_YOFF, SC_VH = O['SC_YOFF'], 0x7c
 CARD_WIDGETS = tuple(dict.fromkeys(VS_WIDGETS + ('vs_item8', 'vs_item9', 'vs_label8', 'vs_label9', 'vs_glyph8', 'vs_glyph9')))   # the shared "..." card's widgets (btn_more among them) and the Playlists asset's two extra action rows
-CARD_TEXTS = ('Name', 'Name', 'Name', 'Name', 'Grid', 'List') + tuple(pod_pages.PLAYLIST_MENU)   # vs_label0..9
+SORT_KEYS = ('Title', 'Date Added', 'Last Played', 'Updated')
+CARD_TEXTS = SORT_KEYS + ('Grid', 'List') + tuple(pod_pages.PLAYLIST_MENU)   # vs_label0..9
 A_NEW, A_IMPORT, A_EXPORT, A_DELETE, V_GRID, V_LIST = 'vs_item6', 'vs_item7', 'vs_item8', 'vs_item9', 'vs_item4', 'vs_item5'
 HALF = COVER // 2
 REC_DISC = O['REC_DISC']
@@ -712,8 +713,8 @@ def stock_tests(ctx):
            and tree.find('vs_tick6') is None and tree.find('vs_tick8') is None, 'the hairline, the glyphs of the action rows and the six ticks (no tick on an action row)')
     labels = {i: next(c for c in items[i].children if c.type == 'hscroll_label') for i in range(10)}
     expect([pod_i18n.shown_english(labels[i]) for i in range(6, 10)] == list(pod_pages.PLAYLIST_MENU) == ['New Playlist', 'Import', 'Export', 'Delete Playlists']
-           and [pod_i18n.shown_english(labels[i]) for i in (0, 4, 5)] == ['Name', 'Grid', 'List'],
-           'the rows: New Playlist, Import, Export, Delete Playlists (slots 6..9, the list-plus button\'s card), Grid and List (4, 5), Name (0: the "..." card; the other sort slots are in the asset and never offered)')
+           and [pod_i18n.shown_english(labels[i]) for i in (0, 1, 2, 3, 4, 5)] == ['Title', 'Date Added', 'Last Played', 'Updated', 'Grid', 'List'],
+           'the rows: New Playlist, Import, Export, Delete Playlists (slots 6..9, the list-plus button\'s card), Grid and List (4, 5), Title, Date Added, Last Played, Updated (0..3: the "..." card)')
     expect(all(c.get('sensitive') == 'false' for it in items for c in it.children if c.type != 'image' or not c.name.startswith('vs_tick')), 'the glyphs and labels in the rows are insensitive (the row button takes the tap)')
     glyphs = {i: next((c for c in items[i].children if c.type == 'image' and c.name == f'vs_glyph{i}'), None) for i in range(6, 10)}
     xx = os.path.join(WORK, 'rootfs', 'release/assets/default/raw/images/xx')
@@ -971,7 +972,7 @@ def stock_tests(ctx):
     expect(vis(m, 'vs_card') == (1, 1) and not [c for c in m.calls if c[0] == 'widget_set_visible' and c[1] == m.widgets['vs_card']], 'while the list-plus button\'s card is open a tap on the "..." or the list-plus button changes nothing (the scrim lies over them, and the handlers ignore it too)')
     m.click('vs_scrim')
     m.click('btn_more'); m.click('btn_plactions')
-    expect(vis(m, 'vs_card') == (1, 1) and m.props.get((m.widgets['vs_card'], 'style:normal:bg_image')) == 'vs_glass3' and vis(m, 'vs_item6') == (0, 0) and vis(m, 'vs_item4') == (1, 1),
+    expect(vis(m, 'vs_card') == (1, 1) and m.props.get((m.widgets['vs_card'], 'style:normal:bg_image')) == 'vs_glass6' and vis(m, 'vs_item6') == (0, 0) and vis(m, 'vs_item4') == (1, 1),
            'while the "..." card is open the list-plus button is ignored: it still holds Grid and List, not the actions')
     m.click('vs_scrim')
     # New playlist: our keyboard opens (stock's T9 dialog is gone); its Done calls pl_named: createPlayListItem on the freshly read stock list, then the page reads again.
@@ -1003,12 +1004,19 @@ def stock_tests(ctx):
         m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)
         expect([c for c in m.calls if c[0] == 'toast'] == [('toast', key, 1, 2000)], f'a playlist that cannot be made says {key} in the stock message box ({[c for c in m.calls if c[0] == "toast"]})')
     m.create_ret = 5
-    # Import / Export: the stock click handlers, in the normal (not multi-select) mode, then the page reads again
-    for item, handler in (('vs_item7', 'stock_playlist_import'), ('vs_item8', 'stock_playlist_export')):
-        m.setword(NAV_STATUS, 1); m.calls = []
-        m.click(item)
-        expect([c for c in m.calls if c[0] == handler] == [(handler, 0)] and m.word(NAV_STATUS) == 0
-               and ('loadLocalClassList', O['CLASS_PLAYLISTS']) in m.calls, f'{item}: the stock {handler[15:]} handler runs with the list in normal mode, then the page reads again')
+    # Export: the stock click handler, in the normal (not multi-select) mode, then the page reads again
+    m.setword(NAV_STATUS, 1); m.calls = []
+    m.click('vs_item8')
+    expect([c for c in m.calls if c[0] == 'stock_playlist_export'] == [('stock_playlist_export', 0)] and m.word(NAV_STATUS) == 0
+           and ('loadLocalClassList', O['CLASS_PLAYLISTS']) in m.calls, 'Export: the stock handler runs with the list in normal mode, then the page reads again')
+    # Import: the stock handler's sequence run by the page (@0x53dedc): the confirm, importPlayList on Yes, the stock message by its result, then the page reads again
+    for yes, ret, msg in ((True, 1, 'msg_importsuccess'), (True, -2, 'msg_nottf'), (True, -6, 'msg_notplaylist'), (False, 1, None)):
+        mi = PM(lists); open_page(mi); settle(mi)
+        mi.confirm_yes, mi.import_ret, mi.calls = yes, ret, []
+        mi.click('vs_item7')
+        seq = [c[:2] for c in mi.calls if c[0] in ('confirm', 'importPlayList', 'toast')]
+        expect(seq == [('confirm', 'msg_importplaylist')] + ([('importPlayList',), ('toast', msg)] if yes else []) and ('loadLocalClassList', O['CLASS_PLAYLISTS']) in mi.calls,
+               f'Import, {"Yes, importPlayList " + str(ret) + ": " + msg if yes else "No: nothing imported, no message"}; the page reads again ({seq})')
     # Delete Playlists: select mode on this page (select_tests below); the stock Playlists page only where the page cannot do it
     m.calls = []
     m.click('vs_item9')
@@ -1029,33 +1037,33 @@ def stock_tests(ctx):
         m = PM(lists)
         if mode is not None: m.fs[PL_FILE] = mode
         open_page(m)
-        texts = [built[loc][k] for k in ('Name', 'Name', 'Name', 'Name', 'Grid', 'List') + tuple(pod_pages.PLAYLIST_MENU)]
+        texts = [built[loc][k] for k in SORT_KEYS + ('Grid', 'List') + tuple(pod_pages.PLAYLIST_MENU)]
         for i, t in enumerate(texts): m.label_text[m.widgets[f'vs_label{i}']] = t
         m.measure = measure; m.calls = []
         m.click(button)
         return m, texts
     def moved_of(m, rows): return [[c[2:] for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets[f'vs_item{i}']][-1] for i in rows]
     glass = lambda m: [m.props.get((m.widgets['vs_card'], f'style:{st}:bg_image')) for st in ('normal', 'pressed', 'over')]
-    ACTS, MORE = (6, 7, 8, 9), (4, 5, 0)
+    ACTS, MORE = (6, 7, 8, 9), (4, 5, 0, 1, 2, 3)
     m, _ = card_for('en_US', px, button='btn_plactions')
     expect(vis(m, 'vs_card') == (1, 1) and vis(m, 'vs_scrim') == (1, 1) and [vis(m, f'vs_item{i}') for i in ACTS] == [(1, 1)] * 4 and [vis(m, f'vs_item{i}') for i in (0, 1, 2, 3, 4, 5)] == [(0, 0)] * 6
            and moved_of(m, ACTS) == [(0, 50 * k) for k in range(4)] and vis(m, 'vs_hair')[0] == 0 and glass(m) == ['vs_glass4'] * 3,
            f'the list-plus button\'s card: the four actions in four rows packed from the top, no hairline, vs_glass4 ({moved_of(m, ACTS)})')
     m, _ = card_for('en_US', px)
-    expect(vis(m, 'vs_card') == (1, 1) and vis(m, 'vs_scrim') == (1, 1) and [vis(m, f'vs_item{i}') for i in MORE] == [(1, 1)] * 3 and [vis(m, f'vs_item{i}') for i in (1, 2, 3, 6, 7, 8, 9)] == [(0, 0)] * 7
-           and moved_of(m, MORE) == [(0, 50 * k) for k in range(3)] and vis(m, 'vs_hair')[0] == 0 and glass(m) == ['vs_glass3'] * 3
+    expect(vis(m, 'vs_card') == (1, 1) and vis(m, 'vs_scrim') == (1, 1) and [vis(m, f'vs_item{i}') for i in MORE] == [(1, 1)] * 6 and [vis(m, f'vs_item{i}') for i in (6, 7, 8, 9)] == [(0, 0)] * 4
+           and moved_of(m, MORE) == [(0, 50 * k) for k in range(6)] and vis(m, 'vs_hair')[0] == 0 and glass(m) == ['vs_glass6'] * 3
            and m.props.get((m.widgets['vs_item0'], 'style:normal:border_width')) in (None, 1),
-           f'the "..." card: Grid, List, Name in three rows, the hairline is Name\'s top border, vs_glass3 ({moved_of(m, MORE)})')
-    expect([vis(m, f'vs_tick{i}')[0] for i in (4, 5, 0)] == [1, 0, 1] and [utf8(c[2]) for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets['vs_sub0']] == ['A–Z'],
-           'the grid is ticked (the default), Name is ticked with A–Z under it')
+           f'the "..." card: Grid, List, Title, Date Added, Last Played, Updated in six rows, the hairline is Title\'s top border, vs_glass6 ({moved_of(m, MORE)})')
+    expect([vis(m, f'vs_tick{i}')[0] for i in (4, 5, 0, 1, 2, 3)] == [1, 0, 1, 0, 0, 0] and [utf8(c[2]) for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets['vs_sub0']] == ['A–Z'],
+           'the grid is ticked (the default), Title is ticked with A–Z under it')
     m, _ = card_for('en_US', px, b'0\n')
     expect([vis(m, f'vs_tick{i}')[0] for i in (4, 5)] == [0, 1], 'in the list mode the List row is ticked')
     m = PM(lists); m.fs['/mnt/data/m1plus/playlists-sort'] = b'a\n'; open_page(m); m.calls = []; m.click('btn_more')
     expect(vis(m, 'vs_tick0')[0] == 1 and [utf8(c[2]) for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets['vs_sub0']] == ['Z–A']
-           and moved_of(m, (0,)) == [(0, 100)], 'with the saved order Z–A, Name is ticked, "Z–A" under it (Name is the third row)')
+           and moved_of(m, (0,)) == [(0, 100)], 'with the saved order Z–A, Title is ticked, "Z–A" under it (Title is the third row)')
     m.click('vs_scrim'); m.click('btn_plactions'); m.click('vs_scrim'); m.click('btn_more')
-    expect(m.props.get((m.widgets['vs_item0'], 'style:normal:border_width')) == 1 and glass(m) == ['vs_glass3'] * 3,
-           'the card offered again after the list-plus button\'s gets the hairline back (Name\'s top border) and the same glass')
+    expect(m.props.get((m.widgets['vs_item0'], 'style:normal:border_width')) == 1 and glass(m) == ['vs_glass6'] * 3,
+           'the card offered again after the list-plus button\'s gets the hairline back (Title\'s top border) and the same glass')
     for loc in pod_i18n.LOCALES:
         m, texts = card_for(loc, px, button='btn_plactions')
         lx = O['VS_TICK_X'] + O['VS_LABEL_X_GLYPH'] - O['VS_GLYPH_X']   # no tick column: the glyph at x 14, the label 28 px after it
@@ -1066,21 +1074,21 @@ def stock_tests(ctx):
                and all(moved(f'vs_glyph{i}') == (O['VS_TICK_X'], 15) for i in ACTS) and all(moved(f'vs_label{i}') == (lx, 0) for i in ACTS) and lx == 42,
                f'{loc}: the list-plus button\'s card {w} px wide, x {311 - w}..311, 200 px high, glyphs at x 14 and labels at x 42 (no tick column) ({pos}, {sizes.get("vs_card")})')
         m, texts = card_for(loc, px)
-        w = max(O['VS_LABEL_X_GLYPH'] + max(px(t) for t in texts[4:6]), O['VS_LABEL_X'] + max(px(texts[0]), px('A–Z'))) + O['VS_TEXT_SLACK'] + O['VS_LABEL_R']
+        w = max(O['VS_LABEL_X_GLYPH'] + max(px(t) for t in texts[4:6]), O['VS_LABEL_X'] + max([px(t) for t in texts[:4]] + [px('A–Z')])) + O['VS_TEXT_SLACK'] + O['VS_LABEL_R']
         w = max(O['VS_CARD_MIN'], min(O['PL_CARD_MAX'], w))
         pos, sizes = fit(m)
         moved = lambda name: [c[2:] for c in m.calls if c[0] == 'widget_move' and c[1] == m.widgets[name]][-1]
-        expect(pos == (311 - w, 52) and sizes.get('vs_card') == (w, 3 * 50) and all(sizes.get(f'vs_item{i}') == (w, 50) for i in MORE) and 206 <= w <= 292
+        expect(pos == (311 - w, 52) and sizes.get('vs_card') == (w, 6 * 50) and all(sizes.get(f'vs_item{i}') == (w, 50) for i in MORE) and 206 <= w <= 292
                and all(moved(f'vs_glyph{i}') == (O['VS_GLYPH_X'], 15) for i in (4, 5)) and moved('vs_label4') == (O['VS_LABEL_X_GLYPH'], 0),
-               f'{loc}: the "..." card {w} px wide, x {311 - w}..311, 150 px high ({pos}, {sizes.get("vs_card")})')
+               f'{loc}: the "..." card {w} px wide, x {311 - w}..311, 300 px high ({pos}, {sizes.get("vs_card")})')
     m, _ = card_for('en_US', lambda t: 300)
-    expect(fit(m)[0] == (19, 52) and fit(m)[1].get('vs_card') == (292, 150), f'a label wider than the room keeps the widest card (292 px, its ellipsis): {fit(m)}')
+    expect(fit(m)[0] == (19, 52) and fit(m)[1].get('vs_card') == (292, 300), f'a label wider than the room keeps the widest card (292 px, its ellipsis): {fit(m)}')
     m, _ = card_for('en_US', None)
     expect(fit(m)[0] is None and vis(m, 'vs_card') == (1, 1), 'a label that cannot be measured leaves the asset\'s card (292 px), and the menu opens')
     m, _ = card_for('en_US', lambda t: 100)
     m.click('btn_more'); m.measure = lambda t: 200; m.calls = []
     m.click('btn_more')
-    expect(fit(m)[1].get('vs_card') == (286, 150) and fit(m)[0] == (25, 52), f'every open measures again (a language changed meanwhile): {fit(m)}')
+    expect(fit(m)[1].get('vs_card') == (286, 300) and fit(m)[0] == (25, 52), f'every open measures again (a language changed meanwhile): {fit(m)}')
 
     # 12. Closing frees everything
     m = PM(lists, missing=(7,)); open_page(m); settle(m)
@@ -1327,14 +1335,14 @@ def hold_tests(ctx):
         if mode == 'list': m.fs[PL_FILE] = b'0\n'
         m.wtext = {}
         RM.with_menu(m, 0)
-        m.played = []
+        m.played, m.play_ret = [], 0   # what so_play answers: 0 started, -1 nothing (its own message)
         m.handlers[PSYMS['so_play']] = 'so_play'
         inner = m._hook
         def hook(u, address, size, _):
             if m.handlers.get(address) == 'so_play':
                 a0, a1, a2, a3 = (u.reg_read(r) for r in (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3))   # noqa: F821
                 m.played.append((a0, m.word(O['CLASSINFO'] + 4) if 'CLASSINFO' in O else None, len(m.deques[a1]), a2 if a2 < 1 << 31 else a2 - (1 << 32), a3))
-                u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
+                u.reg_write(UC_MIPS_REG_V0, m.play_ret & 0xffffffff); u.reg_write(UC_MIPS_REG_PC, u.reg_read(UC_MIPS_REG_RA)); return   # noqa: F821
             if m.handlers.get(address) == 'widget_set_tr_text': m.wtext[u.reg_read(UC_MIPS_REG_A0)] = m.read_cstr(u.reg_read(UC_MIPS_REG_A1))   # noqa: F821
             return inner(u, address, size, _)
         m._hook = hook
@@ -1344,6 +1352,7 @@ def hold_tests(ctx):
     def up(m, y, t=1600, x=MARGIN + 40): m.touch('up', x, SCREEN_Y0 + y, t, fn='pl_on_up', count=30000000)
     opened = lambda calls: [c for c in calls if c[0] == 'navigator_to_with_context']
 
+    played_before = {}
     for mode in ('grid', 'list'):
         m = machine(mode); m.windows['m1plus_songs'] = 0; open_page(m); settle(m)
         y = R0 + 10 if mode == 'grid' else TOP + 10
@@ -1368,6 +1377,9 @@ def hold_tests(ctx):
             m.played.clear(); m.click(item, count=900000000)
             expect(not shown(m) and len(m.played) == 1 and m.played[0][0] == O['CLASS_PLAYLIST_SONGS'] and m.played[0][2] == 4 and m.played[0][3] == (-1 if how else 0) and m.played[0][4] == 1 + how
                    and m.word(pod.DATA['CLASSINFO'][0] + 4) == 2, f'{mode}: {name} plays Night ({m.played})')
+            row_ = [l.split(b' ') for l in m.fs.get(META, b'').split(b'\n') if l.endswith(b' Night')]
+            expect(len(row_) == 1 and row_[0][0] == b'2' and int(row_[0][3]) > played_before.get(mode, 0) and row_[0][1:3] == [b'0', b'0'], f'{mode}: {name} stamps Night\'s Last Played ({row_})')
+            played_before[mode] = int(row_[0][3]) if row_ else 0
         # Play Next / Play After queue the four songs of Night in order; Add to Playlist marks them all
         night = [f'/mnt/mmc/m/{a}/1.flac' for a in (2, 2, 3, 4)]
         for item, after, say in (('rm_item4', 0, 'Playing Next'), ('rm_item5', 1, 'Added to Queue')):
@@ -1379,6 +1391,10 @@ def hold_tests(ctx):
         m.pk_ret = 0; m.pk_calls.clear(); m.calls = []; m.click('rm_item3', count=900000000)
         expect(not shown(m) and m.pk_calls and m.pk_calls[0][0] == O['CLASS_PLAYLIST_SONGS'] and m.pk_calls[0][1] == 4 and m.pk_calls[0][2][0] & 15 == 15 and not RM.toasts_in(m.calls),
                f'{mode}: Add to Playlist opens the picker with the four songs all marked ({m.pk_calls})')
+        down(m, y, 4000); m.call(PSYMS['rm_on_hold'], count=900000000); up(m, y, 4600)
+        m.play_ret, before = -1, m.fs.get(META); m.played.clear(); m.calls = []; m.click('rm_item0', count=900000000); m.play_ret = 0
+        expect(len(m.played) == 1 and m.fs.get(META) == before and not [c for c in m.calls if c[0] == 'toast'],
+               f'{mode}: Play that starts nothing (so_play said why) stamps no Last Played and adds no "Can\'t play"')
         # cancelled: a drift, an abort, an early release (a tap still opens the playlist)
         m.calls = []; down(m, y, 5000); m.calls = []
         m.touch('move', MARGIN + 60, SCREEN_Y0 + y, 5100, fn='pl_on_move')
@@ -1410,5 +1426,262 @@ def hold_tests(ctx):
     m = machine('grid'); src = m.fake_src(); m.call(PSYMS['playlists_open_src'], a0=src, count=60000000); settle(m); m.calls = []; down(m, R0 + 10)
     expect(not timers(m), 'a source\'s page: no hold')
 
+META = '/mnt/data/m1plus/playlists-meta'
+MAGIC = b'M1PLMETA 1\n'
+PLS_FILE = '/mnt/data/m1plus/playlists-sort'
 
-SECTIONS = [stock_tests, src_tests, hold_tests]
+
+def sort_tests(ctx):
+    """The date orders and their times (patch/plmeta.c, docs/modules/playlists.md "Order"): the meta file's parse, write and refusals, the stamps, the four sort rows and their codes."""
+    expect = ctx.expect
+    NOW = 1800000000
+    named = [(1, 'beta', [0]), (2, 'Alpha', [1, 2]), (3, '10 mix', [3]), (4, '2 mix', [4, 5, 6]), (5, 'Zed', [])]
+
+    def fresh(content=None):
+        m = PM(named)
+        if content is not None: m.fs[META] = content
+        return m
+    def plm(m, fn, pid, *names):
+        a = [m.cstr(n) for n in names] + [0, 0]
+        r = m.call(PSYMS[fn], a0=pid, a1=a[0], a2=a[1], count=40000000)
+        return r - (1 << 32) if r >= 1 << 31 else r
+    def forget(m, pid, name):   # plm_forget_many with one playlist
+        ids, names = m.alloc(4), m.alloc(4)
+        m.setword(ids, pid); m.setword(names, m.cstr(name))
+        r = m.call(PSYMS['plm_forget_many'], a0=1, a1=ids, a2=names, count=40000000)
+        return r - (1 << 32) if r >= 1 << 31 else r
+    def lines(m): return (m.fs.get(META) or b'').split(b'\n')[1:-1]
+    def wrote(m): return ('rename', META + '.tmp', META) in m.calls
+
+    # 1. The file: a magic line, one line per playlist (id added updated played name), a stamp is the clock or one past the largest stamp
+    expect('playlists-meta' in pod_pages.SETTING_FILES and pod_pages.SETTING_FILES.index('playlists-meta') == pod_pages.SETTING_FILES.index('playlists-sort') + 1 and pod_pages.SETTING_FILES.count('playlists-meta') == 1,
+           'playlists-meta is on the Settings Files page, after playlists-sort (patch/setfiles.c lists PLAYLISTS_META_FILE in the same place)')
+    expect('{PLAYLISTS_META_FILE, K_PRESENT}' in open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'patch', 'setfiles.c')).read(), 'patch/setfiles.c lists PLAYLISTS_META_FILE as K_PRESENT')
+    m = fresh()
+    expect(plm(m, 'plm_added', 2, 'Alpha') == 0 and m.fs[META] == MAGIC + b'2 %d %d 0 Alpha\n' % (NOW, NOW) and wrote(m), f'plm_added on no file: the magic line and the playlist\'s line, written through the .tmp file ({m.fs.get(META)})')
+    expect(plm(m, 'plm_added', 4, '2 mix') == 0 and lines(m) == [b'2 %d %d 0 Alpha' % (NOW, NOW), b'4 %d %d 0 2 mix' % (NOW + 1, NOW + 1)],
+           f'a second playlist in the same second is one past the largest stamp ({lines(m)})')
+    expect(plm(m, 'plm_played', 2, 'Alpha') == 0 and lines(m)[0] == b'2 %d %d %d Alpha' % (NOW, NOW, NOW + 2), f'plm_played sets the played time only ({lines(m)})')
+    expect(plm(m, 'plm_updated', 2, 'Alpha') == 0 and lines(m)[0] == b'2 %d %d %d Alpha' % (NOW, NOW + 3, NOW + 2), f'plm_updated sets the updated time only ({lines(m)})')
+    m.wall = 1000
+    expect(plm(m, 'plm_updated', 4, '2 mix') == 0 and lines(m)[1] == b'4 %d %d 0 2 mix' % (NOW + 1, NOW + 4), f'a clock far behind the file (unsynced) still stamps strictly above ({lines(m)})')
+    m.wall = NOW
+    expect(plm(m, 'plm_updated', 3, '10 mix') == 0 and lines(m)[2] == b'3 0 %d 0 10 mix' % (NOW + 5), f'a playlist with no entry (made before the file) gets one with no Date Added ({lines(m)})')
+    m.calls = []
+    expect(plm(m, 'plm_rename', 4, '2 mix', 'Two') == 0 and lines(m)[1] == b'4 %d %d 0 Two' % (NOW + 1, NOW + 6), f'plm_rename keeps the times under the new name and stamps updated ({lines(m)})')
+    expect(plm(m, 'plm_rename', 7, 'x', 'Seven') == 0 and lines(m)[3] == b'7 0 %d 0 Seven' % (NOW + 7), f'a rename of a playlist with no entry makes one ({lines(m)})')
+    m.calls = []
+    expect(forget(m, 2, 'Other') == 0 and not wrote(m) and len(lines(m)) == 4, 'forget with another name (the id\'s entry is a stale one, not this playlist\'s) writes nothing')
+    expect(forget(m, 2, 'Alpha') == 0 and wrote(m) and [l.split(b' ')[0] for l in lines(m)] == [b'4', b'3', b'7'], f'plm_forget removes the playlist\'s line and keeps the others in order ({lines(m)})')
+    expect(forget(m, 9, 'None') == 0, 'a playlist with no entry is nothing to forget')
+
+    # 2. A reused id: the entry of the deleted playlist is stale, ignored, and replaced at the next stamp
+    m = fresh(MAGIC + b'3 1700000000 1700000001 1700000005 Old\n')
+    expect(plm(m, 'plm_updated', 3, '10 mix') == 0 and lines(m) == [b'3 0 %d 0 10 mix' % NOW], f'an entry whose name differs is replaced, not extended: its times are not the new playlist\'s ({lines(m)})')
+    m = fresh(MAGIC + b'3 1700000000 1700000001 1700000005 Old\n')
+    expect(plm(m, 'plm_added', 3, 'New') == 0 and lines(m) == [b'3 %d %d 0 New' % (NOW, NOW)], 'Date Added of a playlist on a reused id replaces the stale entry')
+    # a name over 63 bytes and control bytes are kept as the key sees them
+    long_name = 'é' * 40
+    m = fresh()
+    expect(plm(m, 'plm_added', 1, long_name) == 0 and lines(m)[0].split(b' ', 4)[4] == ('é' * 31).encode() and plm(m, 'plm_played', 1, long_name) == 0 and len(lines(m)) == 1,
+           'a name longer than 63 bytes is cut at a character boundary, the same key each time')
+
+    # 3. Strict: a file that is there and is not ours is never written over
+    bad = {
+        'magic': b'M1PLMETA 2\n1 1 1 1 a\n', 'no magic line': b'1 1 1 1 a\n', 'no newline': MAGIC + b'1 1 1 1 a', 'leading zero': MAGIC + b'01 1 1 1 a\n',
+        'a field short': MAGIC + b'1 1 1 a\n', 'letters': MAGIC + b'1 x 1 1 a\n', 'empty name': MAGIC + b'1 1 1 1 \n', 'no name': MAGIC + b'1 1 1 1\n',
+        'control byte': MAGIC + b'1 1 1 1 a\x01b\n', 'id twice': MAGIC + b'1 1 1 1 a\n1 2 2 2 b\n', 'time too big': MAGIC + b'1 2147483648 1 1 a\n',
+        'name too long': MAGIC + b'1 1 1 1 ' + b'a' * 64 + b'\n', 'too many lines': MAGIC + b''.join(b'%d 1 1 1 n\n' % k for k in range(129)),
+        'two spaces': MAGIC + b'1  1 1 1 a\n', 'only magic cut': b'M1PLM',
+    }
+    for what, data in bad.items():
+        m = fresh(data); m.calls = []
+        r = plm(m, 'plm_played', 9, 'X')
+        expect(r == -1 and m.fs[META] == data and not wrote(m), f'{what}: refused (-1), the file is as it was')
+        expect(forget(m, 1, 'a') == -1 and plm(m, 'plm_added', 9, 'X') == -1 and m.fs[META] == data, f'{what}: forget and added refuse it too')
+    for data in (b'', ):
+        m = fresh(data)
+        expect(plm(m, 'plm_played', 9, 'X') == 0 and lines(m) == [b'9 0 0 %d X' % NOW][:0] + [b'9 0 0 %d X' % NOW], 'an empty file holds nothing to lose: it is written')
+    m = fresh(MAGIC + b'1 5 5 5 a\n'); m.fail.add(('read', META)); m.calls = []
+    expect(plm(m, 'plm_played', 9, 'X') == -1 and m.fs[META] == MAGIC + b'1 5 5 5 a\n' and not wrote(m), 'a read error is not "no entries": nothing is written')
+    m = fresh(MAGIC + b'1 5 5 5 a\n'); m.fail.add(('open', META)); m.calls = []
+    expect(plm(m, 'plm_played', 9, 'X') == -1 and not wrote(m), 'an open error (not "no such file") writes nothing')
+    m = fresh(MAGIC + b'1 5 5 5 a\n'); m.fail.add(('rename', META)); m.calls = []
+    expect(plm(m, 'plm_played', 1, 'a') == -1 and m.fs[META] == MAGIC + b'1 5 5 5 a\n', 'a write that fails changes nothing: -1, the file as it was')
+    m = fresh(); m.fail.add(('rename', META))
+    expect(plm(m, 'plm_added', 1, 'a') == -1 and META not in m.fs, 'and no file appears')
+    m = fresh(MAGIC + b'1 2147483647 1 1 a\n')
+    expect(plm(m, 'plm_played', 2, 'b') == -1, 'no room above the largest possible stamp: nothing is written')
+    m = fresh(MAGIC + b''.join(b'%d 1 1 1 n\n' % k for k in range(128)))
+    expect(plm(m, 'plm_played', 500, 'b') == -1 and plm(m, 'plm_played', 5, 'n') == 0, 'a full table takes no new playlist, but still changes a held one')
+
+    # 4. The sort: the codes, the directions, a playlist with no time after the others in both directions, ties by Title
+    TITLE_ROWS = ['2 mix', '10 mix', 'Alpha', 'beta', 'Zed']
+    meta = MAGIC + b'1 300 500 0 beta\n2 300 200 900 Alpha\n4 999 999 999 old\n5 200 0 50 Zed\n'
+    ROW = O['LIST_ROW_H']
+    def list_page(saved=None, content=meta, src=False):
+        m = fresh(content); m.fs[PL_FILE] = b'0\n'
+        if saved is not None: m.fs[PLS_FILE] = saved
+        open_page(m)
+        return m
+    def shown(m):
+        blits, texts, styles = settle(m)
+        title = {(r[1] - TOP) // ROW: tx for (tx, r), st in zip(texts, styles) if st == 'label_row_title'}
+        return [title[k] for k in sorted(title)]
+    ORDERS = {
+        b'0\n': TITLE_ROWS, b'a\n': TITLE_ROWS[::-1],
+        b'1\n': ['Alpha', 'beta', 'Zed', '2 mix', '10 mix'], b'b\n': ['Zed', 'Alpha', 'beta', '2 mix', '10 mix'],
+        b'2\n': ['Alpha', 'Zed', '2 mix', '10 mix', 'beta'], b'c\n': ['Zed', 'Alpha', '2 mix', '10 mix', 'beta'],
+        b'3\n': ['beta', 'Alpha', '2 mix', '10 mix', 'Zed'], b'd\n': ['Alpha', 'beta', '2 mix', '10 mix', 'Zed'],
+    }
+    for code, want in ORDERS.items():
+        got = shown(list_page(code))
+        expect(got == want, f'playlists-sort {code!r}: {want} ({got})')
+    for code in (b'e\n', b'4\n', b'junk', b'', b'1x'):
+        expect(shown(list_page(code)) == TITLE_ROWS, f'playlists-sort {code!r}: Title A-Z')
+    expect(shown(list_page(b'1\n', content=None)) == TITLE_ROWS and shown(list_page(b'3\n', content=MAGIC)) == TITLE_ROWS, 'no meta file, or no entries: every playlist is unstamped, so the Title order')
+    bad_m = list_page(b'1\n', content=MAGIC + b'junk')
+    expect(shown(bad_m) == TITLE_ROWS and bad_m.fs[META] == MAGIC + b'junk', 'an unreadable meta file: Title order, the file untouched')
+    # the grid follows the same order
+    m = fresh(meta); m.fs[PLS_FILE] = b'1\n'; open_page(m)
+    blits, texts, styles = settle(m)
+    grid_ = {(r[1] - R0) // PITCH * COLS + (r[0] - MARGIN) // CPITCH: tx for (tx, r), st in zip(texts, styles) if st == 'label_grid_title'}
+    expect([grid_[k] for k in sorted(grid_)][:4] == ORDERS[b'1\n'][:4], f'the grid shows the date order too ({grid_})')
+
+    # 5. The card: four sort rows, a tap on another row sets it in its default direction, the ticked row reverses; saved first
+    def sub_text(m, i): return [utf8(c[2]) for c in m.calls if c[0] == 'widget_set_tr_text' and c[1] == m.widgets[f'vs_sub{i}']][-1:]
+    m = list_page()
+    m.calls = []; m.click('btn_more')
+    expect([vis(m, f'vs_tick{i}')[0] for i in range(4)] == [1, 0, 0, 0] and sub_text(m, 0) == ['A–Z'], 'the card ticks Title with A–Z')
+    for item, code, want, sub in (('vs_item1', b'1\n', ORDERS[b'1\n'], ['Newest First']), ('vs_item1', b'b\n', ORDERS[b'b\n'], ['Oldest First']), ('vs_item2', b'2\n', ORDERS[b'2\n'], ['Newest First']),
+                                  ('vs_item2', b'c\n', ORDERS[b'c\n'], ['Oldest First']), ('vs_item3', b'3\n', ORDERS[b'3\n'], ['Newest First']), ('vs_item0', b'0\n', TITLE_ROWS, ['A–Z']),
+                                  ('vs_item0', b'a\n', TITLE_ROWS[::-1], ['Z–A']), ('vs_item1', b'1\n', ORDERS[b'1\n'], ['Newest First'])):
+        m.calls = []; m.click(item)
+        expect(m.fs.get(PLS_FILE) == code and ('rename', PLS_FILE + '.tmp', PLS_FILE) in m.calls and vis(m, 'vs_card') == (0, 0), f'{item}: saved as {code!r} through the .tmp file, the card closes')
+        got = shown(m)
+        expect(got == want, f'{item} {code!r}: {want} ({got})')
+        m.calls = []; m.click('btn_more')
+        want_tick = {'vs_item0': 0, 'vs_item1': 1, 'vs_item2': 2, 'vs_item3': 3}[item]
+        expect([vis(m, f'vs_tick{i}')[0] for i in range(4)] == [int(i == want_tick) for i in range(4)] and sub_text(m, want_tick) == sub, f'{item}: ticked, "{sub[0]}" under it ({sub_text(m, want_tick)})')
+    m.click('vs_scrim')
+    m = list_page(b'2\n'); m.fail.add(('rename', PLS_FILE)); m.click('btn_more'); m.click('vs_item3')
+    expect(shown(m) == ORDERS[b'2\n'] and m.fs.get(PLS_FILE) == b'2\n', 'a save that fails changes nothing: the old order, the file as it was')
+    # every playlist keeps its scan across a re-sort, and the stock list is read once
+    m = list_page(); shown(m); m.calls = []; m.click('btn_more'); m.click('vs_item1'); log = list(m.calls); shown(m)
+    expect(not [c for c in m.calls + log if c[0] == 'loadLocalClassList'], 'a re-sort reads no playlist again')
+
+    # 6. A time that moved while the page was away: the order follows, only when it is another one (the scroll stays when it is not)
+    m = list_page(b'2\n'); m.db['/mnt/data/database.db'] = [1, 2, 3]; shown(m)
+    fn, c = m.bound[(m.window, O['EVT_WINDOW_TO_FG'])]
+    m.call(fn, a0=c, a1=0, count=60000000)   # (a first read that keeps the signature: the next one has nothing else to change)
+    m.fs[META] = MAGIC + b'1 300 500 800 beta\n2 300 200 900 Alpha\n5 200 0 50 Zed\n'
+    m.call(fn, a0=c, a1=0, count=60000000)
+    got = shown(m)
+    expect(got == ['Alpha', 'beta', 'Zed', '2 mix', '10 mix'], f'Last Played: a playlist played while the page was behind moves up when it is back in front ({got})')
+    m.fs[META] = MAGIC + b'1 300 500 800 beta\n2 300 200 900 Alpha\n5 200 0 51 Zed\n'
+    m.calls = []; m.call(fn, a0=c, a1=0, count=60000000)
+    expect(shown(m) == ['Alpha', 'beta', 'Zed', '2 mix', '10 mix'] and not [c_ for c_ in m.calls if c_[0] == 'loadLocalClassList' and c_ != ('loadLocalClassList', O['CLASS_PLAYLISTS'])], 'a time that changes nothing in the order keeps the list')
+    m = list_page(b'0\n'); m.db['/mnt/data/database.db'] = [1, 2, 3]; shown(m)
+    fn, c = m.bound[(m.window, O['EVT_WINDOW_TO_FG'])]
+    m.call(fn, a0=c, a1=0, count=60000000)
+    expect(shown(m) == TITLE_ROWS, 'Title order does not look at the times')
+
+    # 7. A source's playlists (Navidrome): Title only, whatever the saved order says
+    for saved in (b'1\n', b'c\n'):
+        m = fresh(meta); m.fs[PLS_FILE] = saved; src = m.fake_src(); m.call(PSYMS['playlists_open_src'], a0=src, count=60000000)
+        m.calls = []; m.click('btn_more')
+        expect([vis(m, f'vs_item{i}') for i in (0, 1, 2, 3)] == [(1, 1), (0, 0), (0, 0), (0, 0)] and vis(m, 'vs_tick0')[0] == 1 and sub_text(m, 0) == ['A–Z'] and 'vs_glass3' in [m.props.get((m.widgets['vs_card'], 'style:normal:bg_image'))],
+               f'a source\'s card ({saved!r}): Grid, List and Title only, Title ticked A-Z')
+
+    # 8. The stamp points of this page: a new playlist, Import, Delete, Play and Shuffle from the sheet
+    m = fresh(); m.create_ret = 5; open_page(m)
+    m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)
+    expect(lines(m) == [b'5 %d %d 0 Mix' % (NOW, NOW)], f'New Playlist: its Date Added and Updated ({lines(m)})')
+    m = fresh(MAGIC + b'5 100 100 0 old\n'); m.create_ret = 5; open_page(m)
+    m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)
+    expect(lines(m) == [b'5 %d %d 0 Mix' % (NOW, NOW)], 'a new playlist on a reused id replaces the old entry')
+    m = fresh(); m.create_ret = -2; open_page(m); m.call(PSYMS['pl_named'], a0=m.cstr('Mix'), count=40000000)
+    expect(META not in m.fs, 'a playlist that was not made is not stamped')
+    m = fresh(MAGIC + b'3 100 100 0 10 mix\n'); open_page(m); settle(m)
+    m.confirm_yes, m.on_import = True, lambda: (PM.add(m, 6, 'Imported A', [0]), PM.add(m, 7, 'Imported B', [1]))
+    m.click('btn_plactions'); m.click('vs_item7')
+    expect(lines(m) == [b'3 100 100 0 10 mix', b'6 %d %d 0 Imported A' % (NOW, NOW), b'7 %d %d 0 Imported B' % (NOW + 1, NOW + 1)],
+           f'Import: only the playlists that were not there before are stamped, each its own time, in one write ({lines(m)})')
+    # Import of a file named like a playlist: stock deletes that playlist and makes it again (maybe under another id); the times follow it and Updated is stamped, only on Yes (the
+    # database may change meanwhile for other reasons: the player's history); a non-regular entry or another extension is not an import file
+    IMP = '/mnt/mmc/_explaylist_data'
+    for yes in (True, False):
+        m = fresh(MAGIC + b'6 10 10 10 Gone\n2 50 60 70 Alpha\n3 100 150 120 10 mix\n'); open_page(m); settle(m)   # (6: a stale entry, of a playlist deleted earlier)
+        m.listing[IMP] = [('10 mix.M3U8', 8), ('beta.m3u', 8), ('2 mix.m3u8', 4), ('Alpha.txt', 8), ('New.m3u8', 8)]
+        def stock_import(m=m):
+            m.playlists = [r_ for r_ in m.playlists if m.word(r_ + REC_DISC) != 3]
+            PM.add(m, 6, '10 mix', [0]); PM.add(m, 7, 'New', [1])
+        m.confirm_yes, m.on_import = yes, stock_import
+        m.db['/mnt/data/database.db'] = [101, 0, 8192]   # (the database changes either way: the player's history, while the dialog is open)
+        before = m.fs[META]; m.click('btn_plactions'); m.click('vs_item7')
+        if yes:
+            expect(lines(m) == [b'2 50 60 70 Alpha', b'6 100 %d 120 10 mix' % (NOW + 1), b'1 0 %d 0 beta' % NOW, b'7 %d %d 0 New' % (NOW + 2, NOW + 2)],
+                   f'Import (Yes): "10 mix" replaced under id 6 keeps its added and played times and is Updated, "beta" replaced (no entry) gets Updated, "New" its Date Added; "Alpha" (a .txt) '
+                   f'and "2 mix" (not a regular file) are as they were; the stale entry on id 6 goes ({lines(m)})')
+        else:
+            expect(m.fs[META] == before and 'importPlayList' not in m.names(), f'Import answered No (while the database changed for another reason): nothing imported, nothing stamped ({lines(m)})')
+    # stock stops at the first file it cannot make a playlist of (100 playlists: createPlayListItem -1) and still returns 1: the files from there on (in readdir order) were not imported
+    m = fresh(MAGIC + b'3 100 150 120 10 mix\n'); open_page(m); settle(m)
+    m.listing[IMP] = [('10 mix.m3u8', 8), ('Full.m3u8', 8), ('beta.m3u', 8)]
+    def stock_import_full(m=m):
+        m.playlists = [r_ for r_ in m.playlists if m.word(r_ + REC_DISC) != 3]
+        PM.add(m, 6, '10 mix', [0])   # "Full" could not be made: stock stopped there, "beta" was never reached
+    m.confirm_yes, m.on_import = True, stock_import_full
+    m.click('btn_plactions'); m.click('vs_item7')
+    expect(lines(m) == [b'6 100 %d 120 10 mix' % NOW], f'Import that stopped at "Full" (no playlist of that name): "10 mix" before it is Updated, "beta" after it is not ({lines(m)})')
+    # stock's names: createPlayListItem cuts the name to 63 bytes (and calls an empty one "Playlist<its id>"), while checkPlayListByName looks for the whole one: such a file is
+    # never a replacement, each Import makes another playlist of that name; when stock stopped at it (no new playlist of that name: one there from before does not count), "Alpha"
+    # after it was not reached
+    LONG = 'L' * 64
+    for stem, made in ((LONG, LONG[:63]), ('', 'Playlist6')):
+        for runs in (True, False):
+            m = fresh(MAGIC + b'2 50 60 70 Alpha\n7 20 30 40 %s\n' % LONG[:63].encode()); PM.add(m, 7, LONG[:63], []); open_page(m); settle(m)
+            m.listing[IMP] = [(stem + '.m3u8', 8), ('Alpha.m3u8', 8)]
+            m.confirm_yes, m.on_import = True, (lambda m=m, made=made: PM.add(m, 6, made, [0])) if runs else (lambda: None)
+            before = m.fs[META]; m.click('btn_plactions'); m.click('vs_item7')
+            if runs:
+                expect(lines(m) == [b'2 50 %d 70 Alpha' % NOW, b'7 20 30 40 ' + LONG[:63].encode(), b'6 %d %d 0 %s' % (NOW + 1, NOW + 1, made.encode())],
+                       f'Import of "{stem}.m3u8" ({len(stem)} bytes): "{made[:8]}..." made anew gets its Date Added, the one of that name there before stays as it was, "Alpha" after it '
+                       f'(made again under its own id) is Updated ({lines(m)})')
+            else:
+                expect(m.fs[META] == before, f'Import that stopped at "{stem}.m3u8" ({len(stem)} bytes): nothing made, "Alpha" after it not reached ({lines(m)})')
+    # a 63-byte name imported (stock makes that playlist again), then a 64-byte one sharing it (stock makes another of the same cut name): each file takes its own row, so the one
+    # made again is Updated (under its own id, or its times moved to another) and the other gets its Date Added
+    P63 = 'P' * 63
+    for same in (True, False):
+        m = fresh(MAGIC + b'7 20 30 40 %s\n' % P63.encode()); PM.add(m, 7, P63, []); open_page(m); settle(m)
+        m.listing[IMP] = [(P63 + '.m3u8', 8), (P63 + 'x.m3u8', 8)]
+        def collide(m=m, same=same):
+            if not same:   # (deleted, made again at the lowest free id: before the 64-byte file's)
+                m.playlists = [r_ for r_ in m.playlists if m.word(r_ + REC_DISC) != 7]
+                PM.add(m, 6, P63, [1]); PM.add(m, 8, P63, [0])
+            else:
+                PM.add(m, 6, P63, [0])
+        m.confirm_yes, m.on_import = True, collide
+        m.click('btn_plactions'); m.click('vs_item7')
+        p = P63.encode()
+        want = [b'7 20 %d 40 %s' % (NOW, p), b'6 %d %d 0 %s' % (NOW + 1, NOW + 1, p)] if same else [b'6 20 %d 40 %s' % (NOW, p), b'8 %d %d 0 %s' % (NOW + 1, NOW + 1, p)]
+        expect(sorted(lines(m)) == sorted(want), f'Import of a 63-byte name, then a 64-byte one sharing it ({"made again under its own id" if same else "made again under another id"}): '
+               f'the replaced one is Updated, the other one new ({lines(m)})')
+    for takes in (True, False):
+        m = fresh(MAGIC + b'1 100 100 0 beta\n2 200 200 0 Alpha\n4 400 400 0 2 mix\n'); m.fs[PL_FILE] = b'0\n'; open_page(m); settle(m)
+        m.setword(SEL_VEC, m.alloc(8)); m.confirm_yes = True
+        if takes: m.on_batch_delete = lambda m=m: setattr(m, 'playlists', [p_ for i, p_ in enumerate(m.playlists) if not m.sel_vec[i]])
+        m.click('btn_plactions'); m.click('vs_item9'); tap(m, 150, TOP + 0 * ROW + 20); tap(m, 150, TOP + 2 * ROW + 20)
+        m.click('pl_del')
+        want = [b'1'] if takes else [b'1', b'2', b'4']
+        expect([l.split(b' ')[0] for l in lines(m)] == want,
+               f'Delete {"takes" if takes else "does not take"} rows 0 and 2 shown ("2 mix" and "Alpha") out: {"their lines go, the others stay" if takes else "every line stays"} ({lines(m)})')
+    m = fresh(MAGIC + b'1 100 100 0 beta\n2 200 200 0 Alpha\n4 400 400 0 2 mix\n'); m.fs[PL_FILE] = b'0\n'; open_page(m); settle(m)
+    m.setword(SEL_VEC, m.alloc(8)); m.confirm_yes = False
+    m.click('btn_plactions'); m.click('vs_item9'); tap(m, 150, TOP + 0 * ROW + 20)
+    before = m.fs[META]; m.click('pl_del')
+    expect(m.fs[META] == before, 'a Delete the user did not confirm leaves the file')
+
+
+SECTIONS = [stock_tests, src_tests, hold_tests, sort_tests]

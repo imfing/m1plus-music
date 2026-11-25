@@ -15,7 +15,7 @@ pressed row `#333334`.
 
 - Navbar: Back (glass chevron) and the title "Add to Playlist" (the Songs pill's text, short in all 13 languages; its label is widened to `SG_SELALL_X`, as
   in select mode). The "..." button and Now Playing are hidden and insensitive; the page is always the list (the saved grid / list choice is
-  the Playlists page's own and is not written). The playlists after the two pinned rows follow the Playlists page's saved order (`playlists-sort`: Name A–Z by default, or Z–A); the picker has no card to change it.
+  the Playlists page's own and is not written). The playlists after the two pinned rows follow the Playlists page's saved order (`playlists-sort`: Title A–Z by default, or any of its orders); the picker has no card to change it. A playlist that gets songs is stamped as updated (`picker_add(id, name)`, [playlists](playlists.md) "Order").
 - Row 0: "New playlist" (the stock key `playlist_create`, the New playlist keyboard's title), a white plus on a dark rounded square (`pl_plus`), no count. A tap opens our keyboard
   (`keyboard_open`, as the Playlists New); its Done creates the playlist (`createPlayListItem`: -1 full and -2 exists say the stock message and leave the picker
   open) and adds to it.

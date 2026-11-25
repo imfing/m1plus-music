@@ -969,13 +969,11 @@ STOCKROWS_PINS = (   # (address, stock word, what it proves)
     (0x4b13f0, 0x0320f809, 'the SyncLink hub row (0x4b13d0): jalr navigator_to'), (0x4b13f4, 0x24848ee8, 'its delay slot: a0 = "systemset/synclink_page"'),
     (0x4d0c10, 0x24a59f14, 'page registry: a1 = "systemset/usbset_page" (strcmp, then systemset_usbset_page_init)'),
 )
-PLAYLIST_IMPORT, PLAYLIST_EXPORT = 0x53dedc, 0x53dd34
+PLAYLIST_EXPORT = 0x53dd34
 PLAYLIST_PINS = (   # (address, stock word, what it proves)
-    (PLAYLIST_IMPORT, 0x3c1c004c, 'import click handler prologue'), (PLAYLIST_IMPORT + 4, 0x279c5ff4, 'import click handler prologue'),
-    (PLAYLIST_IMPORT + 8, 0x0399e021, 'import click handler prologue'),
     (PLAYLIST_EXPORT, 0x3c1c004c, 'export click handler prologue'), (PLAYLIST_EXPORT + 4, 0x279c619c, 'export click handler prologue'),
     (PLAYLIST_EXPORT + 8, 0x0399e021, 'export click handler prologue'),
-    (0x53df64, 0x8f99c2a4, 'import: lw importPlayList from the GOT'), (0x53df6c, 0x0320f809, 'import: jalr importPlayList'),
+    (0x4ef394, 0x3c1c0051, 'importPlayList prologue'), (0x4ef398, 0x279c4b3c, 'importPlayList prologue'), (0x4ef39c, 0x0399e021, 'importPlayList prologue'),
     (0x53ddc4, 0x8f99c2a0, 'export: lw exportPlayList from the GOT'), (0x53dde8, 0x0320f809, 'export: jalr exportPlayList'),
     (0x4eeca8, 0x3c1c0051, 'createPlayListItem prologue'), (0x4eecac, 0x279c5228, 'createPlayListItem prologue'), (0x4eecb0, 0x0399e021, 'createPlayListItem prologue'),
     (0x4ee184, 0x3c1c0051, 'getPlayListMaxId prologue'), (0x4ee188, 0x279c5d4c, 'getPlayListMaxId prologue'), (0x4ee18c, 0x0399e021, 'getPlayListMaxId prologue'),

@@ -41,6 +41,7 @@
 #include "lyrics.h"
 #include "peqout.h"
 #include "scrobble.h"
+#include "plmeta.h"
 
 /* patch/ipod_cf.c: the Cover Flow screen (level K_CF: the albums list drawn as covers; docs/modules/ipod-coverflow.md) */
 
@@ -2681,7 +2682,9 @@ static void ip_step(int dir, int rows) {
 static void ip_play(int at, int shuffle) {
     void *pick, *queue, *first;
     unsigned n, idx = 0;
-    int found;
+    int found, plid = -1;
+    char plname[96];
+    plname[0] = 0;
     if (!ip_ensure() || at < 0 || (unsigned)at >= ip.count) return;
     pick = deque_at(ip.list, (unsigned)at);
     if (!pick || access(cc_str(pick, REC_PATH), F_OK)) {
@@ -2695,8 +2698,10 @@ static void ip_play(int at, int shuffle) {
         K_PL_TRACKS) { /* the playlist's id goes back into classinfo[1], as the stock row tap leaves it (the Songs page does the same before every play) */
         void *pl = ip_stock_list(K_PLAYLISTS);
         int row = ip.st[ip.depth - 1].sel;
-        if (pl && (unsigned)row < deque_size(pl))
-            *(int *)(CLASSINFO + CLASSINFO_ARG) = I(deque_at(pl, (unsigned)row), REC_DISC);
+        if (pl && (unsigned)row < deque_size(pl)) {
+            *(int *)(CLASSINFO + CLASSINFO_ARG) = plid = I(deque_at(pl, (unsigned)row), REC_DISC);
+            snprintf(plname, sizeof plname, "%s", cc_str(deque_at(pl, (unsigned)row), REC_TITLE));
+        }
     }
     found = loadSongList(queue, cc_str(pick, REC_NAME), I(pick, REC_CUE_START), ip.cls);
     n = deque_size(queue);
@@ -2730,6 +2735,7 @@ static void ip_play(int at, int shuffle) {
         pod_set_mode_for_queue(
             MODE_SHUFFLE); /* Shuffle Songs: stock Shuffle over the whole queue, as the Shuffle page sets it (patch/shuffle.c) */
     start_player(queue, (int)idx, ip.cls, PLAY_MODE);
+    if (plid >= 0 && plname[0]) plm_played(plid, plname); /* the playlist's Last Played (patch/plmeta.c) */
     *(unsigned char *)FORCE_REFRESH = 1;
     ip_pend_drop();
     ip.pend_q = queue, ip.pend_rec = first, ip.pend_key = ip_track_key(first), ip.pend_ms = time_now_ms();

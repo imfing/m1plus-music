@@ -14,7 +14,7 @@ library, playlist table and canvas mocked. The checks:
   free         destroy frees everything and a second open works
 
 Each section (SECTIONS) is a task of its own and shares nothing with the others: the fixture functions (uniq_songs, page12, opened) build a new machine for every caller."""
-import datetime, os, random, struct, time
+import datetime, os, random, re, struct, time
 from unicorn import mips_const
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3, UC_MIPS_REG_V0, UC_MIPS_REG_PC, UC_MIPS_REG_RA, UC_MIPS_REG_F0
 from harness import *   # noqa: F401,F403  (test/patch.py initialises the harness before loading a module)
@@ -711,7 +711,10 @@ def add_tests(ctx):
     expect(('checkPlayListExist', paths[0], 5) in t.calls and t.calls.index(('checkPlayListExist', paths[0], 5)) < t.calls.index(('addPlayList',) + t.pl_rows[0]),
            'each song is checked with checkPlayListExist before addPlayList, as the stock batch add does')
     expect([(r, i, d) for r, i, d in t.lib_before] == [(r, t.s32(r + O['REC_ID']), t.s32(r + O['REC_DISC'])) for r, _, _ in t.lib_before], 'the stock library records are not written to (the page adds copies)')
-    expect(t.fs[MIX] == t.mixfile and not written(t, [t.calls]), 'the mix file is untouched and nothing is written to a file (the playlist is the stock database\'s)')
+    meta = '/mnt/data/m1plus/playlists-meta'
+    expect(t.fs[MIX] == t.mixfile and {p.removesuffix('.tmp') for p in written(t, [t.calls])} <= {meta},
+           f'the mix file is untouched and the only file written is the playlists\' times (the playlist is the stock database\'s) ({written(t, [t.calls])})')
+    expect(re.fullmatch(rb'M1PLMETA 1\n5 ([1-9][0-9]*) \1 0 ' + base.encode() + rb'\n', t.fs.get(meta, b'')) is not None, f'the new playlist gets its Date Added (patch/plmeta.c) ({t.fs.get(meta)})')
     expect(not [c for c in t.calls if c[0] in ('navigator_to_with_context',) and c[1] != 'dialog/msginfo_dialog'] and t.played is None, 'no picker, no dialog but the message; nothing plays')
     # another day of the mix: its date; the name in 13 languages (the translated "Daily Mix")
     for d in (1, 11016, 19783):

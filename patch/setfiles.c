@@ -37,7 +37,7 @@ struct sf_file {
     char kind;
 };
 
-/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 60 setting files from SF_SETTING on. */
+/* The order of the page's rows (INFO_SF + index): 4 guard files, the folder, then the 61 setting files from SF_SETTING on. */
 static const struct sf_file sf_files[] = {
     {START_FILE, K_CHAR},
     {MARKER, K_PRESENT},
@@ -52,6 +52,7 @@ static const struct sf_file sf_files[] = {
     {SONGS_SORT_FILE, K_CHAR},
     {FOLDERS_SORT_FILE, K_CHAR},
     {PLAYLISTS_SORT_FILE, K_CHAR},
+    {PLAYLISTS_META_FILE, K_PRESENT},
     {PLAYLISTS_FILE, K_CHAR},
     {RECENTADD_VIEW_FILE, K_CHAR},
     {LANDSCAPE_FILE, K_CHAR},

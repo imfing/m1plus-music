@@ -65,7 +65,7 @@ in the Songs page's top bar and type a title, artist or album. Touch and hold a 
 ### Change the view or order
 
 On Albums, Artists, Songs or Playlists, tap **…** for the options available on that page. For
-example, in Albums you can switch between grid and list or sort by title, artist, date added or year.
+example, in Albums you can switch between grid and list or sort by title, artist, date added or year. Playlists sort by title, date added, last played or updated; a second tap on the chosen order reverses it, and playlists that have no such date (made before this release, or never played) come last.
 
 ### Select several items
 

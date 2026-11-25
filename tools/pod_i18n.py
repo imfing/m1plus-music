@@ -44,6 +44,9 @@ STOCK = {
     'msg_delplaylist': 'Delete Playlist?',     # the Playlists page's select mode: the stock delete handler's confirm dialog and message boxes (@0x53dbcc)
     'msg_delplaylistfailed': 'Failed To Delete Playlist',
     'msg_delplaylistsuccess': 'Playlist Deleted',
+    'msg_importplaylist': 'Import Playlist?',  # the Playlists page's Import (patch/playlists.c pl_import): the stock import handler's confirm dialog and message boxes (@0x53dedc)
+    'msg_importsuccess': 'Successfully imported',
+    'msg_notplaylist': 'Playlist Not Found',
     'msg_delfile': 'Delete File?',             # the Folders page's select mode: the stock folder handler's confirm dialog and message boxes (@0x5324d0), and the stock messages of a level that cannot be entered
     'msg_delfilefailed': 'Failed To Delete File',
     'msg_delfilesuccess': 'File Deleted',
@@ -1343,6 +1346,13 @@ TEXT = dict([
     # the Albums "..." card (patch/viewsort.c, docs/modules/albums.md): the Title sort row, the View group (Grid, List) and the direction line under the ticked sort row
     _t('Title', '标题', '標題', 'タイトル', '제목', 'Titre', 'Titel',
        'Título', 'Titolo', 'ชื่อเรื่อง', 'Tytuł', 'Название', 'Назва'),
+    # the Playlists "..." card's date orders (patch/playlists.c, patch/plmeta.c)
+    _t('Date Added', '添加日期', '加入日期', '追加日', '추가한 날짜', "Date d'ajout", 'Hinzufügedatum',
+       'Fecha de adición', 'Data di aggiunta', 'วันที่เพิ่ม', 'Data dodania', 'Дата добавления', 'Дата додавання'),
+    _t('Last Played', '上次播放', '上次播放', '最後に再生した日', '마지막 재생 날짜', 'Dernière lecture', 'Zuletzt gespielt',
+       'Última reproducción', 'Ultima riproduzione', 'เล่นล่าสุด', 'Ostatnio odtwarzane', 'Последнее воспроизведение', 'Останнє відтворення'),
+    _t('Updated', '更新日期', '更新日期', '更新日', '업데이트한 날짜', 'Mise à jour', 'Aktualisiert',
+       'Actualizada', 'Aggiornamento', 'อัปเดตแล้ว', 'Zaktualizowano', 'Обновлено', 'Оновлено'),
     # the Songs page's Sort card (the same shared card): File Name beside Title, Format and Recently Added
     _t('File Name', '文件名', '檔案名稱', 'ファイル名', '파일 이름', 'Nom du fichier', 'Dateiname',
        'Nombre de archivo', 'Nome file', 'ชื่อไฟล์', 'Nazwa pliku', 'Имя файла', 'Назва файлу'),

@@ -15,7 +15,7 @@ Drag a list to scroll; tap a row to open it or play a track.
 | Albums | Use **…** to switch grid/list or sort by Title, Artist, Recently Added or Year. |
 | Artists | Use **…** to switch Artist/Album Artist. Open an artist to play or shuffle their songs. |
 | Songs | Use Search or the A–Z rail. Use **…** to select songs or change the sort order. |
-| Playlists | Open a playlist to play or shuffle it. Use the list-plus button to create, import, export or delete playlists. |
+| Playlists | Open a playlist to play or shuffle it. Use the list-plus button to create, import, export or delete playlists, and **…** to switch grid/list or sort by Title, Date Added, Last Played or Updated. |
 | Folders | Open **Extras → Folders** to browse the card's folders and audio files. |
 | Shuffle | Open **Extras → Shuffle** to shuffle songs, albums or folders. |
 

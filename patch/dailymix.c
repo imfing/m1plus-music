@@ -34,6 +34,7 @@
 #include "scroll.h"
 #include "podcasts.h"
 #include "songops.h"
+#include "plmeta.h"
 #include "fnv.h"
 #include "dmart.h"
 
@@ -2391,6 +2392,7 @@ static void dp_save(void) {
     else if (r < 0)
         msg = "msg_playlistexist";
     else {
+        plm_added(r, name); /* its Date Added (patch/plmeta.c) */
         for (i = 0; i < dp.n; ++i) {
             int mx;
             if (!ok[i]) continue;

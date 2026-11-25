@@ -1,6 +1,6 @@
 # Playlists
 
-**Sources:** `patch/playlists.c`, `patch/grid.c` (`grid_mosaic`, `grid_list_paint`),
+**Sources:** `patch/playlists.c`, `patch/plmeta.c` (the playlists' times), `patch/grid.c` (`grid_mosaic`, `grid_list_paint`),
 `tools/pod_ui.py` (`build_playlists_page`), `tools/pod_pages.py` (`PLAYLISTS`, `ACT_PLAYLISTS`),
 `PLAYLIST_PINS` in `tools/pod_pins.py`.
 The menu opens `ui/m1plus_playlists.bin` through `ACT_PLAYLISTS`. No hook. A failed open falls back
@@ -40,7 +40,7 @@ offered again at each open (`pl_menu_kind`: `vs_offer` with the rows, then `vs_m
 | Card | Button | Rows | Glass |
 |---|---|---|---|
 | actions | list-plus (`pl_on_actions`) | New Playlist, Import, Export, Delete Playlists; no hairline, no tick column | `vs_glass4` |
-| view and order | "..." (`pl_on_more`) | View: Grid, List (tick on the current); hairline; Order: Name, ticked, direction under it | `vs_glass3` |
+| view and order | "..." (`pl_on_more`) | View: Grid, List (tick on the current); hairline; Order: Title, Date Added, Last Played, Updated (tick on the current, direction under it) | `vs_glass6` (a source's page: Grid, List, Title, `vs_glass3`) |
 
 - The four actions are slots 6..9 (`VS_SEARCH`, `VS_SELECT`, `VS_ACT2`, `VS_ACT3`); slots 8 and 9
   exist only in this page's asset. Glyphs `pl_ic_*` (`mod_icons.PL_MENU_ICONS`).
@@ -52,26 +52,62 @@ offered again at each open (`pl_menu_kind`: `vs_offer` with the rows, then `vs_m
 
 ### Order
 
-Name is the one sort row; a tap on the ticked row reverses it (A-Z / Z-A).
+The card's four sort rows are Title, Date Added, Last Played and Updated. Tapping another row selects
+it in its default direction (Title A-Z, the dates Newest First); tapping the ticked row reverses it
+(Z-A, Oldest First). The direction line under the tick reads A-Z / Z-A for Title and
+Newest First / Oldest First for the dates (`vs_dated`, rows 1..3).
 
-- Saved first in `/mnt/data/m1plus/playlists-sort` (`PLAYLISTS_SORT_FILE`; `a` Name Z-A, written
-  `0` for A-Z; missing or anything else A-Z; a failed save changes nothing; listed in Settings
-  Files).
-- The default is Name A-Z, **not** the stock order. The page, the picker (Favorites and New
-  Playlist stay pinned first) and every list follow it. Name is `cc_name_keys` / `cc_key_cmp`, as
-  the Artists page ([artists](artists.md)); ties keep the stock order and Z-A is the whole order
-  reversed.
+- Saved first in `/mnt/data/m1plus/playlists-sort` (`PLAYLISTS_SORT_FILE`): `0` Title, `1` Date Added,
+  `2` Last Played, `3` Updated, or `a`..`d` for the same order reversed (the Albums codes); missing or
+  anything else is Title A-Z. A failed save changes nothing. Listed in Settings Files.
+- The default is Title A-Z, **not** the stock order. The page, the picker (Favourites and New
+  Playlist stay pinned first) and every list follow it. Title is `cc_name_keys` / `cc_key_cmp`, as the
+  Artists page ([artists](artists.md)); ties keep the stock order and Z-A is the whole order reversed.
+- A date order puts the playlist with the larger time first (Oldest First: the smaller). A playlist
+  with no time for the chosen date is **after the others in both directions**, and those, and playlists
+  with equal times, go by Title A-Z.
 - **The stock list is never reordered**: `pl.pls` is the copy of the stock rows and `pl.ord` maps
   each displayed position to its stock row (`pl_slot`, `pl_rec`). Taps, select marks and the picker
   follow the order shown; stock calls keep stock positions. A re-sort (`pl_reorder`) carries every
   scan over, so no count is read again.
-- **No Recently Added sort.** An order by playlist id was dropped: stock `createPlayListItem`
-  reuses the lowest free id, so after a delete a new playlist lands in the middle, and no creation
-  time is stored.
-- Recently Modified and Number of Tracks are not offered: a playlist has no modification time, and
-  its count is known only after the loader has read its songs (one query per playlist, each
-  replacing `*pdeq_showlist`), so a count order would have to read every playlist before showing a
-  row.
+- A source's playlists (Navidrome) offer Title only; whatever the saved order says, the effective one
+  there is Title (`pl_sort_now`, `pl_rev_now`).
+- Number of Tracks is not offered: a playlist's count is known only after the loader has read its
+  songs (one query per playlist, each replacing `*pdeq_showlist`), so a count order would have to read
+  every playlist before showing a row.
+
+**The times** (`patch/plmeta.c`, `patch/plmeta.h`). Stock's `playlist` table has no time columns and
+`createPlayListItem` reuses the lowest free id, so the page keeps its own in
+`/mnt/data/m1plus/playlists-meta` (`PLAYLISTS_META_FILE`, device data, not the card; listed in Settings
+Files as present or missing). No SQLite writes.
+
+- Format: the line `M1PLMETA 1`, then one line per playlist, `<id> <added> <updated> <played> <name>`
+  (decimal seconds, 0 = none; the name is the rest of the line, 1 to 63 bytes, no control byte). At
+  most 128 lines.
+- **Keyed by id and name**, as the Home pins are (`pn_pl_at`): an entry whose name differs from the
+  playlist with that id is stale (the id was reused) and is ignored; the next stamp for that id
+  replaces it.
+- **Strict.** Every call reads the file, changes it and writes it back (`home_write_atomic`); a failed
+  write changes nothing. A file that is there but unreadable or not ours (bad magic, a field out of
+  shape, a repeated id, a long name, too many lines) gives no times and is never written over; a
+  missing or empty file is no entries.
+- **A stamp** is `max(time(NULL), the largest stamp in the file + 1)`, so the order is strict with an
+  unsynced clock and with several changes in one second. Limits: a clock that jumped far ahead pins
+  every later stamp at +1 from that value until the clock passes it; a playlist made before this file
+  existed has no Date Added (and no Last Played or Updated until it is played or changed), so it sorts
+  after the stamped ones in those orders.
+- **Stamp points.**
+
+| Time | Where |
+|---|---|
+| Date Added (and Updated) | `pl_named` (New Playlist, also from the picker and Now Playing), `dp_save` (Daily Mix's Add), Import (`pl_stamp_imported`: the playlists whose names the page's copy did not have; one write with the replacements below) |
+| Updated | `picker_add` (any Add to Playlist; not Favourites), Add Songs (`sg_pick_tap`), Remove from Playlist (`sg_remove_one`, `sg_remove_marked`), Reorder (`sg_reorder`), Rename (`sg_renamed`: `plm_rename` keeps the times under the new name), Clean Up (`sg_clean`, only when something was repaired or removed), Import of a file named like a playlist (stock deletes it and makes it again, maybe under another id: `plm_imported` moves its times to the new id; only after Yes and an import that ran) |
+| Last Played | a row, Play or Shuffle on a stock playlist's Songs page (`sg_play_at`), Play and Shuffle from the long-press sheet and the Home pins' sheet (`pn_play_playlist`), the Pod's playlist tracks (`ip_play`); only when a song started |
+| removed | Delete Playlists (`pl_forget_deleted`: `plm_forget_many` for the marked playlists the stock delete took out) |
+
+- A date order sorts again when the times file changed while the page was behind another window and
+  nothing else did (`pl_metasig`, `pl_resort`: only when the order is another one). A playlist's
+  Songs page played from the Playlists page returns to the new order.
 
 ### Select mode
 
@@ -135,10 +171,31 @@ action key **Done**).
 
 ### Import and Export
 
-The stock row handlers (static, `PLAYLIST_PINS`) ask with `confirminfo_dialog`, run `importPlayList`
-/ `exportPlayList` over `/mnt/mmc/_explaylist_data` and report in the stock message box. They are
-**called as they are**. Export reads `navigation_status` (1 = multi-select) to pick all or selected
-playlists, so the page stores 0 there first.
+Export is the stock row handler (static, `PLAYLIST_PINS`), **called as it is**: it asks with
+`confirminfo_dialog`, runs `exportPlayList` into `/mnt/mmc/_explaylist_data` and reports in the stock
+message box. It reads `navigation_status` (1 = multi-select) to pick all or selected playlists, so the
+page stores 0 there first.
+
+Import runs the stock handler's sequence (@0x53dedc) in the page (`pl_import`), because the stamps
+need to know that Yes was answered: `pl_ask(msg_importplaylist)`, then `importPlayList` (pinned
+prologue), then `msg_nottf` (-2), `msg_notplaylist` (-6) or `msg_importsuccess`. `importPlayList`
+takes each regular `.m3u8` / `.m3u` file of that folder, in readdir order, as the playlist named after
+the file without its last extension. `createPlayListItem` cuts that name to 63 bytes (an empty one
+becomes `Playlist<id>`) and uses the lowest free id. Before that, `checkPlayListByName` deletes the
+playlist whose name is the whole uncut one, with its songs. So a name over 63 bytes is never a
+replacement: each Import makes another playlist. Import stops at the first file it cannot make a
+playlist of (100 playlists) and returns 1 all the same.
+
+`pl_stamp_imported` compares the (id, name) pairs before and after: a pair that is new was made by
+Import. It then walks the folder in the same order, and each file takes the row it produced:
+- A cut or empty name takes one made row (new: Date Added).
+- An uncut name whose old playlist is gone takes one made row of that name. That row is the
+  replacement: the times move to its id, and it is Updated.
+- An uncut name whose old playlist is still there marks it as made again under its own id: Updated.
+- Otherwise the file takes a made row (new).
+
+The first file with no playlist of its name (for a cut or empty name: no made row left to take) is
+where stock stopped, and the files from there on stamp nothing.
 
 ### Delete
 
@@ -192,10 +249,10 @@ so it does not depend on `g_class_type`. The selection vector is the Songs page'
   row but Pin goes through `pins_playlist_act` (the Home pin's actions); Pin takes the keys of `info_t`.
   `pl_on_bg` closes the sheet; the page reads again at the to-foreground.
 - **Menu.** Every row closes the card first, then: slot 6 New Playlist -> `pl_create`; 7 / 8 Import
-  / Export -> `stock_playlist_import` / `_export` with `navigation_status` 0; 9 Delete Playlists ->
-  `pl_select(1)`; 4 / 5 Grid / List -> `pl_set_mode` and the save; 0 Name -> the order. The page
+  / Export -> `pl_import` / `stock_playlist_export` with `navigation_status` 0; 9 Delete Playlists ->
+  `pl_select(1)`; 4 / 5 Grid / List -> `pl_set_mode` and the save; 0..3 Title, Date Added, Last Played, Updated -> the order. The page
   runs `pl_load` after Import and Export.
-- **Glass.** The actions card uses `vs_glass4`, the "..." card `vs_glass3`. `pl_glass.png` stays
+- **Glass.** The actions card uses `vs_glass4`, the "..." card `vs_glass6` (`vs_glass3` on a source's page). `pl_glass.png` stays
   in the tree only for the Podcasts refresh and Software Update dialogs that borrow it.
 - **Pins** (`tools/pod.py`): `createPlayListItem` (named), data words `pdeq_playlist`,
   `nagvation_title`, `navigation_status`, and `PLAYLIST_PINS` for the two static click handlers.

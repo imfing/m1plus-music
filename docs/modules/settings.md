@@ -196,7 +196,8 @@ page is a `Page(layout=[Row, Hdr, Note, GAP ...])` in `tools/pod_pages.py` of ki
 | `playback-crossfade-auto` | Crossfade > Keep Albums Gapless | `0` Always; missing/other `1` Keep Albums Gapless (default) ([crossfade](crossfade.md)) |
 | `playback-next-album` | Continue Playing | `1` Next Albums; missing/other Off (the default); `2` reserved for Auto Mix ([nextalbum](nextalbum.md)) |
 | `playback-shuffle` | Shuffle (the payload's flag; stock's mode is never 2) | `1` songs, `2` albums; missing/other off ([shuffle](shuffle.md)) |
-| `playlists-sort` | Playlists order | `a` Name Z-A; missing/other Name A-Z ([playlists](playlists.md)) |
+| `playlists-sort` | Playlists order | `0` Title, `1` Date Added, `2` Last Played, `3` Updated, or `a`..`d` reversed; missing/other Title A-Z ([playlists](playlists.md)) |
+| `playlists-meta` | Playlists' added, updated and played times | text, one line per playlist (id, three times, name); shown present or missing; never written over when unreadable ([playlists](playlists.md) "Order") |
 | `playlists-view` | Playlists view | `0` list; missing/other grid |
 | `pod-appearance` | Pod Appearance | `1` Dark; missing/other Light |
 | `podcast-online-search` | Podcast Discover | `0` off; missing/other on (the default); gates Discover and the search level ([podcasts](podcasts.md)) |
@@ -385,7 +386,7 @@ as the page opens; a refresh on coming back reads nothing, and there is no timer
   `m1plus-off` present or missing).
 - **Card 2:** `m1plus/` (present or missing), then one row per file in it. A one-character setting shows
   its character (`other` for anything longer, `empty`); `home-menu` and `pulldown-tiles` their first 12
-  characters; `playback-eq` (binary) present or missing; `search-history` its line count; the two rebuild
+  characters; `playback-eq` (binary) and `playlists-meta` (text) present or missing; `search-history` its line count; the two rebuild
   requests present or missing; an absent file reads `missing`.
 - **Delete.** Only setting-file rows are tappable (`ACT_SFDEL`), and only while their file is there. A tap
   asks "Delete this settings file?"; Yes calls `setfiles_delete`, which unlinks that one file, reads that
