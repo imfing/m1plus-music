@@ -449,6 +449,24 @@ def run(ctx):
     r, th = start(m, ['S']); work(m, th)
     expect(status(m, F_WSJ) == (PN['STORAGE'], 0), 'a temp file that cannot be opened: PN_STORAGE')
 
+    # a feed escaping its titles twice (Arte Radio): a show stored before the second decode heals on the next 200, another name stays
+    def arte(chan):
+        return WSJ.replace(b'<title>WSJ Minute Briefing</title>', b'<title>' + chan.encode() + b'</title>', 1).replace(
+            b'<title>Intensifying Tech Selloff Drags Down Nasdaq</title>', b'<title>Babur s&amp;#x27;empare de l&amp;#x27;Inde</title>')
+    QH = 'Quand l&amp;#x27;histoire'
+    for chan, stored, want, label in ((QH, 'Quand l&#x27;histoire', "Quand l'histoire", 'the stored title escaped once more takes the feed\'s'),
+                                      ('Arts &amp;nbsp; Film', 'Arts &nbsp; Film', 'Arts Film', 'a stored &nbsp; between spaces: decoded and normalized as the feed\'s title, one space'),
+                                      ('Arts&amp;#10;Film', 'Arts&#10;Film', 'Arts Film', 'a stored &#10;: decoded and normalized, one space'),
+                                      ('&amp;nbsp;Arts&amp;#9;', '&nbsp;Arts&#9;', 'Arts', 'stored entities decoding to white space at the ends: dropped as in the feed\'s title'),
+                                      (QH, 'Quand l&amp;#x27;histoire', 'Quand l&amp;#x27;histoire', 'a title escaped twice more is not the feed\'s: it stays'),
+                                      (QH, 'Mon histoire', 'Mon histoire', 'a title that is not the feed\'s stays (only the first refresh takes the feed\'s)')):
+        body = arte(chan)
+        m = machine(site=lambda url, o: {'body': body}); sub(m, 'S', F_WSJ, title=stored, checked=5)
+        r, th = start(m, ['S']); work(m, th)
+        s, got = show_of(m, 'S'), m.fs.get(f'{ROOT_DIR}/S/.episodes', b'').decode()
+        expect(status(m, F_WSJ)[0] == PN['OK'] and s and s['title'] == want and "t=Babur s'empare de l'Inde\t" in got,
+               f'a refresh of a show whose feed escapes its titles twice: {label}; the episode title decoded')
+
     # 6. Refresh All: one show failing does not stop the others; the progress, the current feed
     cur = []
     def site_all(url, o):

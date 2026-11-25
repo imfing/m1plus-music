@@ -627,9 +627,12 @@ static void pn_refresh_one(const struct pn_job *j, const char *dir) {
                 pn_arch_merge(
                     path, eps,
                     n); /* (the archive, when the show has one, gets the items it lacks; the refresh does not depend on it) */
-                /* the show file: the feed's title the first time (the import wrote the host), its picture url; the time of this refresh */
+                /* the show file: the feed's title the first time (the import wrote the host) or when the stored one is it escaped
+                 * once more (stored before titles were decoded twice), its picture url; the time of this refresh */
                 pn_join(file, sizeof file, path, ".show", (const char *)0);
-                memcpy(shown, first && pf_title(p)[0] ? pf_title(p) : s.title, PC_TITLE);
+                memcpy(shown,
+                       (first && pf_title(p)[0]) || pf_title_healed(s.title, pf_title(p)) ? pf_title(p) : s.title,
+                       PC_TITLE);
                 n = pf_render_show(
                     shown, s.feed, pf_image(p)[0] ? pf_image(p) : s.image, (unsigned)time((long *)0),
                     modified, /* the new answer's Last-Modified; 0 (none sent) drops the key: the next request is unconditional */

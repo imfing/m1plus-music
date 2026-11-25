@@ -47,6 +47,8 @@ const pf_item_t *pf_item(const pf_parser_t *p, int i); /* kept item i, 0 <= i < 
 const char *pf_note(const pf_parser_t *p, int i); /* kept item i's long description ("" = none) */
 int pf_seen(const pf_parser_t *p); /* items with an enclosure seen in the whole feed */
 const char *pf_title(const pf_parser_t *p); /* the channel's title ("" = none) */
+int pf_title_healed(const char *t,
+                    const char *f); /* 1: stored title t is f escaped once more (decoded once more, it is f) */
 const char *
 pf_image(const pf_parser_t *p); /* the channel's picture url: itunes:image href, else <image><url> ("" = none) */
 const char *pf_author(

@@ -117,6 +117,32 @@ static unsigned pf_ent_cp(const char *e, unsigned n) {
     return 0;
 }
 
+/*
+ * s[0..n) with the entities pf_ent_cp knows decoded once more (and &nbsp; a space), in place: the new length. For the title, author
+ * and category, which some feeds escape twice ("s&amp;#x27;empare", or "&#x27;" inside CDATA), as the descriptions already are. An
+ * unknown entity stays as written. A decoded character is never longer than its entity, so the text never grows.
+ */
+static unsigned pf_unent(char *s, unsigned n) {
+    unsigned i = 0, o = 0;
+    while (i < n) {
+        if (s[i] == '&') {
+            unsigned j = i + 1, cp;
+            while (j < n && j - i <= 12 &&
+                   (s[j] == '#' || (unsigned)(s[j] - '0') < 10u || (unsigned)(pf_lc(s[j]) - 'a') < 26u))
+                ++j;
+            if (j < n && s[j] == ';' && j - i <= 12) {
+                cp = pf_is(s + i + 1, j - i - 1, "nbsp") ? ' ' : pf_ent_cp(s + i + 1, j - i - 1);
+                if (pf_put_cp(s, &o, j + 1, cp)) {
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        s[o++] = s[i++];
+    }
+    return o;
+}
+
 /* src[0..n) into dst (cap bytes, a NUL at the end): leading and trailing white space dropped, every run of white space and control bytes one space, cut before a split UTF-8 character. */
 static void pf_norm(char *dst, unsigned cap, const char *src, unsigned n) {
     unsigned o = 0, i;
@@ -140,6 +166,22 @@ static void pf_norm(char *dst, unsigned cap, const char *src, unsigned n) {
         if (o) --o;
     }
     dst[o] = 0;
+}
+
+/*
+ * 1 when the stored show title t is the feed's title f escaped once more (stored before the second decode): t decoded once more and
+ * normalized as the feed's title is (pf_unent, then pf_norm: "&nbsp; " or "&#10;" one space) is f. The refresh keeps a show's title
+ * after the first, so this is the one change it still takes.
+ */
+int pf_title_healed(const char *t, const char *f) {
+    char d[PC_TITLE], e[PC_TITLE];
+    unsigned n = (unsigned)strlen(t), m;
+    if (n >= sizeof d || !f[0]) return 0;
+    memcpy(d, t, n + 1);
+    m = pf_unent(d, n);
+    if (m == n) return 0; /* no entity it decodes: nothing to heal */
+    pf_norm(e, sizeof e, d, m);
+    return !strcmp(e, f);
 }
 
 /* ---------------------------------------------------------------------------
@@ -670,11 +712,11 @@ static void pf_finish_text(pf_parser_t *p) {
                 p->srank = rank;
         }
     } else if (w == W_AUTHOR) {
-        if (!p->author[0]) pf_norm(p->author, PC_AUTHOR, p->txt, p->tn);
+        if (!p->author[0]) pf_norm(p->author, PC_AUTHOR, p->txt, pf_unent(p->txt, p->tn));
     } else if (w == W_ITITLE)
-        pf_norm(p->cur.title, PC_TITLE, p->txt, p->tn);
+        pf_norm(p->cur.title, PC_TITLE, p->txt, pf_unent(p->txt, p->tn));
     else if (w == W_CTITLE)
-        pf_norm(p->title, PC_TITLE, p->txt, p->tn);
+        pf_norm(p->title, PC_TITLE, p->txt, pf_unent(p->txt, p->tn));
     else if (w == W_GUID)
         pf_norm(p->cur.guid, PF_GUID, p->txt, p->tn);
     else if (w == W_PUB)
@@ -759,7 +801,7 @@ static void pf_open(pf_parser_t *p, int code, int selfclose) {
         if (!p->in_item && !p->in_image && !p->author[0]) pf_start_text(p, W_AUTHOR);
     } else if (code == E_CAT) {
         if (!p->in_item && !p->category[0] && pf_attr(p->tag, n, "text", buf, sizeof buf))
-            pf_norm(p->category, PC_CAT, buf, strlen(buf));
+            pf_norm(p->category, PC_CAT, buf, pf_unent(buf, strlen(buf)));
     } else if (code == E_IMAGE) {
         if (!p->in_item) p->in_image = 1;
     } else if (code == E_TITLE) {

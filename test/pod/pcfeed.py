@@ -43,6 +43,15 @@ def ent_cp(e):
     return v if 0 < v <= 0x10ffff and not 0xd800 <= v < 0xe000 else None
 
 
+def unent(s):
+    """pf_unent: the title, author and category text once more through the known entities (&nbsp; a space), an unknown one as written."""
+    def one(m):
+        if m[1] == 'nbsp': return ' '
+        v = ent_cp(m[1])
+        return m[0] if v is None else chr(v)
+    return re.sub(r'&([#A-Za-z0-9]{1,11});', one, s)
+
+
 def cut_utf8(s, cap):
     """At most cap bytes of s, never inside a character, no trailing space."""
     b = s.encode('utf-8')
@@ -82,8 +91,8 @@ def oracle_show(root):
     """(author, first category, channel summary) as the documented rules give them, by xml.etree."""
     ch = root.find('channel')
     inside = {id(e) for it in ch.findall('item') for e in it.iter()}
-    authors = [norm(a.text or '', AUTHOR) for a in ch.findall(ITUNES + 'author')]
-    cats = [norm(c.get('text') or '', CAT) for c in ch.iter(ITUNES + 'category') if id(c) not in inside]
+    authors = [norm(unent(a.text or ''), AUTHOR) for a in ch.findall(ITUNES + 'author')]
+    cats = [norm(unent(c.get('text') or ''), CAT) for c in ch.iter(ITUNES + 'category') if id(c) not in inside]
     summary = plain(ch.findtext(ITUNES + 'summary') or '') or plain(ch.findtext('description') or '')
     return next((a for a in authors if a), ''), next((c for c in cats if c), ''), summary
 
@@ -92,7 +101,7 @@ def oracle(path_or_bytes):
     """What the parser should find: (channel title, image, kept items [(guid, pub, dur, length, type, title, url, desc)], items seen), by xml.etree."""
     root = ET.fromstring(path_or_bytes) if isinstance(path_or_bytes, bytes) else ET.parse(path_or_bytes).getroot()
     ch = root.find('channel')
-    title = norm(ch.findtext('title') or '', TITLE)
+    title = norm(unent(ch.findtext('title') or ''), TITLE)
     img = ch.find(ITUNES + 'image')
     image = (img.get('href') if img is not None else None) or (ch.findtext('image/url') or '')
     items = []
@@ -104,7 +113,7 @@ def oracle(path_or_bytes):
         pd = it.findtext('pubDate')
         pub = int(email.utils.parsedate_to_datetime(pd).timestamp()) if pd else 0
         dur = pf_duration(it.findtext(ITUNES + 'duration') or '')
-        items.append((guid, pub, dur, int(enc.get('length') or 0), norm(enc.get('type') or '', 32), norm(it.findtext('title') or '', TITLE), url, item_desc(it)))
+        items.append((guid, pub, dur, int(enc.get('length') or 0), norm(enc.get('type') or '', 32), norm(unent(it.findtext('title') or ''), TITLE), url, item_desc(it)))
     kept = sorted(items, key=lambda x: -x[1])[:KEEP]
     return title, norm(image, 320), kept, len(items)
 
@@ -231,6 +240,15 @@ def run(ctx):
     expect(ls and ls[0]['t'] == 'A & B <c> "d" \'e\' é \U0001F600 &unknown; &', 'entities: the five named, decimal and hex numbers (a four byte character), an unknown one and a lone & stay as written')
     p, ls = one(wrap(item('<![CDATA[Caf\u00e9 <b>bold</b> & more]]>', 'g')))
     expect(ls and ls[0]['t'] == 'Café <b>bold</b> & more', 'CDATA: kept as is, no entity decoding, the "]]" before ">" dropped')
+    for chunk in (0, 1):   # Arte Radio's "Quand l'histoire fait dates" escapes its titles twice
+        p, ls = one(wrap(item('1526, Babur s&amp;#x27;empare de l&amp;#x27;Inde à Panipat', 'g'), '<title>Quand l&amp;#x27;histoire</title>'), chunk)
+        expect(ls and ls[0]['t'] == "1526, Babur s'empare de l'Inde à Panipat" and F.title(p) == "Quand l'histoire",
+               f'a title escaped twice (&amp;#x27;) shows the apostrophe, the item\'s and the channel\'s (chunks of {chunk or "all"})')
+    p, ls = one(wrap(item('<![CDATA[L&#x27;édit &amp; Tom&#8217;s]]>', 'g')))
+    expect(ls and ls[0]['t'] == 'L\'édit & Tom’s', 'CDATA holding entities: decoded once')
+    p, ls = one(wrap(item('AT&amp;amp;T&amp;nbsp;x &amp;unknown; &amp;#0; &amp;#xD800; &amp;#x110000; &amp;amp;amp; &amp;#x1F600; &amp;', 'g')))
+    expect(ls and ls[0]['t'] == 'AT&T x &unknown; &#0; &#xD800; &#x110000; &amp; \U0001F600 &',
+           'a title is decoded twice, not more: &nbsp; a space; an unknown entity, no character, a surrogate or past U+10FFFF stays as written')
     p, ls = one(wrap(item('  Spaced \n\t out\r\n title  ', 'g')))
     expect(ls and ls[0]['t'] == 'Spaced out title', 'white space: runs collapse to one space, the ends are trimmed (no tab or newline can reach the file)')
     p, ls = one(wrap('<!-- <item><title>no</title></item> -->' + item('Real') + '<!DOCTYPE x [ <!ENTITY y "z"> ]>'))
@@ -358,6 +376,8 @@ def run(ctx):
     expect((F.author(p), F.category(p)) == ('é' * 31, '日' * 15), 'an author is cut at 63 bytes and a category at 47, on character boundaries')
     p, _ = one(wrapn(item(), '<title>S</title><itunes:author>  A \n B  </itunes:author><itunes:category text=" Arts \t Film "/>'))
     expect((F.author(p), F.category(p)) == ('A B', 'Arts Film'), 'author and category: white space collapsed (no tab or newline reaches the file)')
+    p, _ = one(wrapn(item(), '<title>S</title><itunes:author>Arte &amp;amp; l&amp;#x27;Atelier</itunes:author><itunes:category text="Arts &amp;amp; Film"/>'))
+    expect((F.author(p), F.category(p)) == ("Arte & l'Atelier", 'Arts & Film'), 'author and category escaped twice: decoded like a title')
 
     # 4. Dates and durations
     T = lambda *a: calendar.timegm(a)

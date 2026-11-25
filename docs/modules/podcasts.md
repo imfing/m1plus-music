@@ -383,7 +383,12 @@ server's Last-Modified, never the device clock.** A 304 preserves episodes; a mi
 file forces an unconditional retry.
 
 **Feed parser:** a streaming RSS parser keeps the 20 newest enclosed items, handles arbitrary chunk
-splits, entities and CDATA, and strips HTML from descriptions. Unicode spaces count as white
+splits, entities and CDATA, and strips HTML from descriptions. Descriptions, titles, the author and
+the category are entity-decoded a second time (`pf_unent` for the last three), because some feeds
+escape twice (Arte Radio's `s&amp;#x27;empare`, or `&#x27;` inside CDATA). Unknown entities stay
+as written. A refresh rewrites the stored episode titles. The show title is kept after the first
+refresh, except a stored one that, decoded once more and normalized, is the feed's (`pf_title_healed`). Local file
+names keep the old text. Unicode spaces count as white
 space, U+2028 and U+2029 as paragraph breaks, and zero-width characters are dropped. **No Atom.**
 Refresh writes episodes before show metadata and preserves local file names. Cover failures do not
 fail the feed or replace user-supplied artwork. Large JPEG and PNG art is reduced to 192 px with
