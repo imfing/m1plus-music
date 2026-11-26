@@ -32,7 +32,7 @@
  *
  * Interlude dots (stage 4): for a first line at LY_DOT_MIN_S seconds or later, three images (np_dot) at the anchor row fill dim to full by thirds of the intro, breathe and fade
  * out before the first line; the lines sit LY_DOT_PAD lower meanwhile (ly.pad). get_playtime counts whole seconds, so ly_clock interpolates a position in ms with time_now_ms.
- * One LY_DOT_MS timer (ly_dframe) exists while they show and the player plays; the page tick polls the same (ly_poll) and starts it. Docs: Interlude dots.
+ * One LY_DOT_MS timer (ly_dframe) exists while they show, the player plays and the screen is lit; the page tick polls the same (ly_poll) and starts it. Docs: Interlude dots.
  *
  * Only the lines that touch the view are laid out (the label of line i is slot i % LY_POOL, a window of LY_POOL lines round the anchor); a label is
  * touched only when its line, style, opacity, size or position changed. Every failure leaves the stock list showing.
@@ -814,10 +814,14 @@ static int ly_find(int pos) {
 static void ly_poll(unsigned now);
 
 /* The dots' frame (LY_DOT_MS): the same poll as the page tick, so the position, the current line and the dots agree, then the layout. It ends itself when the dots
- * are gone or the player is not playing (frozen dots stay as they are; the page tick starts it again). */
+ * are gone, the player is not playing or the screen is dark (frozen dots stay as they are; the page tick starts it again). */
 static int ly_dframe(const void *timer) {
     (void)timer;
     if (!ly.box) return RET_OK;
+    if (!m1_screen_lit()) { /* dark: nobody sees the dots; the lit page tick starts it again */
+        ly.dtimer = 0;
+        return RET_OK;
+    }
     ly_poll(time_now_ms());
     if (ly.dirty) ly_layout();
     if (ly.n > 0 && ly_gap_len() && mclGetPlayStatus() == 2) return RET_REPEAT;
@@ -827,7 +831,7 @@ static int ly_dframe(const void *timer) {
 
 /* The dots show and the player plays: make sure the frame timer runs. A refused timer leaves the dots to the page tick (they move twice a second, never stuck). */
 static void ly_dkick(void) {
-    if (!ly.dtimer && ly.n > 0 && ly_gap_len() && mclGetPlayStatus() == 2)
+    if (!ly.dtimer && m1_screen_lit() && ly.n > 0 && ly_gap_len() && mclGetPlayStatus() == 2)
         ly.dtimer = timer_add(ly_dframe, (void *)0, LY_DOT_MS);
 }
 

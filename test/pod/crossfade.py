@@ -878,11 +878,25 @@ def demo_tests(ctx):
     m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=0)
     expect(r == 42 and m.auto_seen == [1] and not any(c[0] in ('mclGetPlayTime', 'mcl_gapless_preload') for c in m.calls),
            'Crossfade Off: direct mclAutoChange without reading play time or preloading')
+    # Off, the passes after the first (the idle pass runs about 125 times a second): the setting is the cached one, so no file is looked at
+    files = lambda m: [c for c in m.calls if c[0] in ('access', 'open', 'fopen', 'stat')]
+    expect(not [c for c in m.calls if c[0] == 'access'], f'Crossfade Off, the first pass: the kill switch is not looked for ({files(m)})')
+    m.calls = []; m.auto_seen = []
+    rs = [call_c(m, 'xfade_auto_change') for _ in range(3)]
+    expect(rs == [42] * 3 and m.auto_seen == [1] * 3 and not files(m), f'Crossfade Off, later passes: stock\'s mclAutoChange each time, no file call at all ({files(m)})')
+    m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=0, kill=True)
+    m.calls = []
+    expect(r == 42 and call_c(m, 'xfade_auto_change') == 42 and not files(m), 'Crossfade Off with the kill switch: the same, stock and no file call')
 
     # Kill switch: direct mclAutoChange
     m, r = run_auto({'album': 'A', 'path': '/mnt/mmc/1.flac'}, {'album': 'B', 'path': '/mnt/mmc/2.flac'}, sec=5, kill=True)
     expect(r == 42 and XFADE_FILE not in m.fs and not any(c[0] == 'mcl_gapless_preload' for c in m.calls),
            'kill switch: direct mclAutoChange, no record written')
+    expect(('access', KILL) in m.calls and m.auto_seen == [1] and not any(c[0] == 'mclGetPlayTime' for c in m.calls),
+           'Crossfade On with the kill switch: the switch is looked for, stock runs with Gapless as it was, the play time not read')
+    m.calls = []; m.auto_seen = []
+    expect(call_c(m, 'xfade_auto_change') == 42 and ('access', KILL) in m.calls and m.auto_seen == [1] and XFADE_FILE not in m.fs,
+           'and on the next pass again (the switch is looked for on every pass while Crossfade is on)')
 
     # Cross-album with smart ON (5 s, total 200, cur 190 -> rem 10 <= 5+5): writes 5 s and triggers early preload!
     m, r = run_auto({'album': 'Album A', 'path': '/mnt/mmc/1.flac'}, {'album': 'Album B', 'path': '/mnt/mmc/2.flac'}, sec=5, smart=1, play_time=(190, 200))

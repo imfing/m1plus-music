@@ -9,7 +9,7 @@
  *   picture   a 320 x 480 RGBA frame this file owns, composed from tools/vu_art.py's pictures: vu_base (faceplate, both dials without needles, hoods, unlit PEAK lamps, print, keys at rest),
  *             the needles and their shadows (drawn here at run time: vp_needle is tools/vu_art.py draw_needle), vu_hood over each needle's root, vu_lamp for a lit PEAK lamp, vu_keys. A
  *             change restores its rectangle from vu_base, draws it again and invalidates only that rectangle.
- *   levels    the page creates the mark (VU_FILE with VU_MAGIC) when it opens and removes it when it closes: the player's level tap (patch/vu.c) measures only while it is there and keeps
+ *   levels    the page creates the mark (VU_FILE with VU_MAGIC) while it is in front and the screen is lit and removes it when the screen goes dark, another window covers it or it closes: the player's level tap (patch/vu.c) measures only while it is there and keeps
  *             the record in the same file. Each tick reads it whole (a read is kept when seq == seq_end), takes the entries audible since the last tick (their due_us and dur_us against
  *             CLOCK_MONOTONIC) and turns their rms into the needle's target (the law of tools/vu_art.py, linear in the voltage; 0 VU is the page's automatic reference level vp_lv.lt, see vp_level). Nothing audible (rate 0, a record
  *             that stopped being written, a player that is not playing): the target is the rest position.
@@ -101,7 +101,10 @@ static struct {
     int sig; /* the last fresh record had a signal */
     double rms[2], pk[2]; /* its levels */
     vu_record rec; /* the last read */
+    int watch; /* the mark file exists (vp_watch) */
 } vu __attribute__((section(".scratch")));
+
+static void vp_watch(int on);
 
 /* ---------------------------------------------------------------------------
  * The record
@@ -587,8 +590,9 @@ static int vp_tick(const void *timer) {
         return RET_OK;
     }
     scrobble_note(cc_playing()); /* lit or dark (patch/scrobble.c) */
+    vp_watch(m1_screen_lit());
     if (m1_screen_lit())
-        vp_update(0); /* dark: nothing drawn, nothing read; the first lit tick catches up (dt is capped) */
+        vp_update(0); /* dark: nothing drawn, nothing read, no mark; the first lit tick catches up (dt is capped) */
     vp_retime();
     return RET_REPEAT;
 }
@@ -597,6 +601,7 @@ static int vp_first(const void *timer) {
     (void)timer;
     vu.timer = 0;
     if (!vu.win || !vu.fg) return RET_OK;
+    vp_watch(m1_screen_lit());
     if (!m1_screen_lit()) { /* opened with the screen off: the first full draw waits for the light */
         vu.timer = timer_add(vp_first, (void *)0, POD_DARK_MS);
         return RET_OK;
@@ -627,6 +632,7 @@ static int vp_on_background(void *ctx, void *e) {
     if (!vu.win || ctx != vu.win) return RET_OK;
     vu.fg = 0;
     vp_unarm();
+    vp_watch(0); /* covered (another page, or the lock screen as the screen goes dark: no tick runs then) */
     vp_release();
     return RET_OK;
 }
@@ -635,6 +641,7 @@ static int vp_on_foreground(void *ctx, void *e) {
     (void)e;
     if (!vu.win || ctx != vu.win) return RET_OK;
     vu.fg = 1;
+    vp_watch(m1_screen_lit()); /* (before the first look, so the player has a block measured by then) */
     if (!vu.timer) vu.timer = timer_add(vp_first, (void *)0, VN_FIRST_MS);
     return RET_OK;
 }
@@ -713,12 +720,25 @@ static int vp_on_touch(void *ctx, void *e) {
 /* ---------------------------------------------------------------------------
  * The mark, open
  */
-static void
-vp_mark(void) { /* the file the player's tap looks for: just the magic (the player writes the record over it) */
+/* The file the player's tap looks for: just the magic (the player writes the record over it); 1 when it was made. */
+static int vp_mark(void) {
     void *f = fopen(VU_FILE, "wb");
-    if (!f) return;
+    if (!f) return 0;
     fwrite(VU_MAGIC, 1, 8, f);
     fclose(f);
+    return 1;
+}
+
+/* The mark exists while the page is in front and the screen is lit: nobody sees the needles otherwise, so the player does not measure. Acts only on a change;
+ * a mark that could not be made is not remembered, so the next call tries again. */
+static void vp_watch(int on) {
+    on = on != 0;
+    if (on == vu.watch) return;
+    if (on) {
+        if (!vp_mark()) return;
+    } else
+        unlink(VU_FILE);
+    vu.watch = on;
 }
 
 /* Demo starts: a mark left by an earlier run (the page closed by a crash, the player kept measuring) goes; /tmp is empty after a reboot anyway. Called from home_boot. */
@@ -772,7 +792,8 @@ int vupage_open(void) {
             widget_on(vu.view, EVT_POINTER_UP, vp_on_touch, (void *)0);
             widget_on(vu.view, EVT_POINTER_ABORT, vp_on_touch, (void *)0);
             widget_on(vu.view, EVT_AFTER_PAINT, vp_on_paint, (void *)0);
-            vp_mark(); /* the player's tap measures from here, until the page is destroyed */
+            vp_watch(
+                m1_screen_lit()); /* the player's tap measures from here while the screen is lit, until the page is destroyed */
             vu.timer = timer_add(vp_first, (void *)0, VN_FIRST_MS);
             return 0;
         }

@@ -27,7 +27,8 @@ percent scale, no dust and no screws. **0 VU is an automatic reference level** t
   both meters show the one channel. DSD and special formats: no levels (the page parks the needles).
 - **Only while watched:** the mark is the file `VU_FILE` (`/tmp/m1plus-vu`). The player measures only
   while it exists and starts with `VU_MAGIC`; the cost without it is one failed `fopen` per block. The
-  page creates it with just the 8 magic bytes when it opens and `unlink`s it when it closes.
+  page creates it with just the 8 magic bytes while it is in front and the screen is lit, and `unlink`s
+  it when the screen goes dark, another window covers it or it closes.
 - **The record:** the same file (tmpfs, never fsynced). The player rewrites it whole, in place, with one
   `fwrite` per block (open, check magic, seek, write, close). `patch/vu.h` is shared like
   `patch/stereo.h`; the player side is `patch/vu.c`.
@@ -112,7 +113,12 @@ the screen off and then nothing is read or drawn). The Vinyl page's `VN_PLAY_MS`
 - **Entries.** `vupage_open()` and `vupage_open_idle()` (`patch/entries.h`) return 0 once the page is up
   (or already open) and -1 when it could not open. The Display Mode row calls the first (the page first,
   then the sheet closes, as Vinyl); the Idle Display dispatcher calls the second.
-- **The mark.** Open creates `VU_FILE` holding `VU_MAGIC` (`vp_mark`); destroy `unlink`s it.
+- **The mark.** `vp_watch` keeps `VU_FILE` (holding `VU_MAGIC`, `vp_mark`) in step with "in front and lit", acting only on a change: open, `vp_first`, each `vp_tick` and the
+  window's foreground event call it; a dark tick or the background event `unlink`s it (a window such as the lock screen
+  can cover the page as the screen goes dark, and no tick runs behind it), the first lit tick creates it
+  again before `vp_update`; destroy `unlink`s it. A mark that cannot be created is tried again by the next
+  call. A new mark holds only the magic, which reads as no
+  signal, so the needles settle towards rest until the player writes a record.
   `vupage_boot` unlinks a stale one and is called from `home_boot` (the existing Home init hook).
 - **Reading.** Each tick, while the player plays, `fopen`/`fread`/`fclose` the whole record (3 tries
   until `seq == seq_end`; all torn: the last levels stay). A file shorter than a record, another magic or

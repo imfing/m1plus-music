@@ -171,7 +171,7 @@ integer arithmetic without blur.
 Three 10 px image dots appear at the anchor when the first line starts at 4 s or later. Upcoming
 lines sit one pitch lower. The dots keep 18 px spacing, fill by thirds, breathe over 2.4 s and fade
 over the final 500 ms, then the lines spring into the anchor. An 80 ms timer runs only while the
-dots show and playback is active.
+dots show, playback is active and the screen is lit (it ends itself in the dark; the lit page tick starts it again).
 
 `ly_clock` interpolates whole-second playback readings with the monotonic clock, bounded within the
 reported second. Pauses freeze it and seeks reset it. Dots move with the lines during a drag.

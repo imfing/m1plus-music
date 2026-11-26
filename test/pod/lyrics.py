@@ -1412,6 +1412,17 @@ def dots_tests(ctx):
     m.status = 2; est0 = r.ck.est; r.t0 += 500; r.tick(500)
     expect(len(m.dtimers()) == 2 and m.dot_ops() == r.ops() and abs(r.ck.est - est0) == 0, f'playing again: the timer starts again and the position went on from where it froze (est {r.ck.est})')
     r.frame(); expect(r.ck.est == est0 + DMS and m.dot_ops() == r.ops(), 'and moves again by the clock')
+    # the screen goes dark: the frame ends its timer without a poll or layout, the page tick does not start it, the lit tick does
+    r = Run(); m = r.m
+    for _ in range(5): r.frame()
+    shown0, ops0 = m.shown(), m.dot_ops()
+    m.screen(False); r.sync(DMS); m.calls = []
+    res = m.call(PSYMS['ly_dframe'], count=2000000)
+    expect(res == 0 and m.dot_ops() == ops0 and m.shown() == shown0 and not m.calls, f'dark: the dots frame ends (RET_OK) without a poll or a layout ({m.calls})')
+    n0 = len(m.dtimers()); r.tick(500)
+    expect(len(m.dtimers()) == n0, 'dark: the page tick does not start it again')
+    m.screen(True); r.tick(500)
+    expect(len(m.dtimers()) == n0 + 1, 'lit again: the page tick starts it again')
     # a stopped player: the position is 0, the dots show dim and the timer does not run
     r = Run(); m = r.m; m.status = 1; m.play = 0
     for _ in range(2): r.tick(500)

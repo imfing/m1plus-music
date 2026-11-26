@@ -418,6 +418,7 @@ class VUM(Machine):
         self.mock_ms = 1000
         self.mono_us = 5000000000
         self.vufile, self.vh, self.feed, self.log = None, {}, None, []
+        self.mark_fail = False   # True: VU_FILE cannot be created (fopen "wb" answers NULL)
         self.pin = -14.0   # the reference every call of the page's look is made at (dBFS rms at 0 VU; None: the page's automatic level runs)
         self.view = self.widgets['vu_view']
         win = self.alloc(0x80)
@@ -462,9 +463,10 @@ class VUM(Machine):
             else: self.setword(a1, self.mono_us // 1000000); self.setword(a1 + 4, self.mono_us % 1000000 * 1000); ret = 0
         elif name == 'fopen' and self.read_cstr(a0) == VU:
             mode = self.read_cstr(a1); self.calls.append(('fopen', VU, mode)); self.log.append(('fopen', mode))
-            if 'w' in mode: self.vufile = bytearray()
+            made = 'w' not in mode or not self.mark_fail
+            if 'w' in mode and made: self.vufile = bytearray()
             ret = 0
-            if self.vufile is not None: ret = self.alloc(4); self.vh[ret] = 0
+            if made and self.vufile is not None: ret = self.alloc(4); self.vh[ret] = 0
         elif name in ('fread', 'fwrite', 'fclose', 'fseek') and (a0 if name in ('fclose', 'fseek') else a3) in self.vh:
             h = a0 if name in ('fclose', 'fseek') else a3
             if name == 'fread':
@@ -1157,6 +1159,37 @@ def life_tests(ctx):
     m3 = opened(); m3.fs['/mnt/data/m1plus/scrobbling'] = b'1\n'
     m3.screen(False); m3.calls = []; m3.tick(1000)
     expect(('open', '/mnt/data/m1plus/scrobbling', 0) in m3.calls and not m3.rects, 'screen off: the tick still polls scrobbling and draws nothing')
+    # the mark exists only while the page is open and the screen is lit
+    m = opened()
+    expect(m.vufile is not None, 'open and lit: the mark exists')
+    m.screen(False); m.tick(1000)
+    expect(m.vufile is None, 'a dark tick: the mark is gone (the player stops measuring)')
+    m.tick(1000)
+    expect(m.vufile is None, 'dark again: still none')
+    m.screen(True); m.tick(1000)
+    expect(m.vufile is not None and bytes(m.vufile[:8]) == bytes(MAGIC), 'the first lit tick: the mark is back')
+    m.screen(False); m.tick(1000); m.mark_fail = True; m.screen(True); m.calls = []; m.tick(1000)
+    expect(m.vufile is None and ('fopen', VU, 'wb') in m.calls, 'a mark that cannot be made: none')
+    m.mark_fail = False; m.tick(1000)
+    expect(m.vufile is not None and bytes(m.vufile[:8]) == bytes(MAGIC), 'the next lit tick tries again: the mark is there')
+    fn, cx = m.bound[(WIN, EVT_BG)]
+    m.call(fn, a0=cx, a1=0)
+    expect(m.vufile is None, 'covered by another window (the lock screen as the screen goes dark): the mark is gone')
+    m.screen(False)
+    fn, cx = m.bound[(WIN, EVT_FG)]
+    m.call(fn, a0=cx, a1=0)
+    expect(m.vufile is None, 'back in front in the dark: still none')
+    m.call(m.bound[(WIN, EVT_BG)][0], a0=cx, a1=0); m.screen(True); m.call(fn, a0=cx, a1=0)
+    expect(m.vufile is not None and bytes(m.vufile[:8]) == bytes(MAGIC), 'back in front and lit: the mark is back')
+    fn, cx = m.bound[(WIN, EVT_DESTROY)]
+    m.call(fn, a0=cx, a1=0)
+    expect(m.vufile is None, 'destroy: the mark is gone')
+    m = machine(); m.screen(False)
+    expect(m.open() == 0 and m.vufile is None, 'opened with the screen off: no mark')
+    m.first()
+    expect(m.vufile is None, 'the first look in the dark: still none')
+    m.screen(True); m.first()
+    expect(m.vufile is not None, 'the first look once lit: the mark')
     # the paint blits the frame 1:1
     m = opened()
     expect(m.paint() != [], 'the paint blits the frame')

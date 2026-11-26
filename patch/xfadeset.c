@@ -224,9 +224,9 @@ int xfade_auto_change(void) {
     int sec, pos, mode, pt, cur_s = 0, total_s = 0, next_i, eff, preload, keep = 0;
     unsigned char running, saved_gap;
     void *q;
-    if (home_off()) return mclAutoChange();
     sec = xfade_seconds();
-    if (sec <= 0 && !xf.forced_gapless) return mclAutoChange();
+    if (sec <= 0 && !xf.forced_gapless) return mclAutoChange(); /* Crossfade off: no file checks on the idle pass */
+    if (home_off()) return mclAutoChange();
     running = *(volatile unsigned char *)HCI_RUNNING;
     preload = *(volatile int *)MCL_PRELOAD;
     pos = mclGetPlayPos();
