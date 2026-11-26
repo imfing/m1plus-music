@@ -69,7 +69,7 @@ in the Songs page's top bar and type a title, artist or album. Touch and hold a 
 ### Change the view or order
 
 On Albums, Artists, Songs or Playlists, tap **…** for the options available on that page. For
-example, in Albums you can switch between grid and list or sort by title, artist, date added or year. Playlists sort by title, date added, last played or updated; a second tap on the chosen order reverses it, and playlists that have no such date (made before this release, or never played) come last.
+example, in Albums you can switch between grid and list or sort by title, artist, date added or year. Playlists sort by title, date added, last played or updated; a second tap on the chosen order reverses it. Playlists made before the dates were recorded count as older than the others and are ordered by when their songs were added (approximately); an empty one counts as the oldest. Last Played puts playlists that were never played last, and says so when none has been played yet.
 
 ### Select several items
 

@@ -933,7 +933,20 @@ class Machine:
             n_ = re.fullmatch(r"select \* from songtable where filename in \((.*)\)", sql)
             g_ = re.fullmatch(r"select \* from songtable where (?:style like '((?:[^']|'')*)'|(ifnull\(style,''\)='')) group by (songer|album) COLLATE NOCASE", sql)   # a Pod genre row's artists or albums (patch/ipod.c ip_genre_count): the genre's songs (self.genre_songs), one row per group, ASCII case folded   # the library's rows with those file names (Clean Up Playlist's repair, patch/songops.c so_relink_chunk)
             u_ = sql == pod.UNTAGGED_SQL and a2 == 0x4e9058   # patch/covercache.c cc_drop_unknown_album: the library's (class_lists[0xf001], else the shown list) first track without an album tag
-            if (album_sql or a_) and self.__dict__.get('album_query_fails') or u_ and self.__dict__.get('untagged_fails'):
+            pk_ = sql == "select cd_num,min(id),max(id) from playlist where id>100 group by cd_num" and a2 not in (0x4e9058, 0x4e93c8) and a3 == 0   # the Playlists page's date-order keys (payload pl_keys): our own row callback, one row per playlist that has songs: (cd_num, lowest, highest song row id) from self.pl_rowids
+            if pk_:
+                ret = -1 if self.__dict__.get('pl_keys_fail') else 0
+                self.__dict__.setdefault('pl_key_cbs', []).append(a2)
+                for cd, (lo, hi) in sorted(self.__dict__.get('pl_rowids', {}).items()):   # (a nested call: the callback runs on its own stack below this frame)
+                    if ret: break
+                    cols = [self.cstr(str(x)) for x in (cd, lo, hi)]
+                    arr = self.alloc(16)
+                    for k, c_ in enumerate(cols): self.setword(arr + 4 * k, c_)
+                    saved = {r_: self.u.reg_read(r_) for r_ in (UC_MIPS_REG_SP, UC_MIPS_REG_RA, UC_MIPS_REG_T9, UC_MIPS_REG_GP, UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3)}
+                    for r_, v_ in ((UC_MIPS_REG_SP, sp - 0x400), (UC_MIPS_REG_RA, RET), (UC_MIPS_REG_T9, a2), (UC_MIPS_REG_A0, 0), (UC_MIPS_REG_A1, 3), (UC_MIPS_REG_A2, arr), (UC_MIPS_REG_A3, 0)): self.u.reg_write(r_, v_)
+                    self.u.emu_start(a2, RET)
+                    for r_, v_ in saved.items(): self.u.reg_write(r_, v_)
+            elif (album_sql or a_) and self.__dict__.get('album_query_fails') or u_ and self.__dict__.get('untagged_fails'):
                 ret = -1
             elif not m_ and not a_ and not album_sql and not f_ and not d_ and not n_ and not u_ and not g_:
                 ret = -1

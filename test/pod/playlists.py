@@ -1239,7 +1239,7 @@ def stock_tests(ctx):
     m.click('btn_more'); m.click('vs_item0')
     names_, _ = rows(m)
     expect(m.fs.get(PLS) == b'0\n' and names_ == AZ, 'and again: A–Z, "0"')
-    for saved, want in ((b'a\n', ZA), (b'a', ZA), (b'0\n', AZ), (b'junk', AZ), (b'ax', AZ), (b'', AZ), (b'1\n', AZ), (b'b\n', AZ)):   # (the retired Recently Added values read as A–Z)
+    for saved, want in ((b'a\n', ZA), (b'a', ZA), (b'0\n', AZ), (b'junk', AZ), (b'ax', AZ), (b'', AZ)):   # (the date codes are sort_tests')
         names_, _ = rows(list_page(saved))
         expect(names_ == want, f'playlists-sort {saved!r}: {"Z–A" if want == ZA else "A–Z"}')
     m = list_page(); rows(m); m.fail.add(('rename', PLS)); m.click('btn_more'); m.click('vs_item0')
@@ -1519,8 +1519,9 @@ def sort_tests(ctx):
     TITLE_ROWS = ['2 mix', '10 mix', 'Alpha', 'beta', 'Zed']
     meta = MAGIC + b'1 300 500 0 beta\n2 300 200 900 Alpha\n4 999 999 999 old\n5 200 0 50 Zed\n'
     ROW = O['LIST_ROW_H']
-    def list_page(saved=None, content=meta, src=False):
+    def list_page(saved=None, content=meta, src=False, rowids=None, fail=False):
         m = fresh(content); m.fs[PL_FILE] = b'0\n'
+        m.pl_rowids, m.pl_keys_fail = rowids or {}, fail
         if saved is not None: m.fs[PLS_FILE] = saved
         open_page(m)
         return m
@@ -1530,18 +1531,77 @@ def sort_tests(ctx):
         return [title[k] for k in sorted(title)]
     ORDERS = {
         b'0\n': TITLE_ROWS, b'a\n': TITLE_ROWS[::-1],
-        b'1\n': ['Alpha', 'beta', 'Zed', '2 mix', '10 mix'], b'b\n': ['Zed', 'Alpha', 'beta', '2 mix', '10 mix'],
+        b'1\n': ['Alpha', 'beta', 'Zed', '2 mix', '10 mix'], b'b\n': ['10 mix', '2 mix', 'Zed', 'Alpha', 'beta'],
         b'2\n': ['Alpha', 'Zed', '2 mix', '10 mix', 'beta'], b'c\n': ['Zed', 'Alpha', '2 mix', '10 mix', 'beta'],
-        b'3\n': ['beta', 'Alpha', '2 mix', '10 mix', 'Zed'], b'd\n': ['Alpha', 'beta', '2 mix', '10 mix', 'Zed'],
+        b'3\n': ['beta', 'Alpha', 'Zed', '2 mix', '10 mix'], b'd\n': ['10 mix', '2 mix', 'Zed', 'Alpha', 'beta'],
     }
     for code, want in ORDERS.items():
         got = shown(list_page(code))
         expect(got == want, f'playlists-sort {code!r}: {want} ({got})')
     for code in (b'e\n', b'4\n', b'junk', b'', b'1x'):
         expect(shown(list_page(code)) == TITLE_ROWS, f'playlists-sort {code!r}: Title A-Z')
-    expect(shown(list_page(b'1\n', content=None)) == TITLE_ROWS and shown(list_page(b'3\n', content=MAGIC)) == TITLE_ROWS, 'no meta file, or no entries: every playlist is unstamped, so the Title order')
+    # (the stock table's keys: none here, so every playlist is an empty one, keyed by its own id: 1 beta, 2 Alpha, 3 10 mix, 4 2 mix, 5 Zed)
+    expect(shown(list_page(b'1\n', content=None)) == ['Zed', '2 mix', '10 mix', 'Alpha', 'beta'] and shown(list_page(b'3\n', content=MAGIC)) == ['Zed', '2 mix', '10 mix', 'Alpha', 'beta'],
+           'no meta file, or no entries: every playlist is unstamped, so the order of the stock table\'s keys (here the ids)')
     bad_m = list_page(b'1\n', content=MAGIC + b'junk')
-    expect(shown(bad_m) == TITLE_ROWS and bad_m.fs[META] == MAGIC + b'junk', 'an unreadable meta file: Title order, the file untouched')
+    expect(shown(bad_m) == ['Zed', '2 mix', '10 mix', 'Alpha', 'beta'] and bad_m.fs[META] == MAGIC + b'junk', 'an unreadable meta file: the keys of the stock table decide, the file untouched')
+    # the keys of playlists that have no time (docs/modules/playlists.md "Order"): Date Added = the lowest row id of the playlist's songs, Updated = the highest, an empty playlist its own id
+    # (below every song row); one statement for all playlists; never for Title or Last Played; a newer stamp beats any key; Oldest First is the exact reverse
+    rows = {1: (110, 110), 2: (105, 108), 3: (120, 125), 4: (101, 130)}   # 5 (Zed) is empty
+    for code, want in ((b'1\n', ['10 mix', 'beta', 'Alpha', '2 mix', 'Zed']), (b'b\n', ['Zed', '2 mix', 'Alpha', 'beta', '10 mix']),
+                       (b'3\n', ['2 mix', '10 mix', 'beta', 'Alpha', 'Zed']), (b'd\n', ['Zed', 'Alpha', 'beta', '10 mix', '2 mix'])):
+        m = list_page(code, content=MAGIC, rowids=rows)
+        got = shown(m)
+        expect(got == want and len(m.pl_key_cbs) == 1 and m.pl_key_cbs[0] == PSYMS['pl_key_row'] and m.queries.count("select cd_num,min(id),max(id) from playlist where id>100 group by cd_num") == 1,
+               f'{code!r}, no stamps: by the keys of the stock table, one statement with the payload\'s own row callback ({got})')
+    for code in (b'0\n', b'a\n', b'2\n', b'c\n'):
+        m = list_page(code, content=MAGIC, rowids=rows)
+        expect(shown(m) == (TITLE_ROWS[::-1] if code == b'a\n' else TITLE_ROWS) and not m.__dict__.get('pl_key_cbs'), f'{code!r}: Title and Last Played never read the keys; with no time every playlist is the same, so Title A-Z')
+    full = MAGIC + b'1 300 500 0 beta\n2 100 600 0 Alpha\n3 200 700 0 10 mix\n4 400 800 0 2 mix\n5 500 900 0 Zed\n'
+    for code, want in ((b'1\n', ['Zed', '2 mix', 'beta', '10 mix', 'Alpha']), (b'd\n', ['beta', 'Alpha', '10 mix', '2 mix', 'Zed'])):
+        m = list_page(code, content=full, rowids=rows)
+        got = shown(m)
+        expect(got == want and not m.__dict__.get('pl_key_cbs'), f'{code!r}, every playlist stamped: by the times, the keys are not read ({got})')
+    m = PM([(0, 'Mid', []), (1, 'Top', [0]), (2, 'Low', [])]); m.fs[META] = MAGIC; m.fs[PL_FILE] = b'0\n'; m.fs[PLS_FILE] = b'1\n'; m.pl_rowids, m.pl_keys_fail = {1: (150, 150)}, False
+    open_page(m); got = shown(m)
+    expect(got == ['Top', 'Low', 'Mid'], f'the playlist of id 0 (stock\'s first), empty: its key is 0, the oldest ({got})')
+    mixed = MAGIC + b'1 300 500 0 beta\n5 200 0 0 Zed\n'   # beta: added and updated; Zed: added only
+    for code, want in ((b'1\n', ['beta', 'Zed', '10 mix', 'Alpha', '2 mix']), (b'b\n', ['2 mix', 'Alpha', '10 mix', 'Zed', 'beta']),
+                       (b'3\n', ['beta', '2 mix', '10 mix', 'Alpha', 'Zed']), (b'd\n', ['Zed', 'Alpha', '10 mix', '2 mix', 'beta'])):
+        got = shown(list_page(code, content=mixed, rowids=rows))
+        expect(got == want, f'{code!r}, some stamped: the stamped ones by time, then those with a key (the larger first); Oldest First is the reverse of that ({got})')
+    got = shown(list_page(b'1\n', content=MAGIC, rowids={1: (105, 110), 2: (105, 108), 3: (120, 125), 4: (101, 130)}))
+    expect(got == ['10 mix', 'Alpha', 'beta', '2 mix', 'Zed'] and shown(list_page(b'b\n', content=MAGIC, rowids={1: (105, 110), 2: (105, 108), 3: (120, 125), 4: (101, 130)})) == ['Zed', '2 mix', 'Alpha', 'beta', '10 mix'],
+           f'equal keys: Title A-Z in both directions ({got})')
+    got = shown(list_page(b'1\n', content=MAGIC, rowids={1: (110, 110), 7: (500, 500), 200: (300, 300)}))
+    expect(got == ['beta', 'Zed', '2 mix', '10 mix', 'Alpha'], f'a row of an id with no playlist, or out of the id range, is ignored ({got})')
+    # the statement fails: as before the keys (a stamped playlist first in both directions, the rest by Title A-Z)
+    for code, want in ((b'1\n', ['beta', 'Zed', '2 mix', '10 mix', 'Alpha']), (b'b\n', ['Zed', 'beta', '2 mix', '10 mix', 'Alpha']), (b'0\n', TITLE_ROWS)):
+        got = shown(list_page(code, content=mixed, rowids=rows, fail=True))
+        expect(got == want, f'{code!r}, the statement failed: Title for the unstamped ({got})')
+    # Last Played: unchanged (never played = after the others in both directions); the toast "No playlists played yet" only when the user picks it (or reverses it) and none was
+    got = shown(list_page(b'2\n', content=MAGIC + b'2 300 200 900 Alpha\n', rowids=rows)); got_r = shown(list_page(b'c\n', content=MAGIC + b'2 300 200 900 Alpha\n', rowids=rows))
+    expect(got == ['Alpha'] + [t for t in TITLE_ROWS if t != 'Alpha'] and got_r == got, f'Last Played: the played one first in both directions, the rest by Title A-Z ({got}, {got_r})')
+    for saved, none in ((b'2\n', MAGIC), (b'0\n', MAGIC), (b'0\n', MAGIC + b'2 300 200 900 Alpha\n')):
+        m = list_page(saved, content=none); m.calls = []
+        shown(m)
+        expect(not [c for c in m.calls if c[0] == 'toast'], f'{saved!r}: the page opening shows no toast, whatever the order')
+        m.calls = []; m.click('btn_more'); m.click('vs_item2')
+        want = [('toast', 'No playlists played yet', 1, 2000)] if none == MAGIC else []
+        expect([c for c in m.calls if c[0] == 'toast'] == want and shown(m) == (TITLE_ROWS if none == MAGIC else ['Alpha'] + [t for t in TITLE_ROWS if t != 'Alpha']),
+               f'{saved!r}: picking Last Played with {"no" if none == MAGIC else "one"} played playlist: {"the toast, Title A-Z" if want else "no toast"}')
+        m.calls = []; m.click('btn_more'); m.click('vs_item2')
+        expect([c for c in m.calls if c[0] == 'toast'] == want, 'reversing it asks again')
+        m.calls = []; m.click('btn_more'); m.click('vs_item1')
+        expect(not [c for c in m.calls if c[0] == 'toast'], 'another order: no toast')
+    for content, want in ((MAGIC, [('toast', 'No playlists played yet', 1, 2000)]), (MAGIC + b'3 0 0 900 Solo\n', [])):   # one playlist: nothing to order, the toast all the same
+        m = PM([(3, 'Solo', [0])]); m.fs[META] = content; m.fs[PL_FILE] = b'0\n'; m.fs[PLS_FILE] = b'0\n'; m.pl_rowids, m.pl_keys_fail = {}, False
+        open_page(m); shown(m)
+        for step in ('picking', 'reversing'):
+            m.calls = []; m.click('btn_more'); m.click('vs_item2')
+            expect([c for c in m.calls if c[0] == 'toast'] == want, f'one playlist, {"never played" if want else "played"}: {step} Last Played {"shows the toast" if want else "shows no toast"}')
+        m.calls = []; m.click('btn_more'); m.click('vs_item1')
+        expect(not [c for c in m.calls if c[0] == 'toast'] and not m.__dict__.get('pl_key_cbs'), 'one playlist, another order: no toast, no keys read')
     # the grid follows the same order
     m = fresh(meta); m.fs[PLS_FILE] = b'1\n'; open_page(m)
     blits, texts, styles = settle(m)

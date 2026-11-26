@@ -63,9 +63,21 @@ Newest First / Oldest First for the dates (`vs_dated`, rows 1..3).
 - The default is Title A-Z, **not** the stock order. The page, the picker (Favourites and New
   Playlist stay pinned first) and every list follow it. Title is `cc_name_keys` / `cc_key_cmp`, as the
   Artists page ([artists](artists.md)); ties keep the stock order and Z-A is the whole order reversed.
-- A date order puts the playlist with the larger time first (Oldest First: the smaller). A playlist
-  with no time for the chosen date is **after the others in both directions**, and those, and playlists
-  with equal times, go by Title A-Z.
+- A date order puts the playlist with the larger time first (Oldest First: the smaller); equal times
+  go by Title A-Z. A playlist with no time for the chosen date:
+  - **Last Played**: after the others in both directions, by Title A-Z. When no playlist at all has a
+    time, picking the order (or reversing it) from the card shows "No playlists played yet" (`pl_unplayed`,
+    set by `pl_sort`, shown by the card's tap only; opening the page shows nothing) and the order is Title A-Z.
+  - **Date Added, Updated**: ranked by a key of stock's `playlist` table (`pl_keys`), below every stamped
+    playlist. Key = the lowest (Date Added) or highest (Updated) row id of its songs; an empty playlist
+    has its own header id (0..100), below every song id. Keys compare by value, equal ones by Title A-Z;
+    Oldest First is the exact reverse (keys first, smallest first, then the stamped ones oldest first).
+    Nothing is written. One statement for all playlists (not run when every playlist has a time),
+    `select cd_num,min(id),max(id) from playlist where id>100 group by cd_num`, through the hooked
+    `toolsQueryDbTable` with the payload's own row callback (`pl_key_row`, text columns; `sqlite3_exec`'s
+    argument is NULL and the tools deque is cleared and left empty); `pq_filter` passes it untouched (not a
+    songtable select). A failed statement or no memory: no keys, and the order is Last Played's rule (a
+    playlist with no time after the others in both directions, by Title).
 - **The stock list is never reordered**: `pl.pls` is the copy of the stock rows and `pl.ord` maps
   each displayed position to its stock row (`pl_slot`, `pl_rec`). Taps, select marks and the picker
   follow the order shown; stock calls keep stock positions. A re-sort (`pl_reorder`) carries every
@@ -94,8 +106,10 @@ Files as present or missing). No SQLite writes.
 - **A stamp** is `max(time(NULL), the largest stamp in the file + 1)`, so the order is strict with an
   unsynced clock and with several changes in one second. Limits: a clock that jumped far ahead pins
   every later stamp at +1 from that value until the clock passes it; a playlist made before this file
-  existed has no Date Added (and no Last Played or Updated until it is played or changed), so it sorts
-  after the stamped ones in those orders.
+  existed has no Date Added (and no Last Played or Updated until it is played or changed): it sorts by
+  its table key (above) after the stamped ones, and Last Played after the played ones. The key is
+  approximate: new song rows take the highest id + 1, so the ids of deleted top rows are reused, and removing
+  an old playlist's earliest-added song moves its Date Added key.
 - **Stamp points.**
 
 | Time | Where |

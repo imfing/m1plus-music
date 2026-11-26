@@ -1845,6 +1845,8 @@ TEXT = dict([
        'Reproducidas recientemente borradas', 'Riprodotte di recente cancellate', 'ล้างรายการที่เล่นล่าสุดแล้ว', 'Wyczyszczono ostatnio odtwarzane', 'Недавно воспроизведённые очищены', 'Нещодавно відтворені очищено'),
     _t('Could not clear Recently Played', '无法清除最近播放', '無法清除最近播放', '最近再生した局を消去できません', '최근 재생을 지울 수 없음', 'Impossible d’effacer les lus récemment', 'Zuletzt gespielte nicht gelöscht',
        'No se pudo borrar lo reproducido recientemente', 'Impossibile cancellare le riprodotte di recente', 'ล้างรายการที่เล่นล่าสุดไม่ได้', 'Nie można wyczyścić ostatnio odtwarzanych', 'Не удалось очистить недавно воспроизведённые', 'Не вдалося очистити нещодавно відтворені'),
+    _t('No playlists played yet', '还没有播放过歌单', '還沒有播放過歌單', 'まだ再生したプレイリストはありません', '재생한 재생 목록 없음', 'Aucune playlist lue pour l’instant', 'Noch keine Playlist gespielt',
+       'Aún no se ha reproducido ninguna lista', 'Nessuna playlist ancora riprodotta', 'ยังไม่ได้เล่นเพลย์ลิสต์ใด', 'Nie odtworzono jeszcze żadnej playlisty', 'Плейлисты ещё не воспроизводились', 'Плейлисти ще не відтворювалися'),
     _t('No radio is playing', '没有正在播放的电台', '沒有正在播放的電台', 'ラジオを再生していません', '재생 중인 라디오 없음', 'Aucune radio en cours de lecture', 'Kein Radio läuft',
        'No hay radio en reproducción', 'Nessuna radio in riproduzione', 'ไม่มีวิทยุที่กำลังเล่น', 'Radio nie jest odtwarzane', 'Радио не воспроизводится', 'Радіо не відтворюється'),
     _t('Station Info', '电台信息', '電台資訊', '局の情報', '방송국 정보', 'Infos sur la station', 'Senderinfo',

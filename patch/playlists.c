@@ -630,20 +630,34 @@ static int pl_same_list(void *old, unsigned oldn, void *fresh, unsigned n) {
 
 /* The order (the card's rows): pl.ord[k] = the stock playlist shown at position k. Title compares names as the Artist order does (cc_name_keys / cc_key_cmp: digit runs by value, ASCII case
  * folded, a CJK name by its pinyin initials; ties keep the stock order); Z-A is the whole order reversed. A date order puts the newest first (Oldest First reversed) by the time patch/plmeta.c keeps
- * for the playlist (stock id and name); a playlist with no such time is after all the others in both directions, and ties (and those) go by Title A-Z. A source's playlists are Title only.
+ * for the playlist (stock id and name); ties go by Title A-Z. A playlist with no such time: Last Played puts it after all the others in both directions; Date Added and Updated rank it by a key of the
+ * stock table (pl_keys) below every stamped playlist, so Oldest First is the exact reverse of Newest First. A source's playlists are Title only.
  * The stock list is never reordered. No memory: NULL (the stock order). */
 static const char **pl_key __attribute__((section(".scratch")));
 static unsigned *pl_when
     __attribute__((section(".scratch"))); /* the time of each stock playlist for the date order, 0 = none */
+static unsigned *pl_fb __attribute__((
+    section(".scratch"))); /* its key from the stock table when it has no time (Date Added, Updated); NULL: none read */
+static unsigned *pl_kmin __attribute__((section(
+    ".scratch"))); /* pl_keys' answer by playlist id: the lowest and the highest row id of its songs, 0 = none (an empty playlist) */
+static unsigned *pl_kmax __attribute__((section(".scratch")));
+static unsigned char pl_unplayed
+    __attribute__((section(".scratch"))); /* the last pl_sort was Last Played and no playlist had been played */
 
 static int pl_sort_now(void) { return pl.src ? 0 : pl.sort; }
 static int pl_rev_now(void) { return pl.src && pl.sort ? 0 : pl.rev; }
 
 static int pl_cmp(unsigned a, unsigned b) {
-    int d;
-    if (pl_when && pl_when[a] != pl_when[b]) {
-        if (!pl_when[a] || !pl_when[b]) return pl_when[a] ? -1 : 1;
-        return (pl_when[a] > pl_when[b]) != (pl_rev_now() != 0) ? -1 : 1;
+    int d, rev = pl_rev_now() != 0;
+    if (pl_when) {
+        unsigned ta = pl_when[a], tb = pl_when[b];
+        if (pl_fb && (!ta || !tb)) {
+            if (ta || tb) return (ta != 0) != rev ? -1 : 1; /* a stamp is newer than a key */
+            if (pl_fb[a] != pl_fb[b]) return (pl_fb[a] > pl_fb[b]) != rev ? -1 : 1;
+        } else if (ta != tb) {
+            if (!ta || !tb) return ta ? -1 : 1;
+            return (ta > tb) != rev ? -1 : 1;
+        }
     }
     d = cc_key_cmp(pl_key[a], pl_key[b]);
     return d ? d : a < b ? -1 : a > b;
@@ -651,24 +665,76 @@ static int pl_cmp(unsigned a, unsigned b) {
 
 static const char *pl_ntext(const void *ctx, unsigned i) { return cc_str(deque_at((void *)ctx, i), REC_TITLE); }
 
+/* One row of pl_keys' query: cd_num, min(id), max(id) as text. A row of another shape, or an id out of range, is skipped. */
+static unsigned pl_num(const char *s) {
+    unsigned v = 0;
+    if (!s || !*s) return ~0u;
+    for (; *s; ++s) {
+        if (*s < '0' || *s > '9' || v > 0x0ccccccc) return ~0u;
+        v = v * 10 + (unsigned)(*s - '0');
+    }
+    return v;
+}
+static int pl_key_row(void *arg, int n, char **v, char **names) {
+    unsigned id, lo, hi;
+    (void)arg, (void)names;
+    if (n != 3 || !pl_kmin || !pl_kmax) return 0;
+    id = pl_num(v[0]), lo = pl_num(v[1]), hi = pl_num(v[2]);
+    if (id <= PL_MAX && lo != ~0u && hi != ~0u) pl_kmin[id] = lo, pl_kmax[id] = hi;
+    return 0;
+}
+
+/* The lowest and the highest row id of every playlist's songs, in ONE read-only statement through the hooked toolsQueryDbTable (our row callback, no argument; it clears *tools_pdeq_directory and
+ * touches no list; the Library filter passes a statement that does not read songtable). Rows of a playlist are numbered upward through the table (a new song takes the highest id + 1), so these order
+ * the playlists that have no time: Date Added by the lowest, Updated by the highest, an empty one by its own id. 0 when the query failed or there is no memory (the keys stay unread). */
+static int pl_keys(void) {
+    free(pl_kmin);
+    pl_kmin = calloc(2 * (PL_MAX + 1), sizeof *pl_kmin);
+    pl_kmax = pl_kmin ? pl_kmin + PL_MAX + 1 : (unsigned *)0;
+    if (!pl_kmin) return 0;
+    if (toolsQueryDbTable(STOCK_DB_PATH, "select cd_num,min(id),max(id) from playlist where id>100 group by cd_num",
+                          (void *)pl_key_row, 0) >= 0)
+        return 1;
+    free(pl_kmin);
+    pl_kmin = pl_kmax = (unsigned *)0;
+    return 0;
+}
+
 static void pl_sort(void) {
     unsigned n = pl.count > (unsigned)pl_v() ? pl.count - (unsigned)pl_v() : 0, i;
     int sort = pl_sort_now(), title_rev = !sort && pl_rev_now();
     free(pl.ord);
     pl.ord = (unsigned *)0;
+    pl_unplayed = 0;
+    if (n == 1 && pl.pls &&
+        sort == PLM_PLAYED) { /* (one playlist: nothing to order, but the card still says it was never played) */
+        plm_read();
+        pl_unplayed = !plm_get(I(deque_at(pl.pls, 0), REC_DISC), cc_str(deque_at(pl.pls, 0), REC_TITLE), sort);
+    }
     if (n < 2 || !pl.pls) return;
     pl.ord = calloc(n, sizeof *pl.ord);
     pl_key = pl.ord ? cc_name_keys(n, pl_ntext, pl.pls) : (const char **)0;
     pl_when = sort && pl_key ? calloc(n, sizeof *pl_when) : (unsigned *)0;
+    pl_fb = (unsigned *)0;
     if (sort && !pl_when) sort = 0; /* no memory for the times: Title */
     if (!pl.ord || !pl_key) {
         free(pl.ord);
         pl.ord = (unsigned *)0;
     } else {
         if (sort) {
+            unsigned any = 0, miss = 0;
             plm_read();
             for (i = 0; i < n; ++i)
-                pl_when[i] = plm_get(I(deque_at(pl.pls, i), REC_DISC), cc_str(deque_at(pl.pls, i), REC_TITLE), sort);
+                any |= pl_when[i] =
+                    plm_get(I(deque_at(pl.pls, i), REC_DISC), cc_str(deque_at(pl.pls, i), REC_TITLE), sort),
+                       miss |= !pl_when[i];
+            pl_unplayed = sort == PLM_PLAYED && !any;
+            if (sort != PLM_PLAYED && miss && pl_keys())
+                pl_fb /* (every playlist stamped: no query) */ = calloc(n, sizeof *pl_fb);
+            for (i = 0; pl_fb && i < n; ++i) {
+                unsigned id = (unsigned)I(deque_at(pl.pls, i), REC_DISC);
+                pl_fb[i] = id <= PL_MAX ? (pl_kmax[id] ? (sort == PLM_ADDED ? pl_kmin[id] : pl_kmax[id]) : id) : 0;
+            }
         }
         for (i = 0; i < n; ++i) pl.ord[i] = i;
         cc_heapsort(pl.ord, n, pl_cmp);
@@ -678,7 +744,9 @@ static void pl_sort(void) {
         }
     }
     free(pl_when);
-    pl_when = (unsigned *)0;
+    free(pl_fb);
+    free(pl_kmin);
+    pl_when = pl_fb = pl_kmin = pl_kmax = (unsigned *)0;
     free((void *)pl_key);
     pl_key = (const char **)0;
 }
@@ -1454,6 +1522,7 @@ static int pl_on_item(void *ctx, void *e) {
         if (home_write_atomic(PLAYLISTS_SORT_FILE, text) != 0) return RET_OK;
         pl.sort = which, pl.rev = rev;
         pl_reorder();
+        if (pl_unplayed) pod_toast(TR("No playlists played yet")); /* (only on the user's own choice of the order) */
         return RET_OK;
     }
     which -= VS_SEARCH;

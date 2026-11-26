@@ -73,11 +73,11 @@ def run(ctx):
     expect([x[0] for x in titles] == ['playlist_create', 'Favorites', 'Focus', 'Late Night', 'Road Trip'] and [x[0] for x in subs] == ['1 track', '2 tracks', '4 tracks'],
            f'a list: playlist_create (New playlist) and Favorites pinned first (no count), then the playlists in the page\'s name order (A-Z) with their counts ({[x[0] for x in titles]}, {[x[0] for x in subs]})')
     expect(m.word(m.widgets['view_grid'] + 0xc) == PL.TOP + 5 * ROW, 'five rows high, under the title block')
-    for saved, want in ((b'1\n', ['Focus', 'Late Night', 'Road Trip']), (b'b\n', ['Focus', 'Late Night', 'Road Trip']), (b'a\n', ['Road Trip', 'Late Night', 'Focus'])):
+    for saved, want in ((b'1\n', ['Focus', 'Late Night', 'Road Trip']), (b'b\n', ['Road Trip', 'Late Night', 'Focus']), (b'a\n', ['Road Trip', 'Late Night', 'Focus'])):
         m2 = caller(PL); m2.fs['/mnt/data/m1plus/playlists-sort'] = saved
         open_picker(m2); blits, texts, styles = PL.settle(m2)
         got = [x[0] for x, s in zip(texts, styles) if s == 'label_row_title'][2:]
-        expect(got == want, f'the saved order {saved!r} ("a" Title Z-A; the date orders "1" and "b" with no times in the file: Title A-Z) orders the picker\'s playlists ({got})')
+        expect(got == want, f'the saved order {saved!r} ("a" Title Z-A; the date orders "1" and "b" with no times in the file: by the keys of the stock table, "b" the reverse of "1") orders the picker\'s playlists ({got})')
     m2 = caller(PL); m2.fs['/mnt/data/m1plus/playlists-sort'] = b'1\n'; m2.fs['/mnt/data/m1plus/playlists-meta'] = b'M1PLMETA 1\n1 5 5 0 Road Trip\n'
     open_picker(m2); blits, texts, styles = PL.settle(m2)
     got = [x[0] for x, s in zip(texts, styles) if s == 'label_row_title'][2:]
