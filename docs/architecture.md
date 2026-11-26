@@ -84,6 +84,7 @@ binary. See [workflow](workflow.md) for commands, [UI](ui.md) for layout and ass
 | [Parametric EQ](modules/peq.md) | Engine, presets, Equalizer page |
 | [Mono and Crossfeed](modules/stereo.md) | Stereo stage and hciplayer flag |
 | [Crossfade](modules/crossfade.md) | Dual-decoder overlap in hciplayer, preload bridge, kept output with sample-rate conversion |
+| [Non-MQA probe skip](modules/mqa.md) | Skip hciplayer's shadow MQA decoder on non-MQA FLAC/PCM tracks |
 | [Playback settings](modules/playset.md) | Grouped Playback Settings page |
 | [Volume page](modules/volume.md) | Status bar tap's own Volume page |
 | [Scrobbling](modules/scrobble.md) | Card log, ListenBrainz and Last.fm upload |

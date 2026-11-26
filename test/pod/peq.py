@@ -294,9 +294,10 @@ def player_tests(ctx):
     expect(segs[-1][1][:3] == (1, segs[-1][1][1], mod_player.PLAYER_BASE) and segs[-1][1][6] == 7, 'the spare PT_NULL is the payload LOAD at 0xe10000, RWX')
     diff = [i for i in range(0, len(stock), 4) if stock[i:i + 4] != built[i:i + 4]]
     want = {pod.fileoff(stock, a) for a in [mod_player.EQ_OPEN_SLOT, mod_player.SETEQ_CALL] + [a for a, _, _ in mod_player.RATE_GATES]
-            + [a for a, _, _ in mod_player.ICY_CALLS] + [a for a, _, _ in mod_player.AO_SLOTS] + [a for a, _, _ in mod_player.UNINIT_CALLS]}
+            + [a for a, _, _ in mod_player.MQA_PROBE_RET] + [a for a, _, _ in mod_player.ICY_CALLS]
+            + [a for a, _, _ in mod_player.AO_SLOTS] + [a for a, _, _ in mod_player.UNINIT_CALLS]}
     phdr = segs[-1][0]
-    expect(set(diff) - set(range(phdr, phdr + 32)) == want, f'only the open slot, the two gates, the mcl-seteq flag call, the two ICY tap calls, the ao_alsa slots, the end-of-track cleanup call and the program header change in the stock bytes ({[hex(i) for i in diff][:8]})')
+    expect(set(diff) - set(range(phdr, phdr + 32)) == want, f'only the open slot, the two gates, the two MQA probe returns, the mcl-seteq flag call, the two ICY tap calls, the ao_alsa slots, the end-of-track cleanup call and the program header change in the stock bytes ({[hex(i) for i in diff][:8]})')
 
     # open: control, uninit and play set, mul 1, data and setup allocated
     p = Player()

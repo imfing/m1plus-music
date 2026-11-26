@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""The player side of the parametric EQ and of Mono Audio / Crossfeed: hciplayer's equalizer filter replaced by
-patch/peq_player.c (docs/modules/peq.md, docs/modules/stereo.md).
+"""The player side of the parametric EQ, Mono Audio / Crossfeed, Crossfade, VU tap, radio ICY tap and MQA probe skip:
+hciplayer's equalizer filter replaced by patch/peq_player.c (docs/modules/peq.md, docs/modules/stereo.md,
+docs/modules/crossfade.md, docs/modules/vu.md, docs/modules/radio.md, docs/modules/mqa.md).
 
 hciplayer (/usr/bin/hciplayer, the audio daemon: MPlayer 1.3.0 modified) is pinned by SHA-256. Its final program
 header is an unused PT_NULL; pod.py's append_payload turns it into a file-backed PT_LOAD (RWX) at PLAYER_BASE holding the
 payload (patch/peq.c, patch/stereo.c, patch/vu.c and patch/peq_player.c, built with PEQ_PLAYER, non-PIC, linked at PLAYER_BASE, no .bss: per-instance
-state is heap). Four edits, each pinned with its neighbours and the facts the C code reads:
+state is heap). Five edit groups, each pinned with its neighbours and the facts the C code reads:
 
   * the equalizer's af_info open slot (EQ_OPEN_SLOT, stock af_equalizer open 0x44fd14) becomes peq_open;
   * stock skips the equalizer above 48 kHz in two places (RATE_GATES): the mcl-seteq command (beqz to the
@@ -14,7 +15,10 @@ state is heap). Four edits, each pinned with its neighbours and the facts the C 
   * the strtol call that parses mcl-seteq's flag (SETEQ_CALL) becomes peq_seteq_flag, which answers 2 for an off flag, so
     stock keeps the filter in the chain with its Equalizer switch off (the filter then passes the native format through
     unless Mono Audio or Crossfeed is on) and, when the filter must leave native pass-through, calls stock's removal
-    0x42929c so the playback loop adds a float one. The kill switch gets stock's own answer.
+    0x42929c so the playback loop adds a float one. The kill switch gets stock's own answer;
+  * the ICY metadata tap calls (ICY_CALLS) and Crossfade's ao_alsa slots and uninit/reinit calls (AO_SLOTS, UNINIT_CALLS);
+  * mqa_probe's two non-MQA return immediates (MQA_PROBE_RET: 0x42e548, 0x42e564) change from 1 to 0, so ordinary
+    FLAC/PCM tracks skip stock's shadow MQA decoder while real MQA tracks still return 2.
 
 libc is reached only through hciplayer's own PLT GOT slots (no new import): a stub sets $gp and $t8 (the slot, which
 the lazy resolver PLT0 expects) and jumps through it, as q2-pod's tools/peq.py does.
@@ -41,6 +45,11 @@ EQ_OPEN_SLOT, STOCK_OPEN = EQ_INFO + 0x14, 0x44fd14
 # (address, stock word, patched word)
 RATE_GATES = ((0x42ce34, 0x10400098, 0),             # mcl-seteq: beqz $v0, 0x42d098 ("setequalizer off") -> nop
               (0x42fa78, 0x14400052, 0x10000052))    # the insert: bnez $v0, 0x42fbc4 -> b 0x42fbc4
+# Non-MQA probe returns (docs/modules/mqa.md): mqa_probe (0x42e428) returns 1 when the track-start probe finds no MQA
+# (or a short/unaligned first read), causing reinit_audio_chain (0x42e940) to create the MQA decoder and feed every block
+# through it only to discard the output. Returning 0 skips the decoder while real MQA tracks still return 2.
+MQA_PROBE_RET = ((0x42e548, 0x24020001, 0x24020000),  # unaligned/short probe: addiu $v0, $zero, 1 -> 0
+                 (0x42e564, 0x24020001, 0x24020000))  # detector returned 0:   addiu $v0, $zero, 1 -> 0
 # The strtol call that parses mcl-seteq's flag (jal 0xadae10, the PLT stub of strtol): peq_seteq_flag takes it over.
 SETEQ_CALL, SETEQ_STOCK = 0x42cd1c, 0x0c2b6b84
 # Read-only ICY metadata tap (patch/icy.c, docs/modules/radio.md): MPlayer HTTP mp_msg (jal 0x445cec) and FFmpeg HTTPS av_opt_set (jal 0x6f86f0).
@@ -237,6 +246,30 @@ PINS = (
     (0x44601c, 0x8c8200d0, 'audio_pts: lw sh->pts_bytes (+0xd0)'),
     (0x446020, 0xd4800020, 'audio_pts: ldc1 sh->pts (+0x20)'),
     (0x446078, 0x8c83004c, 'audio_pts: lw sh->o_bps (+0x4c)'),
+    # MQA track-start probe (0x42e428, docs/modules/mqa.md) and its callers / play_audio gates.
+    (0x42e428, 0x27bdffd8, 'mqa_probe prologue: addiu $sp, $sp, -0x28'),
+    (0x42e430, 0x2403000b, 'mqa_probe: codec 11 (FLAC/PCM)'),
+    (0x42e450, 0x2403000d, 'mqa_probe: codec 13 (FLAC/PCM)'),
+    (0x42e478, 0x24020002, 'mqa_probe: stereo check (2 channels)'),
+    (0x42e47c, 0x1622fff8, 'mqa_probe: bne $s1, 2 -> return 0'),
+    (0x42e4d8, 0x0c1cbcc0, 'mqa_probe: jal 0x72f300 (alloc MQA detector)'),
+    (0x42e53c, 0x0c1cbcd8, 'mqa_probe: jal 0x72f360 (free detector on unaligned/short read)'),
+    (0x42e544, 0x1000ffc6, 'mqa_probe: b 0x42e460 (return path for 0x42e548 delay slot)'),
+    (0x42e550, 0x0c1cbce0, 'mqa_probe: jal 0x72f380 (run MQA detector)'),
+    (0x42e55c, 0x0c1cbcd8, 'mqa_probe: jal 0x72f360 (free detector after probe)'),
+    (0x42e560, 0x00408025, 'mqa_probe: move $s0, $v0 (detector result)'),
+    (0x42e568, 0x3a100001, 'mqa_probe: xori $s0, $s0, 1 (0 when real MQA)'),
+    (0x42e56c, 0x1000ffbc, 'mqa_probe: b 0x42e460 (return)'),
+    (0x42e570, 0x0230100a, 'mqa_probe: movz $v0, $s1, $s0 (real MQA returns 2)'),
+    (0x42e578, 0x2402ffff, 'mqa_probe: decode error returns -1'),
+    (0x42e924, 0x0c10b90a, 'reinit_audio_chain: jal 0x42e428 (mqa_probe, 0xc00 bytes)'),
+    (0x42e940, 0x19a001d1, 'reinit_audio_chain: blez $t5, 0x42f088 (skip MQA decoder when <= 0)'),
+    (0x42eeac, 0x0c10b90a, 'reinit_audio_chain: jal 0x42e428 (mqa_probe, 0x10000 bytes)'),
+    (0x42ea88, 0x0c1cbce2, 'reinit_audio_chain: jal 0x72f388 (create MQA decoder)'),
+    (0x42efbc, 0xad8d0c54, 'reinit_audio_chain: sw $t5, 0xc54($t4) (store mqa_mode)'),
+    (0x42f468, 0x8c420c54, 'fill_audio_out_buffers: lw mqa_mode (status check)'),
+    (0x42f690, 0x8c420c54, 'fill_audio_out_buffers: lw mqa_mode (decode gate)'),
+    (0x42f7cc, 0x8c420c54, 'fill_audio_out_buffers: lw mqa_mode (EOF flush gate)'),
 )
 NAME_AT, NAME = 0x885e2c, b'equalizer\0'
 DSD_DRV = (0x89b4f0, b'dsdiff\0')   # the vendor's DSD driver name, as the filter compares it
@@ -282,6 +315,8 @@ def check_stock(raw):
         pod.check(word(raw, a) == old, f'{a:#x} ({name}): ao_alsa slot {word(raw, a):#010x} != {old:#010x}')
     for a, old, _ in RATE_GATES:
         pod.check(word(raw, a) == old, f'{a:#x}: rate gate {word(raw, a):#010x} != {old:#010x}')
+    for a, old, _ in MQA_PROBE_RET:
+        pod.check(word(raw, a) == old, f'{a:#x}: mqa probe return {word(raw, a):#010x} != {old:#010x}')
     for a, old, what in PINS:
         pod.check(word(raw, a) == old, f'{a:#x} ({what}): {word(raw, a):#010x} != pinned {old:#010x}')
     for a, s in ((NAME_AT, NAME), DSD_DRV, *ICY_STRS):
@@ -330,6 +365,7 @@ def patch(raw, payload, syms):
     pod.check(PLAYER_BASE <= entry < PLAYER_BASE + len(payload), 'peq_open outside the payload')
     struct.pack_into('<I', image, pod.fileoff(image, EQ_OPEN_SLOT), entry)
     for a, _, new in RATE_GATES: struct.pack_into('<I', image, pod.fileoff(image, a), new)
+    for a, _, new in MQA_PROBE_RET: struct.pack_into('<I', image, pod.fileoff(image, a), new)
     flag = syms['peq_seteq_flag']
     pod.check(PLAYER_BASE <= flag < PLAYER_BASE + len(payload), 'peq_seteq_flag outside the payload')
     struct.pack_into('<I', image, pod.fileoff(image, SETEQ_CALL), 0x0c000000 | flag >> 2)
@@ -363,7 +399,8 @@ def apply(out):
     manifest = {'stock_sha256': PLAYER_SHA, 'patched_sha256': pod.sha(patched), 'base': PLAYER_BASE, 'gp': PLAYER_GP,
                 'payload_len': len(payload), 'payload_sha256': pod.sha(payload), 'segment_file_off': seg_off,
                 'open_slot': {'addr': EQ_OPEN_SLOT, 'stock': STOCK_OPEN, 'target': syms['peq_open']},
-                'rate_gates': [[a, old, new] for a, old, new in RATE_GATES], 'libc_slots': slots,
+                'rate_gates': [[a, old, new] for a, old, new in RATE_GATES],
+                'mqa_probe_ret': [[a, old, new] for a, old, new in MQA_PROBE_RET], 'libc_slots': slots,
                 'seteq_call': {'addr': SETEQ_CALL, 'stock': SETEQ_STOCK, 'target': syms['peq_seteq_flag']},
                 'uninit_calls': [{'addr': a, 'stock': old, 'target': syms[name], 'name': name} for a, old, name in UNINIT_CALLS],
                 'icy_calls': [{'addr': a, 'stock': old, 'target': syms[name], 'name': name} for a, old, name in ICY_CALLS],

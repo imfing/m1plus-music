@@ -75,10 +75,11 @@ Everything else is in the [documentation index](docs/README.md).
   released settings record changes format, the loader also reads the last released format, so
   users keep their choice; mark it temporary and drop it a few releases later.
 - Bluetooth work only for approved features ([Bluetooth](docs/modules/bluetooth.md)).
-  `hciplayer` is patched only for PEQ, Mono / Crossfeed, Crossfade, the read-only VU tap and the
-  read-only radio ICY metadata tap ([peq](docs/modules/peq.md), [stereo](docs/modules/stereo.md),
-  [crossfade](docs/modules/crossfade.md), [vu](docs/modules/vu.md), [radio](docs/modules/radio.md)).
-  Any other Bluetooth or `hciplayer` change needs a decision first.
+  `hciplayer` is patched only for PEQ, Mono / Crossfeed, Crossfade, the read-only VU tap, the
+  read-only radio ICY metadata tap and the non-MQA probe skip ([peq](docs/modules/peq.md),
+  [stereo](docs/modules/stereo.md), [crossfade](docs/modules/crossfade.md), [vu](docs/modules/vu.md),
+  [radio](docs/modules/radio.md), [mqa](docs/modules/mqa.md)). Any other Bluetooth or `hciplayer`
+  change needs a decision first.
 - Module docs describe the code as it is now: behaviour, interfaces, constraints and sources.
   Allowed on main: known limitations and gaps, and short "possible improvements".
 - Planning is for implementation only. Leave none of it on main: no handover, phases,
