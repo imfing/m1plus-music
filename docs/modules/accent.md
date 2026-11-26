@@ -155,6 +155,7 @@ the Show page's Latest Episode pill, Now Playing's and Radio's transport buttons
 | Own progress fills (Home cache pill, Podcasts refresh dialog, Update download popup) | role `#EBEBEC` becomes the accent; the track stays neutral |
 | Pressed rows of bottom sheets and floating cards | role `#FFFFFD10` (white at 6 % alpha over glass) becomes the accent at 22 % alpha, so the glass shows through |
 | Index rail selected-letter disc | `pal_fill()`; the letter on it stays black (the rule of every accent fill) |
+| Cover Flow Slider swell (dragged) | the ticks turn from the ink to `pal_fill()` by the swell's Gaussian (the peak tick is the accent); the needle stays the ink, the far ticks, the dot and the resting ticks grey |
 | Per-row select mark (Songs, album page, Folders, Playlists, Podcasts) | tinted when baked: white becomes the accent, the black tick stays; follows at the next open |
 | EQ value parts (10-Band thumbs, band slider fill, graph curve and fill) | baked with the accent (`tb_acc()`); tracks, grid, cards, value pill stay; not followed under an open page |
 | Podcasts progress ring and Navidrome download ring | the arc is tinted in our own RGBA copy, not by name; the marks inside it stay |

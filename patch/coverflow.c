@@ -560,7 +560,7 @@ static struct {
     int snap_from, snap_to, snap_ms;
     unsigned snap_t0, snap_timer;
     /* the main page's "..." card and scrubber (an artist's page has neither): the card (vs.card NULL: no card), the order shown (CC_SORT_*, reversed) and for Year each stock row's year
-     * (cc_album_order_years, else NULL); the scrubber's widgets (scrub NULL: none), a finger on it, the playing album's place found when it went down (-1 none), the position its
+     * (cc_album_order_years, else NULL); the scrubber's widgets (scrub NULL: none), a finger on it, the playing album's place found when it went down (-1 none), the swell centre its
      * ticks were last painted at, and the bubble's small font (a year) */
     vs_t vs;
     void *more;
@@ -1534,8 +1534,8 @@ static void pick_start(void) {
 /* ---------------------------------------------------------------------------
  * The main page's "..." card and scrubber (docs/modules/coverflow.md "Menu" and "Scrubber"); an artist's page has neither.
  * The card is the Albums page's (patch/viewsort.c): Search Albums, Playing Album, then the sort rows of the order both pages
- * share (cc_sort_mode): a sort row reorders the shelf in place and keeps the centre album. The scrubber is a row of ticks under the
- * captions spanning the shelf from its first album to its last; the ticks swell around the shelf's position. A finger on it jumps the
+ * share (cc_sort_mode): a sort row reorders the shelf in place and keeps the centre album. The scrubber is a row of evenly spaced ticks under the
+ * captions spanning the shelf from its first album to its last; the ticks swell, mirrored, around the tick nearest the shelf's position. A finger on it jumps the
  * shelf to the album under it (no easing): the ticks grow, a needle marks the position and a dot the playing album, the bubble over
  * the centre cover shows the section (the title's or the artist's initial, the year; none in the Recently Added order) and the
  * counter the album's place. Portrait depth mode only, CF_SCRUB_MIN albums or more.
@@ -1556,6 +1556,10 @@ static int bell(int d, int sigma) {
 #define TICK_SPAN ((cf.land ? CFL_TICK_X1 : CF_TICK_X1) - TICK_X0)
 #define TICK_Y (cf.land ? CFL_TICK_Y : CF_TICK_Y)
 #define DOT_DY (cf.land ? CFL_DOT_DY : CF_DOT_DY)
+#define TICK_PITCH (TICK_SPAN / (CF_TICKS - 1))
+/* the ticks a whole number of px apart, so the ticks either side of one are at the same distances */
+typedef char cf_tick_pitch_check
+    [(CF_TICK_X1 - CF_TICK_X0) % (CF_TICKS - 1) == 0 && (CFL_TICK_X1 - CFL_TICK_X0) % (CF_TICKS - 1) == 0 ? 1 : -1];
 
 /* Settings > Library > Cover Flow > Slider (CFBAR_FILE): on unless the file says "0". The page reads it when it shows its covers (scrub_show). */
 int coverflow_bar(void) { return set_read(CFBAR_FILE, 0) != '0'; }
@@ -1584,6 +1588,11 @@ static int scrub_x(void) {
     return tick_x(c * 256 + (frac >> 8));
 }
 
+/* The swell's centre for position x: the nearest tick, so it is mirrored however the albums fall between the ticks. */
+static int swell_x(int x) {
+    return TICK_X0 + clamp_i((x - TICK_X0 + TICK_PITCH / 2) / TICK_PITCH, 0, CF_TICKS - 1) * TICK_PITCH;
+}
+
 /* The album under x. */
 static int index_at(int x) {
     int n = count();
@@ -1609,20 +1618,24 @@ static unsigned blend(unsigned bg, unsigned ink, int a) {
     return c;
 }
 
-/* The scrubber's EVT_AFTER_PAINT: the ticks over the page's own background (the shelf's colour), the needle and the playing album's dot while a finger is on it. */
+/* The scrubber's EVT_AFTER_PAINT: the ticks over the page's own background (the shelf's colour), the needle and the playing album's dot while a finger is on it. Under an accent a
+ * dragged swell turns from the ink to the accent by the same Gaussian (the peak tick is the accent); the needle stays the ink so it stands out of it. At rest the ticks are grey. */
 static int on_scrub_paint(void *ctx, void *e) {
     void *canvas = e ? *(void **)((char *)e + EVENT_PAINT_CANVAS) : (void *)0;
-    unsigned bg = pal_light() ? LIGHT_PAPER * 0x010101u : pal_map(0xff000000u) & 0xffffffu, ink;
-    int i, x0, on = cf.scrubbing;
+    unsigned bg = pal_light() ? LIGHT_PAPER * 0x010101u : pal_map(0xff000000u) & 0xffffffu, ink, acc;
+    int i, x0, xc, on = cf.scrubbing;
     (void)ctx;
     if (!canvas || !scrub_on()) return RET_OK;
     ink = ui_ink(0xffffffffu) & 0xffffffu;
-    x0 = cf.scrub_px = scrub_x();
+    acc = on && pal_accent() ? pal_fill() & 0xffffffu : ink;
+    x0 = scrub_x();
+    xc = cf.scrub_px = swell_x(x0);
     for (i = 0; i < CF_TICKS; ++i) {
-        int x = TICK_X0 + i * TICK_SPAN / (CF_TICKS - 1), g = bell(m1_abs(x - x0), on ? CF_DRAG_SIGMA : CF_REST_SIGMA);
+        int x = TICK_X0 + i * TICK_PITCH, g = bell(m1_abs(x - xc), on ? CF_DRAG_SIGMA : CF_REST_SIGMA);
         int h = (on ? CF_DRAG_H : CF_REST_H) + ((on ? CF_DRAG_BUMP : CF_REST_BUMP) * g + 128) / 256;
-        canvas_set_fill_color(
-            canvas, blend(bg, ink, (on ? CF_DRAG_A : CF_REST_A) + ((on ? CF_DRAG_DA : CF_REST_DA) * g + 128) / 256));
+        canvas_set_fill_color(canvas,
+                              blend(bg, blend(ink, acc, g) & 0xffffffu,
+                                    (on ? CF_DRAG_A : CF_REST_A) + ((on ? CF_DRAG_DA : CF_REST_DA) * g + 128) / 256));
         band_fill(canvas, x - 1, TICK_Y - h / 2, CF_TICK_W, h);
     }
     if (on) {
@@ -1642,7 +1655,7 @@ static int on_scrub_paint(void *ctx, void *e) {
 
 /* The shelf moved: the ticks again when their swell moved (a finger on them: always). */
 static void scrub_redraw(void) {
-    if (scrub_on() && (cf.scrubbing || scrub_x() != cf.scrub_px)) widget_invalidate_force(cf.scrub, (void *)0);
+    if (scrub_on() && (cf.scrubbing || swell_x(scrub_x()) != cf.scrub_px)) widget_invalidate_force(cf.scrub, (void *)0);
 }
 
 /* The scrubber shown when the shelf has one. */

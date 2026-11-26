@@ -1358,7 +1358,7 @@ def menu_tests(ctx):
     needle = [r for r in f if r[3] == O['CF_NEEDLE_W'] and r[4] == O['CF_NEEDLE_H']]
     expect(len(f) == O['CF_TICKS'] + 1 and len(needle) == 1 and needle[0][1] == O['CF_TICK_X1'] - 1,
            'dragged: the ticks and the needle on the position (nothing plays: no dot)')
-    expect(max(r[4] for r in f if r[3] == O['CF_TICK_W']) == O['CF_DRAG_H'] + O['CF_DRAG_BUMP'], 'the ticks grow while a finger is on them')
+    expect(max(r[4] for r in f if r[3] == O['CF_TICK_W'] and r[4] != O['CF_NEEDLE_H']) == O['CF_DRAG_H'] + O['CF_DRAG_BUMP'], 'the ticks grow while a finger is on them')
     x5 = O['CF_TICK_X0'] + 5 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11
     # a move only notes its x and arms the page's one-shot timer: the turn applies the last one (stock's 20-event queue drops what a slow handler leaves waiting)
     turn_timer = ('timer_add', PSYMS['on_scrub_turn'], 1)
@@ -1369,6 +1369,27 @@ def menu_tests(ctx):
     expect(shelf_value(m) == 11 and not any(c[0] == 'timer_add' or c[0].startswith('widget_') for c in m.calls), 'more moves in the same turn: the one timer, still nothing set')
     fired(m, 'on_scrub_turn')
     expect(shelf_value(m) == 5 and ('widget_set_text_utf8', m.widgets['cf_count'], '6 of 12') in m.calls, 'the turn puts the shelf under the last move')
+    # album 5 of 12 falls between two ticks: the swell is on the nearest one, mirrored about it (height and colour), the needle on the exact place
+    f = paint(m)
+    ticks = [r for r in f if r[3] == O['CF_TICK_W'] and r[4] != O['CF_NEEDLE_H']]
+    pitch = (O['CF_TICK_X1'] - O['CF_TICK_X0']) // (O['CF_TICKS'] - 1)
+    x0 = O['CF_TICK_X0'] + 5 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11
+    pk = (x0 - O['CF_TICK_X0'] + pitch // 2) // pitch
+    side = [(ticks[pk - k][0], ticks[pk - k][4], ticks[pk + k][0], ticks[pk + k][4]) for k in range(1, min(pk, len(ticks) - 1 - pk) + 1)]
+    expect(len(ticks) == O['CF_TICKS'] and ticks[pk][4] == max(r[4] for r in ticks) and all(a == c and b == d for a, b, c, d in side) and (x0 - O['CF_TICK_X0']) % pitch,
+           f'dragged between ticks: the swell mirrored about the nearest tick ({side[:4]})')
+    expect([r[1] for r in f if r[4] == O['CF_NEEDLE_H']] == [x0 - 1], 'the needle stays on the exact place, centred like a tick')
+    needle_rgb = lambda f: [struct.pack('<I', r[0])[:3] for r in f if r[4] == O['CF_NEEDLE_H']]
+    expect(needle_rgb(f) == [b'\xff\xff\xff'], 'Neutral: the needle is the ink (white on black)')
+    ma = shelf(**{'/mnt/data/m1plus/appearance-accent': b'4\n'})   # Teal
+    scrub(ma, 'down', x0); fa = paint(ma)
+    ta = [r for r in fa if r[4] != O['CF_NEEDLE_H']]
+    peak_a = O['CF_DRAG_A'] + O['CF_DRAG_DA']
+    expect(needle_rgb(fa) == [b'\xff\xff\xff'] and struct.pack('<I', ta[pk][0])[:3] == bytes(c * peak_a // 255 for c in (0x40, 0xc8, 0xe0))
+           and ta[0][0] == ticks[0][0] and ta[-1][0] == ticks[-1][0] and [r[4] for r in ta] == [r[4] for r in ticks],
+           f'an accent: the dragged swell turns to the accent (the peak tick is it), the far ticks keep their greys, the needle stays white ({hex(ta[pk][0])})')
+    scrub(ma, 'up', x0); fr = paint(ma)
+    expect(len(fr) == O['CF_TICKS'] and all(len(set(struct.pack('<I', r[0])[:3])) == 1 for r in fr), 'an accent at rest: the ticks stay grey')
     # the covers wait while the shelf moves under the finger: a decode tick comes back until the shelf has stayed on one album CF_SCRUB_SETTLE_MS, then decodes
     settle, decoded = O['CF_SCRUB_SETTLE_MS'], lambda c: any(k[0] == 'widget_load_image' for k in c)
     c = fired(m, 'on_load')

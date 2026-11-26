@@ -10,6 +10,7 @@ as patch/coverflow.c lays them in the frame's logical axes (CFL_*), shown as the
 
 Usage: uv run python -I tools/preview/preview_cfmenu.py WORKDIR OUT.png
        uv run python -I tools/preview/preview_cfmenu.py WORKDIR --landscape OUT.png
+       uv run python -I tools/preview/preview_cfmenu.py WORKDIR --accents OUT.png     (the dragged dial under each accent: the swell turns to it, the needle stays white)
 """
 import argparse, math, os, sys
 from PIL import Image, ImageDraw
@@ -19,6 +20,7 @@ import preview_cover as PC
 import preview_icons as PI
 import preview_songs as PS
 import pod_ui
+import palette
 hostcf = PC.hostcf
 TOP = 480 - pod_ui.CLIENT_H          # the status bar above the page's client area
 O = PI.offsets()
@@ -49,15 +51,27 @@ def bell(d, sigma):
 def grey(a): return (a, a, a, 255)   # patch/coverflow.c blend over the black page: a of 255 of the way to white
 
 
-def scrubber(im, frac, drag=False, playing=None):
-    """patch/coverflow.c on_scrub_paint, the same integer rectangles: CF_TICKS ticks swelling around the position; dragged, taller and brighter, the needle and the playing album's dot."""
+def tick(a, g, acc):
+    """A tick's colour: a of 255 from the black page to the ink, which a dragged swell under an accent turns into the accent by g (patch/coverflow.c on_scrub_paint)."""
+    return grey(a) if acc is None else tuple((255 + (c - 255) * g // 255) * a // 255 for c in acc) + (255,)
+
+
+def swell_x(x, x0s, span):
+    """patch/coverflow.c swell_x: the tick nearest x (the swell's centre)."""
+    p = span // (O['CF_TICKS'] - 1)
+    return x0s + min(max((x - x0s + p // 2) // p, 0), O['CF_TICKS'] - 1) * p
+
+
+def scrubber(im, frac, drag=False, playing=None, acc=None):
+    """patch/coverflow.c on_scrub_paint, the same integer rectangles: CF_TICKS ticks swelling around the tick nearest the position; dragged, taller and brighter, the needle on the
+    position and the playing album's dot."""
     d = ImageDraw.Draw(im); y = TOP + O['CF_SCRUB_Y'] + O['CF_TICK_Y']; span = O['CF_TICK_X1'] - O['CF_TICK_X0']
-    x0 = O['CF_TICK_X0'] + round(frac * span)
+    x0 = O['CF_TICK_X0'] + round(frac * span); xc = swell_x(x0, O['CF_TICK_X0'], span)
     pre = 'CF_DRAG_' if drag else 'CF_REST_'
     for i in range(O['CF_TICKS']):
-        x = O['CF_TICK_X0'] + i * span // (O['CF_TICKS'] - 1); g = bell(abs(x - x0), O[pre + 'SIGMA'])
+        x = O['CF_TICK_X0'] + i * span // (O['CF_TICKS'] - 1); g = bell(abs(x - xc), O[pre + 'SIGMA'])
         h = O[pre + 'H'] + (O[pre + 'BUMP'] * g + 128) // 256; a = O[pre + 'A'] + (O[pre + 'DA'] * g + 128) // 256
-        d.rectangle((x - 1, y - h // 2, x - 1 + O['CF_TICK_W'] - 1, y - h // 2 + h - 1), fill=grey(a))
+        d.rectangle((x - 1, y - h // 2, x - 1 + O['CF_TICK_W'] - 1, y - h // 2 + h - 1), fill=tick(a, g, acc if drag else None))
     if drag:
         d.rectangle((x0 - 1, y - O['CF_NEEDLE_H'] // 2, x0 - 2 + O['CF_NEEDLE_W'], y - O['CF_NEEDLE_H'] // 2 + O['CF_NEEDLE_H'] - 1), fill=grey(255))
         if playing is not None:
@@ -103,16 +117,16 @@ def band_fill(im, x, y, w, h, rgb):
     ImageDraw.Draw(im).rectangle((x, O['CFL_SCRUB_Y'] + y, x + w - 1, O['CFL_SCRUB_Y'] + y + h - 1), fill=rgb + (255,))
 
 
-def land_scrubber(im, frac, drag=False, playing=None):
+def land_scrubber(im, frac, drag=False, playing=None, acc=None):
     """patch/coverflow.c on_scrub_paint in landscape, the same integer rectangles in the band: the ticks along CFL_TICK_X0 .. CFL_TICK_X1 on the line CFL_TICK_Y; dragged,
     taller and brighter, the needle and the playing album's dot (CFL_DOT_DY above the line)."""
     x0s, span, ty = O['CFL_TICK_X0'], O['CFL_TICK_X1'] - O['CFL_TICK_X0'], O['CFL_TICK_Y']
-    x0 = x0s + round(frac * span)
+    x0 = x0s + round(frac * span); xc = swell_x(x0, x0s, span)
     pre = 'CF_DRAG_' if drag else 'CF_REST_'
     for i in range(O['CF_TICKS']):
-        x = x0s + i * span // (O['CF_TICKS'] - 1); g = bell(abs(x - x0), O[pre + 'SIGMA'])
+        x = x0s + i * span // (O['CF_TICKS'] - 1); g = bell(abs(x - xc), O[pre + 'SIGMA'])
         h = O[pre + 'H'] + (O[pre + 'BUMP'] * g + 128) // 256; a = O[pre + 'A'] + (O[pre + 'DA'] * g + 128) // 256
-        band_fill(im, x - 1, ty - h // 2, O['CF_TICK_W'], h, grey(a)[:3])
+        band_fill(im, x - 1, ty - h // 2, O['CF_TICK_W'], h, tick(a, g, acc if drag else None)[:3])
     if drag:
         band_fill(im, x0 - 1, ty - O['CF_NEEDLE_H'] // 2, O['CF_NEEDLE_W'], O['CF_NEEDLE_H'], (255, 255, 255))
         if playing is not None:
@@ -169,13 +183,31 @@ def landscape_sheet(work, out):
     PI.save_compact(sheet, out); print('wrote', out, sheet.size)
 
 
+def accents_sheet(work, out):
+    """The dragged dial under each accent (Neutral first): the swell turns from the ink to the accent (patch/coverflow.c on_scrub_paint, pal_fill()); the needle stays white, the far ticks and the dot grey."""
+    s = PI.Side(work, True)
+    base = shot(s, work, 'Moving Pictures', 'Rush', SHELF)
+    y0, h = TOP + O['CF_SCRUB_Y'] - 8, O['CF_SCRUB_H'] + 8
+    pad, lab = 12, 20
+    sheet = Image.new('RGB', (320 + 2 * pad, len(palette.ACCENTS) * (h + lab + pad) + pad), (0x2A, 0x2A, 0x2A)); d = ImageDraw.Draw(sheet)
+    for i, ac in enumerate(palette.ACCENTS):
+        im = base.copy(); scrubber(im, 0.55, True, 0.46, palette.ACCENT_RGB.get(ac)); counter(s, im, '663 of 1204')
+        y = pad + i * (h + lab + pad); d.text((pad, y), ac.title(), fill=(0xAA,) * 3, font=PI.ANN)
+        sheet.paste(im.crop((0, y0, 320, y0 + h)).convert('RGB'), (pad, y + lab))
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    PI.save_compact(sheet, out); print('wrote', out, sheet.size)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('work'); ap.add_argument('out', nargs='?', help='the portrait sheet')
     ap.add_argument('--landscape', metavar='PNG', help='write only the landscape sheet (the player held turned) here')
+    ap.add_argument('--accents', metavar='PNG', help='write only the dragged dial under each accent here')
     a = ap.parse_args()
     if a.landscape:
         landscape_sheet(a.work, a.landscape); return
+    if a.accents:
+        accents_sheet(a.work, a.accents); return
     if not a.out: ap.error('OUT.png or --landscape PNG')
     s = PI.Side(a.work, True)
     panels = []

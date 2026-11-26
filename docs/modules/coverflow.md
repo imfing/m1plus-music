@@ -144,12 +144,18 @@ hidden and takes no touch.
   along the band is the local y of the view (`widget_to_local`, as `where()`), so a press maps by the
   same `index_at`; the finger's distance across the band does not matter.
 - **Paint:** its own `EVT_AFTER_PAINT` draws `CF_TICKS` (46) ticks, 2 px wide, as opaque blends of
-  the page background and the ink (Light and Tinted included). A tick's height and brightness follow
-  a Gaussian of its distance from the shelf's position (`bell`, a byte table of exp(-u) in eighths):
-  at rest a low swell (`CF_REST_*`), with a finger on it a taller, brighter one (`CF_DRAG_*`), a
-  3 x 32 px needle on the position and (outside Recently Added) a 4 px dot over the playing album.
-  The position is the visual one, so the swell follows a drag of the covers; `redraw()` repaints the
-  ticks only when their position moved.
+  the page background and the ink (Light and Tinted included). The ticks are a whole number of px
+  apart (6 portrait, 8 landscape; a compile-time check holds `CF_TICKS - 1` dividing each span) and
+  centred in the band. A tick's height and brightness follow a Gaussian of its distance from the
+  tick nearest the shelf's position (`swell_x`; `bell`, a byte table of exp(-u) in eighths), so the
+  swell is mirrored wherever the albums fall between ticks and steps tick by tick: at rest a low
+  swell (`CF_REST_*`), with a finger on it a taller, brighter one (`CF_DRAG_*`), a 2 x 32 px needle
+  on the exact position in the ink (as wide as a tick, drawn the same way, so it covers a tick it is
+  on) and (outside Recently Added) a 4 px dot over the playing album. Under an accent the dragged
+  swell turns from the ink to the accent by the same Gaussian, so its peak tick is the accent and
+  the white needle stands out of it; the resting ticks stay grey ([accent](accent.md)). The position is the visual one, so
+  the swell follows a drag of the covers; `redraw()` repaints the ticks only when the swell's tick
+  changes.
 - **Touch:** down grabs the gesture (`widget_grab` on the window) and jumps the shelf to the album
   under the finger (`index_at`, no easing). The playing album is looked up once, at down.
 - **Moves are applied once per main-loop turn.** A move only notes its x and arms a one-shot timer
