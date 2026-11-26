@@ -567,7 +567,7 @@ static struct {
     int sort, rev;
     unsigned *years;
     void *scrub, *count_lab, *bubble, *bubble_letter;
-    int scrubbing, play_at, scrub_px, bub_small, bar; /* (bar: the Scroll Bar setting as scrub_show last read it) */
+    int scrubbing, play_at, scrub_px, bub_small, bar; /* (bar: the Slider setting as scrub_show last read it) */
     /* the bubble's and the counter's text while a finger is down ("" none); landscape draws them into the frame */
     char bub_txt[8], cnt_txt[24];
     /* a finger moving on the scrubber: the x of its last move and the one-shot timer that applies it (0: none waiting) */
@@ -1557,7 +1557,7 @@ static int bell(int d, int sigma) {
 #define TICK_Y (cf.land ? CFL_TICK_Y : CF_TICK_Y)
 #define DOT_DY (cf.land ? CFL_DOT_DY : CF_DOT_DY)
 
-/* Settings > Library > Cover Flow > Scroll Bar (CFBAR_FILE): on unless the file says "0". The page reads it when it shows its covers (scrub_show). */
+/* Settings > Library > Cover Flow > Slider (CFBAR_FILE): on unless the file says "0". The page reads it when it shows its covers (scrub_show). */
 int coverflow_bar(void) { return set_read(CFBAR_FILE, 0) != '0'; }
 
 /* Flip it (atomic write, patch/home.c); the new state, or -1 when it could not be saved. */

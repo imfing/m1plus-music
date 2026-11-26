@@ -1269,7 +1269,7 @@ def library_tests(ctx, on_row):
     vk_i = next(i for i, r in enumerate(C.rows) if r.action == P.ACT_VOLKEYS)
     vsw, VK = f'pod_switch{vk_i}', '/mnt/data/m1plus/coverflow-volume-keys'
     sw = f'pod_switch{land_i}'
-    expect([(r.label, r.action) for r in C.rows] == [('Update Library', P.ACT_PAGE), ('Rebuild Covers', P.ACT_REBUILD), ('Rebuild Artist Photos', P.ACT_AREBUILD), ('Split Artists', P.ACT_ASPAGE), ('Split Genres', P.ACT_GSPAGE), ('Index Rail', P.ACT_AZRAIL), ('Section Headers', P.ACT_AZHEAD), ('Folder Album Cover', P.ACT_FOLDERCOVER), ('Landscape', P.ACT_LANDSCAPE), ('Start At', P.ACT_CFSTART), ('Scroll Bar', P.ACT_CFBAR), ('Volume Buttons', P.ACT_VOLKEYS), ('Podcasts', P.ACT_PAGE), ('Scrobbling', P.ACT_SCROBPAGE)]
+    expect([(r.label, r.action) for r in C.rows] == [('Update Library', P.ACT_PAGE), ('Rebuild Covers', P.ACT_REBUILD), ('Rebuild Artist Photos', P.ACT_AREBUILD), ('Split Artists', P.ACT_ASPAGE), ('Split Genres', P.ACT_GSPAGE), ('Index Rail', P.ACT_AZRAIL), ('Section Headers', P.ACT_AZHEAD), ('Folder Album Cover', P.ACT_FOLDERCOVER), ('Landscape', P.ACT_LANDSCAPE), ('Start At', P.ACT_CFSTART), ('Slider', P.ACT_CFBAR), ('Volume Buttons', P.ACT_VOLKEYS), ('Podcasts', P.ACT_PAGE), ('Scrobbling', P.ACT_SCROBPAGE)]
            and C.title == 'Library' and C.rows[0].arg == P.LIBUPDATE_PAGE_INDEX and P.row_kind(C.rows[0]) == 'link',
            'the Library page: one card of Update Library (our page, a chevron), Rebuild Covers, Rebuild Artist Photos, then the List Navigation switches (Index Rail, Section Headers), Folder Album Cover (a switch) under Folders, Landscape and Volume Buttons (switches, the second with its note) under Cover Flow, and the last card of two rows: Podcasts (a plain page link, no value) and Scrobbling (a value, On or Off)')
 
@@ -1313,12 +1313,12 @@ def library_tests(ctx, on_row):
 
     # Volume Buttons: its own setting file (the Cover Flow page reads it), a switch with a note below, off by default
     layout = [f'{type(x).__name__}:{getattr(x, "label", getattr(x, "text", ""))}' for x in C.layout]
-    expect(layout[layout.index('Row:Landscape'):][:5] == ['Row:Landscape', 'Row:Start At', 'Row:Scroll Bar', 'Row:Volume Buttons', 'Note:In Cover Flow, the volume buttons move between albums.'] and P.ACT_VOLKEYS == 89
-           and P.ACT_VOLKEYS in P.SWITCH_ACTIONS and P.row_kind(C.rows[vk_i]) == 'switch', f'Volume Buttons is a switch row (89) below Landscape, Start At and Scroll Bar, with its note ({layout})')
-    # Scroll Bar: a switch row (the scrubber of the main Cover Flow page; the file is a Settings Files row)
+    expect(layout[layout.index('Row:Landscape'):][:5] == ['Row:Landscape', 'Row:Start At', 'Row:Slider', 'Row:Volume Buttons', 'Note:In Cover Flow, the volume buttons move between albums.'] and P.ACT_VOLKEYS == 89
+           and P.ACT_VOLKEYS in P.SWITCH_ACTIONS and P.row_kind(C.rows[vk_i]) == 'switch', f'Volume Buttons is a switch row (89) below Landscape, Start At and Slider, with its note ({layout})')
+    # Slider: a switch row (the scrubber of the main Cover Flow page; the file is a Settings Files row)
     bar_i = next(i for i, r in enumerate(C.rows) if r.action == P.ACT_CFBAR)
-    expect(P.ACT_CFBAR == 223 and P.ACT_CFBAR in P.SWITCH_ACTIONS and P.row_kind(C.rows[bar_i]) == 'switch' and 'coverflow-scroll-bar' in P.SETTING_FILES,
-           'Scroll Bar is a switch row (223) between Start At and Volume Buttons, its file a Settings Files row')
+    expect(P.ACT_CFBAR == 223 and P.ACT_CFBAR in P.SWITCH_ACTIONS and P.row_kind(C.rows[bar_i]) == 'switch' and 'coverflow-slider' in P.SETTING_FILES,
+           'Slider is a switch row (223) between Start At and Volume Buttons, its file a Settings Files row')
     # Start At: a value row in the Cover Flow card opening its three-row picker (the file is a Settings Files row)
     expect([(r.label, r.action, r.arg) for r in P.CFSTART_PAGE.rows] == [('Playing Album', P.ACT_CFSTARTSET, 0), ('Last Position', P.ACT_CFSTARTSET, 1), ('First Album', P.ACT_CFSTARTSET, 2)]
            and P.CFSTART_PAGE.title == 'Start At' and P.PAGES[P.CFSTART_PAGE_INDEX] is P.CFSTART_PAGE and P.CFSTART_VALUES == ('Playing Album', 'Last Position', 'First Album')

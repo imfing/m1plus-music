@@ -44,7 +44,7 @@ To browse by artist, open **Artists** instead and choose an artist, then an albu
 drag through the covers and tap the centre cover to open its album. To jump far, drag along the
 ticks under the covers, in landscape too: a large letter or year shows where you are. Tap **…** to
 search, go to the album that is playing, or sort the albums (the order is shared with Albums). **Settings → Library →
-Cover Flow → Start At** chooses where Cover Flow opens, and **Scroll Bar** there turns the ticks
+Cover Flow → Start At** chooses where Cover Flow opens, and **Slider** there turns the ticks
 off. Songs tagged with several
 artists or genres can be listed under each name with **Settings → Library → Split Artists** and
 **Split Genres** ([library guide](library-guide.md#split-artists)).

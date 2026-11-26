@@ -950,12 +950,12 @@ def landscape_tests(ctx, asset):
 
 def landscape_scrub_tests(ctx):
     """The scrubber on the landscape page (docs/modules/coverflow.md "Scrubber"): its view turned over the band, the touch along it, the fills turned,
-    the bubble and the counter drawn into the frame; the Scroll Bar switch and portrait as before."""
+    the bubble and the counter drawn into the frame; the Slider switch and portrait as before."""
     expect = ctx.expect
     asset = ui_asset('m1plus_cover')
     SH, SY, TX0, TX1 = O['CFL_SCRUB_H'], O['CFL_SCRUB_Y'], O['CFL_TICK_X0'], O['CFL_TICK_X1']
     BEFORE_Y, PRESS_Y = pod.DATA['BEFORE_PRESS_Y'][0], pod.DATA['PRESSDOWN_Y'][0]
-    BAR_FILE = '/mnt/data/m1plus/coverflow-scroll-bar'
+    BAR_FILE = '/mnt/data/m1plus/coverflow-slider'
 
     def band(m, kind, lx, ly=SY + 20, t=1000):
         """A pointer event at the band's logical x lx (ly: across it, logical y): physical x = CFL_H - 1 - ly, screen y = 30 + CFL_Y + lx."""
@@ -1071,7 +1071,7 @@ def landscape_scrub_tests(ctx):
     band(m, 'up', TX1)
 
     # the switch, small libraries: no scrubber, no press taken, in landscape too
-    for what, m in (('Scroll Bar off', land_machine(albums=12, saved=b'1\n', extras=True, files={BAR_FILE: b'0\n'})),
+    for what, m in (('Slider off', land_machine(albums=12, saved=b'1\n', extras=True, files={BAR_FILE: b'0\n'})),
                     (f'under {O["CF_SCRUB_MIN"]} albums', land_machine(albums=O['CF_SCRUB_MIN'] - 1, saved=b'1\n', extras=True))):
         expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), f'{what}: no scrubber, the card stays')
         m.setword(BEFORE_Y, 460); band(m, 'down', TX1)
@@ -1454,11 +1454,11 @@ def menu_tests(ctx):
     expect(m.word(pod.DATA['BEFORE_PRESS_Y'][0]) == 460, 'no scrubber: a press there is not taken, stock\'s bottom-zone press stays (the Home swipe works)')
     m = shelf(extras=False)
     expect(shelf_value(m) == 0 and m.props.get((m.widgets['btn_backtoplayer'], 'style:normal:icon')) != 'ah_nav_play', 'an asset without them: the page works as before')
-    # Settings > Library > Cover Flow > Scroll Bar: on unless its file says 0; the page reads it when it shows its covers
-    BAR_FILE = '/mnt/data/m1plus/coverflow-scroll-bar'
-    expect(cdefs.defines(os.path.join(ROOT, 'patch', 'home.h'), strings=True)['CFBAR_FILE'] == BAR_FILE, 'the Scroll Bar file')
+    # Settings > Library > Cover Flow > Slider: on unless its file says 0; the page reads it when it shows its covers
+    BAR_FILE = '/mnt/data/m1plus/coverflow-slider'
+    expect(cdefs.defines(os.path.join(ROOT, 'patch', 'home.h'), strings=True)['CFBAR_FILE'] == BAR_FILE, 'the Slider file')
     m = shelf(**{BAR_FILE: b'0\n'})
-    expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), 'Scroll Bar off: no scrubber, the card stays')
+    expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), 'Slider off: no scrubber, the card stays')
     m.setword(pod.DATA['BEFORE_PRESS_Y'][0], 460); m.touch('down', O['CF_TICK_X1'], 20, fn='on_scrub')
     expect(shelf_value(m) == 0 and m.word(pod.DATA['BEFORE_PRESS_Y'][0]) == 460 and not any(c[0] == 'widget_grab' for c in m.calls), 'off: a press where the ticks were does nothing')
     for data in (b'1\n', b'', b'x'):

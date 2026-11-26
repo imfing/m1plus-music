@@ -213,7 +213,7 @@ ACT_SWAPKEYS = 196    # switch row (Buttons & Power): Swap Prev / Next, off by d
 ACT_VOLTAP = 219      # switch row (Buttons & Power): Tap for Volume, on by default; off makes the status bar tap do nothing (patch/volume.c vol_tap_toggle and vol_tap_open, /mnt/data/m1plus/volume-tap)
 ACT_COVNAME = 220     # switch row (the Cover page): Name on Cover, the playlist's PLC_FLAG_NAME (patch/plcpage.c plcpage_name; dimmed and inert while Albums is chosen)
 ACT_CFSTART = 221     # value row (Settings > Library > Cover Flow > Start At): Playing Album (default), Last Position or First Album (the saved file /mnt/data/m1plus/coverflow-start); opens its picker page (arg = the page index; patch/coverflow.c coverflow_start)
-ACT_CFBAR = 223       # switch row (Settings > Library > Cover Flow > Scroll Bar): on by default; off, the main Cover Flow page has no row of ticks (the saved file /mnt/data/m1plus/coverflow-scroll-bar; patch/coverflow.c coverflow_bar)
+ACT_CFBAR = 223       # switch row (Settings > Library > Cover Flow > Slider): on by default; off, the main Cover Flow page has no row of ticks (the saved file /mnt/data/m1plus/coverflow-slider; patch/coverflow.c coverflow_bar)
 ACT_CFSTARTSET = 222  # picker row (Start At): choose Playing Album (arg 0), Last Position (1) or First Album (2); a check shows on the chosen row (patch/coverflow.c coverflow_start_set)
 ACT_CRRUN = 210       # action row (Settings > Developer > Tools > Card Script): Run Now, starts /usr/bin/m1plus-run (patch/cardrun.c cardrun_run); reads Stop during a run and then SIGTERMs it (cardrun_stop); 211 is unused
 ACT_CRLOG = 212       # link row (Card Script): View Log, the log as a Release Notes page of our own (patch/relnotes.c cardlog_open)
@@ -836,7 +836,7 @@ COVLIST = Page('m1plus_covlist', 'm1plus_covlist_page', 'Missing Covers', kind='
 
 # Settings > Developer > Tools > Settings Files (patch/setfiles.c, docs/modules/settings.md "Settings Files"): the payload's own files as read when the page opens. The labels are the file names (identifiers, not translated).
 # Only the setting files (ACT_SFDEL) are tappable, while present: a tap deletes the file after a confirm. The guard files and the folder stay ACT_INFO (never deleted).
-SETTING_FILES = ('albums-view', 'albums-sort', 'artists-sort', 'genres-sort', 'composers-sort', 'songs-sort-rev', 'folders-sort', 'playlists-sort', 'playlists-meta', 'playlists-view', 'recently-added-view', 'coverflow-landscape', 'coverflow-volume-keys', 'cassette-theme', 'vinyl-record', 'vinyl-base', 'nowplaying-idle', 'nowplaying-lyrics-size', 'coverflow-start', 'coverflow-scroll-bar', 'nowplaying-position', 'nowplaying-shrink', 'pod-appearance',
+SETTING_FILES = ('albums-view', 'albums-sort', 'artists-sort', 'genres-sort', 'composers-sort', 'songs-sort-rev', 'folders-sort', 'playlists-sort', 'playlists-meta', 'playlists-view', 'recently-added-view', 'coverflow-landscape', 'coverflow-volume-keys', 'cassette-theme', 'vinyl-record', 'vinyl-base', 'nowplaying-idle', 'nowplaying-lyrics-size', 'coverflow-start', 'coverflow-slider', 'nowplaying-position', 'nowplaying-shrink', 'pod-appearance',
                  'appearance-accent', 'appearance-background', 'lockscreen-layout', 'appearance-index-rail', 'appearance-headers', 'home-recent-albums', 'home-daily-mix', 'home-menu', 'pulldown-tiles', 'keyboard-pinyin', 'keyboard-french', 'keyboard-english', 'keyboard-last', 'podcast-online-search', 'podcast-region',
                  'battery-percentage', 'battery-charge-limit', 'battery-history', 'playback-shuffle', 'playback-eq', 'playback-next-album', 'scrobbling', 'scrobble-auto', 'search-history', 'radio-view', 'radio-recent', 'covers-rebuild', 'artists-rebuild', 'wifi-networks', 'podcast-directory', 'led-dynamic', 'playback-mono', 'playback-crossfeed', 'library-artist-split', 'buttons-swap', 'volume-tap', 'library-genre-split', 'pulldown-labels', 'playback-crossfade', 'playback-crossfade-auto')
 GUARD_FILES = ('m1plus-start', 'm1plus-run', 'm1plus-bad', 'm1plus-off')
@@ -1000,7 +1000,7 @@ LIBRARY_PAGE = Page('m1plus_library', 'm1plus_library_page', 'Library', layout=[
     Hdr('Cover Flow'),
     Row('Landscape', ACT_LANDSCAPE),
     Row('Start At', ACT_CFSTART, CFSTART_PAGE_INDEX),
-    Row('Scroll Bar', ACT_CFBAR),
+    Row('Slider', ACT_CFBAR),
     Row('Volume Buttons', ACT_VOLKEYS),
     Note('In Cover Flow, the volume buttons move between albums.', lines=2),
     Row('Podcasts', ACT_PAGE, PCSET_PAGE_INDEX),   # the last card (after a note): a plain page link (ACT_PAGE), no value

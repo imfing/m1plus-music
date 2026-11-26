@@ -402,8 +402,8 @@ TEXT = dict([
     # Settings > Library > Cover Flow > Start At and the Cover Flow menu's Playing Album (patch/coverflow.c coverflow_start); machine translations, unreviewed
     _t('Start At', '起始位置', '起始位置', '開始位置', '시작 위치', 'Début', 'Start bei',
        'Inicio', 'Inizia da', 'เริ่มที่', 'Start', 'Начать с', 'Почати з'),
-    _t('Scroll Bar', '滚动条', '捲軸', 'スクロールバー', '스크롤 막대', 'Barre de défilement', 'Bildlaufleiste',
-       'Desplazamiento', 'Barra di scorrimento', 'แถบเลื่อน', 'Pasek przewijania', 'Полоса прокрутки', 'Смуга прокрутки'),   # Settings > Library > Cover Flow > Scroll Bar (patch/coverflow.c coverflow_bar); machine translations, unreviewed
+    _t('Slider', '滑块', '滑桿', 'スライダー', '슬라이더', 'Curseur', 'Schieberegler',
+       'Deslizador', 'Cursore', 'แถบเลื่อน', 'Suwak', 'Ползунок', 'Повзунок'),   # Settings > Library > Cover Flow > Slider (patch/coverflow.c coverflow_bar); machine translations, unreviewed
     _t('Playing Album', '正在播放的专辑', '正在播放的專輯', '再生中のアルバム', '재생 중인 앨범', 'Album en cours', 'Aktuelles Album',
        'Álbum en curso', 'Album in riproduzione', 'อัลบั้มที่กำลังเล่น', 'Odtwarzany album', 'Играющий альбом', 'Альбом, що грає'),
     _t('Last Position', '上次位置', '上次位置', '前回の位置', '마지막 위치', 'Dernière position', 'Letzte Position',

@@ -53,7 +53,7 @@ enum {
 int coverflow_start(void); /* the saved Start At mode; the main page and the Pod's Cover Flow open by it */
 int coverflow_start_set(int mode); /* the picker's rows: save it; the mode or -1 */
 int coverflow_bar(
-    void); /* Settings > Library > Cover Flow > Scroll Bar: the main page shows its row of ticks (the default) */
+    void); /* Settings > Library > Cover Flow > Slider: the main page shows its row of ticks (the default) */
 int coverflow_bar_toggle(void); /* flip it; the new state, or -1 when it could not be saved */
 unsigned coverflow_position(void); /* the key of the album last centred (the card's coverflow-position file), 0 none */
 void coverflow_position_save(unsigned key); /* save it (a zero key is not saved) */

@@ -129,8 +129,8 @@ page has no card (its left cap is Songs).
 
 `cf_scrub`, a transparent view under the captions (`CF_SCRUB_Y`, to the client's bottom), spans the
 shelf from its first album to its last. Depth mode and `CF_SCRUB_MIN` (10) albums or more only,
-portrait or landscape; never on an artist's page. **Settings > Library > Cover Flow > Scroll Bar** turns it off
-(`coverflow_bar`, `/mnt/data/m1plus/coverflow-scroll-bar`: `0` off, anything else or missing on);
+portrait or landscape; never on an artist's page. **Settings > Library > Cover Flow > Slider** turns it off
+(`coverflow_bar`, `/mnt/data/m1plus/coverflow-slider`: `0` off, anything else or missing on);
 the page reads the switch when it shows its covers (`scrub_show`), and with it off the view is
 hidden and takes no touch.
 
