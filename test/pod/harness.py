@@ -791,7 +791,10 @@ class Machine:
             self.calls.append(('widget_prepare_text_style', a0))
             self.cur_style = next((n for n, h in self.widgets.items() if h == a0), '')
             if a1 and a1 == self.canvas_mem:   # the canvas takes the widget's font and size (canvas_t @0x34 / @0xc)
-                size = {'label_album': 22, 'label_artist': 18, 'label_row_title': 21, 'label_row_sub': 18}.get(next((n for n, h in self.widgets.items() if h == a0), ''), 16)
+                wname = next((n for n, h in self.widgets.items() if h == a0), '')
+                size = {'label_album': 22, 'label_artist': 18, 'label_row_title': 21, 'label_row_sub': 18, 'cf_count': 13}.get(wname, 16)
+                if wname == 'cf_bubble_letter':   # the scrubber's bubble: its style as the payload last set it (56 px, a year smaller)
+                    size = next((v for w, k, v in reversed(getattr(self, 'styled', [])) if w == a0 and k == 'normal:font_size'), 56)
                 self.setword(a1 + O['CANVAS_FONT'], self.font_mem)
                 self.u.mem_write(a1 + O['CANVAS_FONT_SIZE'], struct.pack('<H', size))
         elif name == 'font_get_vmetrics':   # the 8 byte struct through the hidden pointer in $a0: ascent, descent, line gap

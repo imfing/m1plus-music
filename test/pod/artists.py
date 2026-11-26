@@ -71,8 +71,12 @@ def artists_tests(ctx):
     #      caption All albums over the artist, and the shelf still has its ends.
     lw, lh = O['CFL_W'], O['CFL_H']
     ml = artists_machine(); ml.fs['/mnt/data/m1plus/coverflow-landscape'] = b'1\n'; ml.canvas_mem = ml.alloc(0x80)
+    for n in ('cf_scrub', 'cf_count', 'cf_bubble', 'cf_bubble_letter'): ml.widget(n)   # the main page's extras, which an artist's page does not bind
     ml.call(open_, count=5000000); ml.call(PSYMS['ar_open'], a0=0, count=8000000)
     expect([(c[1], c[2]) for c in ml.calls if c[0] == 'bitmap_create_ex'] == [(lh, lw)], 'the artist\'s Cover Flow opens in landscape when that is saved')
+    ml.setword(pod.DATA['BEFORE_PRESS_Y'][0], 460); ml.touch('down', 10, 200, fn='on_scrub')
+    expect(ml.props.get((ml.widgets['cf_scrub'], 'visible'), 0) == 0 and ml.word(pod.DATA['BEFORE_PRESS_Y'][0]) == 460 and not any(c[0] == 'widget_grab' for c in ml.calls),
+           'an artist\'s landscape page has no scrubber: it is not shown and takes no press')
     def paint_land(m):
         ev = m.alloc(0x40); m.u.mem_write(ev, bytes(0x40)); m.setword(ev + O['EVENT_PAINT_CANVAS'], m.canvas_mem)
         m.glyphs.clear(); m.call(PSYMS['on_paint'], a0=0, a1=ev, count=400000000)

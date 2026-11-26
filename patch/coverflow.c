@@ -568,12 +568,12 @@ static struct {
     unsigned *years;
     void *scrub, *count_lab, *bubble, *bubble_letter;
     int scrubbing, play_at, scrub_px, bub_small, bar; /* (bar: the Scroll Bar setting as scrub_show last read it) */
-    /* a finger moving on the scrubber: the x of its last move and the one-shot timer that applies it (0: none waiting), and what the gesture cost, for the opt-in log (its
-     * start, the last event or turn, the longest wait between two, the counts) */
+    /* the bubble's and the counter's text while a finger is down ("" none); landscape draws them into the frame */
+    char bub_txt[8], cnt_txt[24];
+    /* a finger moving on the scrubber: the x of its last move and the one-shot timer that applies it (0: none waiting) */
     int scrub_want;
     unsigned scrub_timer;
-    unsigned sl_t0, sl_last, sl_gap, sl_moves, sl_turns;
-    int sl_x0, sl_x1, sl_y0; /* (the log's too: the press's and the release's x, the press's screen y) */
+    unsigned scrub_at; /* when the scrubber last moved the shelf (time_now_ms): on_load waits for it to rest */
 } cf __attribute__((section(".scratch")));
 
 /* The depth renderer's state: the frame, the textures of the covers around the visual position
@@ -831,10 +831,18 @@ static int fx_fill(int budget) {
     return more;
 }
 
+/* One decode per tick. While a finger is on the scrubber the shelf moves album by album with it, and a decode stalls the UI thread (the next move waits for it) for a cover the
+ * shelf has usually left by then: the tick waits until the shelf has stayed on one album CF_SCRUB_SETTLE_MS, then the covers come one per tick as at any other time. */
 static int on_load(const void *unused) {
+    unsigned rest;
     (void)unused;
     fx.load_timer = 0;
     if (cf.screen != CF_COVERS || !shelf_up()) return RET_OK;
+    rest = (unsigned)time_now_ms() - cf.scrub_at;
+    if (cf.scrubbing && rest < CF_SCRUB_SETTLE_MS) {
+        fx.load_timer = timer_add(on_load, (void *)0, CF_SCRUB_SETTLE_MS - rest);
+        return RET_OK;
+    }
     if (fx_fill(1)) fx.load_timer = timer_add(on_load, (void *)0, LOAD_MS);
     return RET_OK;
 }
@@ -916,6 +924,45 @@ static void captions_land(unsigned *d, int pitch, void *canvas) {
     caption_line(d, pitch, canvas, cf.artist, cc_str(r, REC_ARTIST), CFL_ARTIST_Y, ui_ink(0xffaaaaaau) & 0xffffffu);
 }
 
+/* How much of the pixel (x, y) of an n px square with corner radius r is inside it, 0..255: from the distance of the pixel's centre to the corner's circle, in quarter pixels. */
+static int round_cover(int x, int y, int n, int r) {
+    int dx = 0, dy = 0, d;
+    if ((unsigned)x >= (unsigned)n || (unsigned)y >= (unsigned)n) return 0;
+    if (x < r)
+        dx = 4 * (r - x) - 2;
+    else if (x >= n - r)
+        dx = 4 * (x - (n - r)) + 2;
+    if (y < r)
+        dy = 4 * (r - y) - 2;
+    else if (y >= n - r)
+        dy = 4 * (y - (n - r)) + 2;
+    d = (int)m1_isqrt((unsigned)(dx * dx + dy * dy));
+    return clamp_i(128 + 64 * (4 * r - d), 0, 255);
+}
+
+/* The scrubber's bubble and counter while a finger is on the ticks (text in cf.bub_txt / cf.cnt_txt, set by scrub_labels): the bubble is cf_bubble's square (the A-Z rail's, its
+ * fill and rim through the palette) centred on the centre cover with the letter or the year in the label's size, the counter is the line CFL_COUNT_Y in cf_count's size, under the
+ * centre cover. The widgets themselves stay hidden: text is drawn into the frame as the captions are. */
+static void scrub_land(unsigned *d, int pitch, void *canvas) {
+    if (*cf.bub_txt) {
+        int n = SG_BUBBLE, x0 = CFL_CX - n / 2, y0 = CFL_TOP + ART_SIZE / 2 - n / 2, x, y;
+        int px = cf.bub_small ? SG_BUBBLE_PX_YEAR : SG_BUBBLE_PX;
+        unsigned rim = pal_map(0xff3a3a3au) & 0xffffffu, fill = pal_map(0xff262626u) & 0xffffffu;
+        for (y = 0; y < n; ++y)
+            for (x = 0; x < n; ++x) {
+                unsigned *p = turned(d, pitch, x0 + x, y0 + y);
+                int o = round_cover(x, y, n, CFL_BUBBLE_R), i = round_cover(x - 1, y - 1, n - 2, CFL_BUBBLE_R - 1);
+                if (!p) continue;
+                if (o) *p = m1_mix(*p, rim, (unsigned)o);
+                if (i) *p = m1_mix(*p, fill, (unsigned)i);
+            }
+        caption_line(d, pitch, canvas, cf.bubble_letter, cf.bub_txt, y0 + (n - px) / 2,
+                     ui_ink(0xffffffffu) & 0xffffffu);
+    }
+    if (*cf.cnt_txt)
+        caption_line(d, pitch, canvas, cf.count_lab, cf.cnt_txt, CFL_COUNT_Y, ui_ink(0xffaaaaaau) & 0xffffffu);
+}
+
 /* The touch layer's EVT_AFTER_PAINT: the frame, from resident textures only (an artist's shelf
  * stops at both ends, q2-pod coverflow_bounded: no repeats); missing covers go to the loader. */
 static int on_paint(void *ctx, void *e) {
@@ -935,7 +982,10 @@ static int on_paint(void *ctx, void *e) {
         int pitch = (int)(bitmap_get_line_length(fx.frame) / 4);
         if (!d) return RET_OK;
         coverflow_render(g, d, pitch, frac, ring);
-        if (cf.land) captions_land(d, pitch, canvas);
+        if (cf.land) {
+            captions_land(d, pitch, canvas);
+            scrub_land(d, pitch, canvas);
+        }
         bitmap_unlock_buffer(fx.frame);
         fx.c = c, fx.frac = frac, fx.bg = g->bg, fx.drawn = 1;
     }
@@ -1228,6 +1278,10 @@ static void layout(void) {
     widget_move(cf.covers, 0, on ? CFL_Y : CF_COVER_Y);
     widget_resize(cf.covers, SCREEN_W, on ? CFL_W : CF_VIEW_H);
     widget_resize(cf.input, SCREEN_W, on ? CFL_W : CF_VIEW_H);
+    if (cf.scrub) { /* the scrubber's band, turned: the body's left CFL_SCRUB_H px; a later sibling of view_covers, so it takes the touch there */
+        widget_move(cf.scrub, 0, on ? CFL_Y : CF_SCRUB_Y);
+        widget_resize(cf.scrub, on ? CFL_SCRUB_H : SCREEN_W, on ? CFL_W : CF_SCRUB_H);
+    }
 }
 
 static void scrub_show(void);
@@ -1496,7 +1550,12 @@ static int bell(int d, int sigma) {
     return k < (int)sizeof bell_tab ? bell_tab[k] : 0;
 }
 
-#define TICK_SPAN (CF_TICK_X1 - CF_TICK_X0)
+/* The ticks' geometry in the band's own axes (x along the ticks, y across, down as the user sees it): portrait's view is the band, landscape's is the band turned a quarter (the
+ * view is CFL_SCRUB_H px wide and CFL_W high at the body's left, band (x, y) is view (CFL_SCRUB_H - 1 - y, x)). */
+#define TICK_X0 (cf.land ? CFL_TICK_X0 : CF_TICK_X0)
+#define TICK_SPAN ((cf.land ? CFL_TICK_X1 : CF_TICK_X1) - TICK_X0)
+#define TICK_Y (cf.land ? CFL_TICK_Y : CF_TICK_Y)
+#define DOT_DY (cf.land ? CFL_DOT_DY : CF_DOT_DY)
 
 /* Settings > Library > Cover Flow > Scroll Bar (CFBAR_FILE): on unless the file says "0". The page reads it when it shows its covers (scrub_show). */
 int coverflow_bar(void) { return set_read(CFBAR_FILE, 0) != '0'; }
@@ -1508,27 +1567,35 @@ int coverflow_bar_toggle(void) {
 }
 
 static int scrub_on(void) {
-    return cf.scrub && cf.bar && !cf.scoped && !cf.land && depth() && cf.screen == CF_COVERS && shelf_up() &&
+    return cf.scrub && cf.bar && !cf.scoped && depth() && cf.screen == CF_COVERS && shelf_up() &&
            album_count() >= CF_SCRUB_MIN;
 }
 
-/* The scrubber's x (in its view) of shelf position p, of 256 albums. */
+/* The scrubber's x (along the band) of shelf position p, of 256 albums. */
 static int tick_x(int p256) {
     int n = count();
-    return n < 2 ? CF_TICK_X0 : CF_TICK_X0 + clamp_i(p256 * TICK_SPAN / ((n - 1) * 256), 0, TICK_SPAN);
+    return n < 2 ? TICK_X0 : TICK_X0 + clamp_i(p256 * TICK_SPAN / ((n - 1) * 256), 0, TICK_SPAN);
 }
 
 /* The shelf's position on the ticks: the visual one, so the swell follows a drag of the covers. */
 static int scrub_x(void) {
     int c, frac;
-    if (!visual(count(), &c, &frac)) return CF_TICK_X0;
+    if (!visual(count(), &c, &frac)) return TICK_X0;
     return tick_x(c * 256 + (frac >> 8));
 }
 
 /* The album under x. */
 static int index_at(int x) {
     int n = count();
-    return n < 2 ? 0 : clamp_i(((x - CF_TICK_X0) * (n - 1) + TICK_SPAN / 2) / TICK_SPAN, 0, n - 1);
+    return n < 2 ? 0 : clamp_i(((x - TICK_X0) * (n - 1) + TICK_SPAN / 2) / TICK_SPAN, 0, n - 1);
+}
+
+/* A rectangle of the band's axes (x, y, w, h) filled on the view's canvas: as it is in portrait, turned in landscape. */
+static void band_fill(void *canvas, int x, int y, int w, int h) {
+    if (cf.land)
+        canvas_fill_rect(canvas, CFL_SCRUB_H - y - h, x, h, w);
+    else
+        canvas_fill_rect(canvas, x, y, w, h);
 }
 
 /* An opaque colour a of 255 of the way from bg to ink (the canvas fill is not blended). */
@@ -1552,23 +1619,22 @@ static int on_scrub_paint(void *ctx, void *e) {
     ink = ui_ink(0xffffffffu) & 0xffffffu;
     x0 = cf.scrub_px = scrub_x();
     for (i = 0; i < CF_TICKS; ++i) {
-        int x = CF_TICK_X0 + i * TICK_SPAN / (CF_TICKS - 1),
-            g = bell(m1_abs(x - x0), on ? CF_DRAG_SIGMA : CF_REST_SIGMA);
+        int x = TICK_X0 + i * TICK_SPAN / (CF_TICKS - 1), g = bell(m1_abs(x - x0), on ? CF_DRAG_SIGMA : CF_REST_SIGMA);
         int h = (on ? CF_DRAG_H : CF_REST_H) + ((on ? CF_DRAG_BUMP : CF_REST_BUMP) * g + 128) / 256;
         canvas_set_fill_color(
             canvas, blend(bg, ink, (on ? CF_DRAG_A : CF_REST_A) + ((on ? CF_DRAG_DA : CF_REST_DA) * g + 128) / 256));
-        canvas_fill_rect(canvas, x - 1, CF_TICK_Y - h / 2, CF_TICK_W, h);
+        band_fill(canvas, x - 1, TICK_Y - h / 2, CF_TICK_W, h);
     }
     if (on) {
         canvas_set_fill_color(canvas, 0xff000000u | ink);
-        canvas_fill_rect(canvas, x0 - 1, CF_TICK_Y - CF_NEEDLE_H / 2, CF_NEEDLE_W, CF_NEEDLE_H);
+        band_fill(canvas, x0 - 1, TICK_Y - CF_NEEDLE_H / 2, CF_NEEDLE_W, CF_NEEDLE_H);
         if (cf.play_at >= 0 &&
             cf.sort !=
                 CC_SORT_RECENT) { /* a round dot of CF_DOT px: the cross of two bars cuts its corners (no dot in Recently Added) */
-            int px = tick_x(cf.play_at * 256), y = CF_TICK_Y - CF_DOT_DY;
+            int px = tick_x(cf.play_at * 256), y = TICK_Y - DOT_DY;
             canvas_set_fill_color(canvas, blend(bg, ink, CF_DOT_A));
-            canvas_fill_rect(canvas, px - CF_DOT / 2, y + 1, CF_DOT, CF_DOT - 2);
-            canvas_fill_rect(canvas, px - CF_DOT / 2 + 1, y, CF_DOT - 2, CF_DOT);
+            band_fill(canvas, px - CF_DOT / 2, y + 1, CF_DOT, CF_DOT - 2);
+            band_fill(canvas, px - CF_DOT / 2 + 1, y, CF_DOT - 2, CF_DOT);
         }
     }
     return RET_OK;
@@ -1599,7 +1665,8 @@ static void bubble_font(int small) {
     cf.bub_small = small;
 }
 
-/* The bubble and the counter for the centre album (on), or hidden. Only their visibility changes: they stay insensitive, so they take no touch. */
+/* The bubble and the counter for the centre album (on), or gone. Portrait only changes their visibility (they stay insensitive, so they take no touch). Landscape keeps the widgets
+ * hidden, sets their text and size all the same (the frame draws with the labels' styles) and draws the text itself (scrub_land): the frame is due again. */
 static void scrub_labels(int on) {
     char s[32];
     int i = value();
@@ -1612,23 +1679,33 @@ static void scrub_labels(int on) {
         int c = cc_name_initial(cc_str(r, cf.sort == CC_SORT_ARTIST ? REC_ARTIST : REC_ALBUM));
         s[0] = (char)(c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c >= 'A' && c <= 'Z' ? c : '#'), s[1] = 0;
     }
+    snprintf(cf.bub_txt, sizeof cf.bub_txt, "%s", s);
     if (*s) {
         bubble_font(s[1] != 0);
         widget_set_text_utf8(cf.bubble_letter, s);
     }
-    widget_set_visible(cf.bubble, *s != 0, 0);
+    if (!cf.land) widget_set_visible(cf.bubble, *s != 0, 0);
+    cf.cnt_txt[0] = 0;
     if (r) {
         snprintf(s, sizeof s, TR("%d of %d"), i + 1, count());
+        snprintf(cf.cnt_txt, sizeof cf.cnt_txt, "%s", s);
         widget_set_text_utf8(cf.count_lab, s);
     }
-    widget_set_visible(cf.count_lab, r != (void *)0, 0);
+    if (!cf.land) widget_set_visible(cf.count_lab, r != (void *)0, 0);
+    if (cf.land) {
+        fx.drawn = 0; /* the text is part of the frame */
+        redraw();
+    }
 }
 
 /* The shelf on the album under x, where it is not already. */
 static void scrub_seek(int x) {
     int i = index_at(x);
     if (offset()) set_offset(0);
-    if (i != value()) set_value(i);
+    if (i != value()) {
+        set_value(i);
+        cf.scrub_at = (unsigned)time_now_ms();
+    }
 }
 
 static void scrub_to(int x) {
@@ -1637,29 +1714,8 @@ static void scrub_to(int x) {
     widget_invalidate_force(cf.scrub, (void *)0);
 }
 
-/* The opt-in log's clock (/mnt/mmc/m1plus-log, as the Home log): the longest wait between two of the gesture's events or turns, which is how long the UI thread was away. */
-static void scrub_seen(void) {
-    unsigned now = (unsigned)time_now_ms();
-    if (now - cf.sl_last > cf.sl_gap) cf.sl_gap = now - cf.sl_last;
-    cf.sl_last = now;
-}
-
-static void scrub_log(const char *how) {
-    char line[160];
-    int fd, n;
-    if (access(LOG_ENABLE, F_OK)) return;
-    fd = open(LOG_FILE, O_WRONLY | O_APPEND | O_CREAT, 0644);
-    if (fd < 0) return;
-    n = snprintf(line, sizeof line,
-                 "coverflow: scrub %u ms, x %d to %d, y %d, %u moves in %u turns, longest wait %u ms, %s, %u albums\n",
-                 cf.sl_last - cf.sl_t0, cf.sl_x0, cf.sl_x1, cf.sl_y0, cf.sl_moves, cf.sl_turns, cf.sl_gap, how,
-                 album_count());
-    if (n > 0 && n < (int)sizeof line) write(fd, line, (unsigned)n);
-    close(fd);
-}
-
-/* The finger left (how: the log's word for it): the labels go. */
-static void scrub_end(const char *how) {
+/* The finger left: the labels go. */
+static void scrub_end(void) {
     if (!cf.scrubbing) return;
     cf.scrubbing = 0;
     m1_timer_stop(&cf.scrub_timer);
@@ -1667,8 +1723,6 @@ static void scrub_end(const char *how) {
     scrub_labels(0);
     redraw();
     widget_invalidate_force(cf.scrub, (void *)0);
-    scrub_seen();
-    scrub_log(how);
 }
 
 /* The last move's x applied: once per main-loop turn, however many moves the turn handed out. */
@@ -1676,50 +1730,56 @@ static int on_scrub_turn(const void *unused) {
     (void)unused;
     cf.scrub_timer = 0;
     if (!cf.scrubbing) return RET_OK;
-    scrub_seen();
-    ++cf.sl_turns;
     if (scrub_on())
         scrub_to(cf.scrub_want);
     else
-        scrub_end("gone");
+        scrub_end();
     return RET_OK;
+}
+
+/* The finger's x along the band: portrait's pointer x, landscape's local y of the turned view (which starts at the frame's logical x 0, so that is the logical x). */
+static int scrub_pos(void *e) {
+    int p[2];
+    p[0] = pe(e, PE_X), p[1] = pe(e, PE_Y);
+    if (!cf.land) return p[0];
+    widget_to_local(cf.scrub, p);
+    return p[1];
 }
 
 /* The scrubber's touch. DOWN grabs the gesture and jumps at once. A MOVE only notes its x for on_scrub_turn: stock's event queue holds 20 events and drops what arrives
  * while it is full (event_queue_create(20) @0x693f58, event_queue_send 0x6a3e70), and a turn hands events out for 20 ms at most before its timers and its paint (0x6939d4),
- * so moves that each set the captions, the bubble and the counter can fall behind the finger, and the later ones and the release are then lost. UP has the finger's last
- * position, whatever moves came before it, and is applied as it comes.
+ * so moves that each set the captions, the bubble and the counter can fall behind the finger, and the later ones and the release are then lost. UP leaves the shelf on the
+ * album it shows and drops a move still waiting: a lifting finger's point slides a few px, and with many albums a few px are several of them.
  *
  * The screen's bottom 30 px are stock's swipe-up-to-Home zone, and the scrubber's lower half is in it (the window starts under the 30 px status bar: view y 36 is screen y
  * 450, two px under the ticks). Stock's handlers on the window manager run before any child: on_wm_before_tsdown_fun (0x4cd608, EVT_POINTER_DOWN_BEFORE_CHILDREN) stores
  * the press's y in beforechild_pressdown_y, on_wm_before_tsmove_fun (0x4cd5e0) answers RET_STOP to every move while that is 450 or more, so no child sees one, and
  * on_wm_before_tsup_fun (0x4cd65c) goes Home for a release 50 px or more above such a press. A press the scrubber takes is its own: it clears the stored y (as stock does
- * after going Home, @0x4cd6d0), so its moves come and its release is no Home swipe. */
+ * after going Home, @0x4cd6d0), so its moves come and its release is no Home swipe.
+ *
+ * Landscape's band runs down the screen from y 80 (window y 50), so a press at its very start has a pressdown_y (PRESSDOWN_Y, stored by on_wm_tsdown_fun, which runs after the
+ * children) under 81, and on_wm_tsmove_fun (0x4cd788) opens the pull-down for such a press once the finger is 11 px further down: every move sets it out of reach, as the Control
+ * Center's hold does (patch/pulldown.c). */
 static int on_scrub(void *ctx, void *e) {
     int type, x;
     (void)ctx;
     if (!e) return RET_OK;
-    type = pe(e, 0), x = pe(e, PE_X);
+    type = pe(e, 0), x = scrub_pos(e);
     if (type == EVT_POINTER_DOWN && scrub_on()) {
         *(volatile int *)BEFORE_PRESS_Y = 0;
         snap_stop();
         if (!cf.scrubbing) widget_grab(cf.win, cf.scrub); /* moves and the release come here wherever they go */
         cf.scrubbing = 1;
         m1_timer_stop(&cf.scrub_timer);
-        cf.sl_t0 = cf.sl_last = (unsigned)time_now_ms(), cf.sl_gap = cf.sl_moves = cf.sl_turns = 0;
-        cf.sl_x0 = cf.sl_x1 = x, cf.sl_y0 = pe(e, PE_Y);
         cf.play_at = find_playing();
         scrub_to(x);
     } else if (type == EVT_POINTER_MOVE && cf.scrubbing) {
-        scrub_seen();
-        ++cf.sl_moves;
+        if (cf.land) *(volatile int *)PRESSDOWN_Y = 480;
         cf.scrub_want = x;
         if (!cf.scrub_timer && !(cf.scrub_timer = timer_add(on_scrub_turn, (void *)0, LOAD_MS)))
             on_scrub_turn((void *)0); /* no timer: now */
     } else if (type == EVT_POINTER_UP || type == EVT_POINTER_ABORT) {
-        cf.sl_x1 = x;
-        if (type == EVT_POINTER_UP && cf.scrubbing && scrub_on()) scrub_seek(x);
-        scrub_end(type == EVT_POINTER_UP ? "up" : "abort");
+        scrub_end();
     }
     return RET_OK;
 }
@@ -1975,6 +2035,7 @@ static int on_destroy(void *ctx, void *e) {
     if (cf.scrubbing) widget_ungrab(cf.win, cf.scrub);
     m1_timer_stop(&cf.scrub_timer);
     cf.dragging = cf.vk_taken = cf.scrubbing = 0;
+    cf.bub_txt[0] = cf.cnt_txt[0] = 0;
     build_end();
     fx_close();
     if (cf.saved_album && !cf.scoped) position_save(cf.saved_album);

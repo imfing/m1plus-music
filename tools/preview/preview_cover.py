@@ -54,11 +54,15 @@ def page(work, album, artist, title, ring, frac=0):
     return im
 
 
-def landscape(work, album='Kind of Blue', artist='Miles Davis'):
+LAND_SHELF = [(200, 60, 60), (60, 160, 200), (230, 190, 70), (90, 90, 220), (120, 200, 120), (200, 120, 200), (210, 140, 60)]
+
+
+def landscape(work, album='Kind of Blue', artist='Miles Davis', frac=None, shelf=None, overlay=None):
     """The landscape Cover Flow as the user sees it, the player held turned counter-clockwise (480 x 320): the tree's own
     page (status bar and navbar, which stay portrait, now along the left side) with the real renderer's turned frame in
-    the 320 x 400 body under the navbar, the captions in the tree's font as patch/coverflow.c lays them (centred, 22 px
-    white over 18 px grey). Approximate, like the rest."""
+    the 320 x 400 body under the navbar, the captions in the tree's font as patch/coverflow.c lays them (centred, the line
+    top at CFL_ALBUM_Y / CFL_ARTIST_Y, 22 px white over 18 px grey). shelf: the textures' colours (None: placeholders);
+    overlay(im, font): more drawn into the logical frame (an RGBA image, CFL_W x CFL_H) after the captions. Approximate, like the rest."""
     from stb_raster import StbFont
     raw = os.path.join(work, preview_layout.RAW)
     font = StbFont(os.path.join(raw, 'fonts', 'default.ttf'))
@@ -68,12 +72,12 @@ def landscape(work, album='Kind of Blue', artist='Miles Davis'):
     page_im = preview_layout.MenuPainter(raw).render(root, 0).convert('RGBA')
     with tempfile.TemporaryDirectory() as tmp:
         lib = hostcf.build(tmp)
-        shelf = [hostcf.texture(c, mark=i == 3) for i, c in enumerate(
-            [(200, 60, 60), (60, 160, 200), (230, 190, 70), (90, 90, 220), (120, 200, 120), (200, 120, 200), (210, 140, 60)])]
-        im = hostcf.landscape(lib, hostcf.ONE // 10, shelf).convert('RGBA')
+        tex = [hostcf.texture(c, mark=i == 3) for i, c in enumerate(shelf or LAND_SHELF)]
+        im = hostcf.landscape(lib, hostcf.ONE // 10 if frac is None else frac, tex).convert('RGBA')
     c = hostcf.C
-    for text, px, y, grey in ((album, 22, c['CFL_ALBUM_Y'] + 13, 255), (artist, 18, c['CFL_ARTIST_Y'] + 11, 0xAA)):
-        font.draw(im, (c['CFL_W'] - font.width(text, px)) // 2, int(y - px / 2), text, px, (grey, grey, grey, 255))
+    for text, px, y, grey in ((album, 22, c['CFL_ALBUM_Y'], 255), (artist, 18, c['CFL_ARTIST_Y'], 0xAA)):
+        font.draw(im, (c['CFL_W'] - font.width(text, px)) // 2, y, text, px, (grey, grey, grey, 255))
+    if overlay: overlay(im, font)
     page_im.paste(im.transpose(Image.ROTATE_270), (0, 480 - pod_ui.CLIENT_H + c['CFL_Y']))   # the physical frame
     return page_im.transpose(Image.ROTATE_90).convert('RGB')
 

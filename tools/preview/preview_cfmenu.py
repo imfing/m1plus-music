@@ -5,7 +5,11 @@ album's dot, the bubble over the centre cover with the section of the current or
 the "..." card (Search Albums, Playing Album, the Albums sort rows). The page and shelf are tools/preview/preview_cover.py's (the tree's asset,
 the real depth renderer); the card is the shared view card painter. Approximate, not AWTK; sample data.
 
+Landscape (the page turned, the ticks along the screen's left edge; the bubble and the counter in the frame): the same page, the scrubber's band, ticks, needle, dot, bubble and counter
+as patch/coverflow.c lays them in the frame's logical axes (CFL_*), shown as the player is held.
+
 Usage: uv run python -I tools/preview/preview_cfmenu.py WORKDIR OUT.png
+       uv run python -I tools/preview/preview_cfmenu.py WORKDIR --landscape OUT.png
 """
 import argparse, math, os, sys
 from PIL import Image, ImageDraw
@@ -94,10 +98,85 @@ def shot(s, work, album, artist, ring, title='Cover Flow'):
     im = PC.page(work, album, artist, title, ring).convert('RGBA'); capsule(s, im); return im
 
 
+def band_fill(im, x, y, w, h, rgb):
+    """patch/coverflow.c band_fill: a rectangle of the scrubber band's axes (x along the ticks, y across), here on the logical frame where the band is the rows CFL_SCRUB_Y and down."""
+    ImageDraw.Draw(im).rectangle((x, O['CFL_SCRUB_Y'] + y, x + w - 1, O['CFL_SCRUB_Y'] + y + h - 1), fill=rgb + (255,))
+
+
+def land_scrubber(im, frac, drag=False, playing=None):
+    """patch/coverflow.c on_scrub_paint in landscape, the same integer rectangles in the band: the ticks along CFL_TICK_X0 .. CFL_TICK_X1 on the line CFL_TICK_Y; dragged,
+    taller and brighter, the needle and the playing album's dot (CFL_DOT_DY above the line)."""
+    x0s, span, ty = O['CFL_TICK_X0'], O['CFL_TICK_X1'] - O['CFL_TICK_X0'], O['CFL_TICK_Y']
+    x0 = x0s + round(frac * span)
+    pre = 'CF_DRAG_' if drag else 'CF_REST_'
+    for i in range(O['CF_TICKS']):
+        x = x0s + i * span // (O['CF_TICKS'] - 1); g = bell(abs(x - x0), O[pre + 'SIGMA'])
+        h = O[pre + 'H'] + (O[pre + 'BUMP'] * g + 128) // 256; a = O[pre + 'A'] + (O[pre + 'DA'] * g + 128) // 256
+        band_fill(im, x - 1, ty - h // 2, O['CF_TICK_W'], h, grey(a)[:3])
+    if drag:
+        band_fill(im, x0 - 1, ty - O['CF_NEEDLE_H'] // 2, O['CF_NEEDLE_W'], O['CF_NEEDLE_H'], (255, 255, 255))
+        if playing is not None:
+            px, py, n = x0s + round(playing * span), ty - O['CFL_DOT_DY'], O['CF_DOT']
+            band_fill(im, px - n // 2, py + 1, n, n - 2, grey(O['CF_DOT_A'])[:3]); band_fill(im, px - n // 2 + 1, py, n - 2, n, grey(O['CF_DOT_A'])[:3])
+
+
+def round_cover(x, y, n, r):
+    """patch/coverflow.c round_cover: how much of pixel (x, y) of an n px square with corner radius r is inside it, 0..255, from the distance of its centre to the corner's circle in quarter pixels."""
+    if not (0 <= x < n and 0 <= y < n): return 0
+    dx = 4 * (r - x) - 2 if x < r else 4 * (x - (n - r)) + 2 if x >= n - r else 0
+    dy = 4 * (r - y) - 2 if y < r else 4 * (y - (n - r)) + 2 if y >= n - r else 0
+    return max(0, min(255, 128 + 64 * (4 * r - math.isqrt(dx * dx + dy * dy))))
+
+
+def land_bubble(im, font, text):
+    """patch/coverflow.c scrub_land's bubble: SG_BUBBLE square (rim #3A3A3A, fill #262626, corner CFL_BUBBLE_R) centred on the centre cover, the text centred in it by line box (top (n - px) / 2)."""
+    n, r = O['SG_BUBBLE'], O['CFL_BUBBLE_R']; x0, y0 = O['CFL_CX'] - n // 2, O['CFL_TOP'] + O['ART_SIZE'] // 2 - n // 2
+    px = O['SG_BUBBLE_PX'] if len(text) <= 1 else O['SG_BUBBLE_PX_YEAR']
+    pix = im.load()
+    for y in range(n):
+        for x in range(n):
+            for cover, rgb in ((round_cover(x, y, n, r), (0x3A,) * 3), (round_cover(x - 1, y - 1, n - 2, r - 1), (0x26,) * 3)):
+                if cover:
+                    b = pix[x0 + x, y0 + y]; w = cover + (cover >> 7)
+                    pix[x0 + x, y0 + y] = tuple((b[k] * (256 - w) + rgb[k] * w) >> 8 for k in range(3)) + (255,)
+    font.draw(im, O['CFL_CX'] - font.width(text, px) // 2, y0 + (n - px) // 2, text, px, (255, 255, 255, 255))
+
+
+def land_counter(im, font, text):
+    """scrub_land's counter: the line CFL_COUNT_Y in cf_count's size, grey #AAAAAA, centred in the frame."""
+    font.draw(im, (O['CFL_W'] - font.width(text, O['CF_COUNT_PX'])) // 2, O['CFL_COUNT_Y'], text, O['CF_COUNT_PX'], (0xAA, 0xAA, 0xAA, 255))
+
+
+def landscape_sheet(work, out):
+    """The landscape page as the player is held, at rest and while dragged (a letter in the Title order, a year in the Year order)."""
+    grey_shelf = [(0x3A, 0x3A, 0x3A)] * 7   # covers not decoded yet while the finger moves (the device shows the stock disc placeholder)
+    panels = []
+    panels.append(('At rest', PC.landscape(work, 'Kind of Blue', 'Miles Davis', overlay=lambda im, f: land_scrubber(im, 0.46))))
+    def drag(album, artist, frac, text, count):
+        def paint(im, f):
+            land_scrubber(im, frac, True, 0.46)
+            if text: land_bubble(im, f, text)
+            land_counter(im, f, count)
+        return PC.landscape(work, album, artist, shelf=grey_shelf, overlay=paint)
+    panels.append(('Dragging, Title order: bubble "M"', drag('Moving Pictures', 'Rush', 0.55, 'M', '663 of 1204')))
+    panels.append(('Dragging, Year order: bubble "1997"', drag('OK Computer', 'Radiohead', 0.31, '1997', '373 of 1204')))
+    pad, lab = 12, 20
+    w, h = panels[0][1].size
+    sheet = Image.new('RGB', (w + 2 * pad, len(panels) * (h + lab + pad) + pad), (0x2A, 0x2A, 0x2A)); d = ImageDraw.Draw(sheet)
+    for i, (cap, p) in enumerate(panels):
+        y = pad + i * (h + lab + pad); d.text((pad, y), cap, fill=(0xAA,) * 3, font=PI.ANN); sheet.paste(p, (pad, y + lab))
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    PI.save_compact(sheet, out); print('wrote', out, sheet.size)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('work'); ap.add_argument('out')
+    ap.add_argument('work'); ap.add_argument('out', nargs='?', help='the portrait sheet')
+    ap.add_argument('--landscape', metavar='PNG', help='write only the landscape sheet (the player held turned) here')
     a = ap.parse_args()
+    if a.landscape:
+        landscape_sheet(a.work, a.landscape); return
+    if not a.out: ap.error('OUT.png or --landscape PNG')
     s = PI.Side(a.work, True)
     panels = []
     im = shot(s, a.work, 'Kind of Blue', 'Miles Davis', SHELF); scrubber(im, 0.46); panels.append(('At rest: "... | Now Playing", the dial', im))

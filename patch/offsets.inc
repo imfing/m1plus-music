@@ -189,13 +189,24 @@
 #define CFL_W 400          /* the window's 450 px less the navbar */
 #define CFL_H 320
 #define CFL_CX 200
-#define CFL_TOP 28
+#define CFL_TOP 14
 #define CFL_X1 160
 #define CFL_XS 84
 #define CFL_DRAG_PX 132    /* finger travel per album */
-#define CFL_ALBUM_Y 244    /* the caption lines' tops (logical), the album's 22 px, the artist's 18 px */
-#define CFL_ARTIST_Y 274
+#define CFL_ALBUM_Y 230    /* the caption lines' tops (logical), the album's 22 px, the artist's 18 px */
+#define CFL_ARTIST_Y 260
 #define CFL_CAP_W 368      /* 16 px margins, as portrait's captions */
+/* The scrubber in landscape (docs/modules/coverflow.md "Scrubber"): the band CFL_SCRUB_Y .. + CFL_SCRUB_H of the logical frame, its full width (physically the body's left CFL_SCRUB_H px,
+ * the view cf_scrub turned over it), the ticks on the line CFL_TICK_Y of the band from CFL_TICK_X0 to CFL_TICK_X1 and the playing album's dot CFL_DOT_DY above it. The bubble and the counter are
+ * drawn into the frame: the counter's line top is CFL_COUNT_Y. */
+#define CFL_SCRUB_Y 280
+#define CFL_SCRUB_H 40
+#define CFL_TICK_Y 22
+#define CFL_TICK_X0 24
+#define CFL_TICK_X1 376
+#define CFL_DOT_DY 22
+#define CFL_COUNT_Y 196
+#define CFL_BUBBLE_R 14 /* the bubble's corner radius (cf_bubble's round_radius) */
 #define CANVAS_FONT_SIZE 0x0c   /* canvas_t: font_size u16 @0xc, font_t * @0x34 (canvas_draw_text @0x645348 reads both) */
 #define CANVAS_FONT 0x34
 #define GLYPH_FORMAT_ALPHA 0    /* glyph_t: x,y s16, w,h,advance u16 @0..9, format u8 @0xa (0 = 8 bit alpha, rows w bytes), pitch u8, data @0xc */
@@ -262,6 +273,7 @@
 #define CF_COUNT_H 14
 #define CF_COUNT_PX 13
 #define CF_SCRUB_MIN 10
+#define CF_SCRUB_SETTLE_MS 60 /* while a finger is on the scrubber, covers decode only once the shelf has stayed on one album this long */
 /* ---------------------------------------------------------------------------
  * Shuffle (patch/shuffle.c, docs/architecture.md). Read from this demo with tools/disasm.py.
  */

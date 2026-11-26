@@ -676,18 +676,23 @@ PORTRAIT_RECT = (0, CF_FRAME_Y, O['CF_VIEW_W'], O['CF_VIEW_H'])
 NAV_NAMES = ('navigationbar_view', 'btn_return', 'btn_backtoplayer', 'label_title')
 
 
-def land_machine(albums=5, saved=None, **kw):
+def land_machine(albums=5, saved=None, extras=False, files=None, **kw):
     """A machine opened on Cover Flow with the page's geometry modelled: view_covers at its asset place in the 450 px
     window, every widget_move / widget_resize written to the widget_t too, and the touch layer's parent chain in
-    emulated memory for the stock widget_to_local (the window under the 30 px status bar)."""
+    emulated memory for the stock widget_to_local (the window under the 30 px status bar). extras: the page's "..." card and
+    scrubber widgets too (CF_EXTRA). files: card files present when the page opens."""
     m = cover_machine(albums=albums, **kw)
+    if extras:
+        for n in CF_EXTRA: m.widget(n)
     m.nav_asset = ui_asset('m1plus_cover')
     m.load_image = 0
     m.mem_geometry = True
     cover_rects(m)
     if saved is not None: m.fs[LFILE] = saved
+    m.fs.update(files or {})
     m.canvas_mem = m.alloc(0x80)
-    m.call(PSYMS['coverflow_open'], count=5000000)
+    if extras: m.canvas = m.canvas_mem
+    m.call(PSYMS['coverflow_open'], count=8000000 if extras else 5000000)
     land_parents(m)
     return m
 
@@ -702,10 +707,12 @@ def land_parents(m):
     if 'view' in m.widgets:
         win = m.alloc(0x80); m.setword(win + 4, 30)
         covers, inp = m.widgets['view_covers'], m.widgets['view']
-        for w in (covers, inp):   # x, y, w, h @0..0xc as the props stand (later moves write them too)
+        scrub = m.widgets.get('cf_scrub')   # the scrubber's view, when the machine has the page's extras
+        for w in (covers, inp) + ((scrub,) if scrub else ()):   # x, y, w, h @0..0xc as the props stand (later moves write them too)
             for i, k in enumerate('xywh'): m.setword(w + 4 * i, m.props.get((w, k), 0))
         m.setword(covers + 0x44, win)
         m.setword(inp + 0x44, covers)
+        if scrub: m.setword(scrub + 0x44, win)
 
 
 def lt(m, kind, lx, ly, t):
@@ -941,6 +948,149 @@ def landscape_tests(ctx, asset):
         expect(got[-1] == 'touch_layer', f'a touch at ({x},{y}) in the landscape body reaches the touch layer ({got})')
 
 
+def landscape_scrub_tests(ctx):
+    """The scrubber on the landscape page (docs/modules/coverflow.md "Scrubber"): its view turned over the band, the touch along it, the fills turned,
+    the bubble and the counter drawn into the frame; the Scroll Bar switch and portrait as before."""
+    expect = ctx.expect
+    asset = ui_asset('m1plus_cover')
+    SH, SY, TX0, TX1 = O['CFL_SCRUB_H'], O['CFL_SCRUB_Y'], O['CFL_TICK_X0'], O['CFL_TICK_X1']
+    BEFORE_Y, PRESS_Y = pod.DATA['BEFORE_PRESS_Y'][0], pod.DATA['PRESSDOWN_Y'][0]
+    BAR_FILE = '/mnt/data/m1plus/coverflow-scroll-bar'
+
+    def band(m, kind, lx, ly=SY + 20, t=1000):
+        """A pointer event at the band's logical x lx (ly: across it, logical y): physical x = CFL_H - 1 - ly, screen y = 30 + CFL_Y + lx."""
+        m.touch(kind, LH - 1 - ly, 30 + LY + lx, t, fn='on_scrub')
+
+    def fills(m):
+        m.fills = []
+        m.call(PSYMS['on_scrub_paint'], a0=0, a1=m.paint_event(), count=4000000)
+        return m.fills
+
+    def tree(m):
+        """The page as the window manager sees it, the scrubber's place and flags as the payload left them."""
+        t, h = cover_page_tree(m, asset), m.widgets['cf_scrub']
+        n = node(t, 'cf_scrub')
+        n.x, n.y, n.w, n.h = (m.props.get((h, k), v) for k, v in zip('xywh', (n.x, n.y, n.w, n.h)))
+        for key, bit in (('visible', F_VISIBLE), ('sensitive', F_SENSITIVE)):
+            if (h, key) in m.props: n.flags = n.flags & ~bit | (bit if m.props[(h, key)] else 0)
+        return t
+
+    expect(SY + SH == LH and O['CFL_TICK_Y'] < SH and O['CFL_TICK_Y'] - O['CFL_DOT_DY'] >= 0 and O['CFL_TICK_Y'] - O['CF_NEEDLE_H'] // 2 >= 0 and O['CFL_TICK_Y'] + O['CF_NEEDLE_H'] // 2 <= SH
+           and 0 <= TX0 - 1 and TX1 + O['CF_TICK_W'] <= LW, 'the band is the frame\'s last CFL_SCRUB_H rows, the ticks, the needle and the dot fit in it, the ticks end inside the width')
+
+    # the view moves over the band: the body's left CFL_SCRUB_H px, the body's height; it is later than view_covers on the page, so it takes the touch there
+    m = land_machine(albums=12, saved=b'1\n', extras=True)
+    sc = m.widgets['cf_scrub']
+    place = tuple(m.props.get((sc, k)) for k in 'xywh')
+    expect(vis(m, 'cf_scrub') == (1, 1) and place == (0, LY, SH, LW), f'landscape: the scrubber is shown, its view is the band turned ({place})')
+    t = tree(m)
+    order = [c.name for c in t.children]
+    expect(order.index('cf_scrub') > order.index('view_covers'), f'cf_scrub comes after view_covers in the page ({order})')
+    for x, y, want in ((20, LY + 200, 'cf_scrub'), (0, LY, 'cf_scrub'), (SH - 1, LY + LW - 1, 'cf_scrub'), (SH, LY + 200, 'touch_layer'), (160, LY + 200, 'touch_layer'), (20, LY + 3, 'cf_scrub')):
+        got = stock_target(m, tree(m), x, y)[-1]
+        expect(got == want, f'a touch at ({x},{y}) in the landscape body reaches {want} ({got})')
+    expect(all(m.props.get((m.widgets[n], 'visible'), 0) == 0 for n in ('cf_bubble', 'cf_count')), 'the bubble and the counter widgets stay hidden')
+
+    # a press maps the logical x along the band to the album (the ticks span TX0..TX1, the middle ticks between), whatever the finger's distance across the band
+    x5 = TX0 + 5 * (TX1 - TX0) // 11
+    for lx, want in ((TX1, 11), (TX0, 0), (x5, 5), (LW - 1, 11), (0, 0), (TX1 - 5, 11), (TX0 + (TX1 - TX0) // 22 + 1, 1)):
+        band(m, 'down', lx, ly=SY + 3 if lx % 2 else LH - 1); calls = list(m.calls)
+        expect(shelf_value(m) == want and ('widget_grab', m.window, sc) in calls, f'a press at logical x {lx} jumps to album {want} ({shelf_value(m)})')
+        band(m, 'up', lx)
+    band(m, 'down', TX0)
+    turn_timer = ('timer_add', PSYMS['on_scrub_turn'], 1)
+    band(m, 'move', LW - 1, ly=100)
+    expect(shelf_value(m) == 0 and turn_timer in m.calls, 'a move far from the band arms the turn and sets nothing')
+    band(m, 'move', x5, ly=100)
+    fired(m, 'on_scrub_turn')
+    expect(shelf_value(m) == 5, f'the turn puts the shelf under the last move, wherever across it ({shelf_value(m)})')
+    band(m, 'move', TX1); band(m, 'up', TX0 + 2 * (TX1 - TX0) // 11)
+    expect(shelf_value(m) == 5 and ('timer_remove', 0x777) in m.calls, 'the release keeps the album on screen and drops the waiting turn')
+    band(m, 'down', TX1, ly=SY + 7); band(m, 'abort', TX0)
+    expect(shelf_value(m) == 11, f'an abort leaves the shelf where the press put it ({shelf_value(m)})')
+
+    # the paint: ticks, needle and dot are the band's rectangles turned; at rest, dragged, with a playing album
+    f = fills(m)
+    hs = [r[3] for r in f]
+    expect(len(f) == O['CF_TICKS'] and all(r[4] == O['CF_TICK_W'] for r in f) and [r[2] for r in f] == [TX0 + i * (TX1 - TX0) // (O['CF_TICKS'] - 1) - 1 for i in range(O['CF_TICKS'])],
+           f'at rest: {O["CF_TICKS"]} ticks along the view\'s y, each CF_TICK_W high there (its turned width)')
+    expect(all(SH - r[1] - r[3] + r[3] // 2 == O['CFL_TICK_Y'] for r in f), 'every tick is centred on the line CFL_TICK_Y of the band, counted from the view\'s right edge (the turn)')
+    expect(O['CF_REST_H'] <= min(hs) and max(hs) <= O['CF_REST_H'] + O['CF_REST_BUMP'] and hs[-1] == max(hs) and hs[-1] > hs[0] and all(c >> 24 == 0xff for c, *_ in f), 'a swell on the last album, where the shelf is, opaque blends')
+    expect(all(0 <= r[1] and r[1] + r[3] <= SH and 0 <= r[2] and r[2] + r[4] <= LW for r in f), 'all inside the view')
+    m.play([m.showlist[7]], 0)
+    band(m, 'down', TX1)
+    f = fills(m)
+    needle = [r for r in f if (r[3], r[4]) == (O['CF_NEEDLE_H'], O['CF_NEEDLE_W'])]
+    dot = [r for r in f if r[3:] in ((O['CF_DOT'] - 2, O['CF_DOT']), (O['CF_DOT'], O['CF_DOT'] - 2))]
+    expect(len(f) == O['CF_TICKS'] + 3 and len(needle) == 1 and needle[0][1:3] == (SH - (O['CFL_TICK_Y'] - O['CF_NEEDLE_H'] // 2) - O['CF_NEEDLE_H'], TX1 - 1),
+           f'dragged: the needle on the last album, turned ({needle}), and the dot\'s two bars')
+    px = TX0 + 7 * (TX1 - TX0) // 11
+    y = O['CFL_TICK_Y'] - O['CFL_DOT_DY']
+    expect(sorted(r[1:] for r in dot) == sorted([(SH - (y + 1) - (O['CF_DOT'] - 2), px - O['CF_DOT'] // 2, O['CF_DOT'] - 2, O['CF_DOT']), (SH - y - O['CF_DOT'], px - O['CF_DOT'] // 2 + 1, O['CF_DOT'], O['CF_DOT'] - 2)])
+           and all(0 <= r[1] and r[1] + r[3] <= SH for r in f), f'the playing album\'s dot over its tick, turned, inside the band ({dot})')
+    band(m, 'up', TX1)
+
+    # stock's bottom zone and its pull-down: logical x 370 and over is screen y 450 and below; the very start of the band is the pull-down's (press y < 81)
+    expect(LY + 30 + 370 >= 450, 'the band\'s logical x from 370 is in stock\'s bottom zone')
+    m.setword(BEFORE_Y, 460); band(m, 'down', 380, ly=SY + 30)
+    expect(m.word(BEFORE_Y) == 0, f'a landscape press clears stock\'s bottom-zone press ({m.word(BEFORE_Y)})')
+    m.setword(PRESS_Y, 80); band(m, 'down', 0)
+    expect(m.word(PRESS_Y) == 80, 'a press leaves PRESSDOWN_Y (stock stores its own after the children)')
+    band(m, 'move', 5)
+    expect(m.word(PRESS_Y) == 480, f'a landscape move puts PRESSDOWN_Y out of the pull-down\'s reach ({m.word(PRESS_Y)})')
+    band(m, 'up', 5)
+
+    # the bubble and the counter are drawn into the frame (the widgets stay hidden): at rest nothing, with a finger the bubble and the counter, gone on release
+    m = land_machine(albums=12, saved=b'1\n', extras=True)
+    bx, by, n = O['CFL_CX'] - O['SG_BUBBLE'] // 2, O['CFL_TOP'] + O['ART_SIZE'] // 2 - O['SG_BUBBLE'] // 2, O['SG_BUBBLE']
+    probes = {'corner': (bx, by), 'rim': (bx + n // 2, by), 'fill': (bx + 20, by + 20), 'letter': (O['CFL_CX'] - 1, by + n // 2 + 2), 'count': (O['CFL_CX'] - 31, O['CFL_COUNT_Y'] + 4)}
+    def look(m):
+        m.glyphs.clear(); paint_canvas(m)
+        return {k: physical(m, *p) & 0xffffff for k, p in probes.items()}
+    rest = look(m)
+    expect(rest['rim'] != 0x3a3a3a and rest['fill'] != 0x262626 and rest['count'] != 0xaaaaaa and rest['letter'] != 0xffffff, 'at rest the frame has no bubble and no counter')
+    band(m, 'down', TX1)
+    now = look(m)
+    sizes = {(chr(c), s) for c, s in m.glyphs}
+    expect(now['rim'] == 0x3a3a3a and now['fill'] == 0x262626 and now['corner'] == rest['corner'], f'the bubble: the rim, the fill, rounded corners left to the covers ({now})')
+    expect(now['letter'] == 0xffffff and ('A', O['SG_BUBBLE_PX']) in sizes, 'the title\'s initial in the bubble\'s size, in the ink')
+    expect(now['count'] == 0xaaaaaa and ('1', O['CF_COUNT_PX']) in sizes and ('2', O['CF_COUNT_PX']) in sizes, '"12 of 12" under the centre cover, in the counter\'s size and the grey')
+    expect(physical(m, bx + n // 2, by) >> 24 == 255, 'the frame stays opaque')
+    expect(not any(c[0] == 'widget_set_visible' and c[1] in (m.widgets['cf_bubble'], m.widgets['cf_count']) and c[2] for c in m.calls)
+           and all(m.props.get((m.widgets[w], 'visible'), 0) == 0 for w in ('cf_bubble', 'cf_count')), 'the widgets are never shown')
+    band(m, 'move', TX0); fired(m, 'on_scrub_turn')
+    moved = look(m)
+    expect(shelf_value(m) == 0 and {chr(c) for c, s in m.glyphs if s == O['CF_COUNT_PX']} >= set('1of') and moved['fill'] == 0x262626, 'a turn draws the frame again with the new place (1 of 12)')
+    band(m, 'up', TX0)
+    gone = look(m)
+    expect(gone == rest, f'the release takes both out of the frame again ({gone})')
+    # Recently Added has no bubble, only the counter; the frame is redrawn for the counter alone
+    m = land_machine(albums=12, saved=b'1\n', extras=True, files={SORT_FILE: b'2\n'})
+    rest = look(m); band(m, 'down', TX1); now = look(m)
+    expect(now['rim'] != 0x3a3a3a and now['fill'] != 0x262626 and now['count'] == 0xaaaaaa, f'Recently Added: the counter only ({now})')
+    band(m, 'up', TX1)
+
+    # the switch, small libraries: no scrubber, no press taken, in landscape too
+    for what, m in (('Scroll Bar off', land_machine(albums=12, saved=b'1\n', extras=True, files={BAR_FILE: b'0\n'})),
+                    (f'under {O["CF_SCRUB_MIN"]} albums', land_machine(albums=O['CF_SCRUB_MIN'] - 1, saved=b'1\n', extras=True))):
+        expect(vis(m, 'cf_scrub')[0] == 0 and vis(m, 'btn_more') == (1, 1), f'{what}: no scrubber, the card stays')
+        m.setword(BEFORE_Y, 460); band(m, 'down', TX1)
+        expect(shelf_value(m) == 0 and m.word(BEFORE_Y) == 460 and not any(c[0] == 'widget_grab' for c in m.calls), f'{what}: a press on the band does nothing')
+        expect(stock_target(m, tree(m), 20, LY + 200)[-1] == 'touch_layer', f'{what}: the band\'s touches go to the covers')
+        m.fills = []; m.call(PSYMS['on_scrub_paint'], a0=0, a1=m.paint_event(), count=4000000)
+        expect(not m.fills, f'{what}: nothing is painted')
+
+    # portrait as before: the view where the asset has it (never moved), the ticks across the width, the bubble and the counter widgets
+    m = land_machine(albums=12, extras=True)
+    sc = m.widgets['cf_scrub']
+    expect(vis(m, 'cf_scrub') == (1, 1) and not any(c[0] in ('widget_move', 'widget_resize') and c[1] == sc for c in m.calls) and (sc, 'y') not in m.props, 'portrait: the scrubber\'s view is the asset\'s, not moved')
+    f = fills(m)
+    expect(len(f) == O['CF_TICKS'] and f[0][1] == O['CF_TICK_X0'] - 1 and f[-1][1] == O['CF_TICK_X1'] - 1 and all(r[3] == O['CF_TICK_W'] for r in f), 'portrait: the ticks across the view')
+    m.setword(PRESS_Y, 80); m.touch('down', O['CF_TICK_X1'], 20, fn='on_scrub'); m.touch('move', O['CF_TICK_X0'], 20, fn='on_scrub')
+    expect(shelf_value(m) == 11 and m.word(PRESS_Y) == 80 and vis(m, 'cf_bubble') == (1, 1) and vis(m, 'cf_count') == (1, 1), 'portrait: the press jumps, the widgets show, PRESSDOWN_Y is left alone')
+    expect(not any(c[0] == 'bitmap_create_ex' for c in m.calls), 'portrait draws no frame of its own')
+
+
 def missing_only_tests(ctx):
     """Cover Flow's open builds the missing covers only (Rebuild Covers is Home's: test/pod/homecover.py)."""
     expect = ctx.expect
@@ -1154,7 +1304,6 @@ def volkeys_tests(ctx):
     expect(shelf_value(am) == 2, 'volume up goes back')
 
 
-LOG_ON, LOG = '/mnt/mmc/m1plus-log', '/mnt/mmc/m1plus.log'   # the opt-in log (patch/home.h)
 CF_EXTRA = VS_WIDGETS + ('cf_scrub', 'cf_count', 'cf_bubble', 'cf_bubble_letter')   # the main page's "..." card and scrubber
 CFSTART_FILE, POS_FILE = '/mnt/data/m1plus/coverflow-start', '/mnt/mmc/.m1plus/coverflow-position'
 
@@ -1220,31 +1369,30 @@ def menu_tests(ctx):
     expect(shelf_value(m) == 11 and not any(c[0] == 'timer_add' or c[0].startswith('widget_') for c in m.calls), 'more moves in the same turn: the one timer, still nothing set')
     fired(m, 'on_scrub_turn')
     expect(shelf_value(m) == 5 and ('widget_set_text_utf8', m.widgets['cf_count'], '6 of 12') in m.calls, 'the turn puts the shelf under the last move')
-    # the covers load while the finger is down, as at any other time: a decode tick never waits for it
+    # the covers wait while the shelf moves under the finger: a decode tick comes back until the shelf has stayed on one album CF_SCRUB_SETTLE_MS, then decodes
+    settle, decoded = O['CF_SCRUB_SETTLE_MS'], lambda c: any(k[0] == 'widget_load_image' for k in c)
     c = fired(m, 'on_load')
-    expect(not any(k[0] == 'timer_add' and k[2] > 1 for k in c), f'a decode tick during a scrub runs at once ({c})')
+    expect(('timer_add', PSYMS['on_load'], settle) in c and not decoded(c), f'the shelf just moved: the decode tick waits ({c})')
+    m.clock += settle - 20; c = fired(m, 'on_load')
+    expect(('timer_add', PSYMS['on_load'], 20) in c and not decoded(c), f'still moving lately: it waits the rest ({c})')
+    m.clock += 20; c = fired(m, 'on_load')
+    expect(decoded(c) and not any(k[0] == 'timer_add' and k[2] > 1 for k in c), f'the shelf at rest under the finger: the covers decode ({c})')
     m.timer_fail = True
     scrub(m, 'move', O['CF_TICK_X0'] + 3 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11)
     expect(shelf_value(m) == 3, 'a refused timer: the move is applied as it comes')
     m.timer_fail = False
     scrub(m, 'move', -40); fired(m, 'on_scrub_turn')
     expect(shelf_value(m) == 0, 'past the left end: the first album')
-    # the release carries the finger's last position: applied whatever moves were dropped or still wait, and the waiting turn is dropped
+    # the release keeps the album on screen: a lifting finger's point slides, so neither its own place nor a move still waiting is applied
     scrub(m, 'move', x5)
     scrub(m, 'up', O['CF_TICK_X0'] + 2 * (O['CF_TICK_X1'] - O['CF_TICK_X0']) // 11)
-    expect(shelf_value(m) == 2 and ('timer_remove', 0x777) in m.calls, f'the release puts the shelf under itself and stops the waiting turn ({shelf_value(m)})')
+    expect(shelf_value(m) == 0 and ('timer_remove', 0x777) in m.calls, f'the release leaves the shelf where it shows and stops the waiting turn ({shelf_value(m)})')
     expect(vis(m, 'cf_bubble')[0] == 0 and vis(m, 'cf_count')[0] == 0 and any(c[0] == 'widget_ungrab' for c in m.calls), 'the release hides the bubble and the counter')
-    expect(LOG not in m.fs, 'no log without the card\'s m1plus-log')
     at = shelf_value(m); fired(m, 'on_scrub_turn')
     expect(shelf_value(m) == at, 'a turn after the release does nothing')
     expect(len(paint(m)) == O['CF_TICKS'], 'at rest again')
-    # the opt-in log: what a gesture cost
-    m.fs[LOG_ON] = b''
-    scrub(m, 'down', O['CF_TICK_X1']); m.clock += 30; scrub(m, 'move', x5); m.clock += 250; fired(m, 'on_scrub_turn'); m.clock += 20; scrub(m, 'abort', x5)
-    line = f'coverflow: scrub 300 ms, x {O["CF_TICK_X1"]} to {x5}, y 20, 1 moves in 1 turns, longest wait 250 ms, abort, 12 albums\n'
-    expect(m.fs.get(LOG, b'').decode() == line and shelf_value(m) == 5,
-           f'with m1plus-log each gesture appends its cost; an abort leaves the shelf where it was ({m.fs.get(LOG)})')
-    del m.fs[LOG_ON], m.fs[LOG]
+    scrub(m, 'down', O['CF_TICK_X1']); scrub(m, 'move', x5); fired(m, 'on_scrub_turn'); scrub(m, 'abort', O['CF_TICK_X0'])
+    expect(shelf_value(m) == 5 and vis(m, 'cf_bubble')[0] == 0, f'an abort leaves the shelf where it was and hides the bubble ({shelf_value(m)})')
     # the scrubber's lower half is in stock's swipe-up-to-Home zone (screen y 450 and below): stock's window-manager handler, which runs before the scrubber's, has stored the
     # press's y, and with that 450 or more it stops every move before the page sees one. The press the scrubber takes clears it (the moves come, the release is no Home swipe).
     BEFORE_Y = pod.DATA['BEFORE_PRESS_Y'][0]
@@ -1339,4 +1487,4 @@ def menu_tests(ctx):
 def ticks_on(m): return [vis(m, f'vs_tick{i}')[0] for i in range(4)]
 
 
-SECTIONS = [page_tests, volkeys_tests, keyroute_tests, menu_tests]   # tools/check.py runs each as its own task
+SECTIONS = [page_tests, volkeys_tests, keyroute_tests, menu_tests, landscape_scrub_tests]   # tools/check.py runs each as its own task

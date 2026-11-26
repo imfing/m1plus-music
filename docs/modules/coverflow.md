@@ -103,6 +103,8 @@ global LCD orientation changes.
   page as it was. Textures are shared.
 - `view_covers` and the touch layer move to the body, the caption labels are hidden, and the frame
   draws the captions itself in the page's font.
+- The scrubber's band is the logical rows 280..319 ([Scrubber](#scrubber)); the covers start
+  at `CFL_TOP` (14) and the album and artist lines at `CFL_ALBUM_Y` and `CFL_ARTIST_Y`, above the band.
 - `where()` turns the pointer back, so drags and flings along the long side behave as in portrait.
 - A tap on the centre cover (`|x - 200| < 84`) opens the album; a side tap brings that cover in.
 
@@ -126,12 +128,21 @@ page has no card (its left cap is Songs).
 ## Scrubber
 
 `cf_scrub`, a transparent view under the captions (`CF_SCRUB_Y`, to the client's bottom), spans the
-shelf from its first album to its last. Portrait, depth mode and `CF_SCRUB_MIN` (10) albums or more
-only; never on an artist's page. **Settings > Library > Cover Flow > Scroll Bar** turns it off
+shelf from its first album to its last. Depth mode and `CF_SCRUB_MIN` (10) albums or more only,
+portrait or landscape; never on an artist's page. **Settings > Library > Cover Flow > Scroll Bar** turns it off
 (`coverflow_bar`, `/mnt/data/m1plus/coverflow-scroll-bar`: `0` off, anything else or missing on);
 the page reads the switch when it shows its covers (`scrub_show`), and with it off the view is
 hidden and takes no touch.
 
+- **Landscape:** the band is the frame's logical rows `CFL_SCRUB_Y` .. + `CFL_SCRUB_H` (280..319),
+  its full width, which on the screen is the body's left 40 px. `layout()` moves and resizes the
+  view over it (0, `CFL_Y`, `CFL_SCRUB_H` x `CFL_W`; portrait keeps the asset's place), and the view,
+  a later sibling of `view_covers`, takes the touch there.
+  The ticks run `CFL_TICK_X0` .. `CFL_TICK_X1` on the line `CFL_TICK_Y`, with the same count, heights,
+  alphas, sigmas, needle and dot as portrait (the dot `CFL_DOT_DY` above the line, to fit the band).
+  `band_fill` turns each rectangle (band (x, y) is view (`CFL_SCRUB_H` - 1 - y, x)). A pointer's x
+  along the band is the local y of the view (`widget_to_local`, as `where()`), so a press maps by the
+  same `index_at`; the finger's distance across the band does not matter.
 - **Paint:** its own `EVT_AFTER_PAINT` draws `CF_TICKS` (46) ticks, 2 px wide, as opaque blends of
   the page background and the ink (Light and Tinted included). A tick's height and brightness follow
   a Gaussian of its distance from the shelf's position (`bell`, a byte table of exp(-u) in eighths):
@@ -148,8 +159,9 @@ hidden and takes no touch.
   out for at most 20 ms before its timers and its paint (`0x6939d4`), so a handler that does that
   work per move can fall behind the finger, and the later moves and the release are then dropped. A refused
   timer applies the move as it comes.
-- **Up** has the finger's last position, whatever moves came before it: it is applied at once,
-  then the gesture ends. An abort ends it where the shelf is.
+- **Up** leaves the shelf on the album it shows and drops a move still waiting, then the gesture
+  ends; an abort ends it the same way. A lifting finger's point slides a few px, and with many
+  albums a few px are several of them, so the release's own x is not applied.
 - **Stock's bottom zone.** The screen's bottom 30 px are stock's swipe-up-to-Home zone, and the
   scrubber's lower half is in it: the window starts under the 30 px status bar, so view y 36 is
   screen y 450, two px under the ticks. Stock's handlers on the window manager run before any
@@ -160,17 +172,28 @@ hidden and takes no touch.
   A press the scrubber takes clears the stored y (as stock does after going Home, @`0x4cd6d0`), so
   its moves come and its release is no Home swipe. Without that, a press on or under the ticks gets
   its jump and its release and no move between. A page with no scrubber shown takes no press, and
-  the Home swipe works there as in stock.
-- **Covers load during a scrub** as at any other time: the loader decodes one wanted cover per
-  turn around wherever the shelf is.
-- **Opt-in log:** with `m1plus-log` on the card ([home guard](home-guard.md)) each gesture appends
-  one line: its length, the x of the press and of the release, the press's screen y, the moves and
-  turns, the longest wait between two of them, how it ended and the album count.
+  the Home swipe works there as in stock. In landscape the band's logical x from 370 is in that zone.
+- **Stock's pull-down.** The landscape band starts at screen y 80, so a press at its first row
+  stores a `pressdown_y` (`PRESSDOWN_Y`, `0xa05a30`, kept by `on_wm_tsdown_fun`, which runs after
+  the children) under 81, and `on_wm_tsmove_fun` (`0x4cd788`) opens the pull-down for such a press once the
+  finger is 11 px further down. Every landscape move sets `PRESSDOWN_Y` to 480, as the Control Center's
+  hold does (`patch/pulldown.c`).
+- **Covers load when the shelf rests.** A decode stalls the UI thread, and the next move waits
+  for it, usually for a cover the shelf has already left. While a finger is down, `on_load` waits
+  until the shelf has stayed on one album `CF_SCRUB_SETTLE_MS` (60), then decodes one wanted cover
+  per turn as at any other time.
 - **Bubble and counter:** while a finger is down, `cf_bubble` (the A-Z rail's bubble, 110 px, over
   the centre cover) shows the section of the current order: the title's or the artist's initial
   (`cc_name_initial`, `#` for a non-letter), or the year (from `cc_album_order_years`, set
   smaller); none in the Recently Added order. `cf_count` under the ticks shows "%d of %d". Both
   only change visibility and stay insensitive.
+  In landscape the widgets stay hidden; `scrub_labels` keeps their text in `cf.bub_txt` /
+  `cf.cnt_txt` (and the bubble's font size on the label) and the frame draws them like the
+  captions (`scrub_land`, from `on_paint`, `fx.drawn` cleared when they change). The bubble is the
+  same `SG_BUBBLE` square (fill #262626, rim #3A3A3A through the palette, corners `CFL_BUBBLE_R`,
+  edge coverage by `round_cover`) centred on the centre cover, the letter or year centred in it in the
+  label's size; the counter is the line `CFL_COUNT_Y`, centred, `CF_COUNT_PX` px #AAAAAA, under the
+  centre cover.
 
 ## Volume buttons
 
