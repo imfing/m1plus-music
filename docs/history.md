@@ -32,6 +32,8 @@ and [UI reference](ui.md).
 - **1.9.0:** a second Control Center page, playlist editing, podcast episode notes on Now Playing
   and grouped item menus.
 - **1.9.1:** fixes for Crossfade, lyrics and sliders.
+- **1.10.0:** a Cover Flow Slider, generated playlist covers and sorting, a custom boot logo and a
+  Wi-Fi Transfer QR code.
 
 ## Device findings
 
