@@ -12,7 +12,7 @@ installed M1+ Music yet, start with [Install](install.md).
 
 After you add or move music on the card, run **Update Now** again so the player can find it. To add
 only new music in a few folders, use **Choose Folders**, tick the folders and tap **Scan**. Update
-Library shows how many songs you have and when the library was last updated. The page shows when the library was last updated; **Auto Update** does it for you after a card is inserted or a USB transfer ends.
+Library shows how many songs you have and when the library was last updated; **Auto Update** does it for you after a card is inserted or a USB transfer ends.
 
 ## Find your way around
 
@@ -77,7 +77,11 @@ On Songs, Folders, Playlists, Podcasts or an album, choose **Select** (on an alb
 **Select All** (top right) marks everything. The icons in the pill at the bottom act on the marked items:
 add to a playlist, or delete (the trash can; in a playlist it removes the songs from that playlist only). They stay dim until something is marked. Tap **×** to leave.
 
-In a playlist, open **…** and choose **Edit** instead: the Shuffle and Play buttons make way, the bar shows delete and **+**, and tapping the playlist's name (the pencil beside it) renames it, and tapping the cover (the round pencil on its corner) opens the **Playlist Cover** page: choose Albums (the mosaic of the playlist's albums) or one of five generated looks (Solid, Mesh, Sunburst, Stripes, Band) in colours taken from the albums; a tap takes effect at once, and **Name on Cover** writes the playlist's name (up to two lines) in white at the top left of the cover, on the playlist's page, the Playlists grid and a pinned playlist on Home. Press the three-bar handle at the right of a song to lift it, then drag it to a new place (near the top or the bottom edge the list scrolls by itself); the order is saved when you let go. A new playlist opens straight away with an **Add Songs** row; tap it to fill the playlist. Tap **+** to add songs: the library opens with a plus beside every song (a grey check for songs already in the playlist), and one tap adds a song at the end; the check mark at the top left comes back to the playlist. Tap the check mark at the top left when you are done.
+### Edit a playlist
+
+In a playlist, open **…** and choose **Edit**. Tap the playlist's name (the pencil beside it) to rename it, or tap its cover to open **Playlist Cover** and choose either **Albums** (the mosaic) or one of five generated looks (Solid, Mesh, Sunburst, Stripes, Band) coloured from its albums. **Name on Cover** writes the playlist's title at the top left of the cover on the playlist page, the Playlists grid and list, and Home pins.
+
+Press the three-bar handle on the right of a song to lift and drag it to a new place (the list scrolls near the top or bottom edge). Tap **+** to add songs (a grey check marks songs already in the playlist; one tap adds a song at the end), or mark songs and tap the trash can to remove them from this playlist. A new playlist opens with an **Add Songs** row right away. Tap the check mark at the top left when you are done.
 
 ## Control playback
 
@@ -89,7 +93,7 @@ In a playlist, open **…** and choose **Edit** instead: the Shuffle and Play bu
 
 Tap the mini player's cover on Home, or tap the Now Playing button in a page's top bar. On Now Playing:
 
-- Use the centre button to pause or resume, and the buttons beside it to skip tracks. The cover shrinks while paused and springs back when the music resumes; turn this off in Settings → Now Playing → Shrink on Pause.
+- Use the centre button to pause or resume, and the buttons beside it to skip tracks. The cover shrinks while paused and springs back when the music resumes; turn this off in **Settings → Now Playing → Shrink on Pause**.
 - Drag along the progress bar to move through the song; the bar grows thicker under your finger and the times show where you will land.
 - Swipe across the cover to see lyrics, then swipe again for song details. Lyrics without timings (a plain-text `.lrc`, or plain lyrics saved from Cover & Lyrics) show from the top as a page you scroll yourself. While a podcast episode or an audiobook plays, the first swipe shows the episode's notes instead of lyrics (scroll them with a finger); the file details are on the next page. The page dots sit between the two times; while that spot shows the track's place in the queue, the dots appear there for a moment after each swipe.
 - Tap **…** for more options, including display modes and the Sleep Timer (a moon icon appears in the status bar while a timer is running, when the bar has room for it).
@@ -107,7 +111,7 @@ While a radio station is up, the page shows the station's logo, name and line wi
 Tap the status bar at the top of any page to open **Volume**. Use the **−** and **+** buttons, drag
 the bar, or press the volume keys. A small mark on the bar shows the **Max Volume** limit. Under
 the bar, shortcuts open **Max Volume**, **Equalizer** and **Volume & Sound**. If you open it by
-accident too often, turn off **Tap for Volume** in Settings > Buttons & Power.
+accident too often, turn off **Tap for Volume** in **Settings → Buttons & Power**.
 
 ### Choose what plays next
 
@@ -136,7 +140,7 @@ Open **Extras → Settings** to change the player. A few places to start:
 - **Appearance:** choose an accent colour and customize Control Center, which also has Wi-Fi Transfer and Screenshot tiles.
 - **Boot logo:** put a JPG named `boot-logo.jpg` at the top of the card: under 2 MB, at most 4096
   pixels a side and 8 megapixels. It is stretched to fill the screen, so use a 2:3 portrait picture
-  such as 320 × 480. It shows from the second power-on. Delete the file to get the M1+ logo back.
+  such as 320 × 480. The first power-on imports it, and it shows from the second power-on. Delete the file to get the M1+ logo back.
 
 To return to Shanling Home, open **Settings → Developer → Startup → Open Shanling Home**. Tap the
 M1+ Music icon on Shanling Home to return.

@@ -11,7 +11,7 @@ Drag a list to scroll; tap a row to open it or play a track.
 
 | Page | What you can do |
 |---|---|
-| Cover Flow | Drag through albums. Tap a side cover to centre it, then tap it again to open the album. |
+| Cover Flow | Drag through albums, or drag the Slider ticks to jump across a large library. Tap a side cover to centre it, then tap again to open it. Use **…** to search, jump to the playing album or sort (**Settings → Library → Cover Flow** sets **Start At** and **Slider**). |
 | Albums | Use **…** to switch grid/list or sort by Title, Artist, Recently Added or Year. |
 | Artists | Use **…** to switch Artist/Album Artist. Open an artist to play or shuffle their songs. |
 | Songs | Use Search or the A–Z rail. Use **…** to select songs or change the sort order. |
@@ -30,10 +30,12 @@ before each disc, and numbers each disc's tracks from 1. Run **Update Library** 
 
 ### Edit a playlist
 
-Open a playlist and tap **… → Rename** to give it a new name; a pinned playlist keeps its pin. To
-take one song out, tap its **…** (or long-press it) and choose **Remove from Playlist**. To take out
-several, choose **… → Select**, mark them and tap the trash can. Only this playlist changes; the
-songs stay in your library and on the card.
+Open a playlist and choose **… → Edit** to rename it (tap the pencil beside the title), change its
+cover (tap the cover for **Albums** or five generated styles, with an optional **Name on Cover**),
+reorder songs (drag the three-bar handle on the right), add songs with **+**, or mark songs and tap
+the trash can to remove them. A pinned playlist keeps its pin and cover when renamed. You can also
+remove a single song from its **…** menu (or long-press it) and choose **Remove from Playlist**.
+Only this playlist changes; the songs stay in your library and on the card.
 
 ### Repair a playlist
 
@@ -72,18 +74,23 @@ shows the remaining hours and minutes. This is the same timer as **All System Se
 
 On an album or Songs list, tap a track's **…** or long-press its row. The menu is in groups:
 **Pin Song**, **Add to Playlist**, **Favorite** and **Get Info**, then **Play Next** and **Play After**. A
-favorited track offers **Undo Favorite** instead. In a playlist, **Remove from Playlist** (in red) is the last choice.
+favorited track offers **Undo Favorite** instead. **Get Info** shows the track's format, quality, length,
+size and path. In a playlist, **Remove from Playlist** (in red) is the last choice.
 
 **Add to Playlist** lists **New playlist**, **Favorites** and your playlists. A grey check marks the ones that already
 have every song you are adding; tapping one says so and adds nothing. When a playlist has only some of them, the
 rest are added and the message says how many.
 
-### Album actions
+### Album and playlist actions
 
 Touch and hold an album on **Albums**, the **Recently Added** album grid, **Recently Played** or a Home pin for
 **Play** and **Shuffle**, then **Pin Album** and **Add to Playlist** (the whole album), then **Play Next** and
 **Play After**. On an album's page, **…** has the same choices without Play and Shuffle (the buttons under
-the cover), and **Select** last. Get Info shows the track's format, quality, length, size and path.
+the cover), and **Select** last.
+
+Touch and hold a playlist on **Playlists** or in Home pins for the same six actions (**Play**, **Shuffle**,
+**Pin Playlist**, **Add to Playlist**, **Play Next** and **Play After**). Long-pressing a library Search result
+opens the action menu for that song, album, playlist or artist.
 
 ### Manage Up Next
 

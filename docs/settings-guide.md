@@ -221,7 +221,7 @@ Connect to Wi-Fi and open **Settings → General → Software Update** (the row 
 2. Tap **Download and Install**, then confirm the download.
 3. Follow the firmware's update confirmation when the download finishes.
 
-The download is about 55 MB and needs 110 MB of free card space. A completed download replaces
+The download is about 60 MB and needs 110 MB of free card space. A completed download replaces
 `update.bin` on the card. The progress popup's **Cancel** button (or Back) stops the download
 and keeps the old file.
 

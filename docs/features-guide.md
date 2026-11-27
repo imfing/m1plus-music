@@ -151,7 +151,8 @@ Open **Extras → Pod** for a virtual iPod.
 - The main menu follows the iPod classic: Music, Cover Flow, Podcasts, Settings, Shuffle Songs, and
   Now Playing while something plays. Music holds Cover Flow, Playlists, Artists, Albums, Songs,
   Genres and Composers.
-- In **Cover Flow**, turn the wheel to slide through the albums. Tap the centre to flip the album
+- In **Cover Flow**, turn the wheel to slide through the albums (it follows Cover Flow's sort order
+  and **Start At** setting). Tap the centre to flip the album
   over and see its songs; tap a song to play it, or tap MENU to flip back. Press the bottom button
   on an album to play it from the first song.
 - Tap MENU to go back. Hold it to return to the Pod's main menu, then tap it to close Pod.
@@ -206,8 +207,8 @@ Use a show's **…** menu to change its list:
 Use an episode's **…** menu to mark it played or unplayed. While an episode plays, Now Playing's **…**
 offers Go to Podcasts, Playback Speed, Sleep Timer and A-B Repeat. Now Playing's bottom row becomes
 speed, back 15 seconds, play, forward 30 seconds and queue: tap the speed (**1×**) to step through
-1×, 1.25×, 1.5× and 2× for that show. The hardware keys still change episode. The lyrics and
-information pages are not shown for an episode.
+1×, 1.25×, 1.5× and 2× for that show. The hardware keys still change episode. Swipe across the
+cover for the episode's notes, and swipe again for file details.
 
 Selection, Mark All as Played, deletion and the queue after the episode you start apply to the
 visible rows. If a filter leaves no results, use **…** to switch back. An episode marked played
@@ -289,7 +290,8 @@ Split such books into parts or chapters first.
 - **… → Playback Speed** cycles through 1x, 1.25x, 1.5x and 2x. The playing part shows a wave icon.
 - While a part plays, Now Playing's bottom row is speed, back 15 seconds, play, forward 30 seconds
   and queue. Tap the speed (**1×**) to step through the speeds; the book plays its parts in order,
-  and the hardware keys still change part. The lyrics and information pages are not shown. Its **…** offers Display Mode, Playback Speed, Sleep
+  and the hardware keys still change part. Swipe across the cover for the book's notes, and swipe
+again for file details. Its **…** offers Display Mode, Playback Speed, Sleep
   Timer and A-B Repeat.
 
 ### Find and download LibriVox books
@@ -325,8 +327,8 @@ For technical details, see [Audiobooks](modules/audiobooks.md).
 
 ## Search
 
-**Search** opens the same library search as the Songs page's Search button. It is hidden from
-the main menu by default.
+**Search** opens the same library search as the Songs page's Search button. Touch and hold a result
+for its action menu (song, album, playlist or artist). It is hidden from the main menu by default.
 
 ## Scrobbling
 
